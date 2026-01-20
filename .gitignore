@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+.env
+.venv/
+venv/
+ENV/
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Project specific
+*.ckpt
+*.db
+data/price_cache.json
+data/scryfall_price_cache.json
+data/card_images.db
+logs/
+*.log
+
+# Large data files
+drive-download-*/
+final-model-*/
+models/*.ckpt
+mtg_data/
+
+# Jupyter
+.ipynb_checkpoints/
