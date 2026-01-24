@@ -57,6 +57,22 @@ export interface StackItem {
   targets: string[];
 }
 
+export interface AttackerDeclaration {
+  cardInstanceId: string;
+  defendingPlayerId: string;
+}
+
+export interface BlockerDeclaration {
+  cardInstanceId: string;
+  blockingAttackerId: string;
+}
+
+export interface CombatState {
+  attackers: AttackerDeclaration[];
+  blockers: BlockerDeclaration[];
+  damageAssignment: Map<string, number>; // attackerInstanceId -> damage to assign to player
+}
+
 export interface ManaPool {
   W: number;
   U: number;
@@ -89,6 +105,7 @@ export interface GameState {
   turnNumber: number;
   hasPriorityPassed: boolean[];
   stack: StackItem[];
+  combat: CombatState | null;
 }
 
 export function emptyManaPool(): ManaPool {

@@ -49,6 +49,7 @@ export function initGameState(decks: DeckInput[]): GameState {
     turnNumber: 1,
     hasPriorityPassed: new Array(decks.length).fill(false),
     stack: [],
+    combat: null,
   };
 }
 
