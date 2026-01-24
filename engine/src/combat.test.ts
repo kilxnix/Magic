@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { canDeclareAttacker, declareAttackers, canDeclareBlocker, declareBlockers } from './combat';
+import { canDeclareAttacker, declareAttackers, canDeclareBlocker, declareBlockers, resolveCombatDamage } from './combat';
 import { getCardsInZone, initGameState } from './game-state';
 import { CardDefinition, CombatState } from './types';
 
@@ -290,5 +290,117 @@ describe("Declare Blockers", () => {
       const next = declareBlockers(state, "p2", []);
       expect(next.combat!.blockers).toHaveLength(0);
     });
+  });
+});
+
+describe("Combat Damage", () => {
+  it("unblocked attacker deals damage to defending player", () => {
+    const state = setupBattlefield();
+    const creatures = getCardsInZone(state, "p1", "battlefield");
+    let next = declareAttackers(state, "p1", [
+      { cardInstanceId: creatures[0].instanceId, defendingPlayerId: "p2" },
+    ]);
+    next = declareBlockers(next, "p2", []);
+    next = resolveCombatDamage(next);
+
+    expect(next.players[1].life).toBe(38); // 40 - 2 power
+  });
+
+  it("multiple unblocked attackers deal cumulative damage", () => {
+    const state = setupBattlefield();
+    const creatures = getCardsInZone(state, "p1", "battlefield");
+    let next = declareAttackers(state, "p1", [
+      { cardInstanceId: creatures[0].instanceId, defendingPlayerId: "p2" },
+      { cardInstanceId: creatures[1].instanceId, defendingPlayerId: "p2" },
+    ]);
+    next = declareBlockers(next, "p2", []);
+    next = resolveCombatDamage(next);
+
+    expect(next.players[1].life).toBe(36); // 40 - 2 - 2
+  });
+
+  it("blocked attacker deals damage to blocker (damage marked)", () => {
+    const decks = [
+      { playerId: "p1", name: "Alice", cards: [makeBear("bear-1")], commanderId: "cmd1" },
+      { playerId: "p2", name: "Bob", cards: [makeBear("bear-3")], commanderId: "cmd2" },
+    ];
+    let state = initGameState(decks);
+    for (const [id, card] of state.cards) {
+      state.cards.set(id, { ...card, zone: "battlefield", summoningSick: false });
+    }
+    state = { ...state, phase: "combat", step: "declare_attackers" };
+
+    const p1Bear = getCardsInZone(state, "p1", "battlefield")[0];
+    const p2Bear = getCardsInZone(state, "p2", "battlefield")[0];
+
+    state = declareAttackers(state, "p1", [
+      { cardInstanceId: p1Bear.instanceId, defendingPlayerId: "p2" },
+    ]);
+    state = declareBlockers(state, "p2", [
+      { cardInstanceId: p2Bear.instanceId, blockingAttackerId: p1Bear.instanceId },
+    ]);
+    state = resolveCombatDamage(state);
+
+    // Both deal damage to each other
+    expect(state.cards.get(p1Bear.instanceId)!.damage).toBe(2);
+    expect(state.cards.get(p2Bear.instanceId)!.damage).toBe(2);
+    // No player damage — attacker was blocked
+    expect(state.players[1].life).toBe(40);
+    // Combat cleared
+    expect(state.combat).toBeNull();
+  });
+
+  it("blocked attacker does not deal damage to player", () => {
+    const bigBear: CardDefinition = {
+      id: "big-1",
+      name: "Big Bear",
+      type_line: "Creature — Bear",
+      oracle_text: "",
+      mana_cost: "{3}{G}",
+      cmc: 4,
+      colors: ["G"],
+      color_identity: ["G"],
+      keywords: [],
+      card_types: ["creature"],
+      power: 4,
+      toughness: 4,
+    };
+    const decks = [
+      { playerId: "p1", name: "Alice", cards: [bigBear], commanderId: "cmd1" },
+      { playerId: "p2", name: "Bob", cards: [makeBear("bear-3")], commanderId: "cmd2" },
+    ];
+    let state = initGameState(decks);
+    for (const [id, card] of state.cards) {
+      state.cards.set(id, { ...card, zone: "battlefield", summoningSick: false });
+    }
+    state = { ...state, phase: "combat", step: "declare_attackers" };
+
+    const bigCreature = getCardsInZone(state, "p1", "battlefield")[0];
+    const smallBlocker = getCardsInZone(state, "p2", "battlefield")[0];
+
+    state = declareAttackers(state, "p1", [
+      { cardInstanceId: bigCreature.instanceId, defendingPlayerId: "p2" },
+    ]);
+    state = declareBlockers(state, "p2", [
+      { cardInstanceId: smallBlocker.instanceId, blockingAttackerId: bigCreature.instanceId },
+    ]);
+    state = resolveCombatDamage(state);
+
+    // Big bear deals 4 to blocker, gets 2 back. Player takes no damage.
+    expect(state.cards.get(smallBlocker.instanceId)!.damage).toBe(4);
+    expect(state.cards.get(bigCreature.instanceId)!.damage).toBe(2);
+    expect(state.players[1].life).toBe(40);
+  });
+
+  it("clears combat state after damage", () => {
+    const state = setupBattlefield();
+    const creatures = getCardsInZone(state, "p1", "battlefield");
+    let next = declareAttackers(state, "p1", [
+      { cardInstanceId: creatures[0].instanceId, defendingPlayerId: "p2" },
+    ]);
+    next = declareBlockers(next, "p2", []);
+    next = resolveCombatDamage(next);
+
+    expect(next.combat).toBeNull();
   });
 });

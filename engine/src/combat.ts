@@ -98,3 +98,62 @@ export function declareBlockers(state: GameState, playerId: string, blocks: Bloc
     priorityPlayerIndex: state.activePlayerIndex,
   };
 }
+
+export function resolveCombatDamage(state: GameState): GameState {
+  if (!state.combat) throw new Error("No combat state");
+
+  const newCards = new Map(state.cards);
+  const newPlayers = state.players.map(p => ({ ...p }));
+
+  for (const attacker of state.combat.attackers) {
+    const attackerCard = newCards.get(attacker.cardInstanceId);
+    if (!attackerCard) continue;
+
+    const attackerDef = state.cardDefinitions.get(attackerCard.definitionId);
+    const attackerPower = attackerDef?.power ?? 0;
+
+    // Find blockers for this attacker
+    const blockers = state.combat.blockers.filter(b => b.blockingAttackerId === attacker.cardInstanceId);
+
+    if (blockers.length === 0) {
+      // Unblocked — deal damage to defending player
+      const defenderIndex = newPlayers.findIndex(p => p.id === attacker.defendingPlayerId);
+      if (defenderIndex !== -1) {
+        newPlayers[defenderIndex].life -= attackerPower;
+      }
+    } else {
+      // Blocked — deal damage to first blocker (simplified)
+      const firstBlocker = newCards.get(blockers[0].cardInstanceId);
+      if (firstBlocker) {
+        newCards.set(firstBlocker.instanceId, {
+          ...firstBlocker,
+          damage: firstBlocker.damage + attackerPower,
+        });
+      }
+
+      // Each blocker deals damage back to attacker
+      for (const blocker of blockers) {
+        const blockerCard = newCards.get(blocker.cardInstanceId);
+        if (!blockerCard) continue;
+
+        const blockerDef = state.cardDefinitions.get(blockerCard.definitionId);
+        const blockerPower = blockerDef?.power ?? 0;
+
+        const currentAttacker = newCards.get(attacker.cardInstanceId);
+        if (!currentAttacker) continue;
+
+        newCards.set(attacker.cardInstanceId, {
+          ...currentAttacker,
+          damage: currentAttacker.damage + blockerPower,
+        });
+      }
+    }
+  }
+
+  return {
+    ...state,
+    cards: newCards,
+    players: newPlayers,
+    combat: null,
+  };
+}
