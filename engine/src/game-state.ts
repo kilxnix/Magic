@@ -48,6 +48,7 @@ export function initGameState(decks: DeckInput[]): GameState {
     step: 'untap',
     turnNumber: 1,
     hasPriorityPassed: new Array(decks.length).fill(false),
+    stack: [],
   };
 }
 

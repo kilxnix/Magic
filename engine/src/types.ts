@@ -50,6 +50,13 @@ export interface CardInstance {
   isCommander: boolean;
 }
 
+export interface StackItem {
+  id: string;
+  cardInstanceId: string;
+  casterId: string;
+  targets: string[];
+}
+
 export interface ManaPool {
   W: number;
   U: number;
@@ -81,6 +88,7 @@ export interface GameState {
   step: Step;
   turnNumber: number;
   hasPriorityPassed: boolean[];
+  stack: StackItem[];
 }
 
 export function emptyManaPool(): ManaPool {
