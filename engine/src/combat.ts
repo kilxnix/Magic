@@ -1,4 +1,4 @@
-import { AttackerDeclaration, CombatState, GameState } from './types';
+import { AttackerDeclaration, BlockerDeclaration, CombatState, GameState } from './types';
 import { getCardDefinition, getPlayer } from './game-state';
 
 export function canDeclareAttacker(state: GameState, playerId: string, cardInstanceId: string): boolean {
@@ -46,6 +46,53 @@ export function declareAttackers(state: GameState, playerId: string, attacks: At
   return {
     ...state,
     cards: newCards,
+    combat,
+    hasPriorityPassed: new Array(state.players.length).fill(false),
+    priorityPlayerIndex: state.activePlayerIndex,
+  };
+}
+
+export function canDeclareBlocker(
+  state: GameState,
+  playerId: string,
+  cardInstanceId: string,
+  attackerInstanceId: string
+): boolean {
+  if (!state.combat) return false;
+
+  const card = state.cards.get(cardInstanceId);
+  if (!card) return false;
+  if (card.ownerId !== playerId) return false;
+  if (card.zone !== 'battlefield') return false;
+  if (card.tapped) return false;
+
+  const def = getCardDefinition(state, card);
+  if (!def.card_types.includes('creature')) return false;
+
+  // Can only block attackers targeting you
+  const attacker = state.combat.attackers.find(a => a.cardInstanceId === attackerInstanceId);
+  if (!attacker) return false;
+  if (attacker.defendingPlayerId !== playerId) return false;
+
+  return true;
+}
+
+export function declareBlockers(state: GameState, playerId: string, blocks: BlockerDeclaration[]): GameState {
+  if (!state.combat) throw new Error('No combat state');
+
+  for (const block of blocks) {
+    if (!canDeclareBlocker(state, playerId, block.cardInstanceId, block.blockingAttackerId)) {
+      throw new Error(`Cannot declare blocker: ${block.cardInstanceId}`);
+    }
+  }
+
+  const combat: CombatState = {
+    ...state.combat,
+    blockers: [...state.combat.blockers, ...blocks],
+  };
+
+  return {
+    ...state,
     combat,
     hasPriorityPassed: new Array(state.players.length).fill(false),
     priorityPlayerIndex: state.activePlayerIndex,

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { canDeclareAttacker, declareAttackers } from './combat';
+import { canDeclareAttacker, declareAttackers, canDeclareBlocker, declareBlockers } from './combat';
 import { getCardsInZone, initGameState } from './game-state';
 import { CardDefinition, CombatState } from './types';
 
@@ -187,6 +187,108 @@ describe('Declare Attackers', () => {
       state.cards.set(creatures[0].instanceId, { ...creatures[0], tapped: true });
       const attacks = [{ cardInstanceId: creatures[0].instanceId, defendingPlayerId: 'p2' }];
       expect(() => declareAttackers(state, 'p1', attacks)).toThrow();
+    });
+  });
+});
+
+describe("Declare Blockers", () => {
+  function setupCombat() {
+    const decks = [
+      { playerId: "p1", name: "Alice", cards: [makeBear("bear-1")], commanderId: "cmd1" },
+      { playerId: "p2", name: "Bob", cards: [makeBear("bear-3"), makeBear("bear-4")], commanderId: "cmd2" },
+    ];
+    let state = initGameState(decks);
+    for (const [id, card] of state.cards) {
+      state.cards.set(id, { ...card, zone: "battlefield", summoningSick: false });
+    }
+    state = { ...state, phase: "combat", step: "declare_attackers" };
+
+    // P1 attacks with bear
+    const p1Creatures = getCardsInZone(state, "p1", "battlefield");
+    state = declareAttackers(state, "p1", [
+      { cardInstanceId: p1Creatures[0].instanceId, defendingPlayerId: "p2" },
+    ]);
+    state = { ...state, step: "declare_blockers" };
+    return state;
+  }
+
+  describe("canDeclareBlocker", () => {
+    it("allows untapped creature to block an attacker targeting its controller", () => {
+      const state = setupCombat();
+      const p2Creatures = getCardsInZone(state, "p2", "battlefield");
+      const attackerId = state.combat!.attackers[0].cardInstanceId;
+      expect(canDeclareBlocker(state, "p2", p2Creatures[0].instanceId, attackerId)).toBe(true);
+    });
+
+    it("rejects tapped creatures as blockers", () => {
+      const state = setupCombat();
+      const p2Creatures = getCardsInZone(state, "p2", "battlefield");
+      state.cards.set(p2Creatures[0].instanceId, { ...p2Creatures[0], tapped: true });
+      const attackerId = state.combat!.attackers[0].cardInstanceId;
+      expect(canDeclareBlocker(state, "p2", p2Creatures[0].instanceId, attackerId)).toBe(false);
+    });
+
+    it("allows creatures with summoning sickness to block", () => {
+      const state = setupCombat();
+      const p2Creatures = getCardsInZone(state, "p2", "battlefield");
+      state.cards.set(p2Creatures[0].instanceId, { ...p2Creatures[0], summoningSick: true });
+      const attackerId = state.combat!.attackers[0].cardInstanceId;
+      expect(canDeclareBlocker(state, "p2", p2Creatures[0].instanceId, attackerId)).toBe(true);
+    });
+
+    it("rejects blocking an attacker not targeting you", () => {
+      const decks = [
+        { playerId: "p1", name: "Alice", cards: [makeBear("bear-1")], commanderId: "cmd1" },
+        { playerId: "p2", name: "Bob", cards: [], commanderId: "cmd2" },
+        { playerId: "p3", name: "Carol", cards: [makeBear("bear-5")], commanderId: "cmd3" },
+      ];
+      let state = initGameState(decks);
+      for (const [id, card] of state.cards) {
+        state.cards.set(id, { ...card, zone: "battlefield", summoningSick: false });
+      }
+      state = { ...state, phase: "combat", step: "declare_attackers" };
+
+      const p1Creature = getCardsInZone(state, "p1", "battlefield")[0];
+      state = declareAttackers(state, "p1", [
+        { cardInstanceId: p1Creature.instanceId, defendingPlayerId: "p2" },
+      ]);
+      state = { ...state, step: "declare_blockers" };
+
+      // P3 tries to block an attacker targeting p2 — not allowed
+      const p3Creature = getCardsInZone(state, "p3", "battlefield")[0];
+      expect(canDeclareBlocker(state, "p3", p3Creature.instanceId, p1Creature.instanceId)).toBe(false);
+    });
+  });
+
+  describe("declareBlockers", () => {
+    it("assigns blockers to attackers", () => {
+      const state = setupCombat();
+      const p2Creatures = getCardsInZone(state, "p2", "battlefield");
+      const attackerId = state.combat!.attackers[0].cardInstanceId;
+      const blocks = [
+        { cardInstanceId: p2Creatures[0].instanceId, blockingAttackerId: attackerId },
+      ];
+      const next = declareBlockers(state, "p2", blocks);
+      expect(next.combat!.blockers).toHaveLength(1);
+      expect(next.combat!.blockers[0].blockingAttackerId).toBe(attackerId);
+    });
+
+    it("allows multiple blockers on one attacker", () => {
+      const state = setupCombat();
+      const p2Creatures = getCardsInZone(state, "p2", "battlefield");
+      const attackerId = state.combat!.attackers[0].cardInstanceId;
+      const blocks = [
+        { cardInstanceId: p2Creatures[0].instanceId, blockingAttackerId: attackerId },
+        { cardInstanceId: p2Creatures[1].instanceId, blockingAttackerId: attackerId },
+      ];
+      const next = declareBlockers(state, "p2", blocks);
+      expect(next.combat!.blockers).toHaveLength(2);
+    });
+
+    it("allows empty blocks (no blockers)", () => {
+      const state = setupCombat();
+      const next = declareBlockers(state, "p2", []);
+      expect(next.combat!.blockers).toHaveLength(0);
     });
   });
 });
