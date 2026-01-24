@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { playLand, canPlayLand, tapLandForMana } from './actions';
+import { playLand, canPlayLand, tapLandForMana, drawCards } from './actions';
 import { initGameState, getCardsInZone } from './game-state';
 import { CardDefinition } from './types';
 
@@ -186,6 +186,55 @@ describe('Land Actions', () => {
       state.cards.set(card.instanceId, { ...card, zone: 'battlefield', tapped: true });
 
       expect(() => tapLandForMana(state, 'p1', card.instanceId, 'G')).toThrow();
+    });
+  });
+
+  describe('drawCards', () => {
+    it('moves top card from library to hand', () => {
+      const decks = [{
+        playerId: 'p1', name: 'Alice',
+        cards: [makeForest()], commanderId: 'cmd1',
+      }, {
+        playerId: 'p2', name: 'Bob',
+        cards: [], commanderId: 'cmd2',
+      }];
+      const state = initGameState(decks);
+
+      const next = drawCards(state, 'p1', 1);
+      const hand = getCardsInZone(next, 'p1', 'hand');
+      const library = getCardsInZone(next, 'p1', 'library');
+      expect(hand).toHaveLength(1);
+      expect(library).toHaveLength(0);
+    });
+
+    it('draws multiple cards', () => {
+      const cards = [makeForest(), makeIsland()];
+      const decks = [{
+        playerId: 'p1', name: 'Alice', cards, commanderId: 'cmd1',
+      }, {
+        playerId: 'p2', name: 'Bob',
+        cards: [], commanderId: 'cmd2',
+      }];
+      const state = initGameState(decks);
+
+      const next = drawCards(state, 'p1', 2);
+      const hand = getCardsInZone(next, 'p1', 'hand');
+      expect(hand).toHaveLength(2);
+    });
+
+    it('draws fewer if library is empty', () => {
+      const decks = [{
+        playerId: 'p1', name: 'Alice',
+        cards: [makeForest()], commanderId: 'cmd1',
+      }, {
+        playerId: 'p2', name: 'Bob',
+        cards: [], commanderId: 'cmd2',
+      }];
+      const state = initGameState(decks);
+
+      const next = drawCards(state, 'p1', 5);
+      const hand = getCardsInZone(next, 'p1', 'hand');
+      expect(hand).toHaveLength(1);
     });
   });
 });
