@@ -1,4 +1,5 @@
 import type { GameState } from '../types';
+import { canBeTargetedByOpponent, canBeTargetedByController } from '../keywords';
 
 export type TargetType = 'Creature' | 'Player' | 'Any';
 
@@ -70,6 +71,23 @@ export function validateTargetChoices(
         // Exhaustiveness
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
         const _never: never = spec.type;
+      }
+
+      // Check hexproof/shroud for permanent targets
+      const targetCard = state.cards.get(chosenId);
+      if (targetCard && targetCard.zone === 'battlefield') {
+        const isOwnedByCaster = targetCard.ownerId === casterId;
+        if (isOwnedByCaster) {
+          // Controller targeting their own permanent - only shroud blocks this
+          if (!canBeTargetedByController(state, chosenId)) {
+            throw new Error(`Invalid target for ${spec.id}: target has shroud`);
+          }
+        } else {
+          // Opponent targeting - hexproof and shroud both block this
+          if (!canBeTargetedByOpponent(state, chosenId)) {
+            throw new Error(`Invalid target for ${spec.id}: target has hexproof or shroud`);
+          }
+        }
       }
 
       // Constraints

@@ -3,6 +3,7 @@
 import type { GameState, CardInstance } from '../types';
 import type { Effect, TargetRef } from './ast';
 import { checkStateBasedActions } from '../state-based';
+import { isIndestructible } from '../keywords';
 
 /**
  * Resolve a TargetRef to a concrete ID or IDs.
@@ -77,6 +78,11 @@ function executeDestroy(state: GameState, targetId: string): GameState {
 
   if (card.zone !== 'battlefield') {
     // Can only destroy things on battlefield
+    return state;
+  }
+
+  // Indestructible creatures cannot be destroyed
+  if (isIndestructible(state, targetId)) {
     return state;
   }
 

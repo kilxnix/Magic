@@ -8,6 +8,9 @@ export * from './stack';
 export * from './combat';
 export * from './state-based';
 
+// Keywords (Phase 5)
+export * from './keywords';
+
 // Effects system (Phase 4)
 export * from './effects/ast';
 export * from './effects/tokens';
