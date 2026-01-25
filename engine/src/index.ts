@@ -28,3 +28,6 @@ export * from './persistence';
 
 // Cards system (Phase 13)
 export * from './cards';
+
+// Game initialization (Phase 13)
+export * from './game-init';
