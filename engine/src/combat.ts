@@ -150,6 +150,32 @@ function applyLifelink(
 }
 
 /**
+ * Track commander damage dealt to a player in combat.
+ * If the source is a commander, add the damage to the defender's commanderDamage record.
+ */
+function trackCommanderDamage(
+  state: GameState,
+  newPlayers: ReturnType<typeof state.players.map>,
+  sourceId: string,
+  defenderId: string,
+  damageDealt: number,
+): void {
+  if (damageDealt <= 0) return;
+
+  const sourceCard = state.cards.get(sourceId);
+  if (!sourceCard || !sourceCard.isCommander) return;
+
+  const defenderIndex = newPlayers.findIndex(p => p.id === defenderId);
+  if (defenderIndex === -1) return;
+
+  const currentDamage = newPlayers[defenderIndex].commanderDamage[sourceId] ?? 0;
+  newPlayers[defenderIndex].commanderDamage = {
+    ...newPlayers[defenderIndex].commanderDamage,
+    [sourceId]: currentDamage + damageDealt,
+  };
+}
+
+/**
  * Calculate lethal damage considering deathtouch.
  * Returns 1 for deathtouch (minimum lethal), otherwise returns remaining toughness.
  */
@@ -200,6 +226,7 @@ export function resolveCombatDamage(state: GameState): GameState {
       if (defenderIndex !== -1) {
         newPlayers[defenderIndex].life -= attackerPower;
         applyLifelink(state, newPlayers, attacker.cardInstanceId, attackerPower);
+        trackCommanderDamage(state, newPlayers, attacker.cardInstanceId, attacker.defendingPlayerId, attackerPower);
       }
     } else {
       // Blocked — deal damage to blockers, handle trample
@@ -235,6 +262,7 @@ export function resolveCombatDamage(state: GameState): GameState {
         if (defenderIndex !== -1) {
           newPlayers[defenderIndex].life -= remainingDamage;
           applyLifelink(state, newPlayers, attacker.cardInstanceId, remainingDamage);
+          trackCommanderDamage(state, newPlayers, attacker.cardInstanceId, attacker.defendingPlayerId, remainingDamage);
         }
       }
 

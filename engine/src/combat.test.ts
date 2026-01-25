@@ -404,3 +404,178 @@ describe("Combat Damage", () => {
     expect(next.combat).toBeNull();
   });
 });
+
+describe("Commander Damage Tracking", () => {
+  function makeCommander(): CardDefinition {
+    return {
+      id: "cmd-1",
+      name: "Test Commander",
+      type_line: "Legendary Creature — Human",
+      oracle_text: "",
+      mana_cost: "{2}{W}{U}",
+      cmc: 4,
+      colors: ["W", "U"],
+      color_identity: ["W", "U"],
+      keywords: [],
+      card_types: ["creature"],
+      power: 5,
+      toughness: 5,
+    };
+  }
+
+  function setupCommanderCombat() {
+    const decks = [
+      { playerId: "p1", name: "Alice", cards: [makeCommander()], commanderId: "cmd-1" },
+      { playerId: "p2", name: "Bob", cards: [makeBear("bear-3")], commanderId: "cmd-2" },
+    ];
+    let state = initGameState(decks);
+    // Move commander to battlefield (from command zone)
+    const commander = getCardsInZone(state, "p1", "command")[0];
+    state.cards.set(commander.instanceId, {
+      ...commander,
+      zone: "battlefield",
+      summoningSick: false,
+    });
+    // Move bear to battlefield
+    const bear = getCardsInZone(state, "p2", "library")[0];
+    state.cards.set(bear.instanceId, {
+      ...bear,
+      zone: "battlefield",
+      summoningSick: false,
+    });
+    state = { ...state, phase: "combat", step: "declare_attackers" };
+    return state;
+  }
+
+  it("tracks commander damage when commander deals combat damage to player", () => {
+    let state = setupCommanderCombat();
+    const commander = getCardsInZone(state, "p1", "battlefield")[0];
+
+    state = declareAttackers(state, "p1", [
+      { cardInstanceId: commander.instanceId, defendingPlayerId: "p2" },
+    ]);
+    state = declareBlockers(state, "p2", []);
+    state = resolveCombatDamage(state);
+
+    expect(state.players[1].life).toBe(35); // 40 - 5
+    expect(state.players[1].commanderDamage[commander.instanceId]).toBe(5);
+  });
+
+  it("accumulates commander damage over multiple attacks", () => {
+    let state = setupCommanderCombat();
+    const commander = getCardsInZone(state, "p1", "battlefield")[0];
+
+    // First attack
+    state = declareAttackers(state, "p1", [
+      { cardInstanceId: commander.instanceId, defendingPlayerId: "p2" },
+    ]);
+    state = declareBlockers(state, "p2", []);
+    state = resolveCombatDamage(state);
+
+    // Reset for second attack
+    state.cards.set(commander.instanceId, {
+      ...state.cards.get(commander.instanceId)!,
+      tapped: false,
+    });
+    state = {
+      ...state,
+      phase: "combat",
+      step: "declare_attackers",
+    };
+
+    // Second attack
+    state = declareAttackers(state, "p1", [
+      { cardInstanceId: commander.instanceId, defendingPlayerId: "p2" },
+    ]);
+    state = declareBlockers(state, "p2", []);
+    state = resolveCombatDamage(state);
+
+    expect(state.players[1].life).toBe(30); // 40 - 5 - 5
+    expect(state.players[1].commanderDamage[commander.instanceId]).toBe(10);
+  });
+
+  it("does not track commander damage for non-commander creatures", () => {
+    const state = setupBattlefield();
+    const creatures = getCardsInZone(state, "p1", "battlefield");
+
+    let next = declareAttackers(state, "p1", [
+      { cardInstanceId: creatures[0].instanceId, defendingPlayerId: "p2" },
+    ]);
+    next = declareBlockers(next, "p2", []);
+    next = resolveCombatDamage(next);
+
+    expect(next.players[1].life).toBe(38); // 40 - 2
+    // No commander damage tracked for non-commanders
+    expect(next.players[1].commanderDamage[creatures[0].instanceId]).toBeUndefined();
+  });
+
+  it("does not track commander damage when blocked", () => {
+    let state = setupCommanderCombat();
+    const commander = getCardsInZone(state, "p1", "battlefield")[0];
+    const bear = getCardsInZone(state, "p2", "battlefield")[0];
+
+    state = declareAttackers(state, "p1", [
+      { cardInstanceId: commander.instanceId, defendingPlayerId: "p2" },
+    ]);
+    state = declareBlockers(state, "p2", [
+      { cardInstanceId: bear.instanceId, blockingAttackerId: commander.instanceId },
+    ]);
+    state = resolveCombatDamage(state);
+
+    // No damage to player (blocked)
+    expect(state.players[1].life).toBe(40);
+    // No commander damage tracked
+    expect(state.players[1].commanderDamage[commander.instanceId]).toBeUndefined();
+  });
+
+  it("tracks commander damage from trample overflow", () => {
+    const bigCommander: CardDefinition = {
+      id: "cmd-big",
+      name: "Big Commander",
+      type_line: "Legendary Creature — Giant",
+      oracle_text: "",
+      mana_cost: "{4}{G}{G}",
+      cmc: 6,
+      colors: ["G"],
+      color_identity: ["G"],
+      keywords: ["Trample"],
+      card_types: ["creature"],
+      power: 7,
+      toughness: 7,
+    };
+
+    const decks = [
+      { playerId: "p1", name: "Alice", cards: [bigCommander], commanderId: "cmd-big" },
+      { playerId: "p2", name: "Bob", cards: [makeBear("bear-3")], commanderId: "cmd-2" },
+    ];
+    let state = initGameState(decks);
+
+    const commander = getCardsInZone(state, "p1", "command")[0];
+    state.cards.set(commander.instanceId, {
+      ...commander,
+      zone: "battlefield",
+      summoningSick: false,
+    });
+
+    const bear = getCardsInZone(state, "p2", "library")[0];
+    state.cards.set(bear.instanceId, {
+      ...bear,
+      zone: "battlefield",
+      summoningSick: false,
+    });
+
+    state = { ...state, phase: "combat", step: "declare_attackers" };
+
+    state = declareAttackers(state, "p1", [
+      { cardInstanceId: commander.instanceId, defendingPlayerId: "p2" },
+    ]);
+    state = declareBlockers(state, "p2", [
+      { cardInstanceId: bear.instanceId, blockingAttackerId: commander.instanceId },
+    ]);
+    state = resolveCombatDamage(state);
+
+    // 7 power, 2 toughness blocker, 5 trample overflow
+    expect(state.players[1].life).toBe(35); // 40 - 5
+    expect(state.players[1].commanderDamage[commander.instanceId]).toBe(5);
+  });
+});
