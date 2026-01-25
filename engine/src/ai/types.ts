@@ -72,11 +72,52 @@ export type AIAction =
 export type AIDifficulty = 1 | 2 | 3 | 4 | 5;
 
 /**
+ * AI personality types that define playstyle tendencies.
+ */
+export type AIPersonality = 'Aggressive' | 'Greedy' | 'Political' | 'Balanced';
+
+/**
+ * Weights that define personality behavior.
+ */
+export interface PersonalityWeights {
+  /** Preference for developing board vs holding interaction (0-1) */
+  boardDevelopment: number;
+  /** How eagerly the AI attacks (0-1) */
+  attackAggressiveness: number;
+  /** How eagerly the AI uses removal (0-1) */
+  removalEagerness: number;
+  /** How much grudges affect targeting (0-1) */
+  grudgeBias: number;
+  /** Preference for spreading damage in multiplayer (0-1) */
+  politicalSpread: number;
+}
+
+/**
  * Configuration for an AI player.
  */
 export interface AIPlayerConfig {
   playerId: string;
   difficulty: AIDifficulty;
+  personality?: AIPersonality;
+}
+
+/**
+ * Tracks damage dealt between players for grudge system.
+ */
+export interface DamageRecord {
+  sourcePlayerId: string;
+  targetPlayerId: string;
+  amount: number;
+  turnNumber: number;
+}
+
+/**
+ * Threat assessment result for a player.
+ */
+export interface ThreatAssessment {
+  playerId: string;
+  threatScore: number;
+  reasons: string[];
 }
 
 /**
