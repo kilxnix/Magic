@@ -194,3 +194,10 @@ SQLite databases in `data/`:
 SUPABASE_URL  # For cloud storage sync
 SUPABASE_KEY
 ```
+
+## Current Progress
+
+**Game Engine Status:** Phase 8 — Basic AI (complete)
+- Phases 1-8 complete (332 tests passing)
+- AI module: `engine/src/ai/` with types, legal-actions, evaluate, targeting, agent
+- Next: Phase 9 — Mobile UI (battlefield view, hand overlay, floating stats)

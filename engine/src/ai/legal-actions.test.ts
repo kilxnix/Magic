@@ -1,0 +1,467 @@
+import { describe, it, expect, beforeEach } from 'vitest';
+import {
+  getLegalActions,
+  hasPriority,
+  getSpellTargetSpecs,
+  getLegalTargets,
+} from './legal-actions';
+import { GameState, CardDefinition, emptyManaPool, createPlayer, Phase, Step } from '../types';
+
+// Helper to create minimal game state
+function createTestState(overrides: Partial<GameState> = {}): GameState {
+  const players = [
+    { ...createPlayer('p1', 'Player 1'), hasPriority: true },
+    { ...createPlayer('p2', 'Player 2'), hasPriority: false },
+  ];
+
+  return {
+    players,
+    cards: new Map(),
+    cardDefinitions: new Map(),
+    activePlayerIndex: 0,
+    priorityPlayerIndex: 0,
+    phase: 'precombat_main' as Phase,
+    step: 'upkeep' as Step,
+    turnNumber: 1,
+    hasPriorityPassed: [false, false],
+    stack: [],
+    combat: null,
+    battlefieldAbilities: new Map(),
+    pendingTriggers: [],
+    ...overrides,
+  };
+}
+
+// Helper to add a card to the game state
+function addCard(
+  state: GameState,
+  instanceId: string,
+  ownerId: string,
+  zone: 'hand' | 'battlefield' | 'library' | 'graveyard' | 'command',
+  def: Partial<CardDefinition>,
+): void {
+  const fullDef: CardDefinition = {
+    id: def.id ?? instanceId,
+    name: def.name ?? 'Test Card',
+    type_line: def.type_line ?? 'Creature',
+    oracle_text: def.oracle_text ?? '',
+    mana_cost: def.mana_cost ?? '',
+    cmc: def.cmc ?? 0,
+    colors: def.colors ?? [],
+    color_identity: def.color_identity ?? [],
+    keywords: def.keywords ?? [],
+    card_types: def.card_types ?? ['creature'],
+    power: def.power,
+    toughness: def.toughness,
+  };
+
+  state.cardDefinitions.set(fullDef.id, fullDef);
+  state.cards.set(instanceId, {
+    instanceId,
+    definitionId: fullDef.id,
+    ownerId,
+    zone,
+    tapped: false,
+    summoningSick: zone === 'battlefield',
+    counters: {},
+    damage: 0,
+    isCommander: false,
+  });
+}
+
+describe('hasPriority', () => {
+  it('returns true when player has priority', () => {
+    const state = createTestState({ priorityPlayerIndex: 0 });
+    expect(hasPriority(state, 'p1')).toBe(true);
+    expect(hasPriority(state, 'p2')).toBe(false);
+  });
+
+  it('returns false when player does not have priority', () => {
+    const state = createTestState({ priorityPlayerIndex: 1 });
+    expect(hasPriority(state, 'p1')).toBe(false);
+    expect(hasPriority(state, 'p2')).toBe(true);
+  });
+});
+
+describe('getLegalActions', () => {
+  it('returns empty array when player has no priority', () => {
+    const state = createTestState({ priorityPlayerIndex: 1 });
+    const actions = getLegalActions(state, 'p1');
+    expect(actions).toEqual([]);
+  });
+
+  it('always includes PassPriority when player has priority', () => {
+    const state = createTestState({ priorityPlayerIndex: 0 });
+    const actions = getLegalActions(state, 'p1');
+    expect(actions.some(a => a.kind === 'PassPriority')).toBe(true);
+  });
+
+  describe('PlayLand actions', () => {
+    it('generates PlayLand action for lands in hand during main phase', () => {
+      const state = createTestState({
+        priorityPlayerIndex: 0,
+        activePlayerIndex: 0,
+        phase: 'precombat_main',
+      });
+
+      addCard(state, 'forest1', 'p1', 'hand', {
+        name: 'Forest',
+        type_line: 'Basic Land — Forest',
+        card_types: ['land'],
+      });
+
+      const actions = getLegalActions(state, 'p1');
+      const playLandActions = actions.filter(a => a.kind === 'PlayLand');
+
+      expect(playLandActions).toHaveLength(1);
+      expect(playLandActions[0]).toEqual({
+        kind: 'PlayLand',
+        cardInstanceId: 'forest1',
+      });
+    });
+
+    it('does not generate PlayLand action outside main phase', () => {
+      const state = createTestState({
+        priorityPlayerIndex: 0,
+        activePlayerIndex: 0,
+        phase: 'combat',
+      });
+
+      addCard(state, 'forest1', 'p1', 'hand', {
+        name: 'Forest',
+        type_line: 'Basic Land — Forest',
+        card_types: ['land'],
+      });
+
+      const actions = getLegalActions(state, 'p1');
+      const playLandActions = actions.filter(a => a.kind === 'PlayLand');
+
+      expect(playLandActions).toHaveLength(0);
+    });
+  });
+
+  describe('CastSpell actions', () => {
+    it('generates CastSpell action for spells that can be cast', () => {
+      const state = createTestState({
+        priorityPlayerIndex: 0,
+        activePlayerIndex: 0,
+        phase: 'precombat_main',
+      });
+
+      // Give player mana
+      state.players[0].manaPool = { W: 0, U: 0, B: 0, R: 0, G: 2, C: 0 };
+
+      addCard(state, 'bear1', 'p1', 'hand', {
+        name: 'Grizzly Bears',
+        type_line: 'Creature — Bear',
+        mana_cost: '{1}{G}',
+        cmc: 2,
+        card_types: ['creature'],
+        power: 2,
+        toughness: 2,
+      });
+
+      const actions = getLegalActions(state, 'p1');
+      const castActions = actions.filter(a => a.kind === 'CastSpell');
+
+      expect(castActions).toHaveLength(1);
+      expect(castActions[0]).toEqual({
+        kind: 'CastSpell',
+        cardInstanceId: 'bear1',
+        targets: [],
+      });
+    });
+
+    it('does not generate CastSpell when player cannot afford spell', () => {
+      const state = createTestState({
+        priorityPlayerIndex: 0,
+        activePlayerIndex: 0,
+        phase: 'precombat_main',
+      });
+
+      // Player has no mana
+      state.players[0].manaPool = emptyManaPool();
+
+      addCard(state, 'bear1', 'p1', 'hand', {
+        name: 'Grizzly Bears',
+        type_line: 'Creature — Bear',
+        mana_cost: '{1}{G}',
+        cmc: 2,
+        card_types: ['creature'],
+      });
+
+      const actions = getLegalActions(state, 'p1');
+      const castActions = actions.filter(a => a.kind === 'CastSpell');
+
+      expect(castActions).toHaveLength(0);
+    });
+  });
+
+  describe('ActivateManaAbility actions', () => {
+    it('generates mana actions for untapped lands', () => {
+      const state = createTestState({ priorityPlayerIndex: 0 });
+
+      addCard(state, 'forest1', 'p1', 'battlefield', {
+        name: 'Forest',
+        type_line: 'Basic Land — Forest',
+        card_types: ['land'],
+      });
+      // Untap the land
+      state.cards.get('forest1')!.tapped = false;
+
+      const actions = getLegalActions(state, 'p1');
+      const manaActions = actions.filter(a => a.kind === 'ActivateManaAbility');
+
+      expect(manaActions).toHaveLength(1);
+      expect(manaActions[0]).toEqual({
+        kind: 'ActivateManaAbility',
+        cardInstanceId: 'forest1',
+        color: 'G',
+      });
+    });
+
+    it('does not generate mana actions for tapped lands', () => {
+      const state = createTestState({ priorityPlayerIndex: 0 });
+
+      addCard(state, 'forest1', 'p1', 'battlefield', {
+        name: 'Forest',
+        type_line: 'Basic Land — Forest',
+        card_types: ['land'],
+      });
+      state.cards.get('forest1')!.tapped = true;
+
+      const actions = getLegalActions(state, 'p1');
+      const manaActions = actions.filter(a => a.kind === 'ActivateManaAbility');
+
+      expect(manaActions).toHaveLength(0);
+    });
+
+    it('generates correct colors for basic lands', () => {
+      const state = createTestState({ priorityPlayerIndex: 0 });
+
+      addCard(state, 'plains1', 'p1', 'battlefield', {
+        name: 'Plains',
+        type_line: 'Basic Land — Plains',
+        card_types: ['land'],
+      });
+      addCard(state, 'island1', 'p1', 'battlefield', {
+        name: 'Island',
+        type_line: 'Basic Land — Island',
+        card_types: ['land'],
+      });
+
+      const actions = getLegalActions(state, 'p1');
+      const manaActions = actions.filter(a => a.kind === 'ActivateManaAbility');
+
+      expect(manaActions).toHaveLength(2);
+      expect(manaActions.find(a => a.kind === 'ActivateManaAbility' && a.color === 'W')).toBeDefined();
+      expect(manaActions.find(a => a.kind === 'ActivateManaAbility' && a.color === 'U')).toBeDefined();
+    });
+  });
+
+  describe('DeclareAttackers actions', () => {
+    it('generates attacker actions during declare attackers step', () => {
+      const state = createTestState({
+        activePlayerIndex: 0,
+        priorityPlayerIndex: 0,
+        phase: 'combat',
+        step: 'declare_attackers',
+      });
+
+      addCard(state, 'creature1', 'p1', 'battlefield', {
+        name: 'Grizzly Bears',
+        type_line: 'Creature — Bear',
+        card_types: ['creature'],
+        keywords: [],
+        power: 2,
+        toughness: 2,
+      });
+      // Remove summoning sickness
+      state.cards.get('creature1')!.summoningSick = false;
+
+      const actions = getLegalActions(state, 'p1');
+
+      // Should have: no attack, attack p2 with creature1
+      expect(actions.some(a => a.kind === 'DeclareAttackers' && a.attacks.length === 0)).toBe(true);
+      expect(actions.some(a =>
+        a.kind === 'DeclareAttackers' &&
+        a.attacks.length === 1 &&
+        a.attacks[0].cardInstanceId === 'creature1' &&
+        a.attacks[0].defendingPlayerId === 'p2'
+      )).toBe(true);
+    });
+
+    it('does not include tapped creatures as attackers', () => {
+      const state = createTestState({
+        activePlayerIndex: 0,
+        priorityPlayerIndex: 0,
+        phase: 'combat',
+        step: 'declare_attackers',
+      });
+
+      addCard(state, 'creature1', 'p1', 'battlefield', {
+        name: 'Grizzly Bears',
+        type_line: 'Creature — Bear',
+        card_types: ['creature'],
+        power: 2,
+        toughness: 2,
+      });
+      state.cards.get('creature1')!.summoningSick = false;
+      state.cards.get('creature1')!.tapped = true;
+
+      const actions = getLegalActions(state, 'p1');
+
+      // Should only have "attack with nothing"
+      const attackActions = actions.filter(a => a.kind === 'DeclareAttackers');
+      expect(attackActions).toHaveLength(1);
+      expect(attackActions[0]).toEqual({ kind: 'DeclareAttackers', attacks: [] });
+    });
+  });
+
+  describe('DeclareBlockers actions', () => {
+    it('generates blocker actions during declare blockers step', () => {
+      const state = createTestState({
+        activePlayerIndex: 0,
+        priorityPlayerIndex: 1,
+        phase: 'combat',
+        step: 'declare_blockers',
+        combat: {
+          attackers: [{ cardInstanceId: 'attacker1', defendingPlayerId: 'p2' }],
+          blockers: [],
+          damageAssignment: new Map(),
+        },
+      });
+
+      // Add attacker (owned by p1)
+      addCard(state, 'attacker1', 'p1', 'battlefield', {
+        name: 'Grizzly Bears',
+        type_line: 'Creature — Bear',
+        card_types: ['creature'],
+        keywords: [],
+        power: 2,
+        toughness: 2,
+      });
+
+      // Add potential blocker (owned by p2)
+      addCard(state, 'blocker1', 'p2', 'battlefield', {
+        name: 'Wall of Stone',
+        type_line: 'Creature — Wall',
+        card_types: ['creature'],
+        keywords: [],
+        power: 0,
+        toughness: 4,
+      });
+      state.cards.get('blocker1')!.tapped = false;
+
+      const actions = getLegalActions(state, 'p2');
+
+      // Should have: no blocks, block attacker with blocker
+      expect(actions.some(a => a.kind === 'DeclareBlockers' && a.blocks.length === 0)).toBe(true);
+      expect(actions.some(a =>
+        a.kind === 'DeclareBlockers' &&
+        a.blocks.length === 1 &&
+        a.blocks[0].cardInstanceId === 'blocker1' &&
+        a.blocks[0].blockingAttackerId === 'attacker1'
+      )).toBe(true);
+    });
+  });
+});
+
+describe('getSpellTargetSpecs', () => {
+  it('returns empty array for spells without targets', () => {
+    const state = createTestState();
+
+    addCard(state, 'card1', 'p1', 'hand', {
+      name: 'Grizzly Bears',
+      oracle_text: '',
+      card_types: ['creature'],
+    });
+
+    const card = state.cards.get('card1')!;
+    const specs = getSpellTargetSpecs(state, card);
+
+    expect(specs).toEqual([]);
+  });
+});
+
+describe('getLegalTargets', () => {
+  it('returns players for Player target type', () => {
+    const state = createTestState();
+
+    const targets = getLegalTargets(state, 'p1', {
+      id: 'target1',
+      type: 'Player',
+      count: 1,
+    });
+
+    expect(targets).toContain('p1');
+    expect(targets).toContain('p2');
+  });
+
+  it('returns creatures for Creature target type', () => {
+    const state = createTestState();
+
+    addCard(state, 'creature1', 'p1', 'battlefield', {
+      name: 'Bear',
+      card_types: ['creature'],
+    });
+    addCard(state, 'creature2', 'p2', 'battlefield', {
+      name: 'Lion',
+      card_types: ['creature'],
+    });
+
+    const targets = getLegalTargets(state, 'p1', {
+      id: 'target1',
+      type: 'Creature',
+      count: 1,
+    });
+
+    expect(targets).toContain('creature1');
+    expect(targets).toContain('creature2');
+  });
+
+  it('filters by opponentControls constraint', () => {
+    const state = createTestState();
+
+    addCard(state, 'creature1', 'p1', 'battlefield', {
+      name: 'Bear',
+      card_types: ['creature'],
+    });
+    addCard(state, 'creature2', 'p2', 'battlefield', {
+      name: 'Lion',
+      card_types: ['creature'],
+    });
+
+    const targets = getLegalTargets(state, 'p1', {
+      id: 'target1',
+      type: 'Creature',
+      count: 1,
+      constraints: { opponentControls: true },
+    });
+
+    expect(targets).not.toContain('creature1');
+    expect(targets).toContain('creature2');
+  });
+
+  it('excludes creatures not on battlefield', () => {
+    const state = createTestState();
+
+    addCard(state, 'creature1', 'p1', 'battlefield', {
+      name: 'Bear',
+      card_types: ['creature'],
+    });
+    addCard(state, 'creature2', 'p1', 'graveyard', {
+      name: 'Dead Bear',
+      card_types: ['creature'],
+    });
+
+    const targets = getLegalTargets(state, 'p1', {
+      id: 'target1',
+      type: 'Creature',
+      count: 1,
+    });
+
+    expect(targets).toContain('creature1');
+    expect(targets).not.toContain('creature2');
+  });
+});

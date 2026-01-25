@@ -18,3 +18,6 @@ export * from './effects/targets';
 export * from './effects/parser';
 export * from './effects/executor';
 export * from './effects/overrides';
+
+// AI system (Phase 8)
+export * from './ai';
