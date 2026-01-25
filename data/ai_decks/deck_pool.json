@@ -1,0 +1,114 @@
+{
+  "decks": [
+    {
+      "id": "krenko-goblins-b2",
+      "commander": "Krenko, Mob Boss",
+      "list": [],
+      "colors": ["R"],
+      "bracket": 2,
+      "minBracket": 1,
+      "maxBracket": 3,
+      "theme": "Goblin Tribal",
+      "description": "Aggressive goblin tribal that creates tokens and swarms the board"
+    },
+    {
+      "id": "talrand-drakes-b2",
+      "commander": "Talrand, Sky Summoner",
+      "list": [],
+      "colors": ["U"],
+      "bracket": 2,
+      "minBracket": 1,
+      "maxBracket": 3,
+      "theme": "Spellslinger",
+      "description": "Cantrip-heavy deck that creates drake tokens from instants and sorceries"
+    },
+    {
+      "id": "atraxa-counters-b3",
+      "commander": "Atraxa, Praetors' Voice",
+      "list": [],
+      "colors": ["W", "U", "B", "G"],
+      "bracket": 3,
+      "minBracket": 3,
+      "maxBracket": 5,
+      "theme": "Counters",
+      "description": "Proliferate-based value deck with +1/+1 counters and planeswalkers"
+    },
+    {
+      "id": "muldrotha-graveyard-b4",
+      "commander": "Muldrotha, the Gravetide",
+      "list": [],
+      "colors": ["B", "G", "U"],
+      "bracket": 4,
+      "minBracket": 3,
+      "maxBracket": 5,
+      "theme": "Graveyard Value",
+      "description": "Recurring permanents from graveyard for incremental value"
+    },
+    {
+      "id": "gishath-dinos-b3",
+      "commander": "Gishath, Sun's Avatar",
+      "list": [],
+      "colors": ["R", "G", "W"],
+      "bracket": 3,
+      "minBracket": 2,
+      "maxBracket": 4,
+      "theme": "Dinosaur Tribal",
+      "description": "Big dinosaurs with haste and damage-based triggers"
+    },
+    {
+      "id": "edgar-vampires-b3",
+      "commander": "Edgar Markov",
+      "list": [],
+      "colors": ["W", "B", "R"],
+      "bracket": 3,
+      "minBracket": 2,
+      "maxBracket": 4,
+      "theme": "Vampire Tribal",
+      "description": "Aggressive vampire tribal with eminence token generation"
+    },
+    {
+      "id": "selvala-elfball-b4",
+      "commander": "Selvala, Heart of the Wilds",
+      "list": [],
+      "colors": ["G"],
+      "bracket": 4,
+      "minBracket": 3,
+      "maxBracket": 5,
+      "theme": "Elf Combo",
+      "description": "Mana-generating elves that ramp into large creatures"
+    },
+    {
+      "id": "yuriko-ninjas-b4",
+      "commander": "Yuriko, the Tiger's Shadow",
+      "list": [],
+      "colors": ["U", "B"],
+      "bracket": 4,
+      "minBracket": 3,
+      "maxBracket": 5,
+      "theme": "Ninja Tribal",
+      "description": "Evasive ninjas with commander-ninjutsu drain triggers"
+    },
+    {
+      "id": "korvold-sacrifice-b5",
+      "commander": "Korvold, Fae-Cursed King",
+      "list": [],
+      "colors": ["B", "R", "G"],
+      "bracket": 5,
+      "minBracket": 4,
+      "maxBracket": 5,
+      "theme": "Aristocrats",
+      "description": "Sacrifice synergies with value from permanents dying"
+    },
+    {
+      "id": "urza-artifacts-b5",
+      "commander": "Urza, Lord High Artificer",
+      "list": [],
+      "colors": ["U"],
+      "bracket": 5,
+      "minBracket": 4,
+      "maxBracket": 5,
+      "theme": "Artifacts",
+      "description": "Artifact-based control and combo potential"
+    }
+  ]
+}

@@ -96,3 +96,12 @@ export {
   pruneOldRecords,
 } from './grudges';
 export type { GameStateWithGrudges } from './grudges';
+
+// Deck Pool (Phase 13)
+export {
+  AIDeckPool,
+  createPrebuiltDeck,
+  loadDeckPool,
+  saveDeckPool,
+} from './deck-pool';
+export type { PrebuiltDeck, DeckPoolConfig } from './deck-pool';
