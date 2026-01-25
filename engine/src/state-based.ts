@@ -126,6 +126,19 @@ export function checkStateBasedActions(state: GameState): GameState {
         stateChanged = true;
       }
     }
+
+    // 6. Players with 21+ commander damage from any single commander lose
+    for (let i = 0; i < newPlayers.length; i++) {
+      if (newPlayers[i].hasLost) continue;
+
+      for (const [commanderId, damage] of Object.entries(newPlayers[i].commanderDamage)) {
+        if (damage >= 21) {
+          newPlayers[i].hasLost = true;
+          stateChanged = true;
+          break; // Only need to mark lost once
+        }
+      }
+    }
   }
 
   return { ...state, cards: newCards, players: newPlayers };

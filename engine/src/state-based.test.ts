@@ -113,6 +113,92 @@ describe('State-Based Actions', () => {
   });
 });
 
+describe('Commander Damage Loss', () => {
+  it('player with 21 commander damage from one commander loses', () => {
+    const decks = [
+      { playerId: 'p1', name: 'Alice', cards: [], commanderId: 'cmd1' },
+      { playerId: 'p2', name: 'Bob', cards: [], commanderId: 'cmd2' },
+    ];
+    const state = initGameState(decks);
+    state.players[0].commanderDamage = { 'inst_cmd': 21 };
+
+    const next = checkStateBasedActions(state);
+    expect(next.players[0].hasLost).toBe(true);
+  });
+
+  it('player with more than 21 commander damage loses', () => {
+    const decks = [
+      { playerId: 'p1', name: 'Alice', cards: [], commanderId: 'cmd1' },
+      { playerId: 'p2', name: 'Bob', cards: [], commanderId: 'cmd2' },
+    ];
+    const state = initGameState(decks);
+    state.players[0].commanderDamage = { 'inst_cmd': 25 };
+
+    const next = checkStateBasedActions(state);
+    expect(next.players[0].hasLost).toBe(true);
+  });
+
+  it('player with less than 21 commander damage survives', () => {
+    const decks = [
+      { playerId: 'p1', name: 'Alice', cards: [], commanderId: 'cmd1' },
+      { playerId: 'p2', name: 'Bob', cards: [], commanderId: 'cmd2' },
+    ];
+    const state = initGameState(decks);
+    state.players[0].commanderDamage = { 'inst_cmd': 20 };
+
+    const next = checkStateBasedActions(state);
+    expect(next.players[0].hasLost).toBe(false);
+  });
+
+  it('commander damage from different commanders does not stack for loss', () => {
+    const decks = [
+      { playerId: 'p1', name: 'Alice', cards: [], commanderId: 'cmd1' },
+      { playerId: 'p2', name: 'Bob', cards: [], commanderId: 'cmd2' },
+      { playerId: 'p3', name: 'Carol', cards: [], commanderId: 'cmd3' },
+    ];
+    const state = initGameState(decks);
+    // 15 from one commander, 10 from another = 25 total, but neither is >= 21
+    state.players[0].commanderDamage = {
+      'inst_cmd_2': 15,
+      'inst_cmd_3': 10,
+    };
+
+    const next = checkStateBasedActions(state);
+    expect(next.players[0].hasLost).toBe(false);
+  });
+
+  it('player loses if any single commander dealt 21+ damage', () => {
+    const decks = [
+      { playerId: 'p1', name: 'Alice', cards: [], commanderId: 'cmd1' },
+      { playerId: 'p2', name: 'Bob', cards: [], commanderId: 'cmd2' },
+      { playerId: 'p3', name: 'Carol', cards: [], commanderId: 'cmd3' },
+    ];
+    const state = initGameState(decks);
+    // One commander dealt 21, another dealt less
+    state.players[0].commanderDamage = {
+      'inst_cmd_2': 21,
+      'inst_cmd_3': 5,
+    };
+
+    const next = checkStateBasedActions(state);
+    expect(next.players[0].hasLost).toBe(true);
+  });
+
+  it('already lost player is not checked for commander damage', () => {
+    const decks = [
+      { playerId: 'p1', name: 'Alice', cards: [], commanderId: 'cmd1' },
+      { playerId: 'p2', name: 'Bob', cards: [], commanderId: 'cmd2' },
+    ];
+    const state = initGameState(decks);
+    state.players[0].hasLost = true;
+    state.players[0].commanderDamage = { 'inst_cmd': 21 };
+
+    // Should not throw or change anything
+    const next = checkStateBasedActions(state);
+    expect(next.players[0].hasLost).toBe(true);
+  });
+});
+
 describe('cleanupDamage', () => {
   it('removes all damage from creatures on battlefield', () => {
     const decks = [
