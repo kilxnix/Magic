@@ -1,11 +1,12 @@
-import { GameState, Phase, StackItem } from './types';
+import { GameState, Phase, StackItem, SpellStackItem, TriggeredAbilityStackItem, isSpellStackItem, isTriggeredAbilityStackItem, TriggeredAbilityRef } from './types';
 import { getCardDefinition } from './game-state';
 import { parseManaString, canPayCost, payManaCost } from './mana';
 import { getOverride } from './effects/overrides';
 import { parseOracleText } from './effects/parser';
 import { executeEffectsWithSBA } from './effects/executor';
-import { validateTargetChoices } from './effects/targets';
+import { validateTargetChoices, TargetSpec } from './effects/targets';
 import { checkStateBasedActions } from './state-based';
+import type { Effect } from './effects/ast';
 
 const MAIN_PHASES: Phase[] = ['precombat_main', 'postcombat_main'];
 const PERMANENT_TYPES = ['creature', 'artifact', 'enchantment', 'planeswalker', 'battle'];
@@ -64,7 +65,8 @@ export function castSpell(state: GameState, playerId: string, cardInstanceId: st
   newCards.set(cardInstanceId, { ...card, zone: 'stack' as const });
 
   // Add to stack
-  const stackItem: StackItem = {
+  const stackItem: SpellStackItem = {
+    kind: 'Spell',
     id: `stack_${++stackCounter}`,
     cardInstanceId,
     casterId: playerId,
@@ -81,6 +83,80 @@ export function castSpell(state: GameState, playerId: string, cardInstanceId: st
   };
 }
 
+/**
+ * Register ETB abilities for a permanent that just entered the battlefield.
+ */
+function registerETBAbilities(state: GameState, instanceId: string): GameState {
+  const card = state.cards.get(instanceId);
+  if (!card) return state;
+
+  const def = state.cardDefinitions.get(card.definitionId);
+  if (!def) return state;
+
+  // Check for ETB override first
+  const override = getOverride(def.id, def.name);
+  if (override && override.kind === 'ETB') {
+    const newAbilities = new Map(state.battlefieldAbilities);
+    const existing = newAbilities.get(instanceId) || [];
+    newAbilities.set(instanceId, [...existing, override.ability as TriggeredAbilityRef]);
+    return { ...state, battlefieldAbilities: newAbilities };
+  }
+
+  // Try to parse oracle text for ETB
+  const parsed = parseOracleText(def.oracle_text);
+  if (parsed.kind === 'ETB') {
+    const newAbilities = new Map(state.battlefieldAbilities);
+    const existing = newAbilities.get(instanceId) || [];
+    newAbilities.set(instanceId, [...existing, parsed.ability as TriggeredAbilityRef]);
+    return { ...state, battlefieldAbilities: newAbilities };
+  }
+
+  return state;
+}
+
+/**
+ * Create pending triggers for a permanent that just entered the battlefield.
+ */
+function createETBTriggers(state: GameState, instanceId: string): GameState {
+  const abilities = state.battlefieldAbilities.get(instanceId);
+  if (!abilities || abilities.length === 0) return state;
+
+  const card = state.cards.get(instanceId);
+  if (!card) return state;
+
+  const def = state.cardDefinitions.get(card.definitionId);
+  if (!def) return state;
+
+  // Get target specs from parsing
+  const override = getOverride(def.id, def.name);
+  let targetSpecs: TargetSpec[] = [];
+
+  if (override && override.kind === 'ETB') {
+    targetSpecs = override.targets;
+  } else {
+    const parsed = parseOracleText(def.oracle_text);
+    if (parsed.kind === 'ETB') {
+      targetSpecs = parsed.targets;
+    }
+  }
+
+  const newPendingTriggers = [...state.pendingTriggers];
+
+  for (const ability of abilities) {
+    if (ability.trigger.kind === 'ETB' && ability.trigger.who === 'self') {
+      newPendingTriggers.push({
+        id: `trigger_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+        sourceInstanceId: instanceId,
+        controllerId: card.ownerId,
+        ability,
+        requiredTargets: targetSpecs,
+      });
+    }
+  }
+
+  return { ...state, pendingTriggers: newPendingTriggers };
+}
+
 export function resolveTopOfStack(state: GameState): GameState {
   if (state.stack.length === 0) {
     throw new Error('Stack is empty');
@@ -89,7 +165,33 @@ export function resolveTopOfStack(state: GameState): GameState {
   const topItem = state.stack[state.stack.length - 1];
   const newStack = state.stack.slice(0, -1);
 
-  const card = state.cards.get(topItem.cardInstanceId)!;
+  // Handle triggered ability resolution
+  if (isTriggeredAbilityStackItem(topItem)) {
+    let resultState: GameState = {
+      ...state,
+      stack: newStack,
+      hasPriorityPassed: new Array(state.players.length).fill(false),
+      priorityPlayerIndex: state.activePlayerIndex,
+    };
+
+    // Execute the triggered ability's effects
+    const effects = topItem.ability.effects as Effect[];
+    const targetSpecs = [] as TargetSpec[]; // TODO: Get from ability
+
+    resultState = executeEffectsWithSBA(
+      resultState,
+      effects,
+      topItem.controllerId,
+      topItem.targets,
+      targetSpecs,
+    );
+
+    return resultState;
+  }
+
+  // Handle spell resolution (existing logic)
+  const spellItem = topItem as SpellStackItem;
+  const card = state.cards.get(spellItem.cardInstanceId)!;
   const def = state.cardDefinitions.get(card.definitionId)!;
 
   let newCards = new Map(state.cards);
@@ -114,6 +216,10 @@ export function resolveTopOfStack(state: GameState): GameState {
       hasPriorityPassed: new Array(state.players.length).fill(false),
       priorityPlayerIndex: state.activePlayerIndex,
     };
+
+    // Register and create ETB triggers
+    resultState = registerETBAbilities(resultState, card.instanceId);
+    resultState = createETBTriggers(resultState, card.instanceId);
   } else {
     // Instants and sorceries: execute effects, then go to graveyard
 
@@ -132,13 +238,13 @@ export function resolveTopOfStack(state: GameState): GameState {
     const override = getOverride(def.id, def.name);
     if (override && override.kind === 'Spell') {
       // Validate targets
-      validateTargetChoices(intermediateState, topItem.casterId, override.targets, topItem.targets);
+      validateTargetChoices(intermediateState, spellItem.casterId, override.targets, spellItem.targets);
       // Execute effects with SBA check
       resultState = executeEffectsWithSBA(
         intermediateState,
         override.effects,
-        topItem.casterId,
-        topItem.targets,
+        spellItem.casterId,
+        spellItem.targets,
         override.targets,
       );
     } else {
@@ -146,13 +252,13 @@ export function resolveTopOfStack(state: GameState): GameState {
       const parsed = parseOracleText(def.oracle_text);
       if (parsed.kind === 'Spell') {
         // Validate targets
-        validateTargetChoices(intermediateState, topItem.casterId, parsed.targets, topItem.targets);
+        validateTargetChoices(intermediateState, spellItem.casterId, parsed.targets, spellItem.targets);
         // Execute effects with SBA check
         resultState = executeEffectsWithSBA(
           intermediateState,
           parsed.effects,
-          topItem.casterId,
-          topItem.targets,
+          spellItem.casterId,
+          spellItem.targets,
           parsed.targets,
         );
       } else {
@@ -164,4 +270,41 @@ export function resolveTopOfStack(state: GameState): GameState {
   }
 
   return resultState;
+}
+
+/**
+ * Move pending triggers to the stack.
+ * In APNAP order (active player first, then clockwise).
+ */
+export function putTriggersOnStack(state: GameState): GameState {
+  if (state.pendingTriggers.length === 0) return state;
+
+  // Sort triggers by APNAP order
+  const playerOrder: string[] = [];
+  for (let i = 0; i < state.players.length; i++) {
+    const idx = (state.activePlayerIndex + i) % state.players.length;
+    playerOrder.push(state.players[idx].id);
+  }
+
+  const sortedTriggers = [...state.pendingTriggers].sort((a, b) => {
+    const aIdx = playerOrder.indexOf(a.controllerId);
+    const bIdx = playerOrder.indexOf(b.controllerId);
+    return aIdx - bIdx;
+  });
+
+  // Create stack items for each trigger
+  const newStackItems: TriggeredAbilityStackItem[] = sortedTriggers.map(trigger => ({
+    kind: 'TriggeredAbility' as const,
+    id: trigger.id,
+    sourceInstanceId: trigger.sourceInstanceId,
+    controllerId: trigger.controllerId,
+    ability: trigger.ability,
+    targets: [], // TODO: Handle target selection for triggered abilities
+  }));
+
+  return {
+    ...state,
+    stack: [...state.stack, ...newStackItems],
+    pendingTriggers: [],
+  };
 }

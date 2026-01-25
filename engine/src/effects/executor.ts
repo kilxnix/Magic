@@ -2,7 +2,7 @@
 
 import type { GameState, CardInstance } from '../types';
 import type { Effect, TargetRef } from './ast';
-import { checkStateBasedActions } from '../state-based';
+import { checkStateBasedActions, markPlayerLostFromEmptyLibrary } from '../state-based';
 import { isIndestructible } from '../keywords';
 
 /**
@@ -41,8 +41,8 @@ function executeDraw(state: GameState, playerId: string, count: number): GameSta
     throw new Error(`Player ${playerId} not found`);
   }
 
+  let currentState = state;
   const newCards = new Map(state.cards);
-  const newPlayers = [...state.players];
 
   // Find cards in library (ordered by... we assume first entries are top)
   const libraryCards: CardInstance[] = [];
@@ -52,18 +52,18 @@ function executeDraw(state: GameState, playerId: string, count: number): GameSta
     }
   }
 
-  // Draw from "top" (first N cards in library)
-  const toDraw = Math.min(count, libraryCards.length);
-
-  // If trying to draw from empty library, player loses (handled by SBAs)
-  // For now, just draw what we can
-
-  for (let i = 0; i < toDraw; i++) {
+  // Draw each card one at a time
+  for (let i = 0; i < count; i++) {
+    if (i >= libraryCards.length) {
+      // Attempting to draw from empty library - player loses
+      currentState = markPlayerLostFromEmptyLibrary(currentState, playerId);
+      break;
+    }
     const card = libraryCards[i];
     newCards.set(card.instanceId, { ...card, zone: 'hand' });
   }
 
-  return { ...state, cards: newCards, players: newPlayers };
+  return { ...currentState, cards: newCards };
 }
 
 /**

@@ -50,11 +50,50 @@ export interface CardInstance {
   isCommander: boolean;
 }
 
-export interface StackItem {
+// Import TriggeredAbility from effects/ast (forward declaration for type safety)
+// Actual import is done in files that need the full type
+export interface TriggeredAbilityRef {
+  kind: 'TriggeredAbility';
+  trigger: { kind: 'ETB'; who: 'self' | 'any' | 'controller' };
+  effects: unknown[]; // Effect[] from ast.ts
+}
+
+export type StackItemKind = 'Spell' | 'TriggeredAbility';
+
+export interface SpellStackItem {
+  kind: 'Spell';
   id: string;
   cardInstanceId: string;
   casterId: string;
   targets: string[];
+}
+
+export interface TriggeredAbilityStackItem {
+  kind: 'TriggeredAbility';
+  id: string;
+  sourceInstanceId: string;
+  controllerId: string;
+  ability: TriggeredAbilityRef;
+  targets: string[];
+}
+
+export type StackItem = SpellStackItem | TriggeredAbilityStackItem;
+
+// Legacy helper for backwards compatibility with existing code
+export function isSpellStackItem(item: StackItem): item is SpellStackItem {
+  return item.kind === 'Spell';
+}
+
+export function isTriggeredAbilityStackItem(item: StackItem): item is TriggeredAbilityStackItem {
+  return item.kind === 'TriggeredAbility';
+}
+
+export interface PendingTrigger {
+  id: string;
+  sourceInstanceId: string;
+  controllerId: string;
+  ability: TriggeredAbilityRef;
+  requiredTargets: unknown[]; // TargetSpec[] from targets.ts
 }
 
 export interface AttackerDeclaration {
@@ -106,6 +145,10 @@ export interface GameState {
   hasPriorityPassed: boolean[];
   stack: StackItem[];
   combat: CombatState | null;
+
+  // Phase 6: Triggers
+  battlefieldAbilities: Map<string, TriggeredAbilityRef[]>; // instanceId → abilities
+  pendingTriggers: PendingTrigger[];
 }
 
 export function emptyManaPool(): ManaPool {

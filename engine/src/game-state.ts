@@ -50,6 +50,8 @@ export function initGameState(decks: DeckInput[]): GameState {
     hasPriorityPassed: new Array(decks.length).fill(false),
     stack: [],
     combat: null,
+    battlefieldAbilities: new Map(),
+    pendingTriggers: [],
   };
 }
 
