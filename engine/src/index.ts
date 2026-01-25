@@ -25,3 +25,6 @@ export * from './ai';
 
 // Persistence system (Phase 12)
 export * from './persistence';
+
+// Cards system (Phase 13)
+export * from './cards';
