@@ -13,11 +13,25 @@ const PERMANENT_TYPES = ['creature', 'artifact', 'enchantment', 'planeswalker', 
 
 let stackCounter = 0;
 
+/**
+ * Calculate commander tax for a player.
+ */
+function getCommanderTax(state: GameState, playerId: string): number {
+  const player = state.players.find(p => p.id === playerId);
+  if (!player) return 0;
+  return player.commanderCastCount * 2; // {2} per previous cast
+}
+
 export function canCastSpell(state: GameState, playerId: string, cardInstanceId: string): boolean {
   const card = state.cards.get(cardInstanceId);
   if (!card) return false;
   if (card.ownerId !== playerId) return false;
-  if (card.zone !== 'hand') return false;
+
+  // Can cast from hand OR command zone (if it's the player's commander)
+  const player = state.players.find(p => p.id === playerId);
+  const isCommander = player?.commanderInstanceId === cardInstanceId;
+  const validZone = card.zone === 'hand' || (card.zone === 'command' && isCommander);
+  if (!validZone) return false;
 
   const def = getCardDefinition(state, card);
 
@@ -35,10 +49,12 @@ export function canCastSpell(state: GameState, playerId: string, cardInstanceId:
     if (state.stack.length > 0) return false;
   }
 
-  // Check mana
-  const cost = parseManaString(def.mana_cost);
-  const player = state.players.find(p => p.id === playerId)!;
-  if (!canPayCost(player.manaPool, cost)) return false;
+  // Check mana (including commander tax for command zone casts)
+  const baseCost = parseManaString(def.mana_cost);
+  const taxAmount = card.zone === 'command' ? getCommanderTax(state, playerId) : 0;
+  const totalCost = { ...baseCost, generic: baseCost.generic + taxAmount };
+
+  if (!canPayCost(player!.manaPool, totalCost)) return false;
 
   return true;
 }
@@ -52,12 +68,19 @@ export function castSpell(state: GameState, playerId: string, cardInstanceId: st
   const def = getCardDefinition(state, card);
   const cost = parseManaString(def.mana_cost);
 
-  // Pay mana
+  // Pay mana (including commander tax if from command zone)
   const playerIndex = state.players.findIndex(p => p.id === playerId);
   const player = state.players[playerIndex];
-  const newManaPool = payManaCost(player.manaPool, cost);
+  const isFromCommandZone = card.zone === 'command';
+  const taxAmount = isFromCommandZone ? getCommanderTax(state, playerId) : 0;
+  const totalCost = { ...cost, generic: cost.generic + taxAmount };
+  const newManaPool = payManaCost(player.manaPool, totalCost);
+
+  // Increment commander cast count if casting from command zone
   const newPlayers = state.players.map((p, i) =>
-    i === playerIndex ? { ...p, manaPool: newManaPool } : p
+    i === playerIndex
+      ? { ...p, manaPool: newManaPool, commanderCastCount: isFromCommandZone ? p.commanderCastCount + 1 : p.commanderCastCount }
+      : p
   );
 
   // Move card to stack zone

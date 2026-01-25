@@ -125,8 +125,10 @@ export interface Player {
   id: string;
   name: string;
   life: number;
-  commanderDamage: Record<string, number>;
+  commanderDamage: Record<string, number>; // commanderInstanceId -> damage taken
   commanderTax: number;
+  commanderInstanceId: string | null; // player's commander card instance
+  commanderCastCount: number; // times commander has been cast from command zone
   manaPool: ManaPool;
   hasPlayedLand: boolean;
   hasPriority: boolean;
@@ -162,6 +164,8 @@ export function createPlayer(id: string, name: string, life: number = 40): Playe
     life,
     commanderDamage: {},
     commanderTax: 0,
+    commanderInstanceId: null,
+    commanderCastCount: 0,
     manaPool: emptyManaPool(),
     hasPlayedLand: false,
     hasPriority: false,

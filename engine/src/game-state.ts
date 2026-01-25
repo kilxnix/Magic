@@ -19,27 +19,43 @@ export function initGameState(decks: DeckInput[]): GameState {
   const cards = new Map<string, CardInstance>();
   const cardDefinitions = new Map<string, CardDefinition>();
 
+  // Track commander instance IDs to set on players
+  const commanderByPlayer = new Map<string, string>();
+
   for (const deck of decks) {
     for (const def of deck.cards) {
       cardDefinitions.set(def.id, def);
 
+      const isCommander = def.id === deck.commanderId;
+      const instanceId = nextInstanceId();
+
       const instance: CardInstance = {
-        instanceId: nextInstanceId(),
+        instanceId,
         definitionId: def.id,
         ownerId: deck.playerId,
-        zone: 'library',
+        zone: isCommander ? 'command' : 'library', // Commander starts in command zone
         tapped: false,
         summoningSick: true,
         counters: {},
         damage: 0,
-        isCommander: def.id === deck.commanderId,
+        isCommander,
       };
       cards.set(instance.instanceId, instance);
+
+      if (isCommander) {
+        commanderByPlayer.set(deck.playerId, instanceId);
+      }
     }
   }
 
+  // Set commander instance IDs on players
+  const updatedPlayers = players.map(p => ({
+    ...p,
+    commanderInstanceId: commanderByPlayer.get(p.id) ?? null,
+  }));
+
   return {
-    players,
+    players: updatedPlayers,
     cards,
     cardDefinitions,
     activePlayerIndex: 0,
