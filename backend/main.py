@@ -357,6 +357,41 @@ async def get_decks_batch(request: BatchRequest):
     return [DeckResponse(**d) for d in decks]
 
 
+# Game launcher imports and endpoint
+from backend.game_launcher import GameLaunchRequest, GameLaunchResponse, launch_game
+
+
+@app.post("/api/launch-game", response_model=GameLaunchResponse)
+async def launch_game_endpoint(request: GameLaunchRequest):
+    """
+    Launch a Commander game with the specified deck.
+
+    This endpoint prepares a game session with:
+    - The user's generated deck
+    - 1-3 AI opponents with appropriate decks
+    - Configurable difficulty and AI personalities
+
+    Returns game setup info for the mobile app to initialize.
+    """
+    # Load the user's deck
+    deck = get_deck(request.deck_id)
+    if not deck:
+        raise HTTPException(status_code=404, detail="Deck not found")
+
+    # Launch the game
+    try:
+        response = launch_game(
+            deck_data=deck,
+            opponent_count=request.opponent_count,
+            difficulty=request.difficulty,
+            ai_personalities=request.ai_personalities,
+        )
+        return response
+    except Exception as e:
+        logger.error(f"Failed to launch game: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to launch game: {str(e)}")
+
+
 class CardPrinting(BaseModel):
     """A single printing of a card."""
     id: str
