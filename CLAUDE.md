@@ -197,7 +197,11 @@ SUPABASE_KEY
 
 ## Current Progress
 
-**Game Engine Status:** Phase 8 — Basic AI (complete)
-- Phases 1-8 complete (332 tests passing)
-- AI module: `engine/src/ai/` with types, legal-actions, evaluate, targeting, agent
-- Next: Phase 9 — Mobile UI (battlefield view, hand overlay, floating stats)
+**Game Engine Status:** Phase 13 — Deck Generator Integration (complete)
+- All 13 build phases complete (565 engine tests passing)
+- Phase 11: AI personalities (Aggressive, Greedy, Political, Balanced), threat assessment, grudge tracking
+- Phase 12: Save/resume with versioned schema, migration framework, storage adapters
+- Phase 13: Deck-to-game integration with deck loader, game init, AI deck pool, launch endpoint
+- Mobile app: deep linking support for `commander://game/{game_id}` URLs
+- Frontend: "Test This Deck" button in DeckViewerPage
+- Backend: `/api/launch-game` endpoint to start games from generated decks
