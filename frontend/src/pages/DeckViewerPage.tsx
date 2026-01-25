@@ -5,7 +5,8 @@ import { DeckDisplay } from '../components/DeckDisplay';
 import { DeckVisualView } from '../components/DeckVisualView';
 import { LiveRibbon } from '../components/LiveRibbon';
 import { AdPlaceholder } from '../components/AdPlaceholder';
-import { Grid3X3, List } from 'lucide-react';
+import { TestDeckModal } from '../components/TestDeckModal';
+import { Grid3X3, List, Play } from 'lucide-react';
 
 async function fetchDeck(id: string): Promise<Deck> {
   const res = await fetch(`/api/deck/${id}`);
@@ -27,6 +28,7 @@ export function DeckViewerPage() {
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('visual');
+  const [showTestModal, setShowTestModal] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -149,6 +151,13 @@ export function DeckViewerPage() {
                       <span className="hidden sm:inline">List</span>
                     </button>
                   </div>
+                  <button
+                    onClick={() => setShowTestModal(true)}
+                    className="px-4 py-2 bg-green-600 text-white text-sm font-medium rounded hover:bg-green-700 transition-colors flex items-center gap-2"
+                  >
+                    <Play className="w-4 h-4" />
+                    Test Deck
+                  </button>
                   <Link
                     to="/"
                     className="px-4 py-2 bg-stone-900 text-stone-50 text-sm font-medium rounded hover:bg-stone-800 transition-colors"
@@ -206,6 +215,15 @@ export function DeckViewerPage() {
           </div>
         </aside>
       </div>
+
+      {/* Test Deck Modal */}
+      {showTestModal && (
+        <TestDeckModal
+          deckId={deck.id}
+          deckName={deck.commander}
+          onClose={() => setShowTestModal(false)}
+        />
+      )}
     </div>
   );
 }
