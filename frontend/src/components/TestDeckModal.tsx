@@ -1,19 +1,11 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { X, Gamepad2, Users, Gauge } from 'lucide-react';
 
 interface TestDeckModalProps {
   deckId: string;
   deckName: string;
   onClose: () => void;
-}
-
-interface LaunchResponse {
-  game_id: string;
-  player_count: number;
-  human_deck: string;
-  ai_decks: string[];
-  difficulty: number;
-  message: string;
 }
 
 const PERSONALITIES = ['Balanced', 'Aggressive', 'Greedy', 'Political'] as const;
@@ -27,12 +19,11 @@ const PERSONALITY_DESCRIPTIONS: Record<Personality, string> = {
 };
 
 export function TestDeckModal({ deckId, deckName, onClose }: TestDeckModalProps) {
+  const navigate = useNavigate();
   const [opponentCount, setOpponentCount] = useState(1);
   const [difficulty, setDifficulty] = useState(3);
   const [personalities, setPersonalities] = useState<Personality[]>(['Balanced']);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<LaunchResponse | null>(null);
 
   const handlePersonalityChange = (index: number, value: Personality) => {
     const newPersonalities = [...personalities];
@@ -50,37 +41,17 @@ export function TestDeckModal({ deckId, deckName, onClose }: TestDeckModalProps)
     setPersonalities(newPersonalities.slice(0, count));
   };
 
-  const handleLaunch = async () => {
+  const handleLaunch = () => {
     setLoading(true);
-    setError(null);
-
-    try {
-      const response = await fetch('/api/launch-game', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          deck_id: deckId,
-          opponent_count: opponentCount,
-          difficulty,
-          ai_personalities: personalities,
-        }),
-      });
-
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.detail || 'Failed to launch game');
-      }
-
-      const data: LaunchResponse = await response.json();
-      setResult(data);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred');
-    } finally {
-      setLoading(false);
-    }
+    // Navigate directly to game page with deck ID and settings
+    const params = new URLSearchParams({
+      deckId,
+      opponents: opponentCount.toString(),
+      difficulty: difficulty.toString(),
+      personalities: personalities.join(','),
+    });
+    navigate(`/game?${params.toString()}`);
   };
-
-  const deepLinkUrl = result ? `mtgcommander://game/${result.game_id}` : '';
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -101,9 +72,7 @@ export function TestDeckModal({ deckId, deckName, onClose }: TestDeckModalProps)
 
         {/* Content */}
         <div className="p-4 space-y-6">
-          {!result ? (
-            <>
-              {/* Deck Info */}
+          {/* Deck Info */}
               <div className="bg-stone-50 rounded-lg p-3">
                 <div className="text-sm text-stone-500">Playing with</div>
                 <div className="font-medium text-stone-800">{deckName}</div>
@@ -187,44 +156,10 @@ export function TestDeckModal({ deckId, deckName, onClose }: TestDeckModalProps)
                 </div>
               </div>
 
-              {/* Error */}
-              {error && (
-                <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">
-                  {error}
-                </div>
-              )}
-            </>
-          ) : (
-            /* Success State */
-            <div className="text-center space-y-4">
-              <div className="text-green-600 text-lg font-medium">Game Ready!</div>
-              <div className="text-sm text-stone-600">{result.message}</div>
-
-              {/* Deep Link */}
-              <div className="bg-stone-50 rounded-lg p-4">
-                <div className="text-xs text-stone-500 mb-2">Game ID</div>
-                <code className="text-sm font-mono text-stone-800">{result.game_id}</code>
               </div>
-
-              {/* Open in App Button */}
-              <a
-                href={deepLinkUrl}
-                className="block w-full py-3 bg-green-600 text-white font-medium rounded-lg hover:bg-green-700 transition-colors"
-              >
-                Open in MTG Commander App
-              </a>
-
-              {/* QR Code placeholder */}
-              <div className="text-xs text-stone-500">
-                Or scan the QR code in the mobile app
-              </div>
-            </div>
-          )}
-        </div>
 
         {/* Footer */}
-        {!result && (
-          <div className="flex gap-2 p-4 border-t border-stone-200">
+        <div className="flex gap-2 p-4 border-t border-stone-200">
             <button
               onClick={onClose}
               className="flex-1 py-2 px-4 text-sm font-medium text-stone-600 bg-stone-100 rounded-lg hover:bg-stone-200 transition-colors"
@@ -239,7 +174,6 @@ export function TestDeckModal({ deckId, deckName, onClose }: TestDeckModalProps)
               {loading ? 'Starting...' : 'Start Game'}
             </button>
           </div>
-        )}
       </div>
     </div>
   );
