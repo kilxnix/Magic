@@ -1,0 +1,8 @@
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.2.2+cpu
+faiss-cpu
+ijson
+numpy<2
+pdfplumber
+requests
+sentence-transformers

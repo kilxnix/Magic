@@ -89,8 +89,8 @@ def detect_tags(oracle_text: str, type_line: str = "", keywords: List[str] = Non
         Set of functional tag strings
     """
     tags = set()
-    text_lower = oracle_text.lower()
-    type_lower = type_line.lower()
+    text_lower = (oracle_text or "").lower()
+    type_lower = (type_line or "").lower()
     keywords = keywords or []
 
     # Check each pattern category

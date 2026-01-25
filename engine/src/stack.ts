@@ -1,6 +1,11 @@
 import { GameState, Phase, StackItem } from './types';
 import { getCardDefinition } from './game-state';
 import { parseManaString, canPayCost, payManaCost } from './mana';
+import { getOverride } from './effects/overrides';
+import { parseOracleText } from './effects/parser';
+import { executeEffectsWithSBA } from './effects/executor';
+import { validateTargetChoices } from './effects/targets';
+import { checkStateBasedActions } from './state-based';
 
 const MAIN_PHASES: Phase[] = ['precombat_main', 'postcombat_main'];
 const PERMANENT_TYPES = ['creature', 'artifact', 'enchantment', 'planeswalker', 'battle'];
@@ -87,10 +92,13 @@ export function resolveTopOfStack(state: GameState): GameState {
   const card = state.cards.get(topItem.cardInstanceId)!;
   const def = state.cardDefinitions.get(card.definitionId)!;
 
-  const newCards = new Map(state.cards);
+  let newCards = new Map(state.cards);
   const isPermanent = def.card_types.some(t => PERMANENT_TYPES.includes(t));
 
+  let resultState: GameState;
+
   if (isPermanent) {
+    // Permanents enter the battlefield
     const isCreature = def.card_types.includes('creature');
     newCards.set(card.instanceId, {
       ...card,
@@ -98,16 +106,62 @@ export function resolveTopOfStack(state: GameState): GameState {
       tapped: false,
       summoningSick: isCreature,
     });
+
+    resultState = {
+      ...state,
+      cards: newCards,
+      stack: newStack,
+      hasPriorityPassed: new Array(state.players.length).fill(false),
+      priorityPlayerIndex: state.activePlayerIndex,
+    };
   } else {
-    // Instants and sorceries go to graveyard
+    // Instants and sorceries: execute effects, then go to graveyard
+
+    // Move spell to graveyard first (standard behavior)
     newCards.set(card.instanceId, { ...card, zone: 'graveyard' });
+
+    let intermediateState: GameState = {
+      ...state,
+      cards: newCards,
+      stack: newStack,
+      hasPriorityPassed: new Array(state.players.length).fill(false),
+      priorityPlayerIndex: state.activePlayerIndex,
+    };
+
+    // Try to find effect definition: override first, then parse
+    const override = getOverride(def.id, def.name);
+    if (override && override.kind === 'Spell') {
+      // Validate targets
+      validateTargetChoices(intermediateState, topItem.casterId, override.targets, topItem.targets);
+      // Execute effects with SBA check
+      resultState = executeEffectsWithSBA(
+        intermediateState,
+        override.effects,
+        topItem.casterId,
+        topItem.targets,
+        override.targets,
+      );
+    } else {
+      // Try to parse oracle text
+      const parsed = parseOracleText(def.oracle_text);
+      if (parsed.kind === 'Spell') {
+        // Validate targets
+        validateTargetChoices(intermediateState, topItem.casterId, parsed.targets, topItem.targets);
+        // Execute effects with SBA check
+        resultState = executeEffectsWithSBA(
+          intermediateState,
+          parsed.effects,
+          topItem.casterId,
+          topItem.targets,
+          parsed.targets,
+        );
+      } else {
+        // Unparsed spell: just resolve without effects (card still goes to graveyard)
+        // Run SBAs anyway
+        resultState = checkStateBasedActions(intermediateState);
+      }
+    }
   }
 
-  return {
-    ...state,
-    cards: newCards,
-    stack: newStack,
-    hasPriorityPassed: new Array(state.players.length).fill(false),
-    priorityPlayerIndex: state.activePlayerIndex,
-  };
+  return resultState;
 }

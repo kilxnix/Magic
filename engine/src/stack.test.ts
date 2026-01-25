@@ -14,8 +14,8 @@ function makeCreature(): CardDefinition {
 
 function makeInstant(): CardDefinition {
   return {
-    id: 'bolt-1', name: 'Lightning Bolt', type_line: 'Instant',
-    oracle_text: 'Lightning Bolt deals 3 damage to any target.',
+    id: 'opt-1', name: 'Opt', type_line: 'Instant',
+    oracle_text: 'Scry 1, then draw a card.',  // unparseable, so no targets required
     mana_cost: '{R}', cmc: 1,
     colors: ['R'], color_identity: ['R'], keywords: [],
     card_types: ['instant'],

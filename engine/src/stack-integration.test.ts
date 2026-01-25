@@ -86,7 +86,9 @@ describe('Stack Integration: Cast and Resolve', () => {
     expect(state.cards.get(bear.instanceId)!.summoningSick).toBe(true);
   });
 
-  it('instant responds to creature on stack, resolves first (LIFO)', () => {
+  it('lightning bolt kills creature after it resolves', () => {
+    // Note: You cannot target a spell on the stack with "any target" in MTG
+    // "Any target" means creatures, players, or planeswalkers on the battlefield
     const p1Cards = [makeForest('f1'), makeForest('f2'), makeBear()];
     const p2Cards = [makeMountain(), makeBolt()];
     const decks = [
@@ -112,22 +114,23 @@ describe('Stack Integration: Cast and Resolve', () => {
     state = tapLandForMana(state, 'p1', p1Lands[1].instanceId, 'G');
     const bear = getCardsInZone(state, 'p1', 'hand')[0];
     state = castSpell(state, 'p1', bear.instanceId);
+    expect(state.stack).toHaveLength(1);
 
-    // P2 responds with bolt
+    // Bear resolves to battlefield
+    state = resolveTopOfStack(state);
+    expect(state.cards.get(bear.instanceId)!.zone).toBe('battlefield');
+
+    // Now P2 can bolt the bear (it's on the battlefield now)
     const p2Land = getCardsInZone(state, 'p2', 'battlefield')[0];
     state = tapLandForMana(state, 'p2', p2Land.instanceId, 'R');
     const bolt = getCardsInZone(state, 'p2', 'hand')[0];
     state = castSpell(state, 'p2', bolt.instanceId, [bear.instanceId]);
-    expect(state.stack).toHaveLength(2);
-
-    // Bolt resolves first (LIFO — top of stack)
-    state = resolveTopOfStack(state);
-    expect(state.cards.get(bolt.instanceId)!.zone).toBe('graveyard');
     expect(state.stack).toHaveLength(1);
 
-    // Bear resolves next
+    // Bolt resolves and kills the 2/2 bear
     state = resolveTopOfStack(state);
-    expect(state.cards.get(bear.instanceId)!.zone).toBe('battlefield');
+    expect(state.cards.get(bolt.instanceId)!.zone).toBe('graveyard');
+    expect(state.cards.get(bear.instanceId)!.zone).toBe('graveyard');
     expect(state.stack).toHaveLength(0);
   });
 });
