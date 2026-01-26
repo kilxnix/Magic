@@ -699,3 +699,35 @@ def get_draw_for_colors(color_identity: List[str]) -> List[str]:
             ci += 1
 
     return draw
+
+
+# Core staples that cannot be unlocked during deck regeneration
+# These are auto-included and always kept
+CORE_STAPLES: Set[str] = {
+    # Universal mana rocks
+    "Sol Ring",
+    "Arcane Signet",
+    "Command Tower",
+}
+
+
+def get_core_staples_for_colors(colors: List[str]) -> Set[str]:
+    """
+    Returns core staples that cannot be unlocked for regeneration.
+    These cards are always kept when regenerating a deck.
+    """
+    staples = set(CORE_STAPLES)
+
+    # Add color-specific must-haves
+    if "W" in colors:
+        staples.update(["Swords to Plowshares", "Path to Exile"])
+    if "U" in colors:
+        staples.update(["Counterspell"])
+    if "B" in colors:
+        staples.update(["Demonic Tutor"])
+    if "R" in colors:
+        staples.update(["Chaos Warp"])
+    if "G" in colors:
+        staples.update(["Cultivate", "Kodama's Reach"])
+
+    return staples
