@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from backend.deck_generator import get_generator
-from backend.rules import COMMANDER_BRACKETS, PRICE_TIERS
+from backend.rules import COMMANDER_BRACKETS, PRICE_TIERS, get_core_staples_for_colors
 from backend.database import (
     init_db, save_deck, get_deck, get_recent_decks, get_decks_by_ids,
     init_images_db, get_card_image, get_image_stats, has_card_image
@@ -46,6 +46,35 @@ class DeckRequest(BaseModel):
         None,
         description="Budget tier: budget, affordable, moderate, premium, high_end"
     )
+
+
+class RegenerateDeckRequest(BaseModel):
+    """Request model for deck regeneration."""
+    deck_id: str = Field(..., description="ID of the original deck")
+    kept_card_names: List[str] = Field(..., description="Card names to keep")
+    regeneration_number: int = Field(..., ge=1, le=5, description="Current regeneration (1-5)")
+
+
+class RegenerateDeckResponse(BaseModel):
+    """Response model for regenerated deck."""
+    id: str
+    commander: str
+    colors: List[str]
+    archetype: str
+    timestamp: str
+    legal_status: str
+    card_count: int
+    estimated_price: str
+    list: List[str]
+    bracket: int
+    bracket_name: str
+    theme: str
+    categories: dict
+    regenerations_remaining: int
+    new_card_names: List[str]
+    core_staples: List[str]
+    parent_deck_id: str
+    regeneration_number: int
 
 
 class DeckResponse(BaseModel):
@@ -247,6 +276,98 @@ async def generate_deck(request: DeckRequest):
     # Save to database
     save_deck(deck_response.model_dump())
     logger.info(f"Saved deck {deck_response.id} to database")
+
+    return deck_response
+
+
+@app.post("/api/regenerate-deck", response_model=RegenerateDeckResponse)
+async def regenerate_deck(request: RegenerateDeckRequest):
+    """
+    Regenerate a deck while keeping specified cards.
+
+    Users can regenerate up to 5 times per initial deck.
+    Core staples are automatically kept and cannot be manually locked.
+    """
+    import uuid
+    from datetime import datetime
+
+    # Validate regeneration limit
+    if request.regeneration_number > 5:
+        raise HTTPException(
+            status_code=400,
+            detail="Maximum 5 regenerations per deck"
+        )
+
+    # Load the original deck
+    original_deck = get_deck(request.deck_id)
+    if not original_deck:
+        raise HTTPException(status_code=404, detail="Original deck not found")
+
+    # Check regeneration chain
+    parent_id = original_deck.get('parent_deck_id') or request.deck_id
+
+    generator = get_generator()
+
+    # Get core staples for validation
+    core_staples = get_core_staples_for_colors(original_deck['colors'])
+
+    # Validate kept cards don't include core staples
+    invalid_kept = [c for c in request.kept_card_names if c in core_staples]
+    if invalid_kept:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot lock core staples (they're always kept): {invalid_kept}"
+        )
+
+    # Validate kept cards don't include commander
+    if original_deck['commander'] in request.kept_card_names:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot lock commander (it's always kept)"
+        )
+
+    result = generator.regenerate_deck(
+        commander_name=original_deck['commander'],
+        kept_cards=request.kept_card_names,
+        bracket=original_deck['bracket'],
+        theme=original_deck.get('theme', ''),
+        budget_tier=None,
+    )
+
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+
+    new_deck_id = str(uuid.uuid4())[:8]
+    timestamp = datetime.now().isoformat()
+
+    deck_response = RegenerateDeckResponse(
+        id=new_deck_id,
+        commander=result["commander"],
+        colors=result["colors"],
+        archetype=result["archetype"],
+        timestamp=timestamp,
+        legal_status=result["legal_status"],
+        card_count=result["card_count"],
+        estimated_price=result["estimated_price"],
+        list=result["list"],
+        bracket=result["bracket"],
+        bracket_name=result["bracket_name"],
+        theme=result["theme"],
+        categories=result["categories"],
+        regenerations_remaining=5 - request.regeneration_number,
+        new_card_names=result.get("new_cards", []),
+        core_staples=result.get("core_staples", []),
+        parent_deck_id=parent_id,
+        regeneration_number=request.regeneration_number,
+    )
+
+    # Save to database
+    save_deck({
+        **deck_response.model_dump(),
+        'parent_deck_id': parent_id,
+        'regeneration_number': request.regeneration_number,
+    })
+    logger.info(f"Saved regenerated deck {new_deck_id} (regen #{request.regeneration_number})")
 
     return deck_response
 

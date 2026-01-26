@@ -35,6 +35,7 @@ from backend.rules import (
     is_card_allowed_in_bracket,
     get_card_price_tier,
     is_land_useful_for_colors,
+    get_core_staples_for_colors,
     PRICE_TIERS,
 )
 
@@ -867,6 +868,308 @@ class DeckGenerator:
             "list": deck_list,
             "legal_status": "Legal",
             "archetype": theme or commander.get('type_line', ''),
+        }
+
+    def regenerate_deck(
+        self,
+        commander_name: str,
+        kept_cards: List[str],
+        bracket: int = 2,
+        theme: str = "",
+        budget_tier: Optional[str] = None,
+    ) -> Dict:
+        """
+        Regenerate a deck while keeping specified cards.
+
+        Args:
+            commander_name: Name of the commander
+            kept_cards: List of card names to keep in the deck
+            bracket: Power level bracket (1-5)
+            theme: Optional theme/strategy for the deck
+            budget_tier: Optional budget restriction
+
+        Returns:
+            Dict with deck information including which cards are new
+        """
+        if not self._loaded:
+            self.load()
+
+        # Find commander
+        commander = self.find_commander(commander_name)
+        if not commander:
+            return {"error": f"Commander not found: {commander_name}"}
+
+        commander_identity = commander.get('color_identity', []) or []
+        bracket_info = get_bracket_restrictions(bracket)
+        core_staples = get_core_staples_for_colors(commander_identity)
+
+        # Validate kept cards don't include core staples (they're auto-kept)
+        invalid_kept = [c for c in kept_cards if c in core_staples]
+        if invalid_kept:
+            return {"error": f"Cannot lock core staples (they're always kept): {invalid_kept}"}
+
+        # Track counts for bracket restrictions
+        counts = {'game_changers': 0, 'tutors': 0, 'extra_turns': 0}
+
+        # Build the deck starting with kept cards
+        deck: Dict[str, int] = {}
+        type_categories = {
+            'Commander': [],
+            'Creatures': [],
+            'Instants': [],
+            'Sorceries': [],
+            'Artifacts': [],
+            'Enchantments': [],
+            'Planeswalkers': [],
+            'Lands': [],
+            'Other': []
+        }
+        current_curve: Dict[int, int] = {i: 0 for i in range(8)}
+
+        # Add kept cards first
+        kept_set = set(kept_cards)
+        for card_name in kept_cards:
+            if card_name in self.card_by_name:
+                card = self.card_by_name[card_name]
+                deck[card_name] = 1
+                self._add_card_to_type_category(card_name, type_categories)
+                if not self._is_land(card):
+                    cmc = self._get_cmc(card)
+                    current_curve[cmc] = current_curve.get(cmc, 0) + 1
+                # Track bracket-restricted cards
+                if card_name in GAME_CHANGER_CARDS:
+                    counts['game_changers'] += 1
+                if card_name in TUTOR_CARDS:
+                    counts['tutors'] += 1
+                if card_name in EXTRA_TURN_SPELLS:
+                    counts['extra_turns'] += 1
+
+        # Get valid cards for filling
+        valid_cards = self._filter_by_color_identity(self.cards, commander_identity)
+        valid_cards = [c for c in valid_cards
+                      if c.get('name') not in COMMANDER_BANNED_CARDS
+                      and c.get('name') != commander.get('name')
+                      and c.get('name') not in kept_set]
+
+        # Categorize available cards
+        lands = [
+            c for c in valid_cards
+            if self._is_land(c) and is_land_useful_for_colors(
+                c.get('name', ''),
+                c.get('oracle_text', ''),
+                commander_identity
+            )
+        ]
+        removal = [c for c in valid_cards if self._is_removal(c) and not self._is_land(c)]
+        ramp = [c for c in valid_cards if self._is_ramp(c) and not self._is_land(c)]
+        draw = [c for c in valid_cards if self._is_card_draw(c) and not self._is_land(c)]
+        wincons = [
+            c for c in valid_cards
+            if self._is_wincon(c) and (
+                not self._is_land(c) or
+                is_land_useful_for_colors(c.get('name', ''), c.get('oracle_text', ''), commander_identity)
+            )
+        ]
+
+        # Count kept cards by functional category
+        kept_ramp = len([c for c in kept_cards if c in self.card_by_name and self._is_ramp(self.card_by_name[c])])
+        kept_removal = len([c for c in kept_cards if c in self.card_by_name and self._is_removal(self.card_by_name[c])])
+        kept_draw = len([c for c in kept_cards if c in self.card_by_name and self._is_card_draw(self.card_by_name[c])])
+        kept_lands = len([c for c in kept_cards if c in self.card_by_name and self._is_land(self.card_by_name[c])])
+
+        # Track new cards
+        new_cards: List[str] = []
+
+        # Fill remaining category slots - Ramp
+        ramp_needed = max(0, COMMAND_ZONE_TEMPLATE['ramp']['min'] - kept_ramp)
+        if ramp_needed > 0:
+            for card in ramp:
+                card['score'] = card.get('score', 0.5)
+            best_ramp = self._select_best_cards(
+                ramp, ramp_needed, 'ramp', commander_identity,
+                bracket, counts, deck, current_curve, budget_tier
+            )
+            for card in best_ramp:
+                name = card.get('name')
+                deck[name] = 1
+                new_cards.append(name)
+                self._add_card_to_type_category(name, type_categories)
+                cmc = self._get_cmc(card)
+                current_curve[cmc] = current_curve.get(cmc, 0) + 1
+
+        # Removal
+        removal_needed = max(0, COMMAND_ZONE_TEMPLATE['removal']['min'] - kept_removal)
+        if removal_needed > 0:
+            for card in removal:
+                card['score'] = card.get('score', 0.5)
+            best_removal = self._select_best_cards(
+                removal, removal_needed, 'removal', commander_identity,
+                bracket, counts, deck, current_curve, budget_tier
+            )
+            for card in best_removal:
+                name = card.get('name')
+                if name in GAME_CHANGER_CARDS:
+                    counts['game_changers'] += 1
+                deck[name] = 1
+                new_cards.append(name)
+                self._add_card_to_type_category(name, type_categories)
+                cmc = self._get_cmc(card)
+                current_curve[cmc] = current_curve.get(cmc, 0) + 1
+
+        # Card draw
+        draw_needed = max(0, COMMAND_ZONE_TEMPLATE['card_draw']['min'] - kept_draw)
+        if draw_needed > 0:
+            for card in draw:
+                card['score'] = card.get('score', 0.5)
+            best_draw = self._select_best_cards(
+                draw, draw_needed, 'card_draw', commander_identity,
+                bracket, counts, deck, current_curve, budget_tier
+            )
+            for card in best_draw:
+                name = card.get('name')
+                if name in GAME_CHANGER_CARDS:
+                    counts['game_changers'] += 1
+                deck[name] = 1
+                new_cards.append(name)
+                self._add_card_to_type_category(name, type_categories)
+                cmc = self._get_cmc(card)
+                current_curve[cmc] = current_curve.get(cmc, 0) + 1
+
+        # Generate synergy queries and add synergy cards
+        synergy_queries = self._extract_synergy_keywords(commander)
+        if theme:
+            synergy_queries.insert(0, theme)
+
+        all_synergy_cards: Dict[str, Dict] = {}
+        for query in synergy_queries:
+            results = self.search_cards(query, k=50)
+            for card in results:
+                name = card.get('name', '')
+                if name and name not in all_synergy_cards and name not in kept_set:
+                    all_synergy_cards[name] = card
+                elif name in all_synergy_cards:
+                    existing_score = all_synergy_cards[name].get('score', 0)
+                    new_score = card.get('score', 0)
+                    all_synergy_cards[name]['score'] = existing_score + new_score * 0.5
+
+        synergy_cards = list(all_synergy_cards.values())
+        synergy_cards = self._filter_by_color_identity(synergy_cards, commander_identity)
+        synergy_cards = [c for c in synergy_cards
+                        if c.get('name') not in COMMANDER_BANNED_CARDS
+                        and c.get('name') != commander.get('name')
+                        and not self._is_land(c)]
+
+        # Fill remaining non-land slots
+        current_count = sum(deck.values())
+        target_nonlands = 99 - COMMAND_ZONE_TEMPLATE['lands']['max']
+        remaining_nonlands = target_nonlands - current_count
+
+        if remaining_nonlands > 0:
+            best_synergy = self._select_best_cards(
+                synergy_cards, remaining_nonlands + 10,
+                'synergy', commander_identity,
+                bracket, counts, deck, current_curve, budget_tier
+            )
+            for card in best_synergy:
+                if remaining_nonlands <= 0:
+                    break
+                name = card.get('name')
+                if name and name not in deck:
+                    if name in GAME_CHANGER_CARDS:
+                        counts['game_changers'] += 1
+                    if name in TUTOR_CARDS:
+                        counts['tutors'] += 1
+                    if name in EXTRA_TURN_SPELLS:
+                        counts['extra_turns'] += 1
+                    deck[name] = 1
+                    new_cards.append(name)
+                    self._add_card_to_type_category(name, type_categories)
+                    cmc = self._get_cmc(card)
+                    current_curve[cmc] = current_curve.get(cmc, 0) + 1
+                    remaining_nonlands -= 1
+
+        # Add lands
+        max_lands = COMMAND_ZONE_TEMPLATE['lands']['max']
+        lands_needed = max_lands - kept_lands
+
+        if lands_needed > 0:
+            non_basic_lands = [l for l in lands if 'basic' not in l.get('type_line', '').lower()]
+            num_nonbasics = min(lands_needed - 15, len(non_basic_lands))
+
+            if num_nonbasics > 0:
+                for land in non_basic_lands:
+                    land['score'] = land.get('score', 0.5)
+                best_lands = self._select_best_cards(
+                    non_basic_lands, num_nonbasics, 'lands', commander_identity,
+                    bracket, counts, deck, {}, budget_tier
+                )
+                for land in best_lands:
+                    name = land.get('name')
+                    deck[name] = 1
+                    new_cards.append(name)
+                    type_categories['Lands'].append(name)
+
+            current_lands = kept_lands + len([c for c in new_cards if c in self.card_by_name and self._is_land(self.card_by_name.get(c, {}))])
+            num_basics = max_lands - current_lands
+
+            if num_basics > 0 and commander_identity:
+                basics_per_color = num_basics // len(commander_identity)
+                remainder = num_basics % len(commander_identity)
+                for i, color in enumerate(commander_identity):
+                    basic = BASIC_LANDS.get(color, 'Wastes')
+                    count = basics_per_color + (1 if i < remainder else 0)
+                    if count > 0:
+                        deck[basic] = deck.get(basic, 0) + count
+                        if basic not in type_categories['Lands']:
+                            type_categories['Lands'].append(basic)
+                            new_cards.append(basic)
+            elif num_basics > 0:
+                deck['Wastes'] = num_basics
+                type_categories['Lands'].append('Wastes')
+                new_cards.append('Wastes')
+
+        # Fill if still under 99
+        current_count = sum(deck.values())
+        if current_count < 99:
+            fill_count = 99 - current_count
+            if commander_identity:
+                basic = BASIC_LANDS.get(commander_identity[0], 'Wastes')
+            else:
+                basic = 'Wastes'
+            deck[basic] = deck.get(basic, 0) + fill_count
+            if basic not in type_categories['Lands']:
+                type_categories['Lands'].append(basic)
+
+        # Calculate stats
+        total_price = sum(
+            self._get_card_price(self.card_by_name.get(name, {})) * qty
+            for name, qty in deck.items()
+        )
+
+        commander_name_actual = commander.get('name')
+        deck_list = [f"1x {commander_name_actual} *CMDR*"]
+        for name, qty in sorted(deck.items()):
+            deck_list.append(f"{qty}x {name}")
+
+        type_categories['Commander'].append(commander_name_actual)
+        mana_curve = {str(k): v for k, v in current_curve.items()}
+
+        return {
+            "commander": commander_name_actual,
+            "colors": commander_identity,
+            "bracket": bracket,
+            "bracket_name": bracket_info['name'],
+            "theme": theme or "General synergy",
+            "card_count": sum(deck.values()) + 1,
+            "estimated_price": f"${total_price:.2f}",
+            "categories": type_categories,
+            "mana_curve": mana_curve,
+            "synergy_queries": synergy_queries,
+            "list": deck_list,
+            "legal_status": "Legal",
+            "archetype": theme or commander.get('type_line', ''),
+            "new_cards": new_cards,
+            "core_staples": list(core_staples),
         }
 
 

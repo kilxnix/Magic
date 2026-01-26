@@ -6,7 +6,7 @@ import { DeckVisualView } from '../components/DeckVisualView';
 import { LiveRibbon } from '../components/LiveRibbon';
 import { AdPlaceholder } from '../components/AdPlaceholder';
 import { TestDeckModal } from '../components/TestDeckModal';
-import { Grid3X3, List, Play } from 'lucide-react';
+import { Grid3X3, List, Play, RefreshCw, Lock } from 'lucide-react';
 
 async function fetchDeck(id: string): Promise<Deck> {
   const res = await fetch(`/api/deck/${id}`);
@@ -29,6 +29,13 @@ export function DeckViewerPage() {
   const [copied, setCopied] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('visual');
   const [showTestModal, setShowTestModal] = useState(false);
+  const [lockedCards, setLockedCards] = useState<Set<string>>(new Set());
+  const [regenerationsRemaining, setRegenerationsRemaining] = useState(5);
+  const [newCards, setNewCards] = useState<Set<string>>(new Set());
+  const [coreStaples, setCoreStaples] = useState<Set<string>>(new Set());
+  const [useCheckboxFallback, setUseCheckboxFallback] = useState(false);
+  const [isRegenerating, setIsRegenerating] = useState(false);
+  const [regenerationError, setRegenerationError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -44,6 +51,57 @@ export function DeckViewerPage() {
     navigator.clipboard.writeText(window.location.href);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleRegenerate = async () => {
+    if (!deck || regenerationsRemaining <= 0) return;
+
+    setIsRegenerating(true);
+    setRegenerationError(null);
+
+    try {
+      const response = await fetch('/api/regenerate-deck', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          deck_id: deck.id,
+          kept_card_names: Array.from(lockedCards),
+          regeneration_number: 6 - regenerationsRemaining,
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || 'Failed to regenerate deck');
+      }
+
+      const newDeck = await response.json();
+      setDeck(newDeck);
+      setNewCards(new Set(newDeck.new_card_names || []));
+      setCoreStaples(new Set(newDeck.core_staples || []));
+      setRegenerationsRemaining(newDeck.regenerations_remaining);
+
+      // Clear new card highlights after 10 seconds
+      setTimeout(() => setNewCards(new Set()), 10000);
+    } catch (err) {
+      setRegenerationError(err instanceof Error ? err.message : 'Unknown error');
+    } finally {
+      setIsRegenerating(false);
+    }
+  };
+
+  const handleCardLockToggle = (cardName: string) => {
+    if (coreStaples.has(cardName)) return;
+
+    setLockedCards(prev => {
+      const next = new Set(prev);
+      if (next.has(cardName)) {
+        next.delete(cardName);
+      } else {
+        next.add(cardName);
+      }
+      return next;
+    });
   };
 
   // Color symbols for display
@@ -158,6 +216,31 @@ export function DeckViewerPage() {
                     <Play className="w-4 h-4" />
                     Test Deck
                   </button>
+                  {/* Regeneration Controls */}
+                  <div className="flex items-center gap-2 border-l border-stone-300 pl-2">
+                    <span className="text-xs text-stone-500 flex items-center gap-1">
+                      <Lock className="w-3 h-3" />
+                      {lockedCards.size} locked
+                    </span>
+                    <button
+                      onClick={handleRegenerate}
+                      disabled={regenerationsRemaining <= 0 || isRegenerating}
+                      className={`px-3 py-2 text-sm font-medium rounded transition-colors flex items-center gap-1.5 ${
+                        regenerationsRemaining > 0 && !isRegenerating
+                          ? 'bg-blue-600 text-white hover:bg-blue-700'
+                          : 'bg-stone-300 text-stone-500 cursor-not-allowed'
+                      }`}
+                    >
+                      <RefreshCw className={`w-4 h-4 ${isRegenerating ? 'animate-spin' : ''}`} />
+                      {isRegenerating ? 'Regenerating...' : `Regenerate (${regenerationsRemaining})`}
+                    </button>
+                    <button
+                      onClick={() => setUseCheckboxFallback(!useCheckboxFallback)}
+                      className="text-xs text-stone-400 hover:text-stone-600 underline"
+                    >
+                      {useCheckboxFallback ? 'Click mode' : 'Checkboxes'}
+                    </button>
+                  </div>
                   <Link
                     to="/"
                     className="px-4 py-2 bg-stone-900 text-stone-50 text-sm font-medium rounded hover:bg-stone-800 transition-colors"
@@ -169,10 +252,27 @@ export function DeckViewerPage() {
             </div>
           </header>
 
+          {/* Regeneration Error */}
+          {regenerationError && (
+            <div className="bg-red-50 border-b border-red-200 px-4 py-2">
+              <div className="max-w-6xl mx-auto text-sm text-red-600">
+                Regeneration failed: {regenerationError}
+              </div>
+            </div>
+          )}
+
           {/* Deck Content */}
           <div className="flex-1 max-w-6xl mx-auto w-full overflow-y-auto">
             {viewMode === 'visual' ? (
-              <DeckVisualView deck={deck} />
+              <DeckVisualView
+                deck={deck}
+                selectionMode={true}
+                lockedCards={lockedCards}
+                newCards={newCards}
+                coreStaples={coreStaples}
+                onCardLockToggle={handleCardLockToggle}
+                useCheckboxFallback={useCheckboxFallback}
+              />
             ) : (
               <DeckDisplay deck={deck} />
             )}
