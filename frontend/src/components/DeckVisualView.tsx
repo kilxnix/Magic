@@ -8,6 +8,12 @@ import { X, Search, ExternalLink } from 'lucide-react';
 
 interface DeckVisualViewProps {
   deck: Deck;
+  selectionMode?: boolean;
+  lockedCards?: Set<string>;
+  newCards?: Set<string>;
+  coreStaples?: Set<string>;
+  onCardLockToggle?: (cardName: string) => void;
+  useCheckboxFallback?: boolean;
 }
 
 // Category display order and labels
@@ -29,7 +35,15 @@ interface CardPrinting {
   image_uri: string;
 }
 
-export function DeckVisualView({ deck }: DeckVisualViewProps) {
+export function DeckVisualView({
+  deck,
+  selectionMode = false,
+  lockedCards = new Set(),
+  newCards = new Set(),
+  coreStaples = new Set(),
+  onCardLockToggle,
+  useCheckboxFallback = false,
+}: DeckVisualViewProps) {
   const navigate = useNavigate();
   const [setPreference, setSetPreference] = useState<string | undefined>(undefined);
   const [selectedCard, setSelectedCard] = useState<string | null>(null);
@@ -196,6 +210,12 @@ export function DeckVisualView({ deck }: DeckVisualViewProps) {
               category={label}
               setPreference={setPreference}
               onCardClick={handleCardClick}
+              selectionMode={selectionMode}
+              lockedCards={lockedCards}
+              newCards={newCards}
+              coreStaples={coreStaples}
+              onCardLockToggle={onCardLockToggle}
+              useCheckboxFallback={useCheckboxFallback}
             />
           );
         })}

@@ -1,14 +1,32 @@
 import { useState, useRef, useEffect } from 'react';
 import { CardImage } from './CardImage';
+import { Lock, Sparkles } from 'lucide-react';
 
 interface CardPileProps {
   cards: string[];
   category: string;
   setPreference?: string;
   onCardClick?: (cardName: string) => void;
+  selectionMode?: boolean;
+  lockedCards?: Set<string>;
+  newCards?: Set<string>;
+  coreStaples?: Set<string>;
+  onCardLockToggle?: (cardName: string) => void;
+  useCheckboxFallback?: boolean;
 }
 
-export function CardPile({ cards, category, setPreference, onCardClick }: CardPileProps) {
+export function CardPile({
+  cards,
+  category,
+  setPreference,
+  onCardClick,
+  selectionMode = false,
+  lockedCards = new Set(),
+  newCards = new Set(),
+  coreStaples = new Set(),
+  onCardLockToggle,
+  useCheckboxFallback = false,
+}: CardPileProps) {
   const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [isMobile, setIsMobile] = useState(false);
@@ -26,12 +44,10 @@ export function CardPile({ cards, category, setPreference, onCardClick }: CardPi
   // Calculate overlap - more overlap on mobile to fit more cards
   const getOverlap = () => {
     if (isMobile) {
-      // Tighter overlap on mobile
       if (cards.length <= 5) return 50;
       if (cards.length <= 10) return 40;
       return 35;
     }
-    // Desktop overlap
     if (cards.length <= 5) return 60;
     if (cards.length <= 10) return 45;
     if (cards.length <= 15) return 35;
@@ -39,11 +55,18 @@ export function CardPile({ cards, category, setPreference, onCardClick }: CardPi
   };
 
   const overlap = getOverlap();
-  const cardWidth = isMobile ? 100 : 130; // Smaller cards on mobile
+  const cardWidth = isMobile ? 100 : 130;
   const cardHeight = isMobile ? 140 : 182;
-
-  // Total width needed for the pile
   const pileWidth = cardWidth + (cards.length - 1) * overlap;
+
+  const handleCardInteraction = (cleanName: string, e: React.MouseEvent) => {
+    if (selectionMode && onCardLockToggle && !coreStaples.has(cleanName)) {
+      e.stopPropagation();
+      onCardLockToggle(cleanName);
+    } else {
+      onCardClick?.(cleanName);
+    }
+  };
 
   return (
     <div className="mb-6">
@@ -62,13 +85,19 @@ export function CardPile({ cards, category, setPreference, onCardClick }: CardPi
           className="relative"
           style={{
             width: pileWidth,
-            height: cardHeight + 30, // Extra space for hover lift and tooltip
+            height: cardHeight + 30,
             minWidth: 'min-content',
           }}
         >
           {cards.map((card, index) => {
             const isExpanded = expandedIndex === index;
             const cleanName = card.replace(/^\d+x\s+/, '').replace(/\s+\*CMDR\*$/, '');
+
+            const isLocked = lockedCards.has(cleanName);
+            const isNew = newCards.has(cleanName);
+            const isCoreStaple = coreStaples.has(cleanName);
+            const isCommander = card.includes('*CMDR*');
+            const isFixed = isCoreStaple || isCommander;
 
             return (
               <div
@@ -87,14 +116,67 @@ export function CardPile({ cards, category, setPreference, onCardClick }: CardPi
                 onMouseLeave={() => !isMobile && setExpandedIndex(null)}
                 onTouchStart={() => isMobile && onCardClick?.(cleanName)}
               >
-                <CardImage
-                  cardName={cleanName}
-                  setCode={setPreference}
-                  className="w-full h-full"
-                  showHoverZoom={false}
-                  size="small"
-                  onClick={() => onCardClick?.(cleanName)}
-                />
+                {/* Card wrapper with selection visuals */}
+                <div
+                  className={`relative w-full h-full rounded-lg overflow-hidden ${
+                    selectionMode && !isFixed ? 'cursor-pointer' : ''
+                  } ${
+                    isFixed ? 'cursor-not-allowed' : ''
+                  }`}
+                  onClick={(e) => handleCardInteraction(cleanName, e)}
+                >
+                  {/* Card image */}
+                  <CardImage
+                    cardName={cleanName}
+                    setCode={setPreference}
+                    className="w-full h-full"
+                    showHoverZoom={false}
+                    size="small"
+                    onClick={!selectionMode ? () => onCardClick?.(cleanName) : undefined}
+                  />
+
+                  {/* Lock overlay for locked cards */}
+                  {selectionMode && isLocked && !isFixed && (
+                    <div className="absolute inset-0 border-2 border-blue-500 rounded-lg pointer-events-none">
+                      <div className="absolute top-1 right-1 bg-blue-500 rounded-full p-0.5">
+                        <Lock className="w-3 h-3 text-white" />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Fixed indicator for core staples and commander */}
+                  {selectionMode && isFixed && (
+                    <div className="absolute inset-0 border-2 border-stone-400 rounded-lg pointer-events-none">
+                      <div className="absolute top-1 right-1 bg-stone-400 rounded-full p-0.5">
+                        <Lock className="w-3 h-3 text-white" />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* New card glow */}
+                  {isNew && (
+                    <div className="absolute inset-0 border-2 border-green-400 rounded-lg pointer-events-none animate-pulse">
+                      <div className="absolute top-1 left-1 bg-green-500 rounded-full p-0.5">
+                        <Sparkles className="w-3 h-3 text-white" />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Checkbox fallback */}
+                  {selectionMode && useCheckboxFallback && !isFixed && (
+                    <div className="absolute top-1 left-1">
+                      <input
+                        type="checkbox"
+                        checked={isLocked}
+                        onChange={(e) => {
+                          e.stopPropagation();
+                          onCardLockToggle?.(cleanName);
+                        }}
+                        className="w-4 h-4 rounded border-stone-300 text-blue-600 focus:ring-blue-500"
+                      />
+                    </div>
+                  )}
+                </div>
 
                 {/* Card name tooltip on hover (desktop only) */}
                 {isExpanded && !isMobile && (
