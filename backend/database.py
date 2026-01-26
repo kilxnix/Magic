@@ -31,13 +31,24 @@ def init_db():
                 cards TEXT NOT NULL,
                 categories TEXT,
                 legal_status TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                parent_deck_id TEXT,
+                regeneration_number INTEGER DEFAULT 0
             )
         """)
         conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_decks_created
             ON decks(created_at DESC)
         """)
+        # Migration: add new columns if they don't exist
+        try:
+            conn.execute("ALTER TABLE decks ADD COLUMN parent_deck_id TEXT")
+        except sqlite3.OperationalError:
+            pass  # Column already exists
+        try:
+            conn.execute("ALTER TABLE decks ADD COLUMN regeneration_number INTEGER DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass  # Column already exists
         conn.commit()
 
 
@@ -103,8 +114,8 @@ def save_deck(deck_data: dict) -> str:
             INSERT INTO decks (
                 id, commander, colors, bracket, bracket_name, theme,
                 archetype, card_count, estimated_price, cards, categories,
-                legal_status, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                legal_status, created_at, parent_deck_id, regeneration_number
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             deck_data['id'],
             deck_data['commander'],
@@ -119,6 +130,8 @@ def save_deck(deck_data: dict) -> str:
             json.dumps(deck_data.get('categories', {})),
             deck_data.get('legal_status', ''),
             deck_data.get('timestamp', datetime.now().isoformat()),
+            deck_data.get('parent_deck_id'),
+            deck_data.get('regeneration_number', 0),
         ))
         conn.commit()
     return deck_data['id']
@@ -181,6 +194,8 @@ def _row_to_deck(row: sqlite3.Row) -> dict:
         'categories': json.loads(row['categories']) if row['categories'] else {},
         'legal_status': row['legal_status'] or '',
         'timestamp': row['created_at'],
+        'parent_deck_id': row['parent_deck_id'] if 'parent_deck_id' in row.keys() else None,
+        'regeneration_number': row['regeneration_number'] if 'regeneration_number' in row.keys() else 0,
     }
 
 
