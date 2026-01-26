@@ -315,11 +315,13 @@ class DeckGenerator:
         name = card.get('name', '')
 
         # Base score from semantic search (0-1 range typically)
-        score += search_score * 2.0
+        # Boost synergy weight: 50% influence (was 30%)
+        score += search_score * 3.5
 
         # Staple bonus: +3 for known staples
+        # Reduced staple bonus (was +3.0) to let synergy dominate
         if self._is_staple(card, category, colors):
-            score += 3.0
+            score += 1.5
 
         # Mana curve bonus: reward filling gaps
         if current_curve and target_curve:
