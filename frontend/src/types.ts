@@ -96,3 +96,17 @@ export interface CardPriceInfo {
   price_category: string;
   vendors: Record<string, { usd: number | null; url: string | null }>;
 }
+
+export interface RegenerateDeckRequest {
+  deck_id: string;
+  kept_card_names: string[];
+  regeneration_number: number;
+}
+
+export interface RegenerateDeckResponse extends Deck {
+  regenerations_remaining: number;
+  new_card_names: string[];
+  core_staples: string[];
+  parent_deck_id: string;
+  regeneration_number: number;
+}
