@@ -431,9 +431,15 @@ class DeckGenerator:
         counts: Dict[str, int],
         deck: Dict[str, int],
         current_curve: Dict[int, int],
-        budget_tier: Optional[str] = None
+        budget_tier: Optional[str] = None,
+        randomness: float = 0.15
     ) -> List[Dict]:
-        """Select the best cards from candidates using scoring."""
+        """
+        Select the best cards from candidates using scoring with controlled randomness.
+
+        Args:
+            randomness: Amount of score variation (0.15 = ±15%). Set to 0 for deterministic.
+        """
         scored = []
 
         for card in candidates:
@@ -472,6 +478,19 @@ class DeckGenerator:
 
         # Sort by score descending
         scored.sort(key=lambda x: x[0], reverse=True)
+
+        # Apply controlled randomness: take top 3x candidates, shuffle within score tiers
+        if randomness > 0 and len(scored) > count:
+            pool_size = min(count * 3, len(scored))
+            pool = scored[:pool_size]
+
+            # Add random noise to scores
+            randomized = [
+                (score * random.uniform(1 - randomness, 1 + randomness), card)
+                for score, card in pool
+            ]
+            randomized.sort(key=lambda x: x[0], reverse=True)
+            return [card for _, card in randomized[:count]]
 
         return [card for _, card in scored[:count]]
 
