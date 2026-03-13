@@ -137,6 +137,36 @@ class BatchRequest(BaseModel):
     ids: List[str] = Field(..., max_length=50, description="List of deck IDs")
 
 
+class CardsBatchRequest(BaseModel):
+    """Request for batch card data fetching."""
+    names: List[str] = Field(..., max_length=200, description="List of card names")
+
+
+class CardFaceData(BaseModel):
+    """A single face of a double-faced card."""
+    name: str
+    type_line: str = ""
+    oracle_text: str = ""
+    mana_cost: str = ""
+    power: Optional[str] = None
+    toughness: Optional[str] = None
+
+class CardData(BaseModel):
+    """Full card data for game engine use."""
+    name: str
+    type_line: str
+    oracle_text: str
+    mana_cost: str
+    cmc: float
+    colors: List[str]
+    color_identity: List[str]
+    keywords: List[str]
+    power: Optional[str] = None
+    toughness: Optional[str] = None
+    layout: Optional[str] = None
+    card_faces: Optional[List[CardFaceData]] = None
+
+
 class CardAlternativeResponse(BaseModel):
     """A card alternative with scoring details."""
     name: str
@@ -280,6 +310,21 @@ async def generate_deck(request: DeckRequest):
     return deck_response
 
 
+@app.post("/api/generate-deck-v2")
+async def generate_deck_v2(request: DeckRequest):
+    """Generate a deck using the Qwen3.5 model (falls back to FAISS if unavailable)."""
+    generator = get_generator()
+    result = generator.generate_deck_with_model(
+        commander_name=request.commander,
+        bracket=request.bracket,
+        theme=request.theme or "",
+        budget_tier=request.budget_tier,
+    )
+    if "error" in result:
+        raise HTTPException(status_code=404, detail=result["error"])
+    return result
+
+
 @app.post("/api/regenerate-deck", response_model=RegenerateDeckResponse)
 async def regenerate_deck(request: RegenerateDeckRequest):
     """
@@ -326,12 +371,24 @@ async def regenerate_deck(request: RegenerateDeckRequest):
             detail="Cannot lock commander (it's always kept)"
         )
 
+    # Calculate rejected cards (cards in original deck that user didn't lock)
+    # These should not appear in the regenerated deck
+    original_card_names = set(original_deck['list'].keys())
+    kept_set = set(request.kept_card_names)
+    rejected_cards = list(
+        original_card_names
+        - kept_set
+        - core_staples
+        - {original_deck['commander']}
+    )
+
     result = generator.regenerate_deck(
         commander_name=original_deck['commander'],
         kept_cards=request.kept_card_names,
         bracket=original_deck['bracket'],
         theme=original_deck.get('theme', ''),
         budget_tier=None,
+        excluded_cards=rejected_cards,
     )
 
     if "error" in result:
@@ -476,6 +533,50 @@ async def get_decks_batch(request: BatchRequest):
     """Fetch multiple decks by their IDs (for history hydration)."""
     decks = get_decks_by_ids(request.ids)
     return [DeckResponse(**d) for d in decks]
+
+
+@app.post("/api/cards-batch", response_model=List[CardData])
+async def get_cards_batch(request: CardsBatchRequest):
+    """Fetch full card data for a list of card names (for game engine)."""
+    generator = get_generator()
+    results = []
+    for name in request.names:
+        card = generator.card_by_name.get(name)
+        if card:
+            # Parse power/toughness from card data
+            power = card.get('power')
+            toughness = card.get('toughness')
+            # Build card_faces if present
+            raw_faces = card.get('card_faces')
+            faces = None
+            if raw_faces and isinstance(raw_faces, list) and len(raw_faces) > 1:
+                faces = [
+                    CardFaceData(
+                        name=f.get('name') or '',
+                        type_line=f.get('type_line') or '',
+                        oracle_text=f.get('oracle_text') or '',
+                        mana_cost=f.get('mana_cost') or '',
+                        power=str(f['power']) if f.get('power') is not None else None,
+                        toughness=str(f['toughness']) if f.get('toughness') is not None else None,
+                    )
+                    for f in raw_faces
+                ]
+
+            results.append(CardData(
+                name=card.get('name') or '',
+                type_line=card.get('type_line') or '',
+                oracle_text=card.get('oracle_text') or '',
+                mana_cost=card.get('mana_cost') or '',
+                cmc=float(card.get('cmc') or 0),
+                colors=card.get('colors') or [],
+                color_identity=card.get('color_identity') or [],
+                keywords=card.get('keywords') or [],
+                power=str(power) if power is not None else None,
+                toughness=str(toughness) if toughness is not None else None,
+                layout=card.get('layout'),
+                card_faces=faces,
+            ))
+    return results
 
 
 # Game launcher imports and endpoint
