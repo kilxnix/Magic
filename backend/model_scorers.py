@@ -292,3 +292,157 @@ def score_card_pair(
             scores["qwen"] = 0.5
 
     return scores
+
+
+# Qwen3.5-4B GGUF model path
+QWEN35_SCORER_PATH = MODELS_DIR / "Qwen35" / "mtg-scorer-gguf"
+
+
+class Qwen35Scorer:
+    """Score card-commander fit using fine-tuned Qwen3.5-4B GGUF model."""
+
+    def __init__(self):
+        self.llm = None
+        self._load_model()
+
+    def _load_model(self):
+        """Load the Qwen3.5-4B GGUF model using llama-cpp-python."""
+        try:
+            from llama_cpp import Llama
+        except ImportError:
+            raise ImportError(
+                "llama-cpp-python required for Qwen35Scorer. "
+                "Install with: pip install llama-cpp-python"
+            )
+
+        gguf_files = list(QWEN35_SCORER_PATH.glob("*.gguf"))
+        if not gguf_files:
+            raise FileNotFoundError(
+                f"No GGUF model found in {QWEN35_SCORER_PATH}"
+            )
+
+        model_file = gguf_files[0]
+        self.llm = Llama(
+            model_path=str(model_file),
+            n_ctx=512,
+            n_gpu_layers=-1,
+            n_threads=4,
+            verbose=False
+        )
+
+    def score_similarity(
+        self,
+        source_card: str,
+        candidate_card: str,
+        source_text: str,
+        candidate_text: str,
+        commander_name: str = "",
+        commander_colors: str = ""
+    ) -> float:
+        """
+        Score how well a candidate card fits a commander's deck.
+
+        Args:
+            source_card: Name of the original card
+            candidate_card: Name of the candidate substitute
+            source_text: Oracle text of the source card
+            candidate_text: Oracle text of the candidate card
+            commander_name: Name of the commander (optional)
+            commander_colors: Color identity of the commander (optional)
+
+        Returns:
+            float between 0 and 1, higher means better fit
+        """
+        commander_info = ""
+        if commander_name:
+            commander_info = f"Commander: {commander_name}"
+            if commander_colors:
+                commander_info += f" ({commander_colors})"
+            commander_info += "\n"
+
+        prompt = f"""<|im_start|>system
+You are an MTG Commander deckbuilding expert. Rate how well a card fits in this commander's deck.<|im_end|>
+<|im_start|>user
+{commander_info}Rate how well "{candidate_card}" fits in this commander's deck compared to "{source_card}".
+{source_card}: {source_text}
+{candidate_card}: {candidate_text}
+Reply with just a number 0-10.<|im_end|>
+<|im_start|>assistant
+"""
+
+        output = self.llm(
+            prompt,
+            max_tokens=50,
+            temperature=0.1,
+            stop=["<|im_end|>"]
+        )
+
+        response = output['choices'][0]['text'].strip()
+        try:
+            import re
+            match = re.search(r'\d+(?:\.\d+)?', response)
+            if match:
+                score = float(match.group())
+                return min(1.0, max(0.0, score / 10.0))
+            return 0.5
+        except (ValueError, AttributeError):
+            return 0.5
+
+    def generate_tradeoff_explanation(
+        self,
+        source_card: str,
+        candidate_card: str,
+        source_text: str,
+        candidate_text: str,
+        source_price: float,
+        candidate_price: float,
+        source_cmc: int,
+        candidate_cmc: int
+    ) -> str:
+        """
+        Generate a natural language explanation of the trade-offs.
+
+        Args:
+            source_card: Name of the original card
+            candidate_card: Name of the candidate substitute
+            source_text: Oracle text of the source card
+            candidate_text: Oracle text of the candidate card
+            source_price: Price of the source card in USD
+            candidate_price: Price of the candidate card in USD
+            source_cmc: Converted mana cost of the source card
+            candidate_cmc: Converted mana cost of the candidate card
+
+        Returns:
+            A string containing a brief trade-off explanation
+        """
+        prompt = f"""<|im_start|>system
+You are an MTG deck building advisor. Give brief, helpful card comparisons.<|im_end|>
+<|im_start|>user
+Compare these cards as substitutes:
+Original: {source_card} (${source_price:.2f}, {source_cmc} CMC) - {source_text}
+Alternative: {candidate_card} (${candidate_price:.2f}, {candidate_cmc} CMC) - {candidate_text}
+
+Give a one-sentence trade-off summary.<|im_end|>
+<|im_start|>assistant
+"""
+
+        output = self.llm(
+            prompt,
+            max_tokens=100,
+            temperature=0.7,
+            stop=["<|im_end|>"]
+        )
+
+        return output['choices'][0]['text'].strip()
+
+
+# Singleton instance for Qwen35Scorer
+_qwen35_scorer: Optional[Qwen35Scorer] = None
+
+
+def get_qwen35_scorer() -> Qwen35Scorer:
+    """Get or create the Qwen35 scorer singleton."""
+    global _qwen35_scorer
+    if _qwen35_scorer is None:
+        _qwen35_scorer = Qwen35Scorer()
+    return _qwen35_scorer
