@@ -870,6 +870,190 @@ class DeckGenerator:
             "archetype": theme or commander.get('type_line', ''),
         }
 
+    def generate_deck_with_model(
+        self,
+        commander_name: str,
+        bracket: int = 2,
+        theme: str = "",
+        budget_tier: Optional[str] = None,
+    ) -> Dict:
+        """
+        Generate a Commander deck using a fine-tuned LLM composer, with FAISS backfill.
+
+        Attempts to use the DeckComposer model to produce a full 99-card list.
+        Falls back to the standard FAISS-based generate_deck() on any failure or
+        if the model produces fewer than 90 valid cards.  If the model produces
+        between 90 and 98 cards, remaining slots are filled by FAISS synergy search.
+
+        Args:
+            commander_name: Name of the commander
+            bracket: Power level bracket (1-5)
+            theme: Optional theme/strategy for the deck
+            budget_tier: Optional budget restriction
+
+        Returns:
+            Dict matching the generate_deck() response format, with an additional
+            'generation_method' key set to 'model' (or 'faiss' on fallback).
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+
+        if not self._loaded:
+            self.load()
+
+        # ── Step 1: Find the commander ────────────────────────────────────────
+        commander = self.find_commander(commander_name)
+        if not commander:
+            return {"error": f"Commander not found: {commander_name}"}
+
+        commander_identity = commander.get('color_identity', []) or []
+        bracket_info = get_bracket_restrictions(bracket)
+
+        try:
+            # ── Step 2: Import and invoke the composer ────────────────────────
+            from backend.model_composer import get_composer
+            composer = get_composer()
+
+            model_cards, model_lands = composer.compose_deck(
+                commander_name=commander.get('name', commander_name),
+                colors=commander_identity,
+                bracket=bracket,
+                theme=theme or "General synergy",
+                card_db=self.card_by_name,
+            )
+
+            # ── Step 3: Build deck dict and type_categories ───────────────────
+            deck: Dict[str, int] = {}
+            type_categories: Dict[str, List] = {
+                'Commander': [],
+                'Creatures': [],
+                'Instants': [],
+                'Sorceries': [],
+                'Artifacts': [],
+                'Enchantments': [],
+                'Planeswalkers': [],
+                'Lands': [],
+                'Other': [],
+            }
+            current_curve: Dict[int, int] = {i: 0 for i in range(8)}
+
+            def _add_card(name: str) -> bool:
+                """Validate and add a single card to the deck.  Returns True on success."""
+                if name in deck:
+                    return False
+                # Skip banned cards
+                if name in COMMANDER_BANNED_CARDS:
+                    logger.debug(f"generate_deck_with_model: skipping banned card {name!r}")
+                    return False
+                # Must exist in card database
+                card = self.card_by_name.get(name)
+                if card is None:
+                    logger.debug(f"generate_deck_with_model: card not in database {name!r}")
+                    return False
+                deck[name] = 1
+                self._add_card_to_type_category(name, type_categories)
+                if not self._is_land(card):
+                    cmc = self._get_cmc(card)
+                    current_curve[cmc] = current_curve.get(cmc, 0) + 1
+                return True
+
+            # Add non-land cards from model output
+            for name in model_cards:
+                _add_card(name)
+
+            # Add land cards from model output
+            for name in model_lands:
+                _add_card(name)
+
+            total_model_cards = len(deck)
+
+            # ── Step 4: Validate minimum threshold ───────────────────────────
+            if total_model_cards < 90:
+                logger.warning(
+                    f"generate_deck_with_model: model produced only {total_model_cards} "
+                    "valid cards (< 90). Falling back to FAISS generate_deck()."
+                )
+                result = self.generate_deck(commander_name, bracket, theme, budget_tier)
+                result['generation_method'] = 'faiss'
+                return result
+
+            # ── Step 5: Backfill from FAISS if between 90 and 98 cards ───────
+            if len(deck) < 99:
+                remaining = 99 - len(deck)
+                logger.info(
+                    f"generate_deck_with_model: {len(deck)} cards from model, "
+                    f"backfilling {remaining} slots via FAISS."
+                )
+                synergy_queries = self._extract_synergy_keywords(commander)
+                backfill_candidates: Dict[str, Dict] = {}
+                for query in synergy_queries:
+                    for card in self.search_cards(query, k=60):
+                        cname = card.get('name')
+                        if cname and cname not in backfill_candidates:
+                            backfill_candidates[cname] = card
+
+                # Filter by color identity and not already in deck
+                filtered = self._filter_by_color_identity(
+                    list(backfill_candidates.values()), commander_identity
+                )
+                for card in filtered:
+                    if remaining <= 0:
+                        break
+                    name = card.get('name')
+                    if name and name != commander.get('name') and name not in deck:
+                        if _add_card(name):
+                            remaining -= 1
+
+            # ── Step 6: Fill remaining slots with basic lands ─────────────────
+            if len(deck) < 99:
+                fill_count = 99 - len(deck)
+                if commander_identity:
+                    basic = BASIC_LANDS.get(commander_identity[0], 'Wastes')
+                else:
+                    basic = 'Wastes'
+                deck[basic] = deck.get(basic, 0) + fill_count
+                if basic not in type_categories['Lands']:
+                    type_categories['Lands'].append(basic)
+
+            # ── Step 7: Build response matching generate_deck() format ────────
+            total_price = sum(
+                self._get_card_price(self.card_by_name.get(name, {})) * qty
+                for name, qty in deck.items()
+            )
+
+            actual_commander_name = commander.get('name')
+            deck_list = [f"1x {actual_commander_name} *CMDR*"]
+            for name, qty in sorted(deck.items()):
+                deck_list.append(f"{qty}x {name}")
+
+            type_categories['Commander'].append(actual_commander_name)
+            mana_curve = {str(k): v for k, v in current_curve.items()}
+
+            return {
+                "commander": actual_commander_name,
+                "colors": commander_identity,
+                "bracket": bracket,
+                "bracket_name": bracket_info['name'],
+                "theme": theme or "General synergy",
+                "card_count": sum(deck.values()) + 1,  # +1 for commander
+                "estimated_price": f"${total_price:.2f}",
+                "categories": type_categories,
+                "mana_curve": mana_curve,
+                "list": deck_list,
+                "legal_status": "Legal",
+                "archetype": theme or commander.get('type_line', ''),
+                "generation_method": "model",
+            }
+
+        except Exception as exc:
+            logger.warning(
+                f"generate_deck_with_model: model path failed ({exc!r}). "
+                "Falling back to FAISS generate_deck()."
+            )
+            result = self.generate_deck(commander_name, bracket, theme, budget_tier)
+            result['generation_method'] = 'faiss'
+            return result
+
     def regenerate_deck(
         self,
         commander_name: str,
@@ -877,6 +1061,7 @@ class DeckGenerator:
         bracket: int = 2,
         theme: str = "",
         budget_tier: Optional[str] = None,
+        excluded_cards: Optional[List[str]] = None,
     ) -> Dict:
         """
         Regenerate a deck while keeping specified cards.
@@ -887,6 +1072,7 @@ class DeckGenerator:
             bracket: Power level bracket (1-5)
             theme: Optional theme/strategy for the deck
             budget_tier: Optional budget restriction
+            excluded_cards: List of card names to exclude (previously rejected cards)
 
         Returns:
             Dict with deck information including which cards are new
@@ -946,10 +1132,12 @@ class DeckGenerator:
 
         # Get valid cards for filling
         valid_cards = self._filter_by_color_identity(self.cards, commander_identity)
+        excluded_set = set(excluded_cards) if excluded_cards else set()
         valid_cards = [c for c in valid_cards
                       if c.get('name') not in COMMANDER_BANNED_CARDS
                       and c.get('name') != commander.get('name')
-                      and c.get('name') not in kept_set]
+                      and c.get('name') not in kept_set
+                      and c.get('name') not in excluded_set]
 
         # Categorize available cards
         lands = [
