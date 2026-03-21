@@ -1,12 +1,13 @@
 // Phase 4: Manual effect overrides for complex cards
 // Lookup by definitionId (preferred) or card name (fallback)
 
-import type { Effect, TriggeredAbility } from './ast';
+import type { Effect, TriggeredAbility, ActivatedAbility } from './ast';
 import type { TargetSpec } from './targets';
 
 export type OverrideDefinition =
   | { kind: 'Spell'; effects: Effect[]; targets: TargetSpec[] }
-  | { kind: 'ETB'; ability: TriggeredAbility; targets: TargetSpec[] };
+  | { kind: 'ETB'; ability: TriggeredAbility; targets: TargetSpec[] }
+  | { kind: 'Activated'; ability: ActivatedAbility };
 
 // Registry keyed by definitionId
 const overridesByDefinitionId = new Map<string, OverrideDefinition>();
@@ -124,4 +125,36 @@ registerOverrideByName('Healing Salve', {
     },
   ],
   targets: [],
+});
+
+// Terramorphic Expanse - {T}, Sacrifice: Search for basic land, put onto battlefield tapped, shuffle
+const fetchLandAbility: ActivatedAbility = {
+  kind: 'ActivatedAbility',
+  cost: { tap: true, sacrifice: 'self' },
+  effects: [
+    {
+      kind: 'SearchLibrary',
+      player: { kind: 'Controller' },
+      filter: { types: ['land'], supertypes: ['basic'] },
+      destination: 'battlefield',
+      tapped: true,
+      shuffle: true,
+    },
+    {
+      kind: 'ShuffleLibrary',
+      player: { kind: 'Controller' },
+    },
+  ],
+  isManaAbility: false,
+  targets: [],
+};
+
+registerOverrideByName('Terramorphic Expanse', {
+  kind: 'Activated',
+  ability: fetchLandAbility,
+});
+
+registerOverrideByName('Evolving Wilds', {
+  kind: 'Activated',
+  ability: fetchLandAbility,
 });

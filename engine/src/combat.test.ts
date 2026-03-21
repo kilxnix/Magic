@@ -579,3 +579,483 @@ describe("Commander Damage Tracking", () => {
     expect(state.players[1].commanderDamage[commander.instanceId]).toBe(5);
   });
 });
+
+describe("First Strike / Double Strike Combat", () => {
+  function makeFirstStriker(): CardDefinition {
+    return {
+      id: "fs-1",
+      name: "First Striker",
+      type_line: "Creature — Knight",
+      oracle_text: "",
+      mana_cost: "{1}{W}",
+      cmc: 2,
+      colors: ["W"],
+      color_identity: ["W"],
+      keywords: ["First Strike"],
+      card_types: ["creature"],
+      power: 3,
+      toughness: 2,
+    };
+  }
+
+  function makeDoubleStriker(): CardDefinition {
+    return {
+      id: "ds-1",
+      name: "Double Striker",
+      type_line: "Creature — Knight",
+      oracle_text: "",
+      mana_cost: "{1}{R}",
+      cmc: 2,
+      colors: ["R"],
+      color_identity: ["R"],
+      keywords: ["Double Strike"],
+      card_types: ["creature"],
+      power: 2,
+      toughness: 2,
+    };
+  }
+
+  function makeBigCreature(): CardDefinition {
+    return {
+      id: "big-2",
+      name: "Big Creature",
+      type_line: "Creature — Beast",
+      oracle_text: "",
+      mana_cost: "{3}{G}",
+      cmc: 4,
+      colors: ["G"],
+      color_identity: ["G"],
+      keywords: [],
+      card_types: ["creature"],
+      power: 2,
+      toughness: 3,
+    };
+  }
+
+  function makeBlockerWithFirstStrike(): CardDefinition {
+    return {
+      id: "fs-blocker-1",
+      name: "First Strike Blocker",
+      type_line: "Creature — Soldier",
+      oracle_text: "",
+      mana_cost: "{2}{W}",
+      cmc: 3,
+      colors: ["W"],
+      color_identity: ["W"],
+      keywords: ["First Strike"],
+      card_types: ["creature"],
+      power: 3,
+      toughness: 3,
+    };
+  }
+
+  it("first striker kills blocker before blocker deals damage back", () => {
+    // First Striker (3/2 with First Strike) vs normal creature (2/3)
+    // First strike step: attacker deals 3 damage to blocker (3 >= 3 toughness = lethal)
+    // SBAs: blocker dies
+    // Normal step: blocker is dead, doesn't deal damage. Attacker takes 0 damage.
+    const decks = [
+      { playerId: "p1", name: "Alice", cards: [makeFirstStriker()], commanderId: "cmd1" },
+      { playerId: "p2", name: "Bob", cards: [makeBigCreature()], commanderId: "cmd2" },
+    ];
+    let state = initGameState(decks);
+    for (const [id, card] of state.cards) {
+      state.cards.set(id, { ...card, zone: "battlefield", summoningSick: false });
+    }
+    state = { ...state, phase: "combat", step: "declare_attackers" };
+
+    const attacker = getCardsInZone(state, "p1", "battlefield")[0];
+    const blocker = getCardsInZone(state, "p2", "battlefield")[0];
+
+    state = declareAttackers(state, "p1", [
+      { cardInstanceId: attacker.instanceId, defendingPlayerId: "p2" },
+    ]);
+    state = declareBlockers(state, "p2", [
+      { cardInstanceId: blocker.instanceId, blockingAttackerId: attacker.instanceId },
+    ]);
+    state = resolveCombatDamage(state);
+
+    // First striker takes 0 damage (blocker died from first strike before dealing damage)
+    expect(state.cards.get(attacker.instanceId)!.damage).toBe(0);
+    // Blocker should be in graveyard (killed by first strike + SBAs)
+    expect(state.cards.get(blocker.instanceId)!.zone).toBe("graveyard");
+    // No player damage (attacker was blocked)
+    expect(state.players[1].life).toBe(40);
+  });
+
+  it("double striker unblocked deals damage twice (total = 2x power)", () => {
+    // Double Striker (2/2) unblocked: deals 2 in first strike step + 2 in normal step = 4 total
+    const decks = [
+      { playerId: "p1", name: "Alice", cards: [makeDoubleStriker()], commanderId: "cmd1" },
+      { playerId: "p2", name: "Bob", cards: [], commanderId: "cmd2" },
+    ];
+    let state = initGameState(decks);
+    for (const [id, card] of state.cards) {
+      state.cards.set(id, { ...card, zone: "battlefield", summoningSick: false });
+    }
+    state = { ...state, phase: "combat", step: "declare_attackers" };
+
+    const attacker = getCardsInZone(state, "p1", "battlefield")[0];
+
+    state = declareAttackers(state, "p1", [
+      { cardInstanceId: attacker.instanceId, defendingPlayerId: "p2" },
+    ]);
+    state = declareBlockers(state, "p2", []);
+    state = resolveCombatDamage(state);
+
+    // Player takes 4 damage total (2 from first strike step + 2 from normal step)
+    expect(state.players[1].life).toBe(36); // 40 - 4
+  });
+
+  it("normal combat without first strikers works unchanged", () => {
+    // Two normal bears: attacker deals 2, blocker deals 2 back. Both take 2 damage.
+    const decks = [
+      { playerId: "p1", name: "Alice", cards: [makeBear("bear-a")], commanderId: "cmd1" },
+      { playerId: "p2", name: "Bob", cards: [makeBear("bear-b")], commanderId: "cmd2" },
+    ];
+    let state = initGameState(decks);
+    for (const [id, card] of state.cards) {
+      state.cards.set(id, { ...card, zone: "battlefield", summoningSick: false });
+    }
+    state = { ...state, phase: "combat", step: "declare_attackers" };
+
+    const attacker = getCardsInZone(state, "p1", "battlefield")[0];
+    const blocker = getCardsInZone(state, "p2", "battlefield")[0];
+
+    state = declareAttackers(state, "p1", [
+      { cardInstanceId: attacker.instanceId, defendingPlayerId: "p2" },
+    ]);
+    state = declareBlockers(state, "p2", [
+      { cardInstanceId: blocker.instanceId, blockingAttackerId: attacker.instanceId },
+    ]);
+    state = resolveCombatDamage(state);
+
+    // Both deal 2 damage to each other simultaneously
+    expect(state.cards.get(attacker.instanceId)!.damage).toBe(2);
+    expect(state.cards.get(blocker.instanceId)!.damage).toBe(2);
+    // No player damage
+    expect(state.players[1].life).toBe(40);
+    // Combat cleared
+    expect(state.combat).toBeNull();
+  });
+
+  it("first strike blocker kills attacker before attacker deals damage", () => {
+    // Blocker with First Strike (3/3) vs normal attacker (2/2)
+    // First strike step: blocker deals 3 to attacker (lethal for 2 toughness)
+    // SBAs: attacker dies
+    // Normal step: attacker is dead, doesn't deal damage. Blocker takes 0 damage.
+    const decks = [
+      { playerId: "p1", name: "Alice", cards: [makeBear("bear-c")], commanderId: "cmd1" },
+      { playerId: "p2", name: "Bob", cards: [makeBlockerWithFirstStrike()], commanderId: "cmd2" },
+    ];
+    let state = initGameState(decks);
+    for (const [id, card] of state.cards) {
+      state.cards.set(id, { ...card, zone: "battlefield", summoningSick: false });
+    }
+    state = { ...state, phase: "combat", step: "declare_attackers" };
+
+    const attacker = getCardsInZone(state, "p1", "battlefield")[0];
+    const blocker = getCardsInZone(state, "p2", "battlefield")[0];
+
+    state = declareAttackers(state, "p1", [
+      { cardInstanceId: attacker.instanceId, defendingPlayerId: "p2" },
+    ]);
+    state = declareBlockers(state, "p2", [
+      { cardInstanceId: blocker.instanceId, blockingAttackerId: attacker.instanceId },
+    ]);
+    state = resolveCombatDamage(state);
+
+    // Attacker (2/2) died from first strike damage — should be in graveyard
+    expect(state.cards.get(attacker.instanceId)!.zone).toBe("graveyard");
+    // Blocker takes 0 damage (attacker died before dealing normal damage)
+    expect(state.cards.get(blocker.instanceId)!.damage).toBe(0);
+    // No player damage
+    expect(state.players[0].life).toBe(40);
+    expect(state.players[1].life).toBe(40);
+  });
+
+  it("double striker blocked deals damage in both steps to blocker", () => {
+    // Double Striker (2/2) blocked by Big Creature (2/3)
+    // First strike step: DS deals 2 to blocker (blocker at 2/3 with 2 damage — not lethal)
+    // SBAs: no deaths
+    // Normal step: DS deals 2 again to blocker (4 total damage, >= 3 toughness — lethal marked)
+    //              blocker deals 2 to DS (2 damage >= 2 toughness — lethal marked)
+    // Both die on next SBA check
+    const decks = [
+      { playerId: "p1", name: "Alice", cards: [makeDoubleStriker()], commanderId: "cmd1" },
+      { playerId: "p2", name: "Bob", cards: [makeBigCreature()], commanderId: "cmd2" },
+    ];
+    let state = initGameState(decks);
+    for (const [id, card] of state.cards) {
+      state.cards.set(id, { ...card, zone: "battlefield", summoningSick: false });
+    }
+    state = { ...state, phase: "combat", step: "declare_attackers" };
+
+    const attacker = getCardsInZone(state, "p1", "battlefield")[0];
+    const blocker = getCardsInZone(state, "p2", "battlefield")[0];
+
+    state = declareAttackers(state, "p1", [
+      { cardInstanceId: attacker.instanceId, defendingPlayerId: "p2" },
+    ]);
+    state = declareBlockers(state, "p2", [
+      { cardInstanceId: blocker.instanceId, blockingAttackerId: attacker.instanceId },
+    ]);
+    state = resolveCombatDamage(state);
+
+    // Double striker takes 2 damage from blocker (blocker deals in normal step)
+    expect(state.cards.get(attacker.instanceId)!.damage).toBe(2);
+    // Blocker takes 4 total damage (2 first strike + 2 normal)
+    expect(state.cards.get(blocker.instanceId)!.damage).toBe(4);
+    // No player damage
+    expect(state.players[1].life).toBe(40);
+  });
+
+  it("first strike attacker vs first strike blocker: both deal simultaneously in first strike step", () => {
+    // Both have first strike, so both deal in the first strike step
+    // Normal step: neither deals (only Double Strike would deal again)
+    const fsBear: CardDefinition = {
+      id: "fs-bear",
+      name: "First Strike Bear",
+      type_line: "Creature — Bear",
+      oracle_text: "",
+      mana_cost: "{1}{W}",
+      cmc: 2,
+      colors: ["W"],
+      color_identity: ["W"],
+      keywords: ["First Strike"],
+      card_types: ["creature"],
+      power: 2,
+      toughness: 2,
+    };
+    const fsBear2: CardDefinition = {
+      id: "fs-bear-2",
+      name: "First Strike Bear 2",
+      type_line: "Creature — Bear",
+      oracle_text: "",
+      mana_cost: "{1}{W}",
+      cmc: 2,
+      colors: ["W"],
+      color_identity: ["W"],
+      keywords: ["First Strike"],
+      card_types: ["creature"],
+      power: 2,
+      toughness: 2,
+    };
+
+    const decks = [
+      { playerId: "p1", name: "Alice", cards: [fsBear], commanderId: "cmd1" },
+      { playerId: "p2", name: "Bob", cards: [fsBear2], commanderId: "cmd2" },
+    ];
+    let state = initGameState(decks);
+    for (const [id, card] of state.cards) {
+      state.cards.set(id, { ...card, zone: "battlefield", summoningSick: false });
+    }
+    state = { ...state, phase: "combat", step: "declare_attackers" };
+
+    const attacker = getCardsInZone(state, "p1", "battlefield")[0];
+    const blocker = getCardsInZone(state, "p2", "battlefield")[0];
+
+    state = declareAttackers(state, "p1", [
+      { cardInstanceId: attacker.instanceId, defendingPlayerId: "p2" },
+    ]);
+    state = declareBlockers(state, "p2", [
+      { cardInstanceId: blocker.instanceId, blockingAttackerId: attacker.instanceId },
+    ]);
+    state = resolveCombatDamage(state);
+
+    // Both deal damage in first strike step, both should have lethal damage
+    // After SBAs from first strike step, both are in graveyard
+    expect(state.cards.get(attacker.instanceId)!.zone).toBe("graveyard");
+    expect(state.cards.get(blocker.instanceId)!.zone).toBe("graveyard");
+  });
+
+  it("combat state is cleared after damage resolution with first strikers", () => {
+    const decks = [
+      { playerId: "p1", name: "Alice", cards: [makeFirstStriker()], commanderId: "cmd1" },
+      { playerId: "p2", name: "Bob", cards: [], commanderId: "cmd2" },
+    ];
+    let state = initGameState(decks);
+    for (const [id, card] of state.cards) {
+      state.cards.set(id, { ...card, zone: "battlefield", summoningSick: false });
+    }
+    state = { ...state, phase: "combat", step: "declare_attackers" };
+
+    const attacker = getCardsInZone(state, "p1", "battlefield")[0];
+
+    state = declareAttackers(state, "p1", [
+      { cardInstanceId: attacker.instanceId, defendingPlayerId: "p2" },
+    ]);
+    state = declareBlockers(state, "p2", []);
+    state = resolveCombatDamage(state);
+
+    // Combat should be cleared after all steps
+    expect(state.combat).toBeNull();
+  });
+
+  it("lifelink works with first strike damage", () => {
+    const lifelinkFS: CardDefinition = {
+      id: "ll-fs-1",
+      name: "Lifelink First Striker",
+      type_line: "Creature — Knight",
+      oracle_text: "",
+      mana_cost: "{1}{W}",
+      cmc: 2,
+      colors: ["W"],
+      color_identity: ["W"],
+      keywords: ["First Strike", "Lifelink"],
+      card_types: ["creature"],
+      power: 3,
+      toughness: 2,
+    };
+    const decks = [
+      { playerId: "p1", name: "Alice", cards: [lifelinkFS], commanderId: "cmd1" },
+      { playerId: "p2", name: "Bob", cards: [], commanderId: "cmd2" },
+    ];
+    let state = initGameState(decks);
+    for (const [id, card] of state.cards) {
+      state.cards.set(id, { ...card, zone: "battlefield", summoningSick: false });
+    }
+    state = { ...state, phase: "combat", step: "declare_attackers" };
+
+    const attacker = getCardsInZone(state, "p1", "battlefield")[0];
+
+    state = declareAttackers(state, "p1", [
+      { cardInstanceId: attacker.instanceId, defendingPlayerId: "p2" },
+    ]);
+    state = declareBlockers(state, "p2", []);
+    state = resolveCombatDamage(state);
+
+    // Player 2 takes 3 damage
+    expect(state.players[1].life).toBe(37);
+    // Player 1 gains 3 life from lifelink
+    expect(state.players[0].life).toBe(43);
+  });
+
+  it("lifelink works with double strike (gains life twice)", () => {
+    const lifelinkDS: CardDefinition = {
+      id: "ll-ds-1",
+      name: "Lifelink Double Striker",
+      type_line: "Creature — Knight",
+      oracle_text: "",
+      mana_cost: "{1}{W}{R}",
+      cmc: 3,
+      colors: ["W", "R"],
+      color_identity: ["W", "R"],
+      keywords: ["Double Strike", "Lifelink"],
+      card_types: ["creature"],
+      power: 2,
+      toughness: 2,
+    };
+    const decks = [
+      { playerId: "p1", name: "Alice", cards: [lifelinkDS], commanderId: "cmd1" },
+      { playerId: "p2", name: "Bob", cards: [], commanderId: "cmd2" },
+    ];
+    let state = initGameState(decks);
+    for (const [id, card] of state.cards) {
+      state.cards.set(id, { ...card, zone: "battlefield", summoningSick: false });
+    }
+    state = { ...state, phase: "combat", step: "declare_attackers" };
+
+    const attacker = getCardsInZone(state, "p1", "battlefield")[0];
+
+    state = declareAttackers(state, "p1", [
+      { cardInstanceId: attacker.instanceId, defendingPlayerId: "p2" },
+    ]);
+    state = declareBlockers(state, "p2", []);
+    state = resolveCombatDamage(state);
+
+    // Player 2 takes 4 damage (2 + 2)
+    expect(state.players[1].life).toBe(36);
+    // Player 1 gains 4 life (2 + 2 from lifelink in both steps)
+    expect(state.players[0].life).toBe(44);
+  });
+
+  it("commander damage tracked correctly with double strike", () => {
+    const dsCommander: CardDefinition = {
+      id: "cmd-ds",
+      name: "Double Strike Commander",
+      type_line: "Legendary Creature — Knight",
+      oracle_text: "",
+      mana_cost: "{2}{R}{W}",
+      cmc: 4,
+      colors: ["R", "W"],
+      color_identity: ["R", "W"],
+      keywords: ["Double Strike"],
+      card_types: ["creature"],
+      power: 3,
+      toughness: 3,
+    };
+    const decks = [
+      { playerId: "p1", name: "Alice", cards: [dsCommander], commanderId: "cmd-ds" },
+      { playerId: "p2", name: "Bob", cards: [], commanderId: "cmd2" },
+    ];
+    let state = initGameState(decks);
+
+    const commander = getCardsInZone(state, "p1", "command")[0];
+    state.cards.set(commander.instanceId, {
+      ...commander,
+      zone: "battlefield",
+      summoningSick: false,
+    });
+    state = { ...state, phase: "combat", step: "declare_attackers" };
+
+    state = declareAttackers(state, "p1", [
+      { cardInstanceId: commander.instanceId, defendingPlayerId: "p2" },
+    ]);
+    state = declareBlockers(state, "p2", []);
+    state = resolveCombatDamage(state);
+
+    // Player 2 takes 6 damage total (3 + 3)
+    expect(state.players[1].life).toBe(34);
+    // Commander damage: 6 total (3 from first strike + 3 from normal)
+    expect(state.players[1].commanderDamage[commander.instanceId]).toBe(6);
+  });
+
+  it("first strike with trample works correctly", () => {
+    // First Strike + Trample attacker (5/5) blocked by a 2/2
+    // First strike step: assigns 2 lethal to blocker, 3 trample to player
+    // SBAs: blocker dies
+    // Normal step: no normal damage (only first strike, not double strike)
+    const fsTrampler: CardDefinition = {
+      id: "fs-trample-1",
+      name: "First Strike Trampler",
+      type_line: "Creature — Beast",
+      oracle_text: "",
+      mana_cost: "{3}{R}{G}",
+      cmc: 5,
+      colors: ["R", "G"],
+      color_identity: ["R", "G"],
+      keywords: ["First Strike", "Trample"],
+      card_types: ["creature"],
+      power: 5,
+      toughness: 5,
+    };
+    const decks = [
+      { playerId: "p1", name: "Alice", cards: [fsTrampler], commanderId: "cmd1" },
+      { playerId: "p2", name: "Bob", cards: [makeBear("bear-d")], commanderId: "cmd2" },
+    ];
+    let state = initGameState(decks);
+    for (const [id, card] of state.cards) {
+      state.cards.set(id, { ...card, zone: "battlefield", summoningSick: false });
+    }
+    state = { ...state, phase: "combat", step: "declare_attackers" };
+
+    const attacker = getCardsInZone(state, "p1", "battlefield")[0];
+    const blocker = getCardsInZone(state, "p2", "battlefield")[0];
+
+    state = declareAttackers(state, "p1", [
+      { cardInstanceId: attacker.instanceId, defendingPlayerId: "p2" },
+    ]);
+    state = declareBlockers(state, "p2", [
+      { cardInstanceId: blocker.instanceId, blockingAttackerId: attacker.instanceId },
+    ]);
+    state = resolveCombatDamage(state);
+
+    // Blocker (2/2) takes 2 lethal from first strike, dies
+    expect(state.cards.get(blocker.instanceId)!.zone).toBe("graveyard");
+    // Attacker takes 0 damage (blocker dies before dealing damage)
+    expect(state.cards.get(attacker.instanceId)!.damage).toBe(0);
+    // Player takes 3 trample damage (5 - 2 lethal = 3 overflow)
+    expect(state.players[1].life).toBe(37);
+  });
+});

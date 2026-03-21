@@ -1,10 +1,10 @@
-import { GameState, Phase, StackItem, SpellStackItem, TriggeredAbilityStackItem, isSpellStackItem, isTriggeredAbilityStackItem, TriggeredAbilityRef } from './types';
+import { GameState, Phase, StackItem, SpellStackItem, TriggeredAbilityStackItem, isSpellStackItem, isTriggeredAbilityStackItem, isActivatedAbilityStackItem, TriggeredAbilityRef } from './types';
 import { getCardDefinition } from './game-state';
 import { parseManaString, canPayCost, payManaCost } from './mana';
 import { getOverride } from './effects/overrides';
 import { parseOracleText } from './effects/parser';
 import { executeEffectsWithSBA } from './effects/executor';
-import { validateTargetChoices, TargetSpec } from './effects/targets';
+import { validateTargetChoices, TargetSpec, TargetType } from './effects/targets';
 import { checkStateBasedActions } from './state-based';
 import type { Effect } from './effects/ast';
 
@@ -59,7 +59,7 @@ export function canCastSpell(state: GameState, playerId: string, cardInstanceId:
   return true;
 }
 
-export function castSpell(state: GameState, playerId: string, cardInstanceId: string, targets: string[] = []): GameState {
+export function castSpell(state: GameState, playerId: string, cardInstanceId: string, targets: string[] = [], chosenModes?: number[]): GameState {
   if (!canCastSpell(state, playerId, cardInstanceId)) {
     throw new Error('Cannot cast spell');
   }
@@ -94,6 +94,7 @@ export function castSpell(state: GameState, playerId: string, cardInstanceId: st
     cardInstanceId,
     casterId: playerId,
     targets,
+    ...(chosenModes ? { chosenModes } : {}),
   };
 
   return {
@@ -116,25 +117,32 @@ function registerETBAbilities(state: GameState, instanceId: string): GameState {
   const def = state.cardDefinitions.get(card.definitionId);
   if (!def) return state;
 
+  const abilitiesToAdd: TriggeredAbilityRef[] = [];
+
   // Check for ETB override first
   const override = getOverride(def.id, def.name);
   if (override && override.kind === 'ETB') {
-    const newAbilities = new Map(state.battlefieldAbilities);
-    const existing = newAbilities.get(instanceId) || [];
-    newAbilities.set(instanceId, [...existing, override.ability as TriggeredAbilityRef]);
-    return { ...state, battlefieldAbilities: newAbilities };
+    abilitiesToAdd.push(override.ability as TriggeredAbilityRef);
+  } else {
+    // Try to parse oracle text for ETB
+    const parsed = parseOracleText(def.oracle_text);
+    if (parsed.kind === 'ETB') {
+      abilitiesToAdd.push(parsed.ability as TriggeredAbilityRef);
+    }
   }
 
-  // Try to parse oracle text for ETB
-  const parsed = parseOracleText(def.oracle_text);
-  if (parsed.kind === 'ETB') {
-    const newAbilities = new Map(state.battlefieldAbilities);
-    const existing = newAbilities.get(instanceId) || [];
-    newAbilities.set(instanceId, [...existing, parsed.ability as TriggeredAbilityRef]);
-    return { ...state, battlefieldAbilities: newAbilities };
+  // Also check for dies triggers
+  const parsedForDies = parseOracleText(def.oracle_text);
+  if (parsedForDies.kind === 'Dies') {
+    abilitiesToAdd.push(parsedForDies.ability as TriggeredAbilityRef);
   }
 
-  return state;
+  if (abilitiesToAdd.length === 0) return state;
+
+  const newAbilities = new Map(state.battlefieldAbilities);
+  const existing = newAbilities.get(instanceId) || [];
+  newAbilities.set(instanceId, [...existing, ...abilitiesToAdd]);
+  return { ...state, battlefieldAbilities: newAbilities };
 }
 
 /**
@@ -212,6 +220,29 @@ export function resolveTopOfStack(state: GameState): GameState {
     return resultState;
   }
 
+  // Handle activated ability resolution
+  if (isActivatedAbilityStackItem(topItem)) {
+    let resultState: GameState = {
+      ...state,
+      stack: newStack,
+      hasPriorityPassed: new Array(state.players.length).fill(false),
+      priorityPlayerIndex: state.activePlayerIndex,
+    };
+
+    const effects = topItem.ability.effects as Effect[];
+    const targetSpecs = topItem.ability.targets as TargetSpec[];
+
+    resultState = executeEffectsWithSBA(
+      resultState,
+      effects,
+      topItem.controllerId,
+      topItem.targets,
+      targetSpecs,
+    );
+
+    return resultState;
+  }
+
   // Handle spell resolution (existing logic)
   const spellItem = topItem as SpellStackItem;
   const card = state.cards.get(spellItem.cardInstanceId)!;
@@ -225,10 +256,12 @@ export function resolveTopOfStack(state: GameState): GameState {
   if (isPermanent) {
     // Permanents enter the battlefield
     const isCreature = def.card_types.includes('creature');
+    const entersTapped = def.oracle_text.toLowerCase().includes('enters the battlefield tapped')
+      || def.oracle_text.toLowerCase().includes('enters tapped');
     newCards.set(card.instanceId, {
       ...card,
       zone: 'battlefield',
-      tapped: false,
+      tapped: entersTapped,
       summoningSick: isCreature,
     });
 
@@ -284,8 +317,43 @@ export function resolveTopOfStack(state: GameState): GameState {
           spellItem.targets,
           parsed.targets,
         );
+      } else if (parsed.kind === 'Modal' && spellItem.chosenModes && spellItem.chosenModes.length > 0) {
+        // Modal spell: collect effects and targets from chosen modes
+        const modal = parsed.modal;
+
+        // Validate mode count matches spell requirement
+        if (spellItem.chosenModes.length !== modal.chooseCount) {
+          throw new Error(`Modal spell requires ${modal.chooseCount} mode(s), got ${spellItem.chosenModes.length}`);
+        }
+        const allEffects: Effect[] = [];
+        const allTargetSpecs: TargetSpec[] = [];
+
+        for (const modeIndex of spellItem.chosenModes) {
+          if (modeIndex >= 0 && modeIndex < modal.choices.length) {
+            const choice = modal.choices[modeIndex];
+            allEffects.push(...choice.effects);
+            // Convert ModalChoice targets to TargetSpecs
+            for (const t of choice.targets) {
+              allTargetSpecs.push({ id: t.id, type: t.type as TargetType, count: 1 });
+            }
+          }
+        }
+
+        // Validate targets if any
+        if (allTargetSpecs.length > 0) {
+          validateTargetChoices(intermediateState, spellItem.casterId, allTargetSpecs, spellItem.targets);
+        }
+
+        // Execute effects with SBA check
+        resultState = executeEffectsWithSBA(
+          intermediateState,
+          allEffects,
+          spellItem.casterId,
+          spellItem.targets,
+          allTargetSpecs,
+        );
       } else {
-        // Unparsed spell: just resolve without effects (card still goes to graveyard)
+        // Unparsed spell (or modal with no chosenModes): just resolve without effects (card still goes to graveyard)
         // Run SBAs anyway
         resultState = checkStateBasedActions(intermediateState);
       }

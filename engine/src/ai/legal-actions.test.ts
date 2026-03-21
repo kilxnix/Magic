@@ -465,3 +465,209 @@ describe('getLegalTargets', () => {
     expect(targets).not.toContain('creature2');
   });
 });
+
+describe('Modal spell actions', () => {
+  it('generates separate CastSpell actions with chosenModes for targetless modal spell', () => {
+    const state = createTestState({
+      priorityPlayerIndex: 0,
+      activePlayerIndex: 0,
+      phase: 'precombat_main',
+    });
+
+    // Give player enough mana
+    state.players[0].manaPool = { W: 0, U: 2, B: 0, R: 0, G: 0, C: 0 };
+
+    addCard(state, 'modal1', 'p1', 'hand', {
+      name: 'Modal Charm',
+      type_line: 'Instant',
+      oracle_text: 'Choose one — • Draw a card. • Gain 3 life.',
+      mana_cost: '{1}{U}',
+      cmc: 2,
+      card_types: ['instant'],
+    });
+
+    const actions = getLegalActions(state, 'p1');
+    const castActions = actions.filter(
+      (a): a is import('./types').CastSpellAction => a.kind === 'CastSpell'
+    );
+
+    // Should have two CastSpell actions, one per mode
+    expect(castActions).toHaveLength(2);
+
+    // Mode 0: Draw a card
+    const mode0 = castActions.find(a => a.chosenModes?.[0] === 0);
+    expect(mode0).toBeDefined();
+    expect(mode0!.cardInstanceId).toBe('modal1');
+    expect(mode0!.targets).toEqual([]);
+    expect(mode0!.chosenModes).toEqual([0]);
+
+    // Mode 1: Gain 3 life
+    const mode1 = castActions.find(a => a.chosenModes?.[0] === 1);
+    expect(mode1).toBeDefined();
+    expect(mode1!.cardInstanceId).toBe('modal1');
+    expect(mode1!.targets).toEqual([]);
+    expect(mode1!.chosenModes).toEqual([1]);
+  });
+
+  it('generates CastSpell actions with targets AND chosenModes for targeted modal spell', () => {
+    const state = createTestState({
+      priorityPlayerIndex: 0,
+      activePlayerIndex: 0,
+      phase: 'precombat_main',
+    });
+
+    // Give player enough mana
+    state.players[0].manaPool = { W: 0, U: 0, B: 0, R: 2, G: 0, C: 0 };
+
+    addCard(state, 'modal2', 'p1', 'hand', {
+      name: 'Targeted Charm',
+      type_line: 'Instant',
+      oracle_text: 'Choose one — • Destroy target creature. • Draw a card.',
+      mana_cost: '{1}{R}',
+      cmc: 2,
+      card_types: ['instant'],
+    });
+
+    // Add an opponent's creature as a valid target
+    addCard(state, 'opp-creature1', 'p2', 'battlefield', {
+      name: 'Enemy Bear',
+      type_line: 'Creature — Bear',
+      card_types: ['creature'],
+      power: 2,
+      toughness: 2,
+    });
+
+    // Also add own creature so there's more than one target
+    addCard(state, 'own-creature1', 'p1', 'battlefield', {
+      name: 'Friendly Bear',
+      type_line: 'Creature — Bear',
+      card_types: ['creature'],
+      power: 2,
+      toughness: 2,
+    });
+
+    const actions = getLegalActions(state, 'p1');
+    const castActions = actions.filter(
+      (a): a is import('./types').CastSpellAction => a.kind === 'CastSpell'
+    );
+
+    // Mode 0 (Destroy target creature): one action per legal target
+    const mode0Actions = castActions.filter(a => a.chosenModes?.[0] === 0);
+    expect(mode0Actions.length).toBeGreaterThanOrEqual(1);
+    // Each mode 0 action should have exactly one target
+    for (const action of mode0Actions) {
+      expect(action.targets).toHaveLength(1);
+      expect(action.chosenModes).toEqual([0]);
+    }
+    // Should include opponent creature as a target
+    expect(mode0Actions.some(a => a.targets[0] === 'opp-creature1')).toBe(true);
+
+    // Mode 1 (Draw a card): one targetless action
+    const mode1Actions = castActions.filter(a => a.chosenModes?.[0] === 1);
+    expect(mode1Actions).toHaveLength(1);
+    expect(mode1Actions[0].targets).toEqual([]);
+    expect(mode1Actions[0].chosenModes).toEqual([1]);
+  });
+
+  it('does not add chosenModes to non-modal spells', () => {
+    const state = createTestState({
+      priorityPlayerIndex: 0,
+      activePlayerIndex: 0,
+      phase: 'precombat_main',
+    });
+
+    state.players[0].manaPool = { W: 0, U: 0, B: 0, R: 0, G: 2, C: 0 };
+
+    addCard(state, 'bear1', 'p1', 'hand', {
+      name: 'Grizzly Bears',
+      type_line: 'Creature — Bear',
+      oracle_text: '',
+      mana_cost: '{1}{G}',
+      cmc: 2,
+      card_types: ['creature'],
+      power: 2,
+      toughness: 2,
+    });
+
+    const actions = getLegalActions(state, 'p1');
+    const castActions = actions.filter(
+      (a): a is import('./types').CastSpellAction => a.kind === 'CastSpell'
+    );
+
+    expect(castActions).toHaveLength(1);
+    expect(castActions[0].cardInstanceId).toBe('bear1');
+    expect(castActions[0].chosenModes).toBeUndefined();
+  });
+
+  it('generates CastSpell actions with chosenModes for modal spell in command zone', () => {
+    const state = createTestState({
+      priorityPlayerIndex: 0,
+      activePlayerIndex: 0,
+      phase: 'precombat_main',
+    });
+
+    state.players[0].manaPool = { W: 0, U: 3, B: 0, R: 0, G: 0, C: 0 };
+
+    addCard(state, 'commander1', 'p1', 'command', {
+      name: 'Modal Commander',
+      type_line: 'Legendary Creature — Wizard',
+      oracle_text: 'Choose one — • Draw a card. • Gain 3 life.',
+      mana_cost: '{2}{U}',
+      cmc: 3,
+      card_types: ['creature'],
+      power: 2,
+      toughness: 2,
+    });
+    // Mark as commander
+    state.cards.get('commander1')!.isCommander = true;
+    state.players[0].commanderInstanceId = 'commander1';
+
+    const actions = getLegalActions(state, 'p1');
+    const castActions = actions.filter(
+      (a): a is import('./types').CastSpellAction => a.kind === 'CastSpell'
+    );
+
+    expect(castActions).toHaveLength(2);
+    expect(castActions.some(a => a.chosenModes?.length === 1 && a.chosenModes[0] === 0)).toBe(true);
+    expect(castActions.some(a => a.chosenModes?.length === 1 && a.chosenModes[0] === 1)).toBe(true);
+  });
+
+  it('generates paired modes for "Choose two" spells', () => {
+    const state = createTestState({
+      priorityPlayerIndex: 0,
+      activePlayerIndex: 0,
+      phase: 'precombat_main',
+    });
+
+    state.players[0].manaPool = { W: 0, U: 3, B: 0, R: 0, G: 0, C: 0 };
+
+    addCard(state, 'modal3', 'p1', 'hand', {
+      name: 'Choose Two Charm',
+      type_line: 'Instant',
+      oracle_text: 'Choose two — • Draw a card. • Gain 3 life. • Scry 2.',
+      mana_cost: '{2}{U}',
+      cmc: 3,
+      card_types: ['instant'],
+    });
+
+    const actions = getLegalActions(state, 'p1');
+    const castActions = actions.filter(
+      (a): a is import('./types').CastSpellAction => a.kind === 'CastSpell'
+    );
+
+    // With 3 targetless choices, should have C(3,2) = 3 combinations
+    expect(castActions).toHaveLength(3);
+
+    // Each action should have exactly 2 chosen modes
+    for (const action of castActions) {
+      expect(action.chosenModes).toHaveLength(2);
+    }
+
+    // Verify the combinations are [0,1], [0,2], [1,2]
+    const modeSets = castActions.map(a => a.chosenModes!).sort((a, b) => {
+      if (a[0] !== b[0]) return a[0] - b[0];
+      return a[1] - b[1];
+    });
+    expect(modeSets).toEqual([[0, 1], [0, 2], [1, 2]]);
+  });
+});

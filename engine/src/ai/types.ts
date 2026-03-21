@@ -13,6 +13,7 @@ export interface CastSpellAction {
   kind: 'CastSpell';
   cardInstanceId: string;
   targets: string[];
+  chosenModes?: number[];
 }
 
 /**
@@ -49,6 +50,16 @@ export interface DeclareBlockersAction {
 }
 
 /**
+ * An action to activate a non-mana ability on a permanent.
+ */
+export interface ActivateAbilityAction {
+  kind: 'ActivateAbility';
+  cardInstanceId: string;
+  abilityIndex: number;
+  targets: string[];
+}
+
+/**
  * An action to pass priority.
  */
 export interface PassPriorityAction {
@@ -62,6 +73,7 @@ export type AIAction =
   | CastSpellAction
   | PlayLandAction
   | ActivateManaAbilityAction
+  | ActivateAbilityAction
   | DeclareAttackersAction
   | DeclareBlockersAction
   | PassPriorityAction;

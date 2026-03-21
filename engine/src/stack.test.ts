@@ -329,3 +329,161 @@ describe('Stack', () => {
     });
   });
 });
+
+describe('Modal spell resolution', () => {
+  function makeModalInstant(): CardDefinition {
+    return {
+      id: 'modal-charm-1', name: 'Test Charm', type_line: 'Instant',
+      oracle_text: 'Choose one — • ~ deals 3 damage to target creature. • Draw a card.',
+      mana_cost: '{R}', cmc: 1,
+      colors: ['R'], color_identity: ['R'], keywords: [],
+      card_types: ['instant'],
+    };
+  }
+
+  function makeTargetCreature(): CardDefinition {
+    return {
+      id: 'target-bear-1', name: 'Target Bear', type_line: 'Creature — Bear',
+      oracle_text: '', mana_cost: '{1}{G}', cmc: 2,
+      colors: ['G'], color_identity: ['G'], keywords: [],
+      card_types: ['creature'], power: 2, toughness: 4,
+    };
+  }
+
+  it('resolves modal mode 0 (deal 3 damage to target creature)', () => {
+    // Set up: player has modal instant in hand, opponent has a creature on battlefield
+    const modalCard = makeModalInstant();
+    const bearCard = makeTargetCreature();
+    const decks = [
+      { playerId: 'p1', name: 'Alice', cards: [modalCard], commanderId: 'cmd1' },
+      { playerId: 'p2', name: 'Bob', cards: [bearCard], commanderId: 'cmd2' },
+    ];
+    let state = initGameState(decks);
+
+    // Move modal instant to p1's hand
+    const charmInstance = getCardsInZone(state, 'p1', 'library')[0];
+    state.cards.set(charmInstance.instanceId, { ...charmInstance, zone: 'hand' });
+
+    // Move bear to p2's battlefield
+    const bearInstance = getCardsInZone(state, 'p2', 'library')[0];
+    state.cards.set(bearInstance.instanceId, { ...bearInstance, zone: 'battlefield' });
+
+    // Give p1 mana and set main phase
+    state.players[0].manaPool = { W: 0, U: 0, B: 0, R: 5, G: 0, C: 0 };
+    state = { ...state, phase: 'precombat_main' as any };
+
+    // Cast the modal spell targeting the bear
+    state = castSpell(state, 'p1', charmInstance.instanceId, [bearInstance.instanceId]);
+
+    // Set chosenModes on the stack item (mode 0 = deal 3 damage)
+    const topIdx = state.stack.length - 1;
+    const stackItem = state.stack[topIdx] as any;
+    state = {
+      ...state,
+      stack: [
+        ...state.stack.slice(0, topIdx),
+        { ...stackItem, chosenModes: [0] },
+      ],
+    };
+
+    // Resolve the spell
+    state = resolveTopOfStack(state);
+
+    // Verify: spell goes to graveyard
+    expect(state.cards.get(charmInstance.instanceId)!.zone).toBe('graveyard');
+    expect(state.stack).toHaveLength(0);
+
+    // Verify: bear took 3 damage
+    expect(state.cards.get(bearInstance.instanceId)!.damage).toBe(3);
+  });
+
+  it('resolves modal mode 1 (draw a card)', () => {
+    const modalCard = makeModalInstant();
+    // Add a filler card so p1 has something in library to draw
+    const fillerCard: CardDefinition = {
+      id: 'filler-1', name: 'Filler Card', type_line: 'Creature — Bear',
+      oracle_text: '', mana_cost: '{1}{G}', cmc: 2,
+      colors: ['G'], color_identity: ['G'], keywords: [],
+      card_types: ['creature'], power: 2, toughness: 2,
+    };
+    const decks = [
+      { playerId: 'p1', name: 'Alice', cards: [modalCard, fillerCard], commanderId: 'cmd1' },
+      { playerId: 'p2', name: 'Bob', cards: [], commanderId: 'cmd2' },
+    ];
+    let state = initGameState(decks);
+
+    // Move modal instant to p1's hand (it's the first card in library)
+    const p1Library = getCardsInZone(state, 'p1', 'library');
+    const charmInstance = p1Library.find(c => {
+      const def = state.cardDefinitions.get(c.definitionId);
+      return def?.name === 'Test Charm';
+    })!;
+    state.cards.set(charmInstance.instanceId, { ...charmInstance, zone: 'hand' });
+
+    // Give p1 mana and set main phase
+    state.players[0].manaPool = { W: 0, U: 0, B: 0, R: 5, G: 0, C: 0 };
+    state = { ...state, phase: 'precombat_main' as any };
+
+    // Count cards in p1's library before (should be 1: the filler card)
+    const libraryBefore = getCardsInZone(state, 'p1', 'library').length;
+    expect(libraryBefore).toBe(1);
+
+    // Cast with no targets (draw mode has none)
+    state = castSpell(state, 'p1', charmInstance.instanceId, []);
+
+    // Set chosenModes on the stack item (mode 1 = draw a card)
+    const topIdx = state.stack.length - 1;
+    const stackItem = state.stack[topIdx] as any;
+    state = {
+      ...state,
+      stack: [
+        ...state.stack.slice(0, topIdx),
+        { ...stackItem, chosenModes: [1] },
+      ],
+    };
+
+    // Resolve the spell
+    state = resolveTopOfStack(state);
+
+    // Verify: spell goes to graveyard
+    expect(state.cards.get(charmInstance.instanceId)!.zone).toBe('graveyard');
+    expect(state.stack).toHaveLength(0);
+
+    // Verify: p1 drew a card (one card moved from library to hand)
+    const libraryAfter = getCardsInZone(state, 'p1', 'library').length;
+    const handAfter = getCardsInZone(state, 'p1', 'hand').length;
+    expect(libraryAfter).toBe(libraryBefore - 1);
+    expect(handAfter).toBe(1); // drew 1 card (filler card)
+  });
+
+  it('falls through to unparsed when no chosenModes provided for modal spell', () => {
+    const modalCard = makeModalInstant();
+    const decks = [
+      { playerId: 'p1', name: 'Alice', cards: [modalCard], commanderId: 'cmd1' },
+      { playerId: 'p2', name: 'Bob', cards: [], commanderId: 'cmd2' },
+    ];
+    let state = initGameState(decks);
+
+    // Move modal instant to p1's hand
+    const charmInstance = getCardsInZone(state, 'p1', 'library')[0];
+    state.cards.set(charmInstance.instanceId, { ...charmInstance, zone: 'hand' });
+
+    // Give p1 mana and set main phase
+    state.players[0].manaPool = { W: 0, U: 0, B: 0, R: 5, G: 0, C: 0 };
+    state = { ...state, phase: 'precombat_main' as any };
+
+    const libraryBefore = getCardsInZone(state, 'p1', 'library').length;
+
+    // Cast without setting chosenModes
+    state = castSpell(state, 'p1', charmInstance.instanceId, []);
+    state = resolveTopOfStack(state);
+
+    // Verify: spell goes to graveyard (standard behavior for unparsed)
+    expect(state.cards.get(charmInstance.instanceId)!.zone).toBe('graveyard');
+    expect(state.stack).toHaveLength(0);
+
+    // Verify: no card drawn (no effects executed)
+    const libraryAfter = getCardsInZone(state, 'p1', 'library').length;
+    expect(libraryAfter).toBe(libraryBefore);
+  });
+});

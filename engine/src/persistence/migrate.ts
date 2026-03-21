@@ -67,7 +67,7 @@ export function migrateSave(save: SaveGame): SaveGameLatest {
     version = getSaveVersion(current);
 
     if (version === null) {
-      throw new Error(`Migration from version ${version - 1} produced invalid save`);
+      throw new Error('Migration produced invalid save');
     }
   }
 

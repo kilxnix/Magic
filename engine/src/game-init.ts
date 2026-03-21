@@ -266,9 +266,9 @@ export function getAIPlayers(state: GameStateWithAI): PlayerWithAI[] {
 }
 
 /**
- * Check if a player is AI.
+ * Check if a player is AI controlled (using GameStateWithAI).
  */
-export function isAIPlayer(state: GameStateWithAI, playerId: string): boolean {
+export function isAIControlled(state: GameStateWithAI, playerId: string): boolean {
   const player = state.players.find(p => p.id === playerId);
   return player?.isAI ?? false;
 }

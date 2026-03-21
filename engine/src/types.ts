@@ -54,11 +54,12 @@ export interface CardInstance {
 // Actual import is done in files that need the full type
 export interface TriggeredAbilityRef {
   kind: 'TriggeredAbility';
-  trigger: { kind: 'ETB'; who: 'self' | 'any' | 'controller' };
+  trigger: { kind: 'ETB'; who: 'self' | 'any' | 'controller' }
+    | { kind: 'Dies'; who: 'self' | 'any' };
   effects: unknown[]; // Effect[] from ast.ts
 }
 
-export type StackItemKind = 'Spell' | 'TriggeredAbility';
+export type StackItemKind = 'Spell' | 'TriggeredAbility' | 'ActivatedAbility';
 
 export interface SpellStackItem {
   kind: 'Spell';
@@ -66,6 +67,7 @@ export interface SpellStackItem {
   cardInstanceId: string;
   casterId: string;
   targets: string[];
+  chosenModes?: number[];
 }
 
 export interface TriggeredAbilityStackItem {
@@ -77,7 +79,19 @@ export interface TriggeredAbilityStackItem {
   targets: string[];
 }
 
-export type StackItem = SpellStackItem | TriggeredAbilityStackItem;
+export interface ActivatedAbilityStackItem {
+  kind: 'ActivatedAbility';
+  id: string;
+  sourceInstanceId: string;
+  controllerId: string;
+  ability: {
+    effects: unknown[]; // Effect[] from ast.ts
+    targets: { id: string; type: string }[];
+  };
+  targets: string[];
+}
+
+export type StackItem = SpellStackItem | TriggeredAbilityStackItem | ActivatedAbilityStackItem;
 
 // Legacy helper for backwards compatibility with existing code
 export function isSpellStackItem(item: StackItem): item is SpellStackItem {
@@ -86,6 +100,10 @@ export function isSpellStackItem(item: StackItem): item is SpellStackItem {
 
 export function isTriggeredAbilityStackItem(item: StackItem): item is TriggeredAbilityStackItem {
   return item.kind === 'TriggeredAbility';
+}
+
+export function isActivatedAbilityStackItem(item: StackItem): item is ActivatedAbilityStackItem {
+  return item.kind === 'ActivatedAbility';
 }
 
 export interface PendingTrigger {

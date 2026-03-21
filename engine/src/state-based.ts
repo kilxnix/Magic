@@ -1,5 +1,6 @@
-import { GameState, CardInstance } from './types';
+import { GameState, CardInstance, TriggeredAbilityRef } from './types';
 import { isIndestructible } from './keywords';
+import { getCommanderDestinationZone } from './commander';
 
 /**
  * Get effective toughness considering +1/+1 and -1/-1 counters.
@@ -40,6 +41,9 @@ export function checkStateBasedActions(state: GameState): GameState {
   const newPlayers = state.players.map(p => ({ ...p }));
   let stateChanged = true;
 
+  // Track creatures that die during SBAs (for dies triggers)
+  const creaturesDied: { instanceId: string; ownerId: string }[] = [];
+
   // SBAs are checked repeatedly until no more changes occur
   while (stateChanged) {
     stateChanged = false;
@@ -55,6 +59,11 @@ export function checkStateBasedActions(state: GameState): GameState {
       }
     }
 
+    // Helper: get destination zone applying commander replacement rule
+    const tempState = { ...state, cards: newCards, players: newPlayers };
+    const graveyardDest = (cardId: string) =>
+      getCommanderDestinationZone(tempState, cardId, 'graveyard');
+
     // 2. Creatures with 0 or less toughness die (even if indestructible)
     for (const [id, card] of newCards) {
       if (card.zone !== 'battlefield') continue;
@@ -64,7 +73,8 @@ export function checkStateBasedActions(state: GameState): GameState {
 
       const effectiveToughness = getEffectiveToughness(def, card);
       if (effectiveToughness <= 0) {
-        newCards.set(id, { ...card, zone: 'graveyard', damage: 0, tapped: false });
+        newCards.set(id, { ...card, zone: graveyardDest(id), damage: 0, tapped: false });
+        creaturesDied.push({ instanceId: id, ownerId: card.ownerId });
         stateChanged = true;
       }
     }
@@ -80,7 +90,8 @@ export function checkStateBasedActions(state: GameState): GameState {
 
       if (card.damage >= effectiveToughness && effectiveToughness > 0) {
         if (!isIndestructible(state, id)) {
-          newCards.set(id, { ...card, zone: 'graveyard', damage: 0, tapped: false });
+          newCards.set(id, { ...card, zone: graveyardDest(id), damage: 0, tapped: false });
+          creaturesDied.push({ instanceId: id, ownerId: card.ownerId });
           stateChanged = true;
         }
       }
@@ -109,10 +120,10 @@ export function checkStateBasedActions(state: GameState): GameState {
     for (const [, ownerMap] of legendaryByOwner) {
       for (const [, cards] of ownerMap) {
         if (cards.length > 1) {
-          // Keep the first, move others to graveyard
+          // Keep the first, move others to graveyard (or command zone for commanders)
           for (let i = 1; i < cards.length; i++) {
             const card = cards[i];
-            newCards.set(card.instanceId, { ...card, zone: 'graveyard', damage: 0, tapped: false });
+            newCards.set(card.instanceId, { ...card, zone: graveyardDest(card.instanceId), damage: 0, tapped: false });
             stateChanged = true;
           }
         }
@@ -141,7 +152,35 @@ export function checkStateBasedActions(state: GameState): GameState {
     }
   }
 
-  return { ...state, cards: newCards, players: newPlayers };
+  // Create pending triggers for creatures that died with dies abilities
+  let newPendingTriggers = [...(state.pendingTriggers || [])];
+  for (const died of creaturesDied) {
+    const abilities = state.battlefieldAbilities?.get(died.instanceId);
+    if (!abilities) continue;
+
+    for (const ability of abilities) {
+      if (ability.trigger.kind === 'Dies' && ability.trigger.who === 'self') {
+        newPendingTriggers.push({
+          id: `trigger_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+          sourceInstanceId: died.instanceId,
+          controllerId: died.ownerId,
+          ability,
+          requiredTargets: [],
+        });
+      }
+    }
+  }
+
+  // Clean up battlefieldAbilities for creatures that died
+  let newBattlefieldAbilities = state.battlefieldAbilities || new Map();
+  if (creaturesDied.length > 0) {
+    newBattlefieldAbilities = new Map(state.battlefieldAbilities || new Map());
+    for (const died of creaturesDied) {
+      newBattlefieldAbilities.delete(died.instanceId);
+    }
+  }
+
+  return { ...state, cards: newCards, players: newPlayers, pendingTriggers: newPendingTriggers, battlefieldAbilities: newBattlefieldAbilities };
 }
 
 /**

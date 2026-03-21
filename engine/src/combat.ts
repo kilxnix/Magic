@@ -1,4 +1,4 @@
-import { AttackerDeclaration, BlockerDeclaration, CombatState, GameState } from './types';
+import { AttackerDeclaration, BlockerDeclaration, CombatState, GameState, Player } from './types';
 import { getCardDefinition, getPlayer } from './game-state';
 import {
   canAttackThisTurn,
@@ -8,6 +8,7 @@ import {
   instanceHasKeyword,
   isLethalDamage,
 } from './keywords';
+import { checkStateBasedActions } from './state-based';
 
 export function canDeclareAttacker(state: GameState, playerId: string, cardInstanceId: string): boolean {
   const playerIndex = state.players.findIndex(p => p.id === playerId);
@@ -133,7 +134,7 @@ export function declareBlockers(state: GameState, playerId: string, blocks: Bloc
  */
 function applyLifelink(
   state: GameState,
-  newPlayers: ReturnType<typeof state.players.map>,
+  newPlayers: Player[],
   sourceId: string,
   damageDealt: number,
 ): void {
@@ -155,7 +156,7 @@ function applyLifelink(
  */
 function trackCommanderDamage(
   state: GameState,
-  newPlayers: ReturnType<typeof state.players.map>,
+  newPlayers: Player[],
   sourceId: string,
   defenderId: string,
   damageDealt: number,
@@ -201,81 +202,139 @@ function getLethalDamageAmount(
   return Math.max(0, remainingToughness);
 }
 
-export function resolveCombatDamage(state: GameState): GameState {
+/**
+ * Check if any attacker or blocker in combat has First Strike or Double Strike.
+ */
+function checkForFirstStrikers(state: GameState): boolean {
+  if (!state.combat) return false;
+
+  for (const attacker of state.combat.attackers) {
+    if (instanceHasKeyword(state, attacker.cardInstanceId, 'First Strike') ||
+        instanceHasKeyword(state, attacker.cardInstanceId, 'Double Strike')) {
+      return true;
+    }
+  }
+
+  for (const blocker of state.combat.blockers) {
+    if (instanceHasKeyword(state, blocker.cardInstanceId, 'First Strike') ||
+        instanceHasKeyword(state, blocker.cardInstanceId, 'Double Strike')) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Determine whether a creature deals damage in the given combat damage step.
+ * - 'first' step: only First Strike and Double Strike creatures deal damage
+ * - 'normal' step: non-First-Strike creatures AND Double Strike creatures deal damage
+ *   (Double Strike deals in BOTH steps)
+ */
+function creatureDealsInStep(state: GameState, instanceId: string, step: 'first' | 'normal'): boolean {
+  const hasFirstStrike = instanceHasKeyword(state, instanceId, 'First Strike');
+  const hasDoubleStrike = instanceHasKeyword(state, instanceId, 'Double Strike');
+
+  if (step === 'first') {
+    return hasFirstStrike || hasDoubleStrike;
+  } else {
+    // Normal step: creatures without first strike, plus double strikers
+    return !hasFirstStrike || hasDoubleStrike;
+  }
+}
+
+/**
+ * Resolve damage for a single combat damage step (first strike or normal).
+ * Only creatures that deal damage in this step participate.
+ * Only creatures still on the battlefield deal damage.
+ * Returns updated state with damage applied.
+ */
+function resolveDamageStep(state: GameState, step: 'first' | 'normal'): GameState {
   if (!state.combat) throw new Error("No combat state");
 
   const newCards = new Map(state.cards);
   const newPlayers = state.players.map(p => ({ ...p }));
 
-  // TODO Phase 5: First strike / double strike damage steps
-  // For now, all damage happens simultaneously in one step
-
   for (const attacker of state.combat.attackers) {
     const attackerCard = newCards.get(attacker.cardInstanceId);
-    if (!attackerCard) continue;
+    if (!attackerCard || attackerCard.zone !== 'battlefield') continue;
 
     const attackerDef = state.cardDefinitions.get(attackerCard.definitionId);
     const attackerPower = attackerDef?.power ?? 0;
+
+    // Check if attacker deals damage in this step
+    const attackerDeals = creatureDealsInStep(state, attacker.cardInstanceId, step);
 
     // Find blockers for this attacker
     const blockers = state.combat.blockers.filter(b => b.blockingAttackerId === attacker.cardInstanceId);
 
     if (blockers.length === 0) {
       // Unblocked — deal damage to defending player
-      const defenderIndex = newPlayers.findIndex(p => p.id === attacker.defendingPlayerId);
-      if (defenderIndex !== -1) {
-        newPlayers[defenderIndex].life -= attackerPower;
-        applyLifelink(state, newPlayers, attacker.cardInstanceId, attackerPower);
-        trackCommanderDamage(state, newPlayers, attacker.cardInstanceId, attacker.defendingPlayerId, attackerPower);
-      }
-    } else {
-      // Blocked — deal damage to blockers, handle trample
-      let remainingDamage = attackerPower;
-      const hasTrample = instanceHasKeyword(state, attacker.cardInstanceId, 'Trample');
-
-      // Deal damage to each blocker (in order)
-      for (const blocker of blockers) {
-        const blockerCard = newCards.get(blocker.cardInstanceId);
-        if (!blockerCard) continue;
-
-        // Calculate how much damage to assign to this blocker
-        const lethalAmount = getLethalDamageAmount(state, attacker.cardInstanceId, blocker.cardInstanceId);
-        const damageToBlocker = hasTrample
-          ? Math.min(lethalAmount, remainingDamage) // Trample: only assign lethal
-          : remainingDamage; // Normal: all damage to first blocker
-
-        if (damageToBlocker > 0) {
-          newCards.set(blockerCard.instanceId, {
-            ...blockerCard,
-            damage: blockerCard.damage + damageToBlocker,
-          });
-          remainingDamage -= damageToBlocker;
-          applyLifelink(state, newPlayers, attacker.cardInstanceId, damageToBlocker);
-        }
-
-        if (!hasTrample) break; // Without trample, all damage goes to first blocker
-      }
-
-      // Trample: excess damage to defending player
-      if (hasTrample && remainingDamage > 0) {
+      if (attackerDeals) {
         const defenderIndex = newPlayers.findIndex(p => p.id === attacker.defendingPlayerId);
         if (defenderIndex !== -1) {
-          newPlayers[defenderIndex].life -= remainingDamage;
-          applyLifelink(state, newPlayers, attacker.cardInstanceId, remainingDamage);
-          trackCommanderDamage(state, newPlayers, attacker.cardInstanceId, attacker.defendingPlayerId, remainingDamage);
+          newPlayers[defenderIndex].life -= attackerPower;
+          applyLifelink(state, newPlayers, attacker.cardInstanceId, attackerPower);
+          trackCommanderDamage(state, newPlayers, attacker.cardInstanceId, attacker.defendingPlayerId, attackerPower);
+        }
+      }
+    } else {
+      // Blocked — attacker deals damage to blockers, blockers deal damage back
+
+      // Attacker deals damage to blockers (if it deals in this step)
+      if (attackerDeals) {
+        let remainingDamage = attackerPower;
+        const hasTrample = instanceHasKeyword(state, attacker.cardInstanceId, 'Trample');
+
+        // Deal damage to each blocker (in order)
+        for (const blocker of blockers) {
+          const blockerCard = newCards.get(blocker.cardInstanceId);
+          if (!blockerCard || blockerCard.zone !== 'battlefield') continue;
+
+          // Calculate how much damage to assign to this blocker
+          // Use newCards state for getLethalDamageAmount since damage may have accumulated
+          const lethalState = { ...state, cards: newCards };
+          const lethalAmount = getLethalDamageAmount(lethalState, attacker.cardInstanceId, blocker.cardInstanceId);
+          const damageToBlocker = hasTrample
+            ? Math.min(lethalAmount, remainingDamage) // Trample: only assign lethal
+            : remainingDamage; // Normal: all damage to first blocker
+
+          if (damageToBlocker > 0) {
+            newCards.set(blockerCard.instanceId, {
+              ...blockerCard,
+              damage: blockerCard.damage + damageToBlocker,
+            });
+            remainingDamage -= damageToBlocker;
+            applyLifelink(state, newPlayers, attacker.cardInstanceId, damageToBlocker);
+          }
+
+          if (!hasTrample) break; // Without trample, all damage goes to first blocker
+        }
+
+        // Trample: excess damage to defending player
+        if (hasTrample && remainingDamage > 0) {
+          const defenderIndex = newPlayers.findIndex(p => p.id === attacker.defendingPlayerId);
+          if (defenderIndex !== -1) {
+            newPlayers[defenderIndex].life -= remainingDamage;
+            applyLifelink(state, newPlayers, attacker.cardInstanceId, remainingDamage);
+            trackCommanderDamage(state, newPlayers, attacker.cardInstanceId, attacker.defendingPlayerId, remainingDamage);
+          }
         }
       }
 
-      // Each blocker deals damage back to attacker
+      // Each blocker deals damage back to attacker (if the blocker deals in this step)
       for (const blocker of blockers) {
         const blockerCard = newCards.get(blocker.cardInstanceId);
-        if (!blockerCard) continue;
+        if (!blockerCard || blockerCard.zone !== 'battlefield') continue;
+
+        // Check if blocker deals damage in this step
+        if (!creatureDealsInStep(state, blocker.cardInstanceId, step)) continue;
 
         const blockerDef = state.cardDefinitions.get(blockerCard.definitionId);
         const blockerPower = blockerDef?.power ?? 0;
 
         const currentAttacker = newCards.get(attacker.cardInstanceId);
-        if (!currentAttacker) continue;
+        if (!currentAttacker || currentAttacker.zone !== 'battlefield') continue;
 
         newCards.set(attacker.cardInstanceId, {
           ...currentAttacker,
@@ -286,10 +345,35 @@ export function resolveCombatDamage(state: GameState): GameState {
     }
   }
 
+  // Only clear combat state after the normal damage step
+  const newCombat = step === 'normal' ? null : state.combat;
+
   return {
     ...state,
     cards: newCards,
     players: newPlayers,
-    combat: null,
+    combat: newCombat,
   };
+}
+
+export function resolveCombatDamage(state: GameState): GameState {
+  if (!state.combat) throw new Error("No combat state");
+
+  const hasFirstStrikers = checkForFirstStrikers(state);
+
+  if (!hasFirstStrikers) {
+    // No first strikers — single damage step (same behavior as before)
+    return resolveDamageStep(state, 'normal');
+  }
+
+  // Two-step combat damage:
+  // 1. First strike damage step
+  let afterFirstStrike = resolveDamageStep(state, 'first');
+
+  // 2. Check state-based actions (creatures die from first strike damage)
+  afterFirstStrike = checkStateBasedActions(afterFirstStrike);
+
+  // 3. Normal damage step (dead creatures from first strike won't deal damage
+  //    because resolveDamageStep checks zone === 'battlefield')
+  return resolveDamageStep(afterFirstStrike, 'normal');
 }

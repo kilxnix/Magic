@@ -6,7 +6,7 @@
  */
 
 import { GameState } from '../types';
-import { playLand, tapLandForMana } from '../actions';
+import { playLand, tapLandForMana, activateAbility } from '../actions';
 import { castSpell } from '../stack';
 import { declareAttackers, declareBlockers } from '../combat';
 import { passPriority } from '../priority';
@@ -36,7 +36,7 @@ export function applyAction(state: GameState, playerId: string, action: AIAction
       return tapLandForMana(state, playerId, action.cardInstanceId, action.color);
 
     case 'CastSpell':
-      return castSpell(state, playerId, action.cardInstanceId, action.targets);
+      return castSpell(state, playerId, action.cardInstanceId, action.targets, action.chosenModes);
 
     case 'DeclareAttackers':
       return declareAttackers(state, playerId, action.attacks);
@@ -44,8 +44,11 @@ export function applyAction(state: GameState, playerId: string, action: AIAction
     case 'DeclareBlockers':
       return declareBlockers(state, playerId, action.blocks);
 
+    case 'ActivateAbility':
+      return activateAbility(state, playerId, action.cardInstanceId, action.abilityIndex, action.targets);
+
     case 'PassPriority':
-      return passPriority(state, playerId);
+      return passPriority(state);
 
     default:
       // Exhaustiveness check

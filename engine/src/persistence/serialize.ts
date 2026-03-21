@@ -4,7 +4,7 @@
  * Convert GameState to/from JSON-serializable format.
  */
 
-import { GameState, CardInstance, CardDefinition, Player, StackItem, CombatState } from '../types';
+import { GameState, CardInstance, CardDefinition, Player, StackItem, TriggeredAbilityStackItem, CombatState } from '../types';
 import { hasGrudgeTracking, GameStateWithGrudges } from '../ai/grudges';
 import type {
   SerializedGameStateV1,
@@ -177,7 +177,7 @@ function deserializeStackItem(data: SerializedStackItemV1): StackItem {
       sourceInstanceId: data.sourceInstanceId!,
       controllerId: data.controllerId!,
       targets: [...data.targets],
-      ability: data.ability as StackItem['ability'],
+      ability: data.ability as TriggeredAbilityStackItem['ability'],
     };
   }
 }
@@ -265,7 +265,7 @@ export function deserializeGameState(data: SerializedGameStateV1): GameState {
     hasPriorityPassed: [...data.hasPriorityPassed],
     stack: data.stack.map(deserializeStackItem),
     combat: data.combat ? deserializeCombatState(data.combat) : null,
-    battlefieldAbilities: new Map(data.battlefieldAbilities as [string, unknown[]][]),
+    battlefieldAbilities: new Map(data.battlefieldAbilities) as GameState['battlefieldAbilities'],
     pendingTriggers: [...data.pendingTriggers] as GameState['pendingTriggers'],
   };
 

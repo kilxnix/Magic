@@ -7,7 +7,7 @@
 import { GameState, ManaColor, CardInstance, AttackerDeclaration, BlockerDeclaration } from '../types';
 import { getCardsInZone, getCardDefinition } from '../game-state';
 import { canCastSpell } from '../stack';
-import { canPlayLand } from '../actions';
+import { canPlayLand, getActivatedAbilities, canActivateAbility } from '../actions';
 import { canDeclareAttacker, canDeclareBlocker } from '../combat';
 import { getOverride } from '../effects/overrides';
 import { parseOracleText } from '../effects/parser';
@@ -17,6 +17,7 @@ import type {
   CastSpellAction,
   PlayLandAction,
   ActivateManaAbilityAction,
+  ActivateAbilityAction,
   DeclareAttackersAction,
   DeclareBlockersAction,
   PassPriorityAction,
@@ -132,6 +133,70 @@ export function getLegalTargets(
 /**
  * Generate all legal cast spell actions (without targets).
  */
+function generateModalActions(
+  state: GameState,
+  playerId: string,
+  card: CardInstance,
+  actions: CastSpellAction[],
+  parsed: ReturnType<typeof parseOracleText>,
+): boolean {
+  if (parsed.kind !== 'Modal') return false;
+
+  const modal = parsed.modal;
+
+  if (modal.chooseCount === 1) {
+    for (let i = 0; i < modal.choices.length; i++) {
+      const choice = modal.choices[i];
+      if (choice.targets.length === 0) {
+        // Targetless mode
+        actions.push({
+          kind: 'CastSpell',
+          cardInstanceId: card.instanceId,
+          targets: [],
+          chosenModes: [i],
+        });
+      } else {
+        // Mode with targets — get legal targets for each target spec
+        const specs: TargetSpec[] = choice.targets.map(t => ({
+          id: t.id,
+          type: t.type as any,
+          count: 1,
+        }));
+        if (specs.length === 1) {
+          const legalTargets = getLegalTargets(state, playerId, specs[0]);
+          for (const target of legalTargets) {
+            actions.push({
+              kind: 'CastSpell',
+              cardInstanceId: card.instanceId,
+              targets: [target],
+              chosenModes: [i],
+            });
+          }
+        }
+      }
+    }
+  } else if (modal.chooseCount === 2 && modal.choices.length >= 2) {
+    // Generate pairs of modes
+    for (let i = 0; i < modal.choices.length; i++) {
+      for (let j = i + 1; j < modal.choices.length; j++) {
+        // For simplicity, only generate targetless combinations in v0
+        const ci = modal.choices[i];
+        const cj = modal.choices[j];
+        if (ci.targets.length === 0 && cj.targets.length === 0) {
+          actions.push({
+            kind: 'CastSpell',
+            cardInstanceId: card.instanceId,
+            targets: [],
+            chosenModes: [i, j],
+          });
+        }
+      }
+    }
+  }
+
+  return true;
+}
+
 function generateCastSpellActions(state: GameState, playerId: string): CastSpellAction[] {
   const actions: CastSpellAction[] = [];
 
@@ -139,6 +204,14 @@ function generateCastSpellActions(state: GameState, playerId: string): CastSpell
   const hand = getCardsInZone(state, playerId, 'hand');
   for (const card of hand) {
     if (canCastSpell(state, playerId, card.instanceId)) {
+      // Check for modal spells first
+      const def = getCardDefinition(state, card);
+      const parsed = parseOracleText(def.oracle_text, def.mana_cost);
+
+      if (generateModalActions(state, playerId, card, actions, parsed)) {
+        continue; // Skip normal spell handling for modal spells
+      }
+
       // Get target specs for this spell
       const specs = getSpellTargetSpecs(state, card);
 
@@ -171,6 +244,14 @@ function generateCastSpellActions(state: GameState, playerId: string): CastSpell
   const commandZone = getCardsInZone(state, playerId, 'command');
   for (const card of commandZone) {
     if (canCastSpell(state, playerId, card.instanceId)) {
+      // Check for modal spells first
+      const def = getCardDefinition(state, card);
+      const parsed = parseOracleText(def.oracle_text, def.mana_cost);
+
+      if (generateModalActions(state, playerId, card, actions, parsed)) {
+        continue; // Skip normal spell handling for modal commanders
+      }
+
       const specs = getSpellTargetSpecs(state, card);
       if (specs.length === 0) {
         actions.push({
@@ -225,6 +306,32 @@ function generateManaActions(state: GameState, playerId: string): ActivateManaAb
         kind: 'ActivateManaAbility',
         cardInstanceId: card.instanceId,
         color,
+      });
+    }
+  }
+
+  return actions;
+}
+
+/**
+ * Generate activated ability actions for non-mana abilities.
+ */
+function generateActivateAbilityActions(state: GameState, playerId: string): ActivateAbilityAction[] {
+  const actions: ActivateAbilityAction[] = [];
+
+  const battlefield = getCardsInZone(state, playerId, 'battlefield');
+  for (const card of battlefield) {
+    const abilities = getActivatedAbilities(state, card.instanceId);
+    for (let i = 0; i < abilities.length; i++) {
+      if (!canActivateAbility(state, playerId, card.instanceId, i)) continue;
+      // Non-mana abilities only (mana abilities handled separately)
+      if (abilities[i].isManaAbility) continue;
+
+      actions.push({
+        kind: 'ActivateAbility',
+        cardInstanceId: card.instanceId,
+        abilityIndex: i,
+        targets: [], // Targets will be enhanced by AI targeting logic
       });
     }
   }
@@ -411,6 +518,9 @@ export function getLegalActions(state: GameState, playerId: string): AIAction[] 
 
   // Mana abilities (special action, doesn't use stack)
   actions.push(...generateManaActions(state, playerId));
+
+  // Activated abilities (non-mana, uses stack)
+  actions.push(...generateActivateAbilityActions(state, playerId));
 
   // Always can pass priority
   actions.push(generatePassAction());

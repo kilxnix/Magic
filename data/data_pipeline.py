@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import sys
 import json
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional
@@ -212,6 +213,22 @@ def main() -> None:
     search_p.add_argument("query")
     search_p.add_argument("-k", type=int, default=10)
     search_p.set_defaults(func=_cmd_search)
+
+    # Support "all" shortcut to run full pipeline
+    if len(sys.argv) > 1 and sys.argv[1] == "all":
+        force = "--force" in sys.argv
+        steps = [
+            ("Downloading Scryfall bulk data", _cmd_download),
+            ("Extracting Commander-legal cards", _cmd_extract),
+            ("Building embeddings", _cmd_embed),
+            ("Building FAISS index", _cmd_index),
+        ]
+        for i, (label, func) in enumerate(steps, 1):
+            print(f"\n[{i}/4] {label}...")
+            func(argparse.Namespace(force=force, legal=[], batch_size=256))
+            print(f"[{i}/4] {label} — done!")
+        print("\nPipeline complete!")
+        return
 
     args = parser.parse_args()
     args.func(args)

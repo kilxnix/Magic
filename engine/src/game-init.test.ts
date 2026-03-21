@@ -5,7 +5,7 @@ import {
   resetInstanceCounter,
   getHumanPlayer,
   getAIPlayers,
-  isAIPlayer,
+  isAIControlled,
 } from './game-init';
 import type { GeneratedDeck, ScryfallCard } from './cards/deck-loader';
 import { createCardLookup } from './cards/deck-loader';
@@ -411,7 +411,7 @@ describe('helper functions', () => {
     });
   });
 
-  describe('isAIPlayer', () => {
+  describe('isAIControlled', () => {
     it('returns true for AI player', () => {
       const config: GameInitConfig = {
         humanDeck: createTestDeck('Human Commander'),
@@ -422,7 +422,7 @@ describe('helper functions', () => {
 
       const state = initGameFromDecks(config);
 
-      expect(isAIPlayer(state, 'ai1')).toBe(true);
+      expect(isAIControlled(state, 'ai1')).toBe(true);
     });
 
     it('returns false for human player', () => {
@@ -435,7 +435,7 @@ describe('helper functions', () => {
 
       const state = initGameFromDecks(config);
 
-      expect(isAIPlayer(state, 'human')).toBe(false);
+      expect(isAIControlled(state, 'human')).toBe(false);
     });
 
     it('returns false for unknown player', () => {
@@ -448,7 +448,7 @@ describe('helper functions', () => {
 
       const state = initGameFromDecks(config);
 
-      expect(isAIPlayer(state, 'unknown')).toBe(false);
+      expect(isAIControlled(state, 'unknown')).toBe(false);
     });
   });
 });

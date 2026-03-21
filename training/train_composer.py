@@ -6,30 +6,32 @@ Commander decklists grouped by functional role (ramp, removal, draw, etc.).
 Designed for Google Colab Pro with an A100 GPU (~3-4 hours estimated training time).
 
 Usage (Colab):
-    1. Upload this file and composer_train.jsonl to your Colab session.
-    2. Run cells top-to-bottom, or use File > Save a copy as notebook
-       (Colab will treat each "# Cell N:" comment block as a cell).
-    3. Adapter is saved to "mtg-composer-adapter/".
-    4. Merged model and GGUF are exported at the end.
+    1. Run the notebook — it mounts Google Drive and loads data automatically.
+    2. Adapter is saved to "mtg-composer-adapter/".
+    3. Merged model and GGUF are exported to Google Drive at the end.
 
-Usage (standalone Python — for testing locally):
-    python training/train_composer.py
-
-Input:  composer_train.jsonl  (one {"messages": [...]} record per line)
-Output: mtg-composer-adapter/      — LoRA adapter weights
-        mtg-composer-merged/       — Full merged model (16-bit)
-        mtg-composer-gguf/         — GGUF Q8_0 for llama-cpp-python
+Input:  Google Drive / MTG-Training / composer_train.jsonl
+Output: Google Drive / MTG-Training / mtg-composer-gguf/  — GGUF Q8_0 for llama-cpp-python
 
 Note: Full deck outputs are long (99 card names + section headers).
       MAX_SEQ_LENGTH=4096 and packing=False prevent context truncation.
 """
 
 # ---------------------------------------------------------------------------
-# Cell 1: Install dependencies
+# Cell 1: Install dependencies and mount Google Drive
 # ---------------------------------------------------------------------------
 
-# In Colab, uncomment and run this cell first:
 # !pip install unsloth
+
+from google.colab import drive
+drive.mount('/content/drive')
+
+DRIVE_DIR = "/content/drive/MyDrive/MTG-Training"
+DATA_FILE = f"{DRIVE_DIR}/composer_train.jsonl"
+
+import os
+assert os.path.exists(DATA_FILE), f"Data file not found at {DATA_FILE}. Run upload_to_drive.py first."
+print(f"Data file found: {DATA_FILE} ({os.path.getsize(DATA_FILE) / 1e6:.1f} MB)")
 
 # ---------------------------------------------------------------------------
 # Cell 2: Load Qwen3.5-4B-Instruct with Unsloth + LoRA
@@ -41,7 +43,7 @@ MAX_SEQ_LENGTH = 4096     # Full deck outputs require long context (~1500-2500 t
 LOAD_IN_4BIT = True       # QLoRA — keeps VRAM under 16 GB on A100
 
 model, tokenizer = FastLanguageModel.from_pretrained(
-    model_name="Qwen/Qwen2.5-4B-Instruct",   # Qwen3.5-4B-Instruct when available on HF
+    model_name="unsloth/Qwen3-4B",
     max_seq_length=MAX_SEQ_LENGTH,
     load_in_4bit=LOAD_IN_4BIT,
     dtype=None,            # Auto-detect: bfloat16 on A100
@@ -78,7 +80,7 @@ from datasets import load_dataset
 
 dataset = load_dataset(
     "json",
-    data_files="composer_train.jsonl",
+    data_files=DATA_FILE,
     split="train",
 )
 
@@ -169,4 +171,16 @@ model.save_pretrained_gguf(
     quantization_method="q8_0",
 )
 print("GGUF model saved to mtg-composer-gguf/")
-print("Done! Upload mtg-composer-gguf/ to your local models/Qwen35/adapters/mtg-composer/")
+
+# ---------------------------------------------------------------------------
+# Cell 8: Copy GGUF to Google Drive for easy download
+# ---------------------------------------------------------------------------
+
+import shutil
+
+drive_output = f"{DRIVE_DIR}/mtg-composer-gguf"
+if os.path.exists(drive_output):
+    shutil.rmtree(drive_output)
+shutil.copytree("mtg-composer-gguf", drive_output)
+print(f"GGUF model copied to Google Drive: {drive_output}")
+print("Download this folder to your local models/Qwen35/mtg-composer-gguf/")

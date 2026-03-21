@@ -5,27 +5,29 @@ Trains a LoRA adapter on Qwen3.5-4B-Instruct to rate card-commander fit (0-10).
 Designed for Google Colab Pro with an A100 GPU (~1 hour estimated training time).
 
 Usage (Colab):
-    1. Upload this file and scorer_train.jsonl to your Colab session.
-    2. Run cells top-to-bottom, or use File > Save a copy as notebook
-       (Colab will treat each "# Cell N:" comment block as a cell).
-    3. Adapter is saved to "mtg-scorer-adapter/".
-    4. Merged model and GGUF are exported at the end.
+    1. Run the notebook — it mounts Google Drive and loads data automatically.
+    2. Adapter is saved to "mtg-scorer-adapter/".
+    3. Merged model and GGUF are exported to Google Drive at the end.
 
-Usage (standalone Python — for testing locally):
-    python training/train_scorer.py
-
-Input:  scorer_train.jsonl  (one {"messages": [...]} record per line)
-Output: mtg-scorer-adapter/      — LoRA adapter weights
-        mtg-scorer-merged/       — Full merged model (16-bit)
-        mtg-scorer-gguf/         — GGUF Q8_0 for llama-cpp-python
+Input:  Google Drive / MTG-Training / scorer_train.jsonl
+Output: Google Drive / MTG-Training / mtg-scorer-gguf/  — GGUF Q8_0 for llama-cpp-python
 """
 
 # ---------------------------------------------------------------------------
-# Cell 1: Install dependencies
+# Cell 1: Install dependencies and mount Google Drive
 # ---------------------------------------------------------------------------
 
-# In Colab, uncomment and run this cell first:
 # !pip install unsloth
+
+from google.colab import drive
+drive.mount('/content/drive')
+
+DRIVE_DIR = "/content/drive/MyDrive/MTG-Training"
+DATA_FILE = f"{DRIVE_DIR}/scorer_train.jsonl"
+
+import os
+assert os.path.exists(DATA_FILE), f"Data file not found at {DATA_FILE}. Run upload_to_drive.py first."
+print(f"Data file found: {DATA_FILE} ({os.path.getsize(DATA_FILE) / 1e6:.1f} MB)")
 
 # ---------------------------------------------------------------------------
 # Cell 2: Load Qwen3.5-4B-Instruct with Unsloth + LoRA
@@ -37,7 +39,7 @@ MAX_SEQ_LENGTH = 512      # Scorer inputs are short (single card rating)
 LOAD_IN_4BIT = True       # QLoRA — keeps VRAM under 16 GB on A100
 
 model, tokenizer = FastLanguageModel.from_pretrained(
-    model_name="Qwen/Qwen2.5-4B-Instruct",   # Qwen3.5-4B-Instruct when available on HF
+    model_name="unsloth/Qwen3-4B",
     max_seq_length=MAX_SEQ_LENGTH,
     load_in_4bit=LOAD_IN_4BIT,
     dtype=None,            # Auto-detect: bfloat16 on A100
@@ -74,7 +76,7 @@ from datasets import load_dataset
 
 dataset = load_dataset(
     "json",
-    data_files="scorer_train.jsonl",
+    data_files=DATA_FILE,
     split="train",
 )
 
@@ -165,4 +167,16 @@ model.save_pretrained_gguf(
     quantization_method="q8_0",
 )
 print("GGUF model saved to mtg-scorer-gguf/")
-print("Done! Upload mtg-scorer-gguf/ to your local models/Qwen35/adapters/mtg-scorer/")
+
+# ---------------------------------------------------------------------------
+# Cell 8: Copy GGUF to Google Drive for easy download
+# ---------------------------------------------------------------------------
+
+import shutil
+
+drive_output = f"{DRIVE_DIR}/mtg-scorer-gguf"
+if os.path.exists(drive_output):
+    shutil.rmtree(drive_output)
+shutil.copytree("mtg-scorer-gguf", drive_output)
+print(f"GGUF model copied to Google Drive: {drive_output}")
+print("Download this folder to your local models/Qwen35/mtg-scorer-gguf/")

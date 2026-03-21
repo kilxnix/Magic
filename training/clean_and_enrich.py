@@ -48,7 +48,9 @@ JACCARD_THRESHOLD = 0.90
 MIN_RESOLUTION_RATE = 0.95
 
 # Minimum total card count (cards + lands) to accept a deck
-MIN_TOTAL_CARDS = 98
+# EDHREC average decks typically have 90-95 cards (aggregated consensus),
+# so we use 85 to include this curated data
+MIN_TOTAL_CARDS = 85
 
 # Fast-mana cards used in bracket estimation
 FAST_MANA_CARDS: Set[str] = {

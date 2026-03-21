@@ -22,24 +22,33 @@ export function isOwnersCommander(state: GameState, cardInstanceId: string): boo
 }
 
 /**
- * Apply the commander replacement rule when moving a card to graveyard or exile.
- * If the card is a commander, it goes to the command zone instead.
+ * Apply the commander replacement rule when moving a card to graveyard, exile, or hand.
+ * If the card is a commander, it can go to the command zone instead.
  *
- * Returns the appropriate destination zone.
+ * Per MTG rules (903.9a): If a commander would be put into its owner's hand, graveyard,
+ * or exile from anywhere, that player may put it into the command zone instead.
+ *
+ * The `ownerChoosesCommandZone` parameter controls whether the owner opts for command zone.
+ * When null/undefined, defaults to true for graveyard/exile, false for hand.
  */
 export function getCommanderDestinationZone(
   state: GameState,
   cardInstanceId: string,
-  intendedZone: Zone
+  intendedZone: Zone,
+  ownerChoosesCommandZone?: boolean,
 ): Zone {
-  // Only applies to graveyard and exile
-  if (intendedZone !== 'graveyard' && intendedZone !== 'exile') {
+  // Only applies to graveyard, exile, and hand
+  if (intendedZone !== 'graveyard' && intendedZone !== 'exile' && intendedZone !== 'hand') {
     return intendedZone;
   }
 
   // Check if this is the owner's commander
   if (isOwnersCommander(state, cardInstanceId)) {
-    return 'command';
+    // Default: always redirect from graveyard/exile, never from hand (unless explicitly chosen)
+    const choosesCommandZone = ownerChoosesCommandZone ?? (intendedZone !== 'hand');
+    if (choosesCommandZone) {
+      return 'command';
+    }
   }
 
   return intendedZone;
@@ -52,12 +61,13 @@ export function getCommanderDestinationZone(
 export function moveCardWithCommanderReplacement(
   state: GameState,
   cardInstanceId: string,
-  intendedZone: Zone
+  intendedZone: Zone,
+  ownerChoosesCommandZone?: boolean,
 ): GameState {
   const card = state.cards.get(cardInstanceId);
   if (!card) return state;
 
-  const finalZone = getCommanderDestinationZone(state, cardInstanceId, intendedZone);
+  const finalZone = getCommanderDestinationZone(state, cardInstanceId, intendedZone, ownerChoosesCommandZone);
 
   const newCards = new Map(state.cards);
   const updatedCard: CardInstance = {

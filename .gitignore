@@ -32,8 +32,13 @@ logs/
 # Large data files
 drive-download-*/
 final-model-*/
-models/*.ckpt
+models/
 mtg_data/
+data/*.zip
+data/raw_*.jsonl
+data/*_progress.json
+data/*_train.jsonl
+data/training_decks.jsonl
 
 # Node
 node_modules/

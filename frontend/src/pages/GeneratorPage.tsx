@@ -2,10 +2,10 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Deck, Commander, Bracket, DeckRequest } from '../types';
 import { DeckHistory } from '../components/DeckHistory';
-import { DeckDisplay } from '../components/DeckDisplay';
+import { DeckVisualView } from '../components/DeckVisualView';
 import { LiveRibbon } from '../components/LiveRibbon';
 import { AdPlaceholder } from '../components/AdPlaceholder';
-import { Menu, X, TrendingDown } from 'lucide-react';
+import { Menu, X, TrendingDown, RefreshCw, Lock } from 'lucide-react';
 
 // API functions
 async function fetchCommanders(query: string = ''): Promise<Commander[]> {
@@ -107,6 +107,15 @@ export function GeneratorPage() {
   const [showCommanderDropdown, setShowCommanderDropdown] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
+  // Regeneration state
+  const [lockedCards, setLockedCards] = useState<Set<string>>(new Set());
+  const [regenerationsRemaining, setRegenerationsRemaining] = useState(5);
+  const [newCards, setNewCards] = useState<Set<string>>(new Set());
+  const [coreStaples, setCoreStaples] = useState<Set<string>>(new Set());
+  const [useCheckboxFallback, setUseCheckboxFallback] = useState(false);
+  const [isRegenerating, setIsRegenerating] = useState(false);
+  const [regenerationError, setRegenerationError] = useState<string | null>(null);
+
   // Load history from localStorage on mount
   useEffect(() => {
     const deckIds = loadHistory();
@@ -174,11 +183,75 @@ export function GeneratorPage() {
         return newHistory;
       });
       setSelectedDeckId(deck.id);
+
+      // Reset regeneration state for new deck
+      setLockedCards(new Set());
+      setRegenerationsRemaining(5);
+      setNewCards(new Set());
+      setCoreStaples(new Set());
+      setRegenerationError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to generate deck');
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleRegenerate = async () => {
+    if (!selectedDeck || regenerationsRemaining <= 0) return;
+
+    setIsRegenerating(true);
+    setRegenerationError(null);
+
+    try {
+      const response = await fetch('/api/regenerate-deck', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          deck_id: selectedDeck.id,
+          kept_card_names: Array.from(lockedCards),
+          regeneration_number: 6 - regenerationsRemaining,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || 'Failed to regenerate deck');
+      }
+
+      const newDeck = await response.json();
+
+      // Update deck in history
+      setHistory(prev => {
+        const newHistory = prev.map(d => d.id === newDeck.id ? newDeck : d);
+        return newHistory;
+      });
+
+      setNewCards(new Set(newDeck.new_card_names || []));
+      setCoreStaples(new Set(newDeck.core_staples || []));
+      setRegenerationsRemaining(newDeck.regenerations_remaining);
+
+      // Clear new card highlights after 10 seconds
+      setTimeout(() => setNewCards(new Set()), 10000);
+    } catch (err) {
+      setRegenerationError(err instanceof Error ? err.message : 'Unknown error');
+    } finally {
+      setIsRegenerating(false);
+    }
+  };
+
+  const handleCardLockToggle = (cardName: string) => {
+    if (coreStaples.has(cardName)) return;
+
+    setLockedCards(prev => {
+      const next = new Set(prev);
+      if (next.has(cardName)) {
+        next.delete(cardName);
+      } else {
+        next.add(cardName);
+      }
+      return next;
+    });
   };
 
   const handleCommanderSelect = (commander: Commander) => {
@@ -189,6 +262,16 @@ export function GeneratorPage() {
 
   const handleViewDeck = (deckId: string) => {
     navigate(`/deck/${deckId}`);
+  };
+
+  const handleSelectDeck = (deck: Deck) => {
+    setSelectedDeckId(deck.id);
+    // Reset regeneration state when switching decks
+    setLockedCards(new Set());
+    setRegenerationsRemaining(5);
+    setNewCards(new Set());
+    setCoreStaples(new Set());
+    setRegenerationError(null);
   };
 
   const selectedDeck = history.find(d => d.id === selectedDeckId) || null;
@@ -224,7 +307,7 @@ export function GeneratorPage() {
           <DeckHistory
             history={history}
             selectedId={selectedDeckId}
-            onSelect={(d) => setSelectedDeckId(d.id)}
+            onSelect={handleSelectDeck}
             onViewFull={handleViewDeck}
           />
         </aside>
@@ -241,7 +324,7 @@ export function GeneratorPage() {
                 history={history}
                 selectedId={selectedDeckId}
                 onSelect={(deck) => {
-                  setSelectedDeckId(deck.id);
+                  handleSelectDeck(deck);
                   setMobileMenuOpen(false);
                 }}
                 onViewFull={(id) => {
@@ -415,7 +498,7 @@ export function GeneratorPage() {
             </div>
           ) : (
             <div className="flex-1 flex flex-col min-w-0">
-              <div className="flex justify-between items-center p-4 border-b border-stone-200 bg-white">
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 p-4 border-b border-stone-200 bg-white">
                 <div className="text-sm text-stone-500">
                   {selectedDeck.bracket_name && (
                     <span className="font-medium">
@@ -426,22 +509,81 @@ export function GeneratorPage() {
                     <span className="ml-2">| Theme: {selectedDeck.theme}</span>
                   )}
                 </div>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  {/* Regeneration Controls */}
+                  <div className="flex items-center gap-2 pr-2 border-r border-stone-300">
+                    <span className="text-xs text-stone-500 flex items-center gap-1">
+                      <Lock className="w-3 h-3" />
+                      {lockedCards.size} locked
+                    </span>
+                    <button
+                      onClick={handleRegenerate}
+                      disabled={regenerationsRemaining <= 0 || isRegenerating}
+                      className={`px-3 py-2 text-xs font-medium rounded transition-colors flex items-center gap-1.5 ${
+                        regenerationsRemaining > 0 && !isRegenerating
+                          ? 'bg-blue-600 text-white hover:bg-blue-700'
+                          : 'bg-stone-300 text-stone-500 cursor-not-allowed'
+                      }`}
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${isRegenerating ? 'animate-spin' : ''}`} />
+                      {isRegenerating ? 'Regenerating...' : `Regenerate (${regenerationsRemaining})`}
+                    </button>
+                    <button
+                      onClick={() => setUseCheckboxFallback(!useCheckboxFallback)}
+                      className="text-xs text-stone-400 hover:text-stone-600 underline"
+                    >
+                      {useCheckboxFallback ? 'Click mode' : 'Checkboxes'}
+                    </button>
+                  </div>
                   <button
                     onClick={() => handleViewDeck(selectedDeck.id)}
-                    className="px-4 py-2 bg-stone-700 text-stone-50 text-xs font-medium rounded hover:bg-stone-600 transition-colors"
+                    className="px-3 py-2 bg-stone-700 text-stone-50 text-xs font-medium rounded hover:bg-stone-600 transition-colors"
                   >
-                    Edit Deck
+                    Full View
                   </button>
                   <button
-                    onClick={() => setSelectedDeckId(null)}
-                    className="px-4 py-2 bg-stone-900 text-stone-50 text-xs font-medium rounded hover:bg-stone-800 transition-colors"
+                    onClick={() => {
+                      setSelectedDeckId(null);
+                      setLockedCards(new Set());
+                      setRegenerationsRemaining(5);
+                      setNewCards(new Set());
+                      setCoreStaples(new Set());
+                    }}
+                    className="px-3 py-2 bg-stone-900 text-stone-50 text-xs font-medium rounded hover:bg-stone-800 transition-colors"
                   >
                     Generate Another
                   </button>
                 </div>
               </div>
-              <DeckDisplay deck={selectedDeck} />
+
+              {/* Regeneration Error */}
+              {regenerationError && (
+                <div className="bg-red-50 border-b border-red-200 px-4 py-2">
+                  <div className="text-sm text-red-600">
+                    Regeneration failed: {regenerationError}
+                  </div>
+                </div>
+              )}
+
+              {/* Lock/Regenerate Tip */}
+              <div className="bg-blue-50 border-b border-blue-100 px-4 py-2">
+                <div className="text-xs text-blue-700">
+                  <strong>Tip:</strong> Click cards to lock them, then hit Regenerate to replace the unlocked cards with new options.
+                </div>
+              </div>
+
+              {/* Deck Visual View with Locking */}
+              <div className="flex-1 overflow-y-auto">
+                <DeckVisualView
+                  deck={selectedDeck}
+                  selectionMode={true}
+                  lockedCards={lockedCards}
+                  newCards={newCards}
+                  coreStaples={coreStaples}
+                  onCardLockToggle={handleCardLockToggle}
+                  useCheckboxFallback={useCheckboxFallback}
+                />
+              </div>
 
               {/* Bottom Ad below deck display */}
               <div className="flex justify-center p-4 border-t border-stone-200 bg-stone-100">

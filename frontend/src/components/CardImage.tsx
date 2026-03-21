@@ -7,6 +7,7 @@ interface CardImageProps {
   onClick?: () => void;
   showHoverZoom?: boolean;
   size?: 'normal' | 'small';
+  face?: 'back';
 }
 
 // Card skeleton that mimics an MTG card shape
@@ -51,6 +52,7 @@ export function CardImage({
   onClick,
   showHoverZoom = true,
   size = 'normal',
+  face,
 }: CardImageProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
@@ -66,6 +68,15 @@ export function CardImage({
     setHasError(false);
     setImageUrl('');
 
+    const faceParam = face ? `&face=${face}` : '';
+
+    // For back faces, go directly to Scryfall (local cache only stores front faces)
+    if (face === 'back') {
+      const scryfallUrl = `https://api.scryfall.com/cards/named?exact=${encodeURIComponent(cleanName)}${setCode ? `&set=${setCode}` : ''}&format=image&version=${size}${faceParam}`;
+      setImageUrl(scryfallUrl);
+      return;
+    }
+
     const localUrl = getLocalImageUrl(cleanName, setCode, size);
 
     // Fetch to check if it's cached or returns a redirect
@@ -80,7 +91,7 @@ export function CardImage({
           // It's JSON with a scryfall_url fallback
           const data = await res.json();
           if (data.scryfall_url) {
-            setImageUrl(data.scryfall_url);
+            setImageUrl(data.scryfall_url + faceParam);
           } else {
             setHasError(true);
           }
@@ -88,10 +99,10 @@ export function CardImage({
       })
       .catch(() => {
         // Network error - try Scryfall directly as fallback
-        const scryfallUrl = `https://api.scryfall.com/cards/named?exact=${encodeURIComponent(cleanName)}${setCode ? `&set=${setCode}` : ''}&format=image&version=${size}`;
+        const scryfallUrl = `https://api.scryfall.com/cards/named?exact=${encodeURIComponent(cleanName)}${setCode ? `&set=${setCode}` : ''}&format=image&version=${size}${faceParam}`;
         setImageUrl(scryfallUrl);
       });
-  }, [cleanName, setCode, size]);
+  }, [cleanName, setCode, size, face]);
 
   return (
     <div
