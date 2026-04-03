@@ -30,8 +30,13 @@ app = FastAPI(
 # CORS for frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
-    allow_origin_regex=r"^http://(localhost|127\.0\.0\.1|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+):5173$",
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
+    ],
+    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+)(:\d+)?$|^https://.*\.trycloudflare\.com$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -1109,6 +1114,80 @@ async def parse_deck_url(req: ParseDeckURLRequest):
     except Exception as e:
         logger.error(f"Failed to fetch deck from URL: {e}")
         raise HTTPException(status_code=502, detail=f"Failed to fetch deck: {str(e)}")
+
+
+# ---------------------------------------------------------------------------
+# Shelector API proxy (forward to agent service on port 8100)
+# ---------------------------------------------------------------------------
+from starlette.requests import Request
+from starlette.responses import Response as StarletteResponse
+
+
+@app.api_route("/shelector-api/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
+async def proxy_shelector(path: str, request: Request):
+    """Forward requests to the Shelector agent service."""
+    import httpx
+    async with httpx.AsyncClient() as client:
+        target_url = f"http://localhost:8100/{path}"
+        body = await request.body()
+        resp = await client.request(
+            method=request.method,
+            url=target_url,
+            headers={k: v for k, v in request.headers.items() if k.lower() not in ("host", "content-length")},
+            content=body,
+            params=request.query_params,
+            timeout=30.0,
+        )
+        return StarletteResponse(
+            content=resp.content,
+            status_code=resp.status_code,
+            headers=dict(resp.headers),
+        )
+
+
+# ---------------------------------------------------------------------------
+# Static file serving & SPA fallback (MUST be last)
+# ---------------------------------------------------------------------------
+import os
+from pathlib import Path
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+
+# Serve frontend production build
+FRONTEND_DIST = Path(__file__).parent.parent / "frontend" / "dist"
+
+if FRONTEND_DIST.exists():
+    # Serve static assets
+    app.mount("/assets", StaticFiles(directory=str(FRONTEND_DIST / "assets")), name="assets")
+
+    @app.get("/manifest.json")
+    async def manifest():
+        return FileResponse(str(FRONTEND_DIST / "manifest.json"))
+
+    @app.get("/manifest.webmanifest")
+    async def manifest_webmanifest():
+        return FileResponse(str(FRONTEND_DIST / "manifest.webmanifest"))
+
+    @app.get("/sw.js")
+    async def service_worker():
+        return FileResponse(str(FRONTEND_DIST / "sw.js"), media_type="application/javascript")
+
+    @app.get("/registerSW.js")
+    async def register_sw():
+        path = FRONTEND_DIST / "registerSW.js"
+        if path.exists():
+            return FileResponse(str(path), media_type="application/javascript")
+        raise HTTPException(status_code=404)
+
+    # SPA fallback: any unmatched route serves index.html
+    @app.get("/{full_path:path}")
+    async def spa_fallback(full_path: str):
+        if full_path.startswith("api/") or full_path.startswith("shelector-api/"):
+            raise HTTPException(status_code=404)
+        file_path = FRONTEND_DIST / full_path
+        if file_path.exists() and file_path.is_file():
+            return FileResponse(str(file_path))
+        return FileResponse(str(FRONTEND_DIST / "index.html"))
 
 
 if __name__ == "__main__":
