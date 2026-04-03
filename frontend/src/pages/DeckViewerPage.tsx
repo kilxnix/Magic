@@ -5,8 +5,7 @@ import { DeckDisplay } from '../components/DeckDisplay';
 import { DeckVisualView } from '../components/DeckVisualView';
 import { LiveRibbon } from '../components/LiveRibbon';
 import { AdPlaceholder } from '../components/AdPlaceholder';
-import { TestDeckModal } from '../components/TestDeckModal';
-import { Grid3X3, List, Play, RefreshCw, Lock } from 'lucide-react';
+import { Grid3X3, List, Swords, RefreshCw, Lock } from 'lucide-react';
 
 async function fetchDeck(id: string): Promise<Deck> {
   const res = await fetch(`/api/deck/${id}`);
@@ -28,7 +27,6 @@ export function DeckViewerPage() {
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('visual');
-  const [showTestModal, setShowTestModal] = useState(false);
   const [lockedCards, setLockedCards] = useState<Set<string>>(new Set());
   const [regenerationsRemaining, setRegenerationsRemaining] = useState(5);
   const [newCards, setNewCards] = useState<Set<string>>(new Set());
@@ -209,13 +207,13 @@ export function DeckViewerPage() {
                       <span className="hidden sm:inline">List</span>
                     </button>
                   </div>
-                  <button
-                    onClick={() => setShowTestModal(true)}
-                    className="px-4 py-2 bg-green-600 text-white text-sm font-medium rounded hover:bg-green-700 transition-colors flex items-center gap-2"
+                  <Link
+                    to="/play"
+                    className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-lg font-medium flex items-center gap-2"
                   >
-                    <Play className="w-4 h-4" />
-                    Test Deck
-                  </button>
+                    <Swords className="w-4 h-4" />
+                    Play This Deck
+                  </Link>
                   {/* Regeneration Controls */}
                   <div className="flex items-center gap-2 border-l border-stone-300 pl-2">
                     <span className="text-xs text-stone-500 flex items-center gap-1">
@@ -316,14 +314,6 @@ export function DeckViewerPage() {
         </aside>
       </div>
 
-      {/* Test Deck Modal */}
-      {showTestModal && (
-        <TestDeckModal
-          deckId={deck.id}
-          deckName={deck.commander}
-          onClose={() => setShowTestModal(false)}
-        />
-      )}
     </div>
   );
 }
