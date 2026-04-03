@@ -340,10 +340,10 @@ export function PlayPage() {
           </h2>
 
           {/* Tabs */}
-          <div className="flex gap-2 mb-4">
+          <div className="flex gap-2 mb-4 flex-wrap">
             <button
               onClick={() => setImportTab('url')}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+              className={`px-4 py-2.5 rounded-lg text-sm font-medium transition-colors min-h-[44px] ${
                 importTab === 'url'
                   ? 'bg-amber-600 text-white'
                   : 'bg-stone-700 text-stone-300 hover:bg-stone-600'
@@ -354,7 +354,7 @@ export function PlayPage() {
             </button>
             <button
               onClick={() => setImportTab('text')}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+              className={`px-4 py-2.5 rounded-lg text-sm font-medium transition-colors min-h-[44px] ${
                 importTab === 'text'
                   ? 'bg-amber-600 text-white'
                   : 'bg-stone-700 text-stone-300 hover:bg-stone-600'
@@ -368,7 +368,7 @@ export function PlayPage() {
             {deckHistory.length > 0 && (
               <button
                 onClick={() => setShowDeckHistory(!showDeckHistory)}
-                className="ml-auto px-3 py-2 rounded-lg text-sm bg-stone-700 text-stone-300 hover:bg-stone-600"
+                className="ml-auto px-3 py-2.5 rounded-lg text-sm bg-stone-700 text-stone-300 hover:bg-stone-600 min-h-[44px]"
               >
                 <History className="w-4 h-4 inline mr-1" />
                 Recent
@@ -514,7 +514,7 @@ export function PlayPage() {
                   <button
                     key={b}
                     onClick={() => setSpawnBracket(b)}
-                    className={`w-10 h-10 rounded-lg font-bold transition-colors ${
+                    className={`w-11 h-11 sm:w-10 sm:h-10 rounded-lg font-bold transition-colors ${
                       spawnBracket === b
                         ? 'bg-amber-600 text-white'
                         : 'bg-stone-700 text-stone-300 hover:bg-stone-600'
@@ -534,7 +534,7 @@ export function PlayPage() {
                   <button
                     key={mode}
                     onClick={() => setSpawnMode(mode)}
-                    className={`px-4 py-2 rounded-lg text-sm font-medium capitalize transition-colors ${
+                    className={`px-4 py-2.5 rounded-lg text-sm font-medium capitalize transition-colors min-h-[44px] ${
                       spawnMode === mode
                         ? 'bg-amber-600 text-white'
                         : 'bg-stone-700 text-stone-300 hover:bg-stone-600'
@@ -549,12 +549,12 @@ export function PlayPage() {
             {/* Color filter */}
             <div className="mb-4">
               <label className="text-sm text-stone-400 block mb-2">Exclude Colors</label>
-              <div className="flex gap-2">
+              <div className="flex gap-2 flex-wrap">
                 {Object.entries(COLOR_BADGES).map(([color, badge]) => (
                   <button
                     key={color}
                     onClick={() => setColorFilter(prev => ({ ...prev, [color]: !prev[color] }))}
-                    className={`w-9 h-9 rounded-full text-sm font-bold transition-all ${
+                    className={`w-11 h-11 sm:w-9 sm:h-9 rounded-full text-sm font-bold transition-all ${
                       colorFilter[color]
                         ? `${badge} ring-2 ring-offset-2 ring-offset-stone-800 ring-amber-500`
                         : 'bg-stone-700 text-stone-400'
@@ -574,7 +574,7 @@ export function PlayPage() {
                   <button
                     key={p}
                     onClick={() => setPersonality(p)}
-                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    className={`px-4 py-2.5 rounded-lg text-sm font-medium transition-colors min-h-[44px] ${
                       personality === p
                         ? 'bg-amber-600 text-white'
                         : 'bg-stone-700 text-stone-300 hover:bg-stone-600'
