@@ -16,6 +16,7 @@ from backend.database import (
 )
 from backend.card_alternatives import get_alternative_finder, CardAlternative
 from backend.price_service import get_card_prices, get_cheapest_price, get_price_category
+from backend.deck_url_parser import fetch_deck_from_url, detect_site
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -46,6 +47,7 @@ class DeckRequest(BaseModel):
         None,
         description="Budget tier: budget, affordable, moderate, premium, high_end"
     )
+    use_ai: bool = Field(False, description="Use Shelector AI to re-rank card choices")
 
 
 class RegenerateDeckRequest(BaseModel):
@@ -92,6 +94,8 @@ class DeckResponse(BaseModel):
     bracket_name: str
     theme: str
     categories: dict
+    ai_enhanced: bool = False
+    ai_reasoning: Optional[str] = None
 
 
 class CommanderInfo(BaseModel):
@@ -247,6 +251,89 @@ async def health_check():
     return {"status": "healthy"}
 
 
+SHELECTOR_URL = "http://localhost:8100"
+
+
+def _shelector_rerank(
+    commander: str,
+    theme: str,
+    bracket: int,
+    card_list: list,
+    categories: dict,
+) -> tuple[list, dict, str]:
+    """Call the Shelector /evaluate-cards endpoint to re-rank synergy cards.
+
+    Returns (improved_list, improved_categories, reasoning).
+    Falls back to originals on any error.
+    """
+    # Identify synergy/theme cards that are candidates for re-ranking.
+    # We leave core staples (ramp, removal, draw, lands, commander) untouched.
+    protected_categories = {"Ramp", "Card Draw", "Removal", "Lands", "Commander"}
+    protected_cards: set = set()
+    swappable_cards: list = []
+
+    for cat, names in categories.items():
+        if cat in protected_categories:
+            protected_cards.update(names)
+        else:
+            swappable_cards.extend(names)
+
+    if not swappable_cards:
+        return card_list, categories, ""
+
+    # Ask Shelector to rank the swappable cards
+    try:
+        resp = requests.post(
+            f"{SHELECTOR_URL}/evaluate-cards",
+            json={
+                "commander": commander,
+                "theme": theme,
+                "bracket": bracket,
+                "candidates": swappable_cards,
+                "slots_needed": len(swappable_cards),
+            },
+            timeout=90,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception as e:
+        logger.warning("Shelector rerank failed: %s", e)
+        return card_list, categories, f"Shelector unavailable: {e}"
+
+    ranked = data.get("ranked_cards", [])
+    reasoning = data.get("reasoning", "")
+
+    if not ranked:
+        return card_list, categories, reasoning
+
+    # Rebuild the card list using AI-ranked order for the swappable slots
+    # while preserving protected cards in their original positions.
+    ranked_set = set(ranked)
+    # Keep all protected cards, replace swappable section with AI ranking
+    new_list = [c for c in card_list if c in protected_cards]
+    new_list.extend(ranked)
+    # Add any swappable cards the Shelector didn't mention back
+    for c in swappable_cards:
+        if c not in ranked_set and c not in protected_cards:
+            new_list.append(c)
+
+    # Rebuild categories with AI-ranked order
+    new_categories = {}
+    for cat, names in categories.items():
+        if cat in protected_categories:
+            new_categories[cat] = names
+        else:
+            # Re-order this category's cards by their rank in the AI list
+            rank_map = {name: i for i, name in enumerate(ranked)}
+            sorted_names = sorted(
+                names,
+                key=lambda n: rank_map.get(n, len(ranked)),
+            )
+            new_categories[cat] = sorted_names
+
+    return new_list, new_categories, reasoning
+
+
 @app.post("/api/generate-deck", response_model=DeckResponse)
 async def generate_deck(request: DeckRequest):
     """
@@ -264,6 +351,9 @@ async def generate_deck(request: DeckRequest):
     - Bracket 1-2: No game changers, MLD, combos, extra turns
     - Bracket 3: Limited game changers (3), no MLD, limited combos
     - Bracket 4-5: No restrictions except banned list
+
+    When use_ai=true, the Shelector brain re-ranks synergy/theme cards
+    for better commander fit.
     """
     import uuid
     from datetime import datetime
@@ -287,6 +377,23 @@ async def generate_deck(request: DeckRequest):
     if "error" in result:
         raise HTTPException(status_code=404, detail=result["error"])
 
+    ai_enhanced = False
+    ai_reasoning = None
+
+    # Optionally enhance with Shelector AI
+    if request.use_ai:
+        improved_list, improved_categories, reasoning = _shelector_rerank(
+            commander=result["commander"],
+            theme=result.get("theme", ""),
+            bracket=result["bracket"],
+            card_list=result["list"],
+            categories=result["categories"],
+        )
+        result["list"] = improved_list
+        result["categories"] = improved_categories
+        ai_enhanced = True
+        ai_reasoning = reasoning or "Shelector evaluated card choices for this deck."
+
     deck_response = DeckResponse(
         id=str(uuid.uuid4())[:8],
         commander=result["commander"],
@@ -301,6 +408,8 @@ async def generate_deck(request: DeckRequest):
         bracket_name=result["bracket_name"],
         theme=result["theme"],
         categories=result["categories"],
+        ai_enhanced=ai_enhanced,
+        ai_reasoning=ai_reasoning,
     )
 
     # Save to database
@@ -966,6 +1075,43 @@ async def trigger_update(
         return {"status": "completed", "stats": stats}
 
 
+class ParseDeckURLRequest(BaseModel):
+    """Request model for deck URL parsing."""
+    url: str = Field(..., description="URL from Moxfield, Archidekt, TappedOut, or MTGGoldfish")
+
+
+class ParseDeckURLResponse(BaseModel):
+    """Response model for parsed deck URL."""
+    commander: Optional[str]
+    cards: List[str]
+    site: str
+    error: Optional[str] = None
+
+
+@app.post("/api/parse-deck-url", response_model=ParseDeckURLResponse)
+async def parse_deck_url(req: ParseDeckURLRequest):
+    """
+    Parse a deck URL from a supported MTG deck-building site.
+
+    Supported sites: Moxfield, Archidekt, TappedOut, MTGGoldfish.
+    Returns the commander (if detected), card list, and source site.
+    """
+    try:
+        result = fetch_deck_from_url(req.url)
+        site = detect_site(req.url)
+        return ParseDeckURLResponse(
+            commander=result.get("commander"),
+            cards=result.get("cards", []),
+            site=site or "unknown",
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Failed to fetch deck from URL: {e}")
+        raise HTTPException(status_code=502, detail=f"Failed to fetch deck: {str(e)}")
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+# reload trigger
