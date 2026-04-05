@@ -49,6 +49,9 @@ cleanup() {
     if [ ! -z "$BACKEND_PID" ]; then
         kill $BACKEND_PID 2>/dev/null || true
     fi
+    if [ ! -z "$SHELECTOR_PID" ]; then
+        kill $SHELECTOR_PID 2>/dev/null || true
+    fi
     if [ ! -z "$FRONTEND_PID" ]; then
         kill $FRONTEND_PID 2>/dev/null || true
     fi
@@ -77,17 +80,25 @@ if ! curl -s http://localhost:8000/api/health > /dev/null 2>&1; then
     echo -e "${YELLOW}Warning: Backend may not be ready yet. Check for errors above.${NC}"
 fi
 
+# Start Shelector agent server
+echo -e "${GREEN}Starting Shelector agent on http://0.0.0.0:8100${NC}"
+cd "$SCRIPT_DIR"
+python -m backend.agent.server &
+SHELECTOR_PID=$!
+
 # Start frontend
 echo -e "${GREEN}Starting frontend on http://0.0.0.0:5173${NC}"
 cd "$FRONTEND_DIR"
 npm run dev &
 FRONTEND_PID=$!
 
-echo -e "\n${GREEN}Both servers running!${NC}"
-echo "  Backend:  http://localhost:8000"
-echo "  Frontend: http://localhost:5173"
-echo "  LAN:      http://<your-ip>:5173"
-echo -e "\nPress Ctrl+C to stop both servers.\n"
+echo -e "\n${GREEN}All servers running!${NC}"
+echo "  Backend:   http://localhost:8000"
+echo "  Shelector: http://localhost:8100"
+echo "  Frontend:  http://localhost:5173"
+echo "  Chat UI:   http://localhost:5173/shelector"
+echo "  LAN:       http://<your-ip>:5173"
+echo -e "\nPress Ctrl+C to stop all servers.\n"
 
 # Wait for both processes
 wait

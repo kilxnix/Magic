@@ -6,7 +6,7 @@
  */
 
 import { GameState } from '../types';
-import { playLand, tapLandForMana, activateAbility } from '../actions';
+import { playLand, tapLandForMana, activateAbility, equipCreature } from '../actions';
 import { castSpell } from '../stack';
 import { declareAttackers, declareBlockers } from '../combat';
 import { passPriority } from '../priority';
@@ -46,6 +46,9 @@ export function applyAction(state: GameState, playerId: string, action: AIAction
 
     case 'ActivateAbility':
       return activateAbility(state, playerId, action.cardInstanceId, action.abilityIndex, action.targets);
+
+    case 'Equip':
+      return equipCreature(state, playerId, action.equipmentInstanceId, action.targetCreatureId);
 
     case 'PassPriority':
       return passPriority(state);

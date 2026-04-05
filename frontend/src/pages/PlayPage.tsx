@@ -139,7 +139,13 @@ export function PlayPage() {
 
       // Step 2: Build decklist text and run through import-deck for validation
       const lines: string[] = [];
-      if (parsed.commander) lines.push(`1 ${parsed.commander}`);
+      if (parsed.commander) {
+        // Support partner commanders ("Name A // Name B")
+        const commanders = parsed.commander.split(' // ');
+        lines.push('Commander');
+        for (const cmd of commanders) lines.push(`1 ${cmd}`);
+        lines.push('Deck');
+      }
       for (const card of parsed.cards) lines.push(`1 ${card}`);
       const listText = lines.join('\n');
 

@@ -46,6 +46,8 @@ def _minimize_card(card: Dict) -> Dict:
         "legalities": card.get("legalities"),
         "rarity": card.get("rarity"),
         "prices": card.get("prices"),
+        "power": card.get("power"),
+        "toughness": card.get("toughness"),
         "set": card.get("set"),
         "collector_number": card.get("collector_number"),
         "image_uris": card.get("image_uris"),

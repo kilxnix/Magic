@@ -1,7 +1,7 @@
 import type { GameState } from '../types';
 import { canBeTargetedByOpponent, canBeTargetedByController } from '../keywords';
 
-export type TargetType = 'Creature' | 'Player' | 'Any';
+export type TargetType = 'Creature' | 'Player' | 'Any' | 'Permanent' | 'Artifact' | 'Enchantment' | 'ArtifactOrEnchantment' | 'NonlandPermanent' | 'Spell' | 'NoncreatureSpell' | 'CreatureCardInGraveyard';
 
 export interface TargetSpec {
   /** Stable id for mapping spec -> StackItem.targets position */
@@ -67,10 +67,57 @@ export function validateTargetChoices(
         if (!isAnyTarget(state, chosenId)) {
           throw new Error(`Invalid target for ${spec.id}: expected any target, got ${chosenId}`);
         }
-      } else {
-        // Exhaustiveness
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        const _never: never = spec.type;
+      } else if (spec.type === 'Permanent' || spec.type === 'NonlandPermanent') {
+        // Any permanent on the battlefield
+        const card = state.cards.get(chosenId);
+        if (!card || card.zone !== 'battlefield') {
+          throw new Error(`Invalid target for ${spec.id}: expected permanent on battlefield, got ${chosenId}`);
+        }
+        if (spec.type === 'NonlandPermanent') {
+          const def = state.cardDefinitions.get(card.definitionId);
+          if (def && def.card_types.includes('land')) {
+            throw new Error(`Invalid target for ${spec.id}: expected nonland permanent, got land`);
+          }
+        }
+      } else if (spec.type === 'Artifact') {
+        const card = state.cards.get(chosenId);
+        if (!card || card.zone !== 'battlefield') {
+          throw new Error(`Invalid target for ${spec.id}: expected artifact on battlefield, got ${chosenId}`);
+        }
+        const def = state.cardDefinitions.get(card.definitionId);
+        if (!def || !def.card_types.includes('artifact')) {
+          throw new Error(`Invalid target for ${spec.id}: expected artifact, got ${chosenId}`);
+        }
+      } else if (spec.type === 'Enchantment') {
+        const card = state.cards.get(chosenId);
+        if (!card || card.zone !== 'battlefield') {
+          throw new Error(`Invalid target for ${spec.id}: expected enchantment on battlefield, got ${chosenId}`);
+        }
+        const def = state.cardDefinitions.get(card.definitionId);
+        if (!def || !def.card_types.includes('enchantment')) {
+          throw new Error(`Invalid target for ${spec.id}: expected enchantment, got ${chosenId}`);
+        }
+      } else if (spec.type === 'ArtifactOrEnchantment') {
+        const card = state.cards.get(chosenId);
+        if (!card || card.zone !== 'battlefield') {
+          throw new Error(`Invalid target for ${spec.id}: expected artifact or enchantment on battlefield, got ${chosenId}`);
+        }
+        const def = state.cardDefinitions.get(card.definitionId);
+        if (!def || (!def.card_types.includes('artifact') && !def.card_types.includes('enchantment'))) {
+          throw new Error(`Invalid target for ${spec.id}: expected artifact or enchantment, got ${chosenId}`);
+        }
+      } else if (spec.type === 'Spell' || spec.type === 'NoncreatureSpell') {
+        // Spells are on the stack — validated at cast time, not here
+        // Just ensure an id was provided
+      } else if (spec.type === 'CreatureCardInGraveyard') {
+        const card = state.cards.get(chosenId);
+        if (!card || card.zone !== 'graveyard') {
+          throw new Error(`Invalid target for ${spec.id}: expected card in graveyard, got ${chosenId}`);
+        }
+        const def = state.cardDefinitions.get(card.definitionId);
+        if (!def || !def.card_types.includes('creature')) {
+          throw new Error(`Invalid target for ${spec.id}: expected creature card in graveyard, got ${chosenId}`);
+        }
       }
 
       // Check hexproof/shroud for permanent targets

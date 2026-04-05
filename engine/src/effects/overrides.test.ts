@@ -102,8 +102,8 @@ describe('overrides registry', () => {
   });
 
   describe('pre-registered overrides', () => {
-    it('has Lightning Bolt registered', () => {
-      const result = getOverride('any', 'Lightning Bolt');
+    it('has Blasphemous Act registered', () => {
+      const result = getOverride('any', 'Blasphemous Act');
       expect(result).not.toBeNull();
       expect(result?.kind).toBe('Spell');
       if (result?.kind === 'Spell') {
@@ -111,19 +111,19 @@ describe('overrides registry', () => {
       }
     });
 
-    it('has Murder registered', () => {
-      const result = getOverride('any', 'Murder');
+    it('has Beast Within registered', () => {
+      const result = getOverride('any', 'Beast Within');
       expect(result).not.toBeNull();
       if (result?.kind === 'Spell') {
         expect(result.effects[0].kind).toBe('Destroy');
       }
     });
 
-    it('has Divination registered', () => {
-      const result = getOverride('any', 'Divination');
+    it('has Wrath of God registered', () => {
+      const result = getOverride('any', 'Wrath of God');
       expect(result).not.toBeNull();
       if (result?.kind === 'Spell') {
-        expect(result.effects[0].kind).toBe('Draw');
+        expect(result.effects[0].kind).toBe('Destroy');
       }
     });
   });

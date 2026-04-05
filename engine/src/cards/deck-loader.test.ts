@@ -230,25 +230,36 @@ describe('convertGeneratedDeck', () => {
     expect(() => convertGeneratedDeck(deck, lookup)).toThrow('Commander not found');
   });
 
-  it('throws for wrong card count', () => {
-    const allCards = [sampleCommander, sampleCreature, sampleLand];
+  it('pads short decks with basic lands', () => {
+    const island: ScryfallCard = {
+      id: 'island', name: 'Island', type_line: 'Basic Land — Island',
+      oracle_text: '({T}: Add {U}.)', mana_cost: '', cmc: 0,
+      colors: [], color_identity: ['U'], keywords: [],
+    };
+    const allCards = [sampleCommander, sampleCreature, sampleLand, island];
     const lookup = createCardLookup(allCards);
 
     const deck: GeneratedDeck = {
       id: 'deck-001',
       commander: 'Atraxa, Praetors\' Voice',
       list: ['Grizzly Bears', 'Forest'], // Only 2 cards
-      colors: [],
+      colors: ['U'],
       bracket: 1,
       theme: '',
     };
 
-    expect(() => convertGeneratedDeck(deck, lookup)).toThrow('Invalid deck size: expected 99 cards, got 2');
+    const result = convertGeneratedDeck(deck, lookup);
+    expect(result.library.length).toBe(99);
   });
 
-  it('throws for missing cards with helpful message', () => {
+  it('pads missing cards with basic lands when enough cards found', () => {
+    const island: ScryfallCard = {
+      id: 'island', name: 'Island', type_line: 'Basic Land — Island',
+      oracle_text: '({T}: Add {U}.)', mana_cost: '', cmc: 0,
+      colors: [], color_identity: ['U'], keywords: [],
+    };
     const testCards = create99Cards().slice(0, 90); // Only 90 cards
-    const allCards = [sampleCommander, ...testCards];
+    const allCards = [sampleCommander, island, ...testCards];
     const lookup = createCardLookup(allCards);
 
     const missingNames = [];
@@ -260,12 +271,13 @@ describe('convertGeneratedDeck', () => {
       id: 'deck-001',
       commander: 'Atraxa, Praetors\' Voice',
       list: [...testCards.map(c => c.name), ...missingNames],
-      colors: [],
+      colors: ['U'],
       bracket: 1,
       theme: '',
     };
 
-    expect(() => convertGeneratedDeck(deck, lookup)).toThrow('Cards not found');
+    const result = convertGeneratedDeck(deck, lookup);
+    expect(result.library.length).toBe(99);
   });
 });
 

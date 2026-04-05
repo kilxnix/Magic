@@ -1,9 +1,16 @@
 # backend/model_composer.py
-"""Model-based deck composer using a fine-tuned Qwen3.5-4B GGUF model."""
+"""Model-based deck composer using a fine-tuned Qwen3.5-4B model.
+
+Supports both HuggingFace safetensors (via transformers) and GGUF
+(via llama-cpp-python) backends.  Prefers GGUF when a .gguf file is
+present; otherwise loads safetensors automatically.
+"""
 
 import logging
 from pathlib import Path
 from typing import List, Optional, Tuple
+
+import torch
 
 logger = logging.getLogger(__name__)
 
@@ -20,39 +27,66 @@ COMPOSER_SYSTEM = (
 
 
 class DeckComposer:
-    """Compose Commander decks using a fine-tuned Qwen GGUF model."""
+    """Compose Commander decks using a fine-tuned Qwen model.
+
+    Loads from GGUF if available, otherwise from HuggingFace safetensors.
+    """
 
     def __init__(self):
-        self.llm = None
+        self.llm = None          # llama-cpp Llama instance
+        self.model = None        # transformers model
+        self.tokenizer = None    # transformers tokenizer
+        self._backend = None     # "transformers" or "llama_cpp"
 
     def _load_model(self):
-        """Lazy-load the Qwen GGUF composer model."""
-        if self.llm is not None:
+        """Lazy-load the composer model."""
+        if self._backend is not None:
             return
 
-        try:
-            from llama_cpp import Llama
-        except ImportError:
-            raise ImportError(
-                "llama-cpp-python required for DeckComposer. "
-                "Install with: pip install llama-cpp-python"
-            )
-
-        gguf_files = list(COMPOSER_MODEL_PATH.glob("*.gguf"))
-        if not gguf_files:
+        if not COMPOSER_MODEL_PATH.exists():
             raise FileNotFoundError(
-                f"No GGUF model file found in {COMPOSER_MODEL_PATH}"
+                f"Composer model dir not found: {COMPOSER_MODEL_PATH}"
             )
 
-        model_file = gguf_files[0]
-        logger.info(f"Loading composer model from {model_file}")
+        # Try GGUF first
+        gguf_files = list(COMPOSER_MODEL_PATH.glob("*.gguf"))
+        if gguf_files:
+            try:
+                from llama_cpp import Llama
+                model_file = gguf_files[0]
+                logger.info(f"Loading composer model (GGUF) from {model_file}")
+                self.llm = Llama(
+                    model_path=str(model_file),
+                    n_ctx=4096,
+                    n_gpu_layers=-1,
+                    verbose=False,
+                )
+                self._backend = "llama_cpp"
+                return
+            except Exception:
+                pass
 
-        self.llm = Llama(
-            model_path=str(model_file),
-            n_ctx=4096,
-            n_gpu_layers=-1,
-            verbose=False,
+        # Fall back to safetensors via transformers
+        safetensors_files = list(COMPOSER_MODEL_PATH.glob("*.safetensors"))
+        if not safetensors_files:
+            raise FileNotFoundError(
+                f"No model weights (.gguf or .safetensors) in {COMPOSER_MODEL_PATH}"
+            )
+
+        from transformers import AutoModelForCausalLM, AutoTokenizer
+
+        logger.info(f"Loading composer model (safetensors) from {COMPOSER_MODEL_PATH}")
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            str(COMPOSER_MODEL_PATH), trust_remote_code=True
         )
+        self.model = AutoModelForCausalLM.from_pretrained(
+            str(COMPOSER_MODEL_PATH),
+            dtype=torch.bfloat16,
+            device_map="auto",
+            trust_remote_code=True,
+        )
+        self.model.eval()
+        self._backend = "transformers"
 
     @staticmethod
     def _build_prompt(
@@ -207,7 +241,7 @@ class DeckComposer:
         card_db: dict,
     ) -> Tuple[List[str], List[str]]:
         """
-        Compose a Commander deck using the GGUF model.
+        Compose a Commander deck using the fine-tuned model.
 
         Args:
             commander_name: Name of the Commander card
@@ -223,26 +257,48 @@ class DeckComposer:
 
         user_prompt = self._build_prompt(commander_name, colors, bracket, theme)
 
-        # Qwen chat template format
-        full_prompt = (
-            f"<|im_start|>system\n{COMPOSER_SYSTEM}<|im_end|>\n"
-            f"<|im_start|>user\n{user_prompt}<|im_end|>\n"
-            f"<|im_start|>assistant\n"
-        )
-
         logger.info(
             f"Composing deck for {commander_name} (bracket {bracket}, theme: {theme})"
         )
 
-        output = self.llm(
-            full_prompt,
-            max_tokens=3000,
-            temperature=0.7,
-            top_p=0.9,
-            stop=["<|im_end|>"],
-        )
-
-        raw_text = output["choices"][0]["text"]
+        if self._backend == "llama_cpp":
+            full_prompt = (
+                f"<|im_start|>system\n{COMPOSER_SYSTEM}<|im_end|>\n"
+                f"<|im_start|>user\n{user_prompt}<|im_end|>\n"
+                f"<|im_start|>assistant\n"
+            )
+            output = self.llm(
+                full_prompt,
+                max_tokens=3000,
+                temperature=0.7,
+                top_p=0.9,
+                stop=["<|im_end|>"],
+            )
+            raw_text = output["choices"][0]["text"]
+        else:
+            messages = [
+                {"role": "system", "content": COMPOSER_SYSTEM},
+                {"role": "user", "content": user_prompt},
+            ]
+            input_text = self.tokenizer.apply_chat_template(
+                messages, tokenize=False, add_generation_prompt=True,
+                enable_thinking=False,
+            )
+            inputs = self.tokenizer(input_text, return_tensors="pt").to(
+                self.model.device
+            )
+            with torch.no_grad():
+                output_ids = self.model.generate(
+                    **inputs,
+                    max_new_tokens=3000,
+                    temperature=0.7,
+                    top_p=0.9,
+                    do_sample=True,
+                    pad_token_id=self.tokenizer.pad_token_id
+                        or self.tokenizer.eos_token_id,
+                )
+            new_tokens = output_ids[0][inputs["input_ids"].shape[1]:]
+            raw_text = self.tokenizer.decode(new_tokens, skip_special_tokens=True)
         cards, lands = self._parse_model_output(raw_text)
         cards, lands = self._validate_cards(cards, lands, card_db, colors)
 

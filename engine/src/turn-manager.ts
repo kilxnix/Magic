@@ -53,6 +53,7 @@ export function advanceStep(state: GameState): GameState {
     players: updatedPlayers,
     hasPriorityPassed: new Array(state.players.length).fill(false),
     priorityPlayerIndex: state.activePlayerIndex,
+    combat: state.step === 'end_of_combat' ? null : state.combat,
   };
 }
 
@@ -82,6 +83,7 @@ export function advanceToNextTurn(state: GameState): GameState {
     step: 'untap',
     turnNumber: state.turnNumber + 1,
     hasPriorityPassed: new Array(playerCount).fill(false),
+    combat: null,
   };
 }
 

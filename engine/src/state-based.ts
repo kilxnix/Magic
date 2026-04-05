@@ -180,6 +180,16 @@ export function checkStateBasedActions(state: GameState): GameState {
     }
   }
 
+  // Unattach equipment from creatures that left the battlefield
+  for (const [id, card] of newCards) {
+    if (card.attachedTo) {
+      const attachedToCard = newCards.get(card.attachedTo);
+      if (!attachedToCard || attachedToCard.zone !== 'battlefield') {
+        newCards.set(id, { ...card, attachedTo: undefined });
+      }
+    }
+  }
+
   return { ...state, cards: newCards, players: newPlayers, pendingTriggers: newPendingTriggers, battlefieldAbilities: newBattlefieldAbilities };
 }
 

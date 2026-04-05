@@ -99,23 +99,34 @@ class DeckGenerator:
         self._loaded = True
 
     def search_cards(self, query: str, k: int = 50) -> List[Dict]:
-        """Search for cards semantically matching the query."""
+        """Search for cards semantically matching the query.
+
+        Token cards (type_line contains 'Token') are automatically excluded
+        from results since they are not real cards that belong in decks.
+        """
         if not self._loaded:
             self.load()
 
         if self.index is None or self.model is None:
             return []
 
+        # Request extra results to compensate for filtered-out tokens
         query_vec = self.model.encode([query], normalize_embeddings=True).astype('float32')
-        scores, indices = self.index.search(query_vec, k)
+        scores, indices = self.index.search(query_vec, k + 20)
 
         results = []
         for idx, score in zip(indices[0], scores[0]):
             if idx == -1 or idx >= len(self.cards):
                 continue
-            card = self.cards[idx].copy()
-            card['score'] = float(score)
-            results.append(card)
+            card = self.cards[idx]
+            # Skip token cards — they are not real cards for decks
+            if self._is_token_card(card):
+                continue
+            card_copy = card.copy()
+            card_copy['score'] = float(score)
+            results.append(card_copy)
+            if len(results) >= k:
+                break
 
         return results
 
@@ -190,6 +201,11 @@ class DeckGenerator:
             if is_card_allowed_in_bracket(name, bracket, current_counts):
                 valid.append(card)
         return valid
+
+    def _is_token_card(self, card: Dict) -> bool:
+        """Check if a card is a token (not a real card that belongs in a deck)."""
+        type_line = (card.get('type_line') or '').lower()
+        return 'token' in type_line
 
     def _is_land(self, card: Dict) -> bool:
         """Check if a card is a land."""
@@ -450,6 +466,10 @@ class DeckGenerator:
 
             # Skip if already in deck
             if name in deck:
+                continue
+
+            # Skip token cards (not real cards for decks)
+            if self._is_token_card(card):
                 continue
 
             # Skip banned cards

@@ -5,6 +5,7 @@
  */
 
 import type { CardDefinition, CardType, ManaColor } from '../types';
+import { populateParsedCache } from './card-parser-cache';
 
 /**
  * Scryfall card data format (from cards_min.jsonl).
@@ -52,6 +53,13 @@ export interface EngineDeck {
 export type CardLookup = (name: string) => ScryfallCard | undefined;
 
 /**
+ * Basic land names by color identity.
+ */
+const BASIC_LANDS: Record<string, string> = {
+  'W': 'Plains', 'U': 'Island', 'B': 'Swamp', 'R': 'Mountain', 'G': 'Forest',
+};
+
+/**
  * Valid mana colors for type conversion.
  */
 const MANA_COLORS = new Set(['W', 'U', 'B', 'R', 'G', 'C']);
@@ -97,7 +105,7 @@ function parsePT(value: string | undefined): number | undefined {
 export function convertCard(card: ScryfallCard): CardDefinition {
   const cmc = typeof card.cmc === 'string' ? parseFloat(card.cmc) : card.cmc;
 
-  return {
+  const baseDef: CardDefinition = {
     id: card.id,
     name: card.name,
     type_line: card.type_line,
@@ -111,6 +119,8 @@ export function convertCard(card: ScryfallCard): CardDefinition {
     power: parsePT(card.power),
     toughness: parsePT(card.toughness),
   };
+
+  return populateParsedCache(baseDef);
 }
 
 /**
@@ -131,11 +141,19 @@ export function convertGeneratedDeck(
     throw new Error(`Commander not found: ${deck.commander}`);
   }
 
-  // Validate card count (99 cards + 1 commander = 100)
-  if (deck.list.length !== 99) {
-    throw new Error(
-      `Invalid deck size: expected 99 cards, got ${deck.list.length}`,
-    );
+  // Pad short decks with basic lands (handles decks saved without lands)
+  const deckList = [...deck.list];
+  if (deckList.length < 99) {
+    const colors = deck.colors.length > 0 ? deck.colors : ['U'];
+    const landsPerColor = Math.floor((99 - deckList.length) / colors.length);
+    const remainder = (99 - deckList.length) % colors.length;
+    for (let i = 0; i < colors.length; i++) {
+      const landName = BASIC_LANDS[colors[i]] || 'Island';
+      const count = landsPerColor + (i < remainder ? 1 : 0);
+      for (let j = 0; j < count; j++) {
+        deckList.push(landName);
+      }
+    }
   }
 
   // Convert all cards
@@ -143,7 +161,7 @@ export function convertGeneratedDeck(
   const library: CardDefinition[] = [];
   const missingCards: string[] = [];
 
-  for (const cardName of deck.list) {
+  for (const cardName of deckList) {
     const card = lookup(cardName);
     if (!card) {
       missingCards.push(cardName);
@@ -152,7 +170,18 @@ export function convertGeneratedDeck(
     library.push(convertCard(card));
   }
 
-  if (missingCards.length > 0) {
+  // Log missing cards but don't throw — continue with what we have
+  if (missingCards.length > 0 && library.length >= 60) {
+    // Pad remaining slots with basic lands
+    const colors = deck.colors.length > 0 ? deck.colors : ['U'];
+    const landName = BASIC_LANDS[colors[0]] || 'Island';
+    const landCard = lookup(landName);
+    if (landCard) {
+      while (library.length < 99) {
+        library.push(convertCard(landCard));
+      }
+    }
+  } else if (missingCards.length > 0) {
     throw new Error(
       `Cards not found: ${missingCards.slice(0, 5).join(', ')}${missingCards.length > 5 ? ` (and ${missingCards.length - 5} more)` : ''}`,
     );

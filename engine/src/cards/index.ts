@@ -14,3 +14,5 @@ export {
   createCardLookup,
   parseCardsJsonl,
 } from './deck-loader';
+
+export { populateParsedCache } from './card-parser-cache';

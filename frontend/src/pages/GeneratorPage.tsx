@@ -5,7 +5,7 @@ import { DeckHistory } from '../components/DeckHistory';
 import { DeckVisualView } from '../components/DeckVisualView';
 import { LiveRibbon } from '../components/LiveRibbon';
 import { AdPlaceholder } from '../components/AdPlaceholder';
-import { Menu, X, TrendingDown, RefreshCw, Lock } from 'lucide-react';
+import { Menu, X, TrendingDown, RefreshCw, Lock, Brain, ChevronDown, ChevronUp } from 'lucide-react';
 
 // API functions
 async function fetchCommanders(query: string = ''): Promise<Commander[]> {
@@ -100,9 +100,11 @@ export function GeneratorPage() {
   const [selectedBracket, setSelectedBracket] = useState(2);
   const [theme, setTheme] = useState('');
   const [budgetTier, setBudgetTier] = useState('');
+  const [useAI, setUseAI] = useState(false);
 
   // UI state
   const [loading, setLoading] = useState(false);
+  const [showAiReasoning, setShowAiReasoning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showCommanderDropdown, setShowCommanderDropdown] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -175,6 +177,7 @@ export function GeneratorPage() {
         bracket: selectedBracket,
         theme: theme || undefined,
         budget_tier: budgetTier || undefined,
+        use_ai: useAI || undefined,
       });
 
       setHistory(prev => {
@@ -454,6 +457,24 @@ export function GeneratorPage() {
                   </select>
                 </div>
 
+                {/* Shelector AI Toggle */}
+                <div className="flex items-center gap-3 p-3 bg-violet-50 border border-violet-200 rounded-md">
+                  <input
+                    type="checkbox"
+                    id="use-ai-toggle"
+                    checked={useAI}
+                    onChange={(e) => setUseAI(e.target.checked)}
+                    className="w-4 h-4 text-violet-600 border-stone-300 rounded focus:ring-violet-500"
+                  />
+                  <label htmlFor="use-ai-toggle" className="flex items-center gap-2 text-sm text-stone-700 cursor-pointer select-none">
+                    <Brain className="w-4 h-4 text-violet-500" />
+                    <span>
+                      <span className="font-medium">Use Shelector AI</span>
+                      <span className="text-stone-500 ml-1">— LLM re-ranks cards for better synergy</span>
+                    </span>
+                  </label>
+                </div>
+
                 {/* Error */}
                 {error && (
                   <div className="p-3 bg-red-50 border border-red-200 rounded-md text-red-700 text-sm">
@@ -471,7 +492,10 @@ export function GeneratorPage() {
                       : 'bg-stone-900 text-stone-50 hover:bg-stone-800'
                     }`}
                 >
-                  {loading ? 'Generating...' : 'Generate Deck'}
+                  {loading
+                    ? (useAI ? 'Shelector is thinking...' : 'Generating...')
+                    : (useAI ? 'Generate with AI' : 'Generate Deck')
+                  }
                 </button>
 
                 {/* Rules Info */}
@@ -562,6 +586,28 @@ export function GeneratorPage() {
                   <div className="text-sm text-red-600">
                     Regeneration failed: {regenerationError}
                   </div>
+                </div>
+              )}
+
+              {/* Shelector AI Reasoning */}
+              {selectedDeck.ai_enhanced && selectedDeck.ai_reasoning && (
+                <div className="bg-violet-50 border-b border-violet-200 px-4 py-2">
+                  <button
+                    onClick={() => setShowAiReasoning(!showAiReasoning)}
+                    className="flex items-center gap-2 text-sm text-violet-700 font-medium w-full"
+                  >
+                    <Brain className="w-4 h-4 text-violet-500" />
+                    Shelector AI enhanced this deck
+                    {showAiReasoning
+                      ? <ChevronUp className="w-4 h-4 ml-auto" />
+                      : <ChevronDown className="w-4 h-4 ml-auto" />
+                    }
+                  </button>
+                  {showAiReasoning && (
+                    <p className="mt-2 text-xs text-violet-600 whitespace-pre-wrap">
+                      {selectedDeck.ai_reasoning}
+                    </p>
+                  )}
                 </div>
               )}
 

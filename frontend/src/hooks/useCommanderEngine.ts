@@ -1676,6 +1676,24 @@ export function useCommanderEngine(): GameEngine {
             }
           }
 
+          // Pad short decks with basic lands to reach 99
+          if (expandedNames.length < 99) {
+            const landNames: Record<string, string> = {
+              'W': 'Plains', 'U': 'Island', 'B': 'Swamp', 'R': 'Mountain', 'G': 'Forest',
+            };
+            const deckColors = deck.colors.length > 0 ? deck.colors : ['U'];
+            const deficit = 99 - expandedNames.length;
+            const perColor = Math.floor(deficit / deckColors.length);
+            const remainder = deficit % deckColors.length;
+            for (let i = 0; i < deckColors.length; i++) {
+              const landName = landNames[deckColors[i]] || 'Island';
+              const count = perColor + (i < remainder ? 1 : 0);
+              for (let j = 0; j < count; j++) {
+                expandedNames.push(landName);
+              }
+            }
+          }
+
           const humanDeck: GeneratedDeck = {
             id: deck.id,
             commander: deck.commander,

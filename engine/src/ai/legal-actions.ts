@@ -4,11 +4,12 @@
  * Enumerates all legal actions available to a player from a game state.
  */
 
-import { GameState, ManaColor, CardInstance, AttackerDeclaration, BlockerDeclaration } from '../types';
+import { GameState, CardInstance, AttackerDeclaration, BlockerDeclaration } from '../types';
 import { getCardsInZone, getCardDefinition } from '../game-state';
 import { canCastSpell } from '../stack';
 import { canPlayLand, getActivatedAbilities, canActivateAbility } from '../actions';
 import { canDeclareAttacker, canDeclareBlocker } from '../combat';
+import { canPayCost } from '../mana';
 import { getOverride } from '../effects/overrides';
 import { parseOracleText } from '../effects/parser';
 import type { TargetSpec } from '../effects/targets';
@@ -21,6 +22,7 @@ import type {
   DeclareAttackersAction,
   DeclareBlockersAction,
   PassPriorityAction,
+  EquipAction,
 } from './types';
 
 /**
@@ -29,38 +31,6 @@ import type {
 export function hasPriority(state: GameState, playerId: string): boolean {
   const playerIndex = state.players.findIndex(p => p.id === playerId);
   return state.priorityPlayerIndex === playerIndex;
-}
-
-/**
- * Determine what mana colors a land can produce.
- * Simplified: basic lands produce their color, others produce colorless.
- */
-function getLandManaColors(state: GameState, card: CardInstance): ManaColor[] {
-  const def = getCardDefinition(state, card);
-  const typeLine = def.type_line.toLowerCase();
-
-  // Basic lands
-  if (typeLine.includes('plains')) return ['W'];
-  if (typeLine.includes('island')) return ['U'];
-  if (typeLine.includes('swamp')) return ['B'];
-  if (typeLine.includes('mountain')) return ['R'];
-  if (typeLine.includes('forest')) return ['G'];
-
-  // Check oracle text for mana production
-  const oracle = def.oracle_text.toLowerCase();
-  const colors: ManaColor[] = [];
-
-  if (oracle.includes('{w}') || oracle.includes('add {w}')) colors.push('W');
-  if (oracle.includes('{u}') || oracle.includes('add {u}')) colors.push('U');
-  if (oracle.includes('{b}') || oracle.includes('add {b}')) colors.push('B');
-  if (oracle.includes('{r}') || oracle.includes('add {r}')) colors.push('R');
-  if (oracle.includes('{g}') || oracle.includes('add {g}')) colors.push('G');
-  if (oracle.includes('{c}') || oracle.includes('add {c}')) colors.push('C');
-
-  // Default: colorless for unknown lands
-  if (colors.length === 0) colors.push('C');
-
-  return colors;
 }
 
 /**
@@ -297,11 +267,11 @@ function generateManaActions(state: GameState, playerId: string): ActivateManaAb
     if (card.tapped) continue;
 
     const def = getCardDefinition(state, card);
-    if (!def.card_types.includes('land')) continue;
 
-    // Get all colors this land can produce
-    const colors = getLandManaColors(state, card);
-    for (const color of colors) {
+    if (!def.manaProduction) continue;
+    if (def.manaProduction.requiresSacrifice) continue;
+
+    for (const color of def.manaProduction.colors) {
       actions.push({
         kind: 'ActivateManaAbility',
         cardInstanceId: card.instanceId,
@@ -481,6 +451,57 @@ function generateBlockerActions(state: GameState, playerId: string): DeclareBloc
 }
 
 /**
+ * Generate equip actions for equipment on the battlefield.
+ * Equip is a sorcery-speed action (main phases only, empty stack).
+ */
+function generateEquipActions(state: GameState, playerId: string): EquipAction[] {
+  const actions: EquipAction[] = [];
+
+  // Only during main phases, active player, empty stack (sorcery speed)
+  const playerIndex = state.players.findIndex(p => p.id === playerId);
+  if (state.activePlayerIndex !== playerIndex) return actions;
+  if (state.phase !== 'precombat_main' && state.phase !== 'postcombat_main') return actions;
+  if (state.stack.length > 0) return actions;
+
+  const battlefield = getCardsInZone(state, playerId, 'battlefield');
+  const creatures = battlefield.filter(c => {
+    const def = getCardDefinition(state, c);
+    return def.card_types.includes('creature');
+  });
+
+  if (creatures.length === 0) return actions;
+
+  // Find equipment on battlefield
+  const equipment = battlefield.filter(c => {
+    const def = getCardDefinition(state, c);
+    return def.isEquipment && def.equipCost;
+  });
+
+  for (const equip of equipment) {
+    const def = getCardDefinition(state, equip);
+    const equipCost = def.equipCost!;
+    const costAsMana = { W: equipCost.W, U: equipCost.U, B: equipCost.B, R: equipCost.R, G: equipCost.G, C: equipCost.C, generic: equipCost.generic };
+
+    // Check if player can pay equip cost
+    const player = state.players[playerIndex];
+    if (!canPayCost(player.manaPool, costAsMana)) continue;
+
+    // Can equip any creature you control (skip if already equipped to this creature)
+    for (const creature of creatures) {
+      if (equip.attachedTo === creature.instanceId) continue;
+
+      actions.push({
+        kind: 'Equip',
+        equipmentInstanceId: equip.instanceId,
+        targetCreatureId: creature.instanceId,
+      });
+    }
+  }
+
+  return actions;
+}
+
+/**
  * Generate the pass priority action.
  */
 function generatePassAction(): PassPriorityAction {
@@ -521,6 +542,9 @@ export function getLegalActions(state: GameState, playerId: string): AIAction[] 
 
   // Activated abilities (non-mana, uses stack)
   actions.push(...generateActivateAbilityActions(state, playerId));
+
+  // Equipment (sorcery speed, special action)
+  actions.push(...generateEquipActions(state, playerId));
 
   // Always can pass priority
   actions.push(generatePassAction());

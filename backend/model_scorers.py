@@ -294,41 +294,110 @@ def score_card_pair(
     return scores
 
 
-# Qwen3.5-4B GGUF model path
+# Qwen3.5-4B model path (supports both safetensors and GGUF)
 QWEN35_SCORER_PATH = MODELS_DIR / "Qwen35" / "mtg-scorer-gguf"
 
 
 class Qwen35Scorer:
-    """Score card-commander fit using fine-tuned Qwen3.5-4B GGUF model."""
+    """Score card-commander fit using fine-tuned Qwen3.5-4B model.
+
+    Loads from HuggingFace safetensors format via transformers.
+    Falls back to GGUF via llama-cpp-python if a .gguf file is present.
+    """
 
     def __init__(self):
-        self.llm = None
+        self.llm = None          # llama-cpp Llama instance (GGUF path)
+        self.model = None        # transformers model (safetensors path)
+        self.tokenizer = None    # transformers tokenizer
+        self._backend = None     # "transformers" or "llama_cpp"
         self._load_model()
 
     def _load_model(self):
-        """Load the Qwen3.5-4B GGUF model using llama-cpp-python."""
-        try:
-            from llama_cpp import Llama
-        except ImportError:
-            raise ImportError(
-                "llama-cpp-python required for Qwen35Scorer. "
-                "Install with: pip install llama-cpp-python"
-            )
+        """Load the scorer model, preferring GGUF if available, else safetensors."""
+        if not QWEN35_SCORER_PATH.exists():
+            raise FileNotFoundError(f"Scorer model dir not found: {QWEN35_SCORER_PATH}")
 
+        # Try GGUF first (faster inference via llama-cpp)
         gguf_files = list(QWEN35_SCORER_PATH.glob("*.gguf"))
-        if not gguf_files:
+        if gguf_files:
+            try:
+                from llama_cpp import Llama
+                self.llm = Llama(
+                    model_path=str(gguf_files[0]),
+                    n_ctx=512,
+                    n_gpu_layers=-1,
+                    n_threads=4,
+                    verbose=False,
+                )
+                self._backend = "llama_cpp"
+                return
+            except Exception:
+                pass  # Fall through to transformers
+
+        # Load from safetensors via transformers
+        safetensors_files = list(QWEN35_SCORER_PATH.glob("*.safetensors"))
+        if not safetensors_files:
             raise FileNotFoundError(
-                f"No GGUF model found in {QWEN35_SCORER_PATH}"
+                f"No model weights (.gguf or .safetensors) in {QWEN35_SCORER_PATH}"
             )
 
-        model_file = gguf_files[0]
-        self.llm = Llama(
-            model_path=str(model_file),
-            n_ctx=512,
-            n_gpu_layers=-1,
-            n_threads=4,
-            verbose=False
+        from transformers import AutoModelForCausalLM, AutoTokenizer
+
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            str(QWEN35_SCORER_PATH), trust_remote_code=True
         )
+        self.model = AutoModelForCausalLM.from_pretrained(
+            str(QWEN35_SCORER_PATH),
+            dtype=torch.bfloat16,
+            device_map="auto",
+            trust_remote_code=True,
+        )
+        self.model.eval()
+        self._backend = "transformers"
+
+    def _generate(self, prompt: str, max_tokens: int, temperature: float) -> str:
+        """Run generation on whichever backend is loaded."""
+        if self._backend == "llama_cpp":
+            output = self.llm(
+                prompt,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                stop=["<|im_end|>"],
+            )
+            return output["choices"][0]["text"].strip()
+
+        # transformers path
+        messages = self._prompt_to_messages(prompt)
+        input_text = self.tokenizer.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=True,
+            enable_thinking=False,
+        )
+        inputs = self.tokenizer(input_text, return_tensors="pt").to(self.model.device)
+        with torch.no_grad():
+            output_ids = self.model.generate(
+                **inputs,
+                max_new_tokens=max_tokens,
+                temperature=max(temperature, 0.01),
+                do_sample=temperature > 0,
+                pad_token_id=self.tokenizer.pad_token_id
+                    or self.tokenizer.eos_token_id,
+            )
+        new_tokens = output_ids[0][inputs["input_ids"].shape[1]:]
+        text = self.tokenizer.decode(new_tokens, skip_special_tokens=True)
+        return text.strip()
+
+    @staticmethod
+    def _prompt_to_messages(prompt: str) -> list:
+        """Parse a raw Qwen chat-template prompt string into messages list."""
+        import re
+        messages = []
+        for m in re.finditer(
+            r"<\|im_start\|>(system|user|assistant)\n(.*?)(?:<\|im_end\|>|$)",
+            prompt,
+            re.DOTALL,
+        ):
+            messages.append({"role": m.group(1), "content": m.group(2).strip()})
+        return messages
 
     def score_similarity(
         self,
@@ -370,14 +439,7 @@ Reply with just a number 0-10.<|im_end|>
 <|im_start|>assistant
 """
 
-        output = self.llm(
-            prompt,
-            max_tokens=50,
-            temperature=0.1,
-            stop=["<|im_end|>"]
-        )
-
-        response = output['choices'][0]['text'].strip()
+        response = self._generate(prompt, max_tokens=50, temperature=0.1)
         try:
             import re
             match = re.search(r'\d+(?:\.\d+)?', response)
@@ -426,14 +488,7 @@ Give a one-sentence trade-off summary.<|im_end|>
 <|im_start|>assistant
 """
 
-        output = self.llm(
-            prompt,
-            max_tokens=100,
-            temperature=0.7,
-            stop=["<|im_end|>"]
-        )
-
-        return output['choices'][0]['text'].strip()
+        return self._generate(prompt, max_tokens=100, temperature=0.7)
 
 
 # Singleton instance for Qwen35Scorer

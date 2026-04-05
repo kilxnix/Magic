@@ -1,3 +1,5 @@
+import type { EquipCostInfo, EquipmentBonusInfo, ManaProductionInfo, SearchAbilityInfo, UnlessTaxInfo } from './effects/ast';
+
 export type ManaColor = 'W' | 'U' | 'B' | 'R' | 'G' | 'C';
 
 export type Zone = 'library' | 'hand' | 'battlefield' | 'graveyard' | 'exile' | 'stack' | 'command';
@@ -35,6 +37,14 @@ export interface CardDefinition {
   power?: number;
   toughness?: number;
   card_types: CardType[];
+
+  // Cached parse data — populated at card load time
+  isEquipment?: boolean;
+  equipCost?: EquipCostInfo;
+  equipmentBonus?: EquipmentBonusInfo;
+  manaProduction?: ManaProductionInfo;
+  searchAbility?: SearchAbilityInfo;
+  unlessTax?: UnlessTaxInfo;
 }
 
 export interface CardInstance {
@@ -48,6 +58,10 @@ export interface CardInstance {
   attachedTo?: string;
   damage: number;
   isCommander: boolean;
+  phasedOut?: boolean; // Phase 16: true when phased out (treated as not existing)
+  grantedKeywords?: string[]; // Phase 16: temporarily granted keywords (e.g. "until end of turn")
+  isToken?: boolean; // Phase 16: true for token copies / token creatures
+  copiedFromDefinitionId?: string; // Phase 16: original definition for copy tokens
 }
 
 // Import TriggeredAbility from effects/ast (forward declaration for type safety)
@@ -55,7 +69,19 @@ export interface CardInstance {
 export interface TriggeredAbilityRef {
   kind: 'TriggeredAbility';
   trigger: { kind: 'ETB'; who: 'self' | 'any' | 'controller' }
-    | { kind: 'Dies'; who: 'self' | 'any' };
+    | { kind: 'Dies'; who: 'self' | 'any' }
+    | { kind: 'Attacks'; who: 'self' }
+    | { kind: 'Upkeep'; whose: 'yours' | 'each' }
+    | { kind: 'EndStep'; whose: 'yours' }
+    | { kind: 'AnotherCreatureETB'; controller: 'yours' }
+    | { kind: 'CreatureYouControlDies' }
+    | { kind: 'YouCastSpell' }
+    | { kind: 'LifeGain' }
+    | { kind: 'CardDrawn' }
+    | { kind: 'OpponentCastSpell' }
+    | { kind: 'AnyCreatureETB' }
+    | { kind: 'CastInstantOrSorcery' }
+    | { kind: 'Landfall' };
   effects: unknown[]; // Effect[] from ast.ts
 }
 
@@ -77,6 +103,10 @@ export interface TriggeredAbilityStackItem {
   controllerId: string;
   ability: TriggeredAbilityRef;
   targets: string[];
+  eventContext?: {
+    casterId?: string;
+    cardInstanceId?: string;
+  };
 }
 
 export interface ActivatedAbilityStackItem {
@@ -112,6 +142,10 @@ export interface PendingTrigger {
   controllerId: string;
   ability: TriggeredAbilityRef;
   requiredTargets: unknown[]; // TargetSpec[] from targets.ts
+  eventContext?: {
+    casterId?: string;        // Who cast the spell that triggered this
+    cardInstanceId?: string;  // The spell that was cast
+  };
 }
 
 export interface AttackerDeclaration {
@@ -153,6 +187,23 @@ export interface Player {
   hasLost: boolean;
 }
 
+// Phase 15: Forward declaration for continuous effects (actual type in effects/continuous.ts)
+export interface ContinuousEffectRef {
+  id: string;
+  sourceInstanceId: string;
+  controllerId: string;
+  ability: {
+    kind: 'StaticAbility';
+    modifier: { kind: 'ModifyPT'; power: number; toughness: number }
+      | { kind: 'GrantKeyword'; keyword: string }
+      | { kind: 'ReduceCost'; amount: number };
+    filter: { types?: string[]; subtypes?: string[]; supertypes?: string[]; colors?: Array<'W' | 'U' | 'B' | 'R' | 'G'>; cmc?: { op: 'eq' | 'lte' | 'gte'; value: number } };
+    controller: 'you' | 'opponent' | 'any';
+    excludeSelf: boolean;
+  };
+  timestamp: number;
+}
+
 export interface GameState {
   players: Player[];
   cards: Map<string, CardInstance>;
@@ -169,6 +220,9 @@ export interface GameState {
   // Phase 6: Triggers
   battlefieldAbilities: Map<string, TriggeredAbilityRef[]>; // instanceId → abilities
   pendingTriggers: PendingTrigger[];
+
+  // Phase 15: Continuous effects from static abilities
+  continuousEffects?: ContinuousEffectRef[];
 }
 
 export function emptyManaPool(): ManaPool {

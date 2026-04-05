@@ -4,6 +4,7 @@ import { addMana, parseManaString, canPayCost, payManaCost } from './mana';
 import { getOverride } from './effects/overrides';
 import { parseActivatedAbilities } from './effects/parser';
 import { executeSacrificeSpecific, executeSearchLibrary, executeShuffleLibrary, executeEffectsWithSBA } from './effects/executor';
+import { checkTriggersForEvent, registerBattlefieldAbilities } from './stack';
 import type { ActivatedAbility, Effect } from './effects/ast';
 import type { TargetSpec } from './effects/targets';
 
@@ -42,7 +43,19 @@ export function playLand(state: GameState, playerId: string, cardInstanceId: str
     i === playerIndex ? { ...p, hasPlayedLand: true } : p
   );
 
-  return { ...state, cards: newCards, players: newPlayers };
+  let resultState: GameState = { ...state, cards: newCards, players: newPlayers };
+
+  // Register any triggered abilities the land might have (e.g., ETB triggers on lands)
+  resultState = registerBattlefieldAbilities(resultState, cardInstanceId);
+
+  // Fire landfall triggers ("Whenever a land enters the battlefield under your control")
+  resultState = checkTriggersForEvent(resultState, {
+    kind: 'LandETB',
+    instanceId: cardInstanceId,
+    controllerId: playerId,
+  });
+
+  return resultState;
 }
 
 /** Check if a permanent's oracle text indicates it enters the battlefield tapped. */
@@ -59,12 +72,15 @@ export function tapLandForMana(state: GameState, playerId: string, cardInstanceI
   if (card.zone !== 'battlefield') throw new Error('Card not on battlefield');
   if (card.tapped) throw new Error('Card already tapped');
 
+  const def = getCardDefinition(state, card);
+  const amount = def.manaProduction?.amounts[color] ?? 1;
+
   const newCards = new Map(state.cards);
   newCards.set(cardInstanceId, { ...card, tapped: true });
 
   const playerIndex = state.players.findIndex(p => p.id === playerId);
   const newPlayers = state.players.map((p, i) =>
-    i === playerIndex ? { ...p, manaPool: addMana(p.manaPool, color, 1) } : p
+    i === playerIndex ? { ...p, manaPool: addMana(p.manaPool, color, amount) } : p
   );
 
   return { ...state, cards: newCards, players: newPlayers };
@@ -223,4 +239,49 @@ export function activateAbility(
   }
 
   return newState;
+}
+
+// ============================================================================
+// Equipment
+// ============================================================================
+
+/**
+ * Equip an equipment to a creature you control.
+ * Pays the equip cost and attaches the equipment.
+ */
+export function equipCreature(
+  state: GameState,
+  playerId: string,
+  equipmentInstanceId: string,
+  targetCreatureId: string,
+): GameState {
+  const equipment = state.cards.get(equipmentInstanceId);
+  if (!equipment || equipment.zone !== 'battlefield') throw new Error('Equipment not on battlefield');
+  if (equipment.ownerId !== playerId) throw new Error('Not your equipment');
+
+  const equipDef = getCardDefinition(state, equipment);
+  if (!equipDef.equipCost) throw new Error('No equip cost');
+  const costAsMana = { W: equipDef.equipCost.W, U: equipDef.equipCost.U, B: equipDef.equipCost.B, R: equipDef.equipCost.R, G: equipDef.equipCost.G, C: equipDef.equipCost.C, generic: equipDef.equipCost.generic };
+
+  const playerIndex = state.players.findIndex(p => p.id === playerId);
+  const player = state.players[playerIndex];
+
+  // Pay equip cost
+  const newManaPool = payManaCost(player.manaPool, costAsMana);
+
+  const target = state.cards.get(targetCreatureId);
+  if (!target || target.zone !== 'battlefield') throw new Error('Target not on battlefield');
+  if (target.ownerId !== playerId) throw new Error('Can only equip your own creatures');
+
+  const targetDef = getCardDefinition(state, target);
+  if (!targetDef.card_types.includes('creature')) throw new Error('Target is not a creature');
+
+  const newCards = new Map(state.cards);
+  newCards.set(equipmentInstanceId, { ...equipment, attachedTo: targetCreatureId });
+
+  const newPlayers = state.players.map((p, i) =>
+    i === playerIndex ? { ...p, manaPool: newManaPool } : p
+  );
+
+  return { ...state, cards: newCards, players: newPlayers };
 }

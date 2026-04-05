@@ -12,6 +12,9 @@ const PUNCT_RE = /([(),.:;])/g;
 // Includes Unicode em dash / en dash.
 const DASHES_RE = /([—–-])/g;
 
+// P/T modification patterns like +1/+1, -3/-3, +2/+0 — preserve as single tokens
+const PT_MOD_RE = /([+-]\d+\/[+-]\d+)/g;
+
 export function tokenizeOracleText(oracleText: string): OracleToken[] {
   // Lowercase normalization (preserve numbers and braces).
   let s = oracleText.toLowerCase();
@@ -23,6 +26,13 @@ export function tokenizeOracleText(oracleText: string): OracleToken[] {
     return `__mana_${idx}__`;
   });
 
+  // Preserve P/T modification patterns before dash splitting.
+  const ptChunks: string[] = [];
+  s = s.replace(PT_MOD_RE, (m) => {
+    const idx = ptChunks.push(m) - 1;
+    return `__pt_${idx}__`;
+  });
+
   // Split punctuation and parentheses.
   s = s.replace(PUNCT_RE, ' $1 ');
 
@@ -32,11 +42,18 @@ export function tokenizeOracleText(oracleText: string): OracleToken[] {
   // Collapse whitespace.
   const raw = s.split(/\s+/).filter(Boolean);
 
-  // Restore mana chunks.
+  // Restore mana chunks and P/T chunks.
   return raw.map(tok => {
-    const match = tok.match(/^__mana_(\d+)__$/);
-    if (!match) return tok;
-    const idx = Number(match[1]);
-    return manaChunks[idx] ?? tok;
+    const manaMatch = tok.match(/^__mana_(\d+)__$/);
+    if (manaMatch) {
+      const idx = Number(manaMatch[1]);
+      return manaChunks[idx] ?? tok;
+    }
+    const ptMatch = tok.match(/^__pt_(\d+)__$/);
+    if (ptMatch) {
+      const idx = Number(ptMatch[1]);
+      return ptChunks[idx] ?? tok;
+    }
+    return tok;
   });
 }

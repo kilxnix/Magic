@@ -7,6 +7,7 @@ import {
 } from './agent';
 import { GameState, CardDefinition, createPlayer, Phase, Step } from '../types';
 import type { AIAction } from './types';
+import { populateParsedCache } from '../cards/card-parser-cache';
 
 // Helper to create minimal game state
 function createTestState(overrides: Partial<GameState> = {}): GameState {
@@ -42,7 +43,7 @@ function addCard(
   def: Partial<CardDefinition>,
   options: { tapped?: boolean; summoningSick?: boolean } = {},
 ): void {
-  const fullDef: CardDefinition = {
+  const baseDef: CardDefinition = {
     id: def.id ?? instanceId,
     name: def.name ?? 'Test Card',
     type_line: def.type_line ?? 'Creature',
@@ -57,6 +58,7 @@ function addCard(
     toughness: def.toughness,
   };
 
+  const fullDef = populateParsedCache(baseDef);
   state.cardDefinitions.set(fullDef.id, fullDef);
   state.cards.set(instanceId, {
     instanceId,

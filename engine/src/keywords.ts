@@ -76,8 +76,7 @@ export function getKeywordsFromDefinition(def: CardDefinition): Set<Keyword> {
 
 /**
  * Get all keywords for a card instance.
- * Currently just returns definition keywords, but will be extended
- * in later phases to include granted abilities from continuous effects.
+ * Returns definition keywords plus any keywords granted by continuous effects.
  */
 export function getKeywordsForInstance(state: GameState, instanceId: string): Set<Keyword> {
   const card = state.cards.get(instanceId);
@@ -89,17 +88,77 @@ export function getKeywordsForInstance(state: GameState, instanceId: string): Se
   // Base keywords from definition
   const keywords = getKeywordsFromDefinition(def);
 
-  // TODO (Phase 6+): Add keywords granted by continuous effects
-  // This would involve checking state.continuousEffects for GrantAbility effects
+  // Phase 15: Add keywords granted by continuous effects
+  if (state.continuousEffects) {
+    for (const ce of state.continuousEffects) {
+      if (ce.ability.modifier.kind !== 'GrantKeyword') continue;
+
+      // Check source is still on the battlefield
+      const source = state.cards.get(ce.sourceInstanceId);
+      if (!source || source.zone !== 'battlefield') continue;
+
+      // Check excludeSelf
+      if (ce.ability.excludeSelf && instanceId === ce.sourceInstanceId) continue;
+
+      // Check controller filter
+      if (ce.ability.controller === 'you' && card.ownerId !== ce.controllerId) continue;
+      if (ce.ability.controller === 'opponent' && card.ownerId === ce.controllerId) continue;
+
+      // Must be on battlefield
+      if (card.zone !== 'battlefield') continue;
+
+      // Check card filter
+      const filter = ce.ability.filter;
+      if (filter.types || filter.subtypes || filter.colors || filter.cmc) {
+        // Simple filter matching inline (avoid circular import)
+        let matches = true;
+        if (filter.types) {
+          const hasType = filter.types.some((t: string) =>
+            def.card_types.includes(t as any) || def.type_line.toLowerCase().includes(t.toLowerCase())
+          );
+          if (!hasType) matches = false;
+        }
+        if (matches && filter.subtypes) {
+          const typeLine = def.type_line.toLowerCase();
+          const hasSub = filter.subtypes.some((st: string) => typeLine.includes(st.toLowerCase()));
+          if (!hasSub) matches = false;
+        }
+        if (!matches) continue;
+      }
+
+      // Map the keyword string to canonical Keyword type
+      const normalized = ce.ability.modifier.keyword.toLowerCase().replace(/[\s_-]/g, '');
+      const canonical = KEYWORD_MAP[normalized];
+      if (canonical) {
+        keywords.add(canonical);
+      }
+    }
+  }
 
   return keywords;
 }
 
 /**
  * Check if a card instance has a specific keyword.
+ * Includes keywords from the card definition, continuous effects, and attached equipment.
  */
 export function instanceHasKeyword(state: GameState, instanceId: string, keyword: Keyword): boolean {
-  return getKeywordsForInstance(state, instanceId).has(keyword);
+  if (getKeywordsForInstance(state, instanceId).has(keyword)) {
+    return true;
+  }
+
+  // Check equipment keywords from cached data
+  for (const [, otherCard] of state.cards) {
+    if (otherCard.attachedTo !== instanceId || otherCard.zone !== 'battlefield') continue;
+    const equipDef = state.cardDefinitions.get(otherCard.definitionId);
+    if (equipDef?.equipmentBonus?.keywords.some(
+      k => k.toLowerCase() === keyword.toLowerCase()
+    )) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 /**

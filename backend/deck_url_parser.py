@@ -6,6 +6,7 @@ from typing import Optional
 from urllib.parse import urlparse
 
 import requests
+import cloudscraper
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +79,7 @@ def parse_decklist_text(text: str) -> dict:
     codes / collector numbers from card lines.
     """
     cards: list[str] = []
-    commander: Optional[str] = None
+    commander_names: list[str] = []
     current_section: Optional[str] = None
 
     for raw_line in text.splitlines():
@@ -103,10 +104,7 @@ def parse_decklist_text(text: str) -> dict:
         card_name = re.sub(r"\s+\([A-Z0-9]+\)(?:\s+\d+)?$", "", card_name)
 
         if current_section == "commander" or current_section == "command zone":
-            commander = card_name
-            # The commander is also part of the deck, but we track it
-            # separately; do NOT add it to the main cards list so consumers
-            # can decide how to handle it.
+            commander_names.append(card_name)
             continue
 
         if current_section in _IGNORED_SECTIONS:
@@ -116,6 +114,7 @@ def parse_decklist_text(text: str) -> dict:
         for _ in range(qty):
             cards.append(card_name)
 
+    commander = " // ".join(commander_names) if commander_names else None
     return {"commander": commander, "cards": cards}
 
 
@@ -127,31 +126,51 @@ _REQUEST_TIMEOUT = 15  # seconds
 
 
 def fetch_moxfield(deck_id: str) -> dict:
-    """Fetch a deck from Moxfield's public API."""
+    """Fetch a deck from Moxfield's public API using cloudscraper to bypass Cloudflare.
+
+    Moxfield's API is behind Cloudflare bot protection. We use cloudscraper
+    which solves JS challenges automatically.
+    """
     api_url = f"https://api2.moxfield.com/v3/decks/all/{deck_id}"
-    headers = {
-        "User-Agent": "MagicBrains/1.0",
-        "Accept": "application/json",
-    }
-    resp = requests.get(api_url, headers=headers, timeout=_REQUEST_TIMEOUT)
+    scraper = cloudscraper.create_scraper()
+    resp = scraper.get(api_url, timeout=_REQUEST_TIMEOUT)
+
+    if resp.status_code == 403:
+        raise ValueError(
+            "Moxfield blocked this request (bot protection). "
+            "Please use Moxfield's Export button to copy your decklist, "
+            "then paste it in the 'Paste Decklist' tab instead."
+        )
+
     resp.raise_for_status()
     data = resp.json()
 
     cards: list[str] = []
     commander: Optional[str] = None
 
-    # Moxfield nests cards under board keys: mainboard, commanders, etc.
-    for board_key in ("mainboard", "companions"):
-        board = data.get(board_key, {})
-        for card_name, _info in board.items():
-            qty = _info.get("quantity", 1) if isinstance(_info, dict) else 1
-            for _ in range(qty):
-                cards.append(card_name)
+    # Moxfield v3 API nests cards under boards.{boardName}.cards
+    boards = data.get("boards", {})
 
-    commanders_board = data.get("commanders", {})
-    for card_name, _info in commanders_board.items():
-        commander = card_name  # last one wins; usually only 1 or 2
-        # Don't add commander to the main cards list (same as text parser)
+    for board_key in ("mainboard", "companions"):
+        board = boards.get(board_key, {})
+        for _card_id, entry in (board.get("cards") or {}).items():
+            card_obj = entry.get("card", {})
+            name = card_obj.get("name", "")
+            qty = entry.get("quantity", 1)
+            if name:
+                for _ in range(qty):
+                    cards.append(name)
+
+    commanders_board = boards.get("commanders", {})
+    commander_names: list[str] = []
+    for _card_id, entry in (commanders_board.get("cards") or {}).items():
+        card_obj = entry.get("card", {})
+        name = card_obj.get("name", "")
+        if name:
+            commander_names.append(name)
+
+    if commander_names:
+        commander = " // ".join(commander_names) if len(commander_names) > 1 else commander_names[0]
 
     return {"commander": commander, "cards": cards}
 
@@ -164,7 +183,7 @@ def fetch_archidekt(deck_id: str) -> dict:
     data = resp.json()
 
     cards: list[str] = []
-    commander: Optional[str] = None
+    commander_names: list[str] = []
 
     for entry in data.get("cards", []):
         card = entry.get("card", {})
@@ -173,7 +192,7 @@ def fetch_archidekt(deck_id: str) -> dict:
         qty = entry.get("quantity", 1)
 
         if "commander" in categories:
-            commander = name
+            commander_names.append(name)
             continue
 
         if "sideboard" in categories or "maybeboard" in categories:
@@ -182,6 +201,7 @@ def fetch_archidekt(deck_id: str) -> dict:
         for _ in range(qty):
             cards.append(name)
 
+    commander = " // ".join(commander_names) if commander_names else None
     return {"commander": commander, "cards": cards}
 
 

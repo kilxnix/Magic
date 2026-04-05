@@ -7,3 +7,13 @@
     @apply antialiased;
   }
 }
+
+/* Mobile chat drawer slide-up animation */
+@keyframes slideUp {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}

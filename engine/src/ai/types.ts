@@ -67,6 +67,15 @@ export interface PassPriorityAction {
 }
 
 /**
+ * An action to equip an equipment to a creature.
+ */
+export interface EquipAction {
+  kind: 'Equip';
+  equipmentInstanceId: string;  // The equipment card
+  targetCreatureId: string;      // The creature to equip
+}
+
+/**
  * Union of all possible AI actions.
  */
 export type AIAction =
@@ -76,7 +85,8 @@ export type AIAction =
   | ActivateAbilityAction
   | DeclareAttackersAction
   | DeclareBlockersAction
-  | PassPriorityAction;
+  | PassPriorityAction
+  | EquipAction;
 
 /**
  * AI difficulty level, aligned with Commander brackets.

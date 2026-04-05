@@ -12,6 +12,8 @@ export interface Deck {
   bracket_name: string;
   theme: string;
   categories: Record<string, string[]>;
+  ai_enhanced?: boolean;
+  ai_reasoning?: string | null;
 }
 
 export interface DeckEvent {
@@ -40,6 +42,7 @@ export interface DeckRequest {
   bracket: number;
   theme?: string;
   budget_tier?: string;
+  use_ai?: boolean;
 }
 
 export interface DeckSummary {

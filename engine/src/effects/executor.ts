@@ -1,8 +1,10 @@
 // Phase 4: Effect executor - applies Effect AST to GameState
 // Phase 10: Extended with new effect types, X costs, tokens
+// Phase 14: Extended with ExileFromLibrary, GainControl, ForEach, EachPlayer, AllOfType
+// Phase 17: Conditional, Blink, Copy, GrantKeyword, PhaseOut, loyalty ability execution
 
 import type { GameState, CardInstance, CardDefinition } from '../types';
-import type { Effect, TargetRef, AmountRef, TokenDefinition, CardFilter } from './ast';
+import type { Effect, TargetRef, AmountRef, TokenDefinition, CardFilter, SurveilEffect, ForEachAmount, Condition, LoyaltyAbility } from './ast';
 import { checkStateBasedActions, markPlayerLostFromEmptyLibrary } from '../state-based';
 import { isIndestructible } from '../keywords';
 import { getCommanderDestinationZone } from '../commander';
@@ -20,8 +22,9 @@ export interface ExecutionContext {
 
 /**
  * Resolve an AmountRef to a concrete number.
+ * For ForEach amounts, we need the full game state and caster.
  */
-function resolveAmount(amount: AmountRef, xValue: number): number {
+function resolveAmount(amount: AmountRef, xValue: number, state?: GameState, casterId?: string): number {
   if (typeof amount === 'number') {
     return amount;
   }
@@ -31,9 +34,59 @@ function resolveAmount(amount: AmountRef, xValue: number): number {
   if (amount.kind === 'XMultiplied') {
     return xValue * amount.multiplier;
   }
+  if (amount.kind === 'ForEach') {
+    return resolveForEachCount(amount, state, casterId);
+  }
   // Exhaustiveness
   const _never: never = amount;
   throw new Error(`Unknown AmountRef kind`);
+}
+
+/**
+ * Count entities matching a ForEachAmount condition.
+ */
+function resolveForEachCount(
+  forEach: ForEachAmount,
+  state?: GameState,
+  casterId?: string,
+): number {
+  if (!state || !casterId) return 0;
+
+  let count = 0;
+  const { zone, filter, controller } = forEach;
+
+  // Determine which player(s) we're counting for
+  const playerIds: string[] = [];
+  if (controller === 'you') {
+    playerIds.push(casterId);
+  } else if (controller === 'opponent') {
+    for (const p of state.players) {
+      if (p.id !== casterId && !p.hasLost) {
+        playerIds.push(p.id);
+      }
+    }
+  } else if (controller === 'each') {
+    for (const p of state.players) {
+      if (!p.hasLost) {
+        playerIds.push(p.id);
+      }
+    }
+  }
+
+  for (const [, card] of state.cards) {
+    if (card.zone !== zone) continue;
+    if (!playerIds.includes(card.ownerId)) continue;
+
+    if (filter) {
+      const def = state.cardDefinitions.get(card.definitionId);
+      if (!def) continue;
+      if (!matchesCardFilter(def, filter)) continue;
+    }
+
+    count++;
+  }
+
+  return count;
 }
 
 /**
@@ -58,8 +111,14 @@ function resolveTargetRef(
       return ref.playerId;
     case 'EachOpponent':
       throw new Error('EachOpponent must be handled before calling resolveTargetRef');
+    case 'EachPlayer':
+      throw new Error('EachPlayer must be handled before calling resolveTargetRef');
     case 'AllCreatures':
       throw new Error('AllCreatures must be handled before calling resolveTargetRef');
+    case 'AllCreaturesYouControl':
+      throw new Error('AllCreaturesYouControl must be handled before calling resolveTargetRef');
+    case 'AllOfType':
+      throw new Error('AllOfType must be handled before calling resolveTargetRef');
     default:
       // Exhaustiveness check
       const _never: never = ref;
@@ -453,6 +512,73 @@ function executeScry(state: GameState, playerId: string, count: number): GameSta
 }
 
 /**
+ * Execute a Surveil effect.
+ * Simplified: uses AI heuristic — puts high-CMC non-land cards into graveyard,
+ * keeps lands and low-CMC spells on top (similar to Scry but cards go to graveyard
+ * instead of bottom of library).
+ */
+function executeSurveil(state: GameState, playerId: string, count: number): GameState {
+  // Get library cards (Map iteration order = library order)
+  const libraryCards: CardInstance[] = [];
+  for (const [, card] of state.cards) {
+    if (card.ownerId === playerId && card.zone === 'library') {
+      libraryCards.push(card);
+    }
+  }
+
+  const toSurveil = Math.min(count, libraryCards.length);
+  if (toSurveil === 0) return state;
+
+  // Get the top N cards to surveil
+  const surveilCards = libraryCards.slice(0, toSurveil);
+  const restLibrary = libraryCards.slice(toSurveil);
+
+  // AI heuristic: lands and low-CMC spells stay on top, others go to graveyard.
+  const keepOnTop: CardInstance[] = [];
+  const sendToGraveyard: CardInstance[] = [];
+
+  for (const card of surveilCards) {
+    const def = state.cardDefinitions.get(card.definitionId);
+    if (!def) {
+      keepOnTop.push(card); // Unknown = keep
+      continue;
+    }
+    const isLand = def.card_types.includes('land');
+    const isLowCost = def.cmc <= 3;
+    if (isLand || isLowCost) {
+      keepOnTop.push(card);
+    } else {
+      sendToGraveyard.push(card);
+    }
+  }
+
+  // Rebuild library: top cards first, then rest (no bottom — graveyard cards are removed)
+  const newLibrary = [...keepOnTop, ...restLibrary];
+
+  // Rebuild cards map
+  const nonLibraryEntries: [string, CardInstance][] = [];
+  for (const [id, card] of state.cards) {
+    if (card.ownerId !== playerId || card.zone !== 'library') {
+      nonLibraryEntries.push([id, card]);
+    }
+  }
+
+  const newCards = new Map<string, CardInstance>();
+  for (const [id, card] of nonLibraryEntries) {
+    newCards.set(id, card);
+  }
+  for (const card of newLibrary) {
+    newCards.set(card.instanceId, card);
+  }
+  // Move surveiled cards to graveyard
+  for (const card of sendToGraveyard) {
+    newCards.set(card.instanceId, { ...card, zone: 'graveyard' });
+  }
+
+  return { ...state, cards: newCards };
+}
+
+/**
  * Check if a card definition matches a CardFilter.
  */
 export function matchesCardFilter(def: CardDefinition, filter: CardFilter): boolean {
@@ -677,6 +803,327 @@ function executeCreateToken(
 }
 
 /**
+ * Execute a CounterSpell effect.
+ * Moves the target spell from the stack to the graveyard.
+ * V0: We move the card to the graveyard if it exists on the stack.
+ */
+function executeCounterSpell(state: GameState, targetId: string): GameState {
+  // In the real engine, countering removes from the stack.
+  // Here we move the card instance to graveyard if it exists.
+  const card = state.cards.get(targetId);
+  if (!card) return state;
+
+  // The card should be on the stack, but we handle any zone gracefully
+  const destZone = getCommanderDestinationZone(state, targetId, 'graveyard');
+  const newCards = new Map(state.cards);
+  newCards.set(targetId, { ...card, zone: destZone });
+
+  return { ...state, cards: newCards };
+}
+
+/**
+ * Execute a ReturnFromGraveyard effect.
+ * Moves target creature card from graveyard to hand or battlefield.
+ */
+function executeReturnFromGraveyard(
+  state: GameState,
+  targetId: string,
+  destination: 'hand' | 'battlefield',
+): GameState {
+  const card = state.cards.get(targetId);
+  if (!card) return state;
+
+  if (card.zone !== 'graveyard') return state;
+
+  const newCards = new Map(state.cards);
+  newCards.set(targetId, {
+    ...card,
+    zone: destination,
+    tapped: false,
+    damage: 0,
+    counters: {},
+    summoningSick: destination === 'battlefield',
+  });
+
+  return { ...state, cards: newCards };
+}
+
+/**
+ * Execute a ModifyPT effect on a single creature.
+ * Adjusts the creature's power/toughness via temporary counters or modifiers.
+ * V0: Uses a simplistic approach of adjusting counters.
+ */
+function executeModifyPT(
+  state: GameState,
+  targetId: string,
+  powerMod: number,
+  toughnessMod: number,
+): GameState {
+  const card = state.cards.get(targetId);
+  if (!card || card.zone !== 'battlefield') return state;
+
+  const newCards = new Map(state.cards);
+  // Store P/T modifications as special counters
+  // The game engine can read these to adjust effective P/T
+  const currentPowerMod = card.counters['_powerMod'] || 0;
+  const currentToughMod = card.counters['_toughnessMod'] || 0;
+
+  newCards.set(targetId, {
+    ...card,
+    counters: {
+      ...card.counters,
+      '_powerMod': currentPowerMod + powerMod,
+      '_toughnessMod': currentToughMod + toughnessMod,
+    },
+  });
+
+  return { ...state, cards: newCards };
+}
+
+/**
+ * Execute an ExileFromLibrary effect.
+ * Moves the top N cards from library to exile.
+ */
+function executeExileFromLibrary(state: GameState, playerId: string, count: number): GameState {
+  const newCards = new Map(state.cards);
+
+  // Find cards in library
+  const libraryCards: CardInstance[] = [];
+  for (const [, card] of state.cards) {
+    if (card.ownerId === playerId && card.zone === 'library') {
+      libraryCards.push(card);
+    }
+  }
+
+  const toExile = Math.min(count, libraryCards.length);
+  for (let i = 0; i < toExile; i++) {
+    const card = libraryCards[i];
+    newCards.set(card.instanceId, { ...card, zone: 'exile' });
+  }
+
+  return { ...state, cards: newCards };
+}
+
+/**
+ * Execute a GainControl effect.
+ * Changes the ownerId of the target permanent to the new controller.
+ */
+function executeGainControl(state: GameState, targetId: string, newControllerId: string): GameState {
+  const card = state.cards.get(targetId);
+  if (!card || card.zone !== 'battlefield') return state;
+
+  const newCards = new Map(state.cards);
+  newCards.set(targetId, { ...card, ownerId: newControllerId });
+
+  return { ...state, cards: newCards };
+}
+
+// ============================================================================
+// Phase 17: Conditional effect evaluation
+// ============================================================================
+
+/**
+ * Evaluate a condition against the current game state.
+ */
+function evaluateCondition(state: GameState, condition: Condition, casterId: string): boolean {
+  switch (condition.kind) {
+    case 'ControlsType': {
+      const playerId = condition.controller === 'you' ? casterId : undefined;
+      for (const [, card] of state.cards) {
+        if (card.zone !== 'battlefield') continue;
+        if (playerId && card.ownerId !== playerId) continue;
+        if (!playerId) {
+          // opponent
+          if (card.ownerId === casterId) continue;
+        }
+        const def = state.cardDefinitions.get(card.definitionId);
+        if (def && matchesCardFilter(def, condition.filter)) return true;
+      }
+      return false;
+    }
+    case 'ControlsMoreThan': {
+      let opponentCount = 0;
+      let yourCount = 0;
+      for (const [, card] of state.cards) {
+        if (card.zone !== 'battlefield') continue;
+        const def = state.cardDefinitions.get(card.definitionId);
+        if (!def || !matchesCardFilter(def, condition.what)) continue;
+        if (card.ownerId === casterId) yourCount++;
+        else opponentCount++;
+      }
+      return opponentCount > yourCount;
+    }
+    case 'LifeAtOrBelow': {
+      const player = condition.controller === 'you'
+        ? state.players.find(p => p.id === casterId)
+        : state.players.find(p => p.id !== casterId && !p.hasLost);
+      return player ? player.life <= condition.amount : false;
+    }
+    case 'LifeAtOrAbove': {
+      const player = condition.controller === 'you'
+        ? state.players.find(p => p.id === casterId)
+        : state.players.find(p => p.id !== casterId && !p.hasLost);
+      return player ? player.life >= condition.amount : false;
+    }
+    default: {
+      const _never: never = condition;
+      return false;
+    }
+  }
+}
+
+// ============================================================================
+// Phase 16: Blink, Copy, GrantKeyword, PhaseOut executors
+// ============================================================================
+
+/**
+ * Blink: exile then immediately return to battlefield (triggers ETB again).
+ * The card stays on the battlefield but resets all state (untapped, no damage, no counters).
+ * In a full implementation, this would create a new object identity for triggers,
+ * but for our engine we reset all transient state.
+ */
+function executeBlink(state: GameState, targetId: string): GameState {
+  const card = state.cards.get(targetId);
+  if (!card || card.zone !== 'battlefield') return state;
+
+  const newCards = new Map(state.cards);
+  // Return to battlefield fresh (untapped, no damage, no counters, summoning sick, no granted keywords)
+  newCards.set(targetId, {
+    ...card,
+    zone: 'battlefield',
+    tapped: false,
+    damage: 0,
+    counters: {},
+    summoningSick: true,
+    grantedKeywords: undefined,
+    phasedOut: undefined,
+  });
+
+  return { ...state, cards: newCards };
+}
+
+/**
+ * Copy: create a token that's a copy of target creature (simplified).
+ * Creates a new CardInstance that references the same CardDefinition as the target.
+ * The copy is marked as a token.
+ */
+function executeCopy(state: GameState, targetId: string, controllerId: string): GameState {
+  const card = state.cards.get(targetId);
+  if (!card) return state;
+
+  const def = state.cardDefinitions.get(card.definitionId);
+  if (!def) return state;
+
+  // Create a token copy with a fresh instance ID
+  const copyId = `copy_${++tokenInstanceCounter}`;
+  const newCards = new Map(state.cards);
+  newCards.set(copyId, {
+    instanceId: copyId,
+    definitionId: card.definitionId,
+    ownerId: controllerId,
+    zone: 'battlefield',
+    tapped: false,
+    summoningSick: true,
+    counters: {},
+    damage: 0,
+    isCommander: false,
+    isToken: true,
+    copiedFromDefinitionId: card.definitionId,
+  });
+
+  return { ...state, cards: newCards };
+}
+
+/**
+ * Grant a keyword ability to a creature.
+ * Adds the keyword to grantedKeywords array on the CardInstance.
+ * For "until end of turn" effects, the cleanup step should clear grantedKeywords.
+ */
+function executeGrantKeyword(state: GameState, targetId: string, keyword: string): GameState {
+  const card = state.cards.get(targetId);
+  if (!card || card.zone !== 'battlefield') return state;
+
+  const newCards = new Map(state.cards);
+  const currentGranted = card.grantedKeywords || [];
+  // Don't add duplicates
+  if (!currentGranted.includes(keyword)) {
+    newCards.set(targetId, {
+      ...card,
+      grantedKeywords: [...currentGranted, keyword],
+    });
+  } else {
+    // Already has the keyword, no-op
+    return state;
+  }
+
+  return { ...state, cards: newCards };
+}
+
+/**
+ * Phase out a permanent.
+ * Sets phasedOut flag; the permanent stays on the battlefield but is treated as not existing.
+ * In the untap step, phased-out permanents phase back in.
+ */
+function executePhaseOut(state: GameState, targetId: string): GameState {
+  const card = state.cards.get(targetId);
+  if (!card || card.zone !== 'battlefield') return state;
+
+  const newCards = new Map(state.cards);
+  newCards.set(targetId, { ...card, phasedOut: true });
+
+  return { ...state, cards: newCards };
+}
+
+// ============================================================================
+// Phase 17: Loyalty ability executor
+// ============================================================================
+
+/**
+ * Execute a loyalty ability on a planeswalker.
+ * Adjusts loyalty counters, then executes the effects.
+ * If loyalty reaches 0, SBA will handle destruction.
+ */
+export function executeLoyaltyAbility(
+  state: GameState,
+  planeswalkerInstanceId: string,
+  ability: LoyaltyAbility,
+  controllerId: string,
+  chosenTargetIds: string[] = [],
+): GameState {
+  const card = state.cards.get(planeswalkerInstanceId);
+  if (!card || card.zone !== 'battlefield') return state;
+
+  // Adjust loyalty counters
+  const currentLoyalty = card.counters['loyalty'] || 0;
+  const newLoyalty = currentLoyalty + ability.loyaltyCost;
+
+  // Cannot activate if loyalty would go below 0 from a negative cost
+  if (newLoyalty < 0) return state;
+
+  const newCards = new Map(state.cards);
+  newCards.set(planeswalkerInstanceId, {
+    ...card,
+    counters: { ...card.counters, loyalty: newLoyalty },
+  });
+  let newState = { ...state, cards: newCards };
+
+  // Execute the ability's effects
+  const targetSpecs = ability.targets;
+  newState = executeEffects(
+    newState,
+    ability.effects,
+    controllerId,
+    chosenTargetIds,
+    targetSpecs,
+  );
+
+  // Check SBA (planeswalker with 0 loyalty dies)
+  newState = checkStateBasedActions(newState);
+
+  return newState;
+}
+
+/**
  * Execute a single effect.
  */
 function executeEffect(
@@ -688,9 +1135,30 @@ function executeEffect(
 
   switch (effect.kind) {
     case 'Draw': {
-      const playerId = resolveTargetRef(effect.player, casterId, chosenTargets);
-      const count = resolveAmount(effect.count, xValue);
-      return executeDraw(state, playerId, count);
+      // Handle EachPlayer and EachOpponent
+      if (effect.player.kind === 'EachPlayer') {
+        const count = resolveAmount(effect.count, xValue, state, casterId);
+        let s = state;
+        for (const p of state.players) {
+          if (!p.hasLost) {
+            s = executeDraw(s, p.id, count);
+          }
+        }
+        return s;
+      }
+      if (effect.player.kind === 'EachOpponent') {
+        const count = resolveAmount(effect.count, xValue, state, casterId);
+        let s = state;
+        for (const p of state.players) {
+          if (p.id !== casterId && !p.hasLost) {
+            s = executeDraw(s, p.id, count);
+          }
+        }
+        return s;
+      }
+      const drawPlayerId = resolveTargetRef(effect.player, casterId, chosenTargets);
+      const drawCount = resolveAmount(effect.count, xValue, state, casterId);
+      return executeDraw(state, drawPlayerId, drawCount);
     }
     case 'Destroy': {
       if (effect.target.kind === 'AllCreatures') {
@@ -705,104 +1173,292 @@ function executeEffect(
         }
         return s;
       }
-      const targetId = resolveTargetRef(effect.target, casterId, chosenTargets);
-      return executeDestroy(state, targetId);
+      // AllOfType: destroy all permanents matching filter
+      if (effect.target.kind === 'AllOfType') {
+        let s = state;
+        for (const [, card] of state.cards) {
+          if (card.zone === 'battlefield') {
+            const def = state.cardDefinitions.get(card.definitionId);
+            if (def && matchesCardFilter(def, effect.target.filter)) {
+              s = executeDestroy(s, card.instanceId);
+            }
+          }
+        }
+        return s;
+      }
+      const destroyTargetId = resolveTargetRef(effect.target, casterId, chosenTargets);
+      return executeDestroy(state, destroyTargetId);
     }
     case 'DealDamage': {
-      const targetId = resolveTargetRef(effect.target, casterId, chosenTargets);
-      const amount = resolveAmount(effect.amount, xValue);
-      return executeDealDamage(state, targetId, amount);
+      const dmgTargetId = resolveTargetRef(effect.target, casterId, chosenTargets);
+      const dmgAmount = resolveAmount(effect.amount, xValue, state, casterId);
+      return executeDealDamage(state, dmgTargetId, dmgAmount);
     }
     case 'GainLife': {
-      const playerId = resolveTargetRef(effect.player, casterId, chosenTargets);
-      const amount = resolveAmount(effect.amount, xValue);
-      return executeGainLife(state, playerId, amount);
+      if (effect.player.kind === 'EachPlayer') {
+        const glAmount = resolveAmount(effect.amount, xValue, state, casterId);
+        let s = state;
+        for (const p of state.players) {
+          if (!p.hasLost) {
+            s = executeGainLife(s, p.id, glAmount);
+          }
+        }
+        return s;
+      }
+      const glPlayerId = resolveTargetRef(effect.player, casterId, chosenTargets);
+      const glAmt = resolveAmount(effect.amount, xValue, state, casterId);
+      return executeGainLife(state, glPlayerId, glAmt);
     }
     case 'LoseLife': {
       if (effect.player.kind === 'EachOpponent') {
-        const amount = resolveAmount(effect.amount, xValue);
+        const llAmount = resolveAmount(effect.amount, xValue, state, casterId);
         let s = state;
         for (const p of state.players) {
           if (p.id !== casterId && !p.hasLost) {
-            s = executeLoseLife(s, p.id, amount);
+            s = executeLoseLife(s, p.id, llAmount);
           }
         }
         return s;
       }
-      const playerId = resolveTargetRef(effect.player, casterId, chosenTargets);
-      const amount = resolveAmount(effect.amount, xValue);
-      return executeLoseLife(state, playerId, amount);
+      if (effect.player.kind === 'EachPlayer') {
+        const llAmount = resolveAmount(effect.amount, xValue, state, casterId);
+        let s = state;
+        for (const p of state.players) {
+          if (!p.hasLost) {
+            s = executeLoseLife(s, p.id, llAmount);
+          }
+        }
+        return s;
+      }
+      const llPlayerId = resolveTargetRef(effect.player, casterId, chosenTargets);
+      const llAmt = resolveAmount(effect.amount, xValue, state, casterId);
+      return executeLoseLife(state, llPlayerId, llAmt);
     }
     case 'Exile': {
-      const targetId = resolveTargetRef(effect.target, casterId, chosenTargets);
-      return executeExile(state, targetId);
+      // AllOfType: exile all permanents matching filter
+      if (effect.target.kind === 'AllOfType') {
+        let s = state;
+        for (const [, card] of state.cards) {
+          if (card.zone === 'battlefield') {
+            const def = state.cardDefinitions.get(card.definitionId);
+            if (def && matchesCardFilter(def, effect.target.filter)) {
+              s = executeExile(s, card.instanceId);
+            }
+          }
+        }
+        return s;
+      }
+      const exileTargetId = resolveTargetRef(effect.target, casterId, chosenTargets);
+      return executeExile(state, exileTargetId);
     }
     case 'ReturnToHand': {
-      const targetId = resolveTargetRef(effect.target, casterId, chosenTargets);
-      return executeReturnToHand(state, targetId);
+      // AllOfType: return all matching permanents
+      if (effect.target.kind === 'AllOfType') {
+        let s = state;
+        for (const [, card] of state.cards) {
+          if (card.zone === 'battlefield') {
+            const def = state.cardDefinitions.get(card.definitionId);
+            if (def && matchesCardFilter(def, effect.target.filter)) {
+              s = executeReturnToHand(s, card.instanceId);
+            }
+          }
+        }
+        return s;
+      }
+      const bounceTargetId = resolveTargetRef(effect.target, casterId, chosenTargets);
+      return executeReturnToHand(state, bounceTargetId);
     }
     case 'Sacrifice': {
-      // Sacrifice N permanents matching filter (player choice).
-      // V0: auto-selects first matching permanent(s).
+      // Handle EachOpponent and EachPlayer sacrifice
+      if (effect.player.kind === 'EachOpponent') {
+        const sacCount = resolveAmount(effect.count, xValue, state, casterId);
+        let s = state;
+        for (const p of state.players) {
+          if (p.id !== casterId && !p.hasLost) {
+            s = executeSacrifice(s, p.id, sacCount, effect.filter);
+          }
+        }
+        return s;
+      }
+      if (effect.player.kind === 'EachPlayer') {
+        const sacCount = resolveAmount(effect.count, xValue, state, casterId);
+        let s = state;
+        for (const p of state.players) {
+          if (!p.hasLost) {
+            s = executeSacrifice(s, p.id, sacCount, effect.filter);
+          }
+        }
+        return s;
+      }
       const sacrificePlayerId = resolveTargetRef(effect.player, casterId, chosenTargets);
-      const sacrificeCount = resolveAmount(effect.count, xValue);
+      const sacrificeCount = resolveAmount(effect.count, xValue, state, casterId);
       return executeSacrifice(state, sacrificePlayerId, sacrificeCount, effect.filter);
     }
     case 'Mill': {
-      const playerId = resolveTargetRef(effect.player, casterId, chosenTargets);
-      const count = resolveAmount(effect.count, xValue);
-      return executeMill(state, playerId, count);
+      const millPlayerId = resolveTargetRef(effect.player, casterId, chosenTargets);
+      const millCount = resolveAmount(effect.count, xValue, state, casterId);
+      return executeMill(state, millPlayerId, millCount);
     }
     case 'AddCounters': {
-      const targetId = resolveTargetRef(effect.target, casterId, chosenTargets);
-      const count = resolveAmount(effect.count, xValue);
-      return executeAddCounters(state, targetId, effect.counterType, count);
+      const acTargetId = resolveTargetRef(effect.target, casterId, chosenTargets);
+      const acCount = resolveAmount(effect.count, xValue, state, casterId);
+      return executeAddCounters(state, acTargetId, effect.counterType, acCount);
     }
     case 'RemoveCounters': {
-      const targetId = resolveTargetRef(effect.target, casterId, chosenTargets);
-      const count = resolveAmount(effect.count, xValue);
-      return executeRemoveCounters(state, targetId, effect.counterType, count);
+      const rcTargetId = resolveTargetRef(effect.target, casterId, chosenTargets);
+      const rcCount = resolveAmount(effect.count, xValue, state, casterId);
+      return executeRemoveCounters(state, rcTargetId, effect.counterType, rcCount);
     }
     case 'Tap': {
-      const targetId = resolveTargetRef(effect.target, casterId, chosenTargets);
-      return executeTap(state, targetId);
+      const tapTargetId = resolveTargetRef(effect.target, casterId, chosenTargets);
+      return executeTap(state, tapTargetId);
     }
     case 'Untap': {
-      const targetId = resolveTargetRef(effect.target, casterId, chosenTargets);
-      return executeUntap(state, targetId);
+      const untapTargetId = resolveTargetRef(effect.target, casterId, chosenTargets);
+      return executeUntap(state, untapTargetId);
     }
     case 'CreateToken': {
-      const controllerId = resolveTargetRef(effect.controller, casterId, chosenTargets);
-      const count = resolveAmount(effect.count, xValue);
-      return executeCreateToken(state, controllerId, effect.token, count);
+      const ctControllerId = resolveTargetRef(effect.controller, casterId, chosenTargets);
+      const ctCount = resolveAmount(effect.count, xValue, state, casterId);
+      return executeCreateToken(state, ctControllerId, effect.token, ctCount);
     }
     case 'Discard': {
       if (effect.player.kind === 'EachOpponent') {
-        const count = resolveAmount(effect.count, xValue);
+        const dcCount = resolveAmount(effect.count, xValue, state, casterId);
         let s = state;
         for (const p of state.players) {
           if (p.id !== casterId && !p.hasLost) {
-            s = executeDiscard(s, p.id, count, effect.random);
+            s = executeDiscard(s, p.id, dcCount, effect.random);
           }
         }
         return s;
       }
-      const playerId = resolveTargetRef(effect.player, casterId, chosenTargets);
-      const count = resolveAmount(effect.count, xValue);
-      return executeDiscard(state, playerId, count, effect.random);
+      if (effect.player.kind === 'EachPlayer') {
+        const dcCount = resolveAmount(effect.count, xValue, state, casterId);
+        let s = state;
+        for (const p of state.players) {
+          if (!p.hasLost) {
+            s = executeDiscard(s, p.id, dcCount, effect.random);
+          }
+        }
+        return s;
+      }
+      const dcPlayerId = resolveTargetRef(effect.player, casterId, chosenTargets);
+      const dcCount = resolveAmount(effect.count, xValue, state, casterId);
+      return executeDiscard(state, dcPlayerId, dcCount, effect.random);
     }
     case 'Scry': {
-      const playerId = resolveTargetRef(effect.player, casterId, chosenTargets);
-      const count = resolveAmount(effect.count, xValue);
-      return executeScry(state, playerId, count);
+      const scryPlayerId = resolveTargetRef(effect.player, casterId, chosenTargets);
+      const scryCount = resolveAmount(effect.count, xValue, state, casterId);
+      return executeScry(state, scryPlayerId, scryCount);
+    }
+    case 'Surveil': {
+      const surveilPlayerId = resolveTargetRef(effect.player, casterId, chosenTargets);
+      const surveilCount = resolveAmount(effect.count, xValue, state, casterId);
+      return executeSurveil(state, surveilPlayerId, surveilCount);
     }
     case 'SearchLibrary': {
-      const playerId = resolveTargetRef(effect.player, casterId, chosenTargets);
-      return executeSearchLibrary(state, playerId, effect.filter, effect.destination, effect.tapped);
+      const slPlayerId = resolveTargetRef(effect.player, casterId, chosenTargets);
+      return executeSearchLibrary(state, slPlayerId, effect.filter, effect.destination, effect.tapped);
     }
     case 'ShuffleLibrary': {
+      const shPlayerId = resolveTargetRef(effect.player, casterId, chosenTargets);
+      return executeShuffleLibrary(state, shPlayerId);
+    }
+    case 'CounterSpell': {
+      const csTargetId = resolveTargetRef(effect.target, casterId, chosenTargets);
+      return executeCounterSpell(state, csTargetId);
+    }
+    case 'ReturnFromGraveyard': {
+      const rfgTargetId = resolveTargetRef(effect.target, casterId, chosenTargets);
+      return executeReturnFromGraveyard(state, rfgTargetId, effect.destination);
+    }
+    case 'ModifyPT': {
+      if (effect.target.kind === 'AllCreaturesYouControl') {
+        let s = state;
+        for (const [, card] of state.cards) {
+          if (card.zone === 'battlefield' && card.ownerId === casterId) {
+            const def = state.cardDefinitions.get(card.definitionId);
+            if (def && def.card_types.includes('creature')) {
+              s = executeModifyPT(s, card.instanceId, effect.power, effect.toughness);
+            }
+          }
+        }
+        return s;
+      }
+      const mptTargetId = resolveTargetRef(effect.target, casterId, chosenTargets);
+      return executeModifyPT(state, mptTargetId, effect.power, effect.toughness);
+    }
+    case 'ExileFromLibrary': {
+      const eflPlayerId = resolveTargetRef(effect.player, casterId, chosenTargets);
+      const eflCount = resolveAmount(effect.count, xValue, state, casterId);
+      return executeExileFromLibrary(state, eflPlayerId, eflCount);
+    }
+    case 'GainControl': {
+      const gcTargetId = resolveTargetRef(effect.target, casterId, chosenTargets);
+      return executeGainControl(state, gcTargetId, casterId);
+    }
+    // Phase 17: Conditional effects
+    case 'Conditional': {
+      if (evaluateCondition(state, effect.condition, casterId)) {
+        return executeEffect(state, effect.effect, ctx);
+      } else if (effect.elseEffect) {
+        return executeEffect(state, effect.elseEffect, ctx);
+      }
+      return state;
+    }
+    // Phase 16: Blink — exile then return to battlefield
+    case 'Blink': {
+      const blinkTargetId = resolveTargetRef(effect.target, casterId, chosenTargets);
+      return executeBlink(state, blinkTargetId);
+    }
+    // Phase 16: Copy — create token copy (simplified)
+    case 'Copy': {
+      const copyTargetId = resolveTargetRef(effect.target, casterId, chosenTargets);
+      return executeCopy(state, copyTargetId, casterId);
+    }
+    // Phase 16: GrantKeyword — give keyword to creature
+    case 'GrantKeyword': {
+      const gkTargetId = resolveTargetRef(effect.target, casterId, chosenTargets);
+      return executeGrantKeyword(state, gkTargetId, effect.keyword);
+    }
+    // Phase 16: PhaseOut
+    case 'PhaseOut': {
+      const poTargetId = resolveTargetRef(effect.target, casterId, chosenTargets);
+      return executePhaseOut(state, poTargetId);
+    }
+    // WinGame: all other players lose
+    case 'WinGame': {
+      const winnerId = resolveTargetRef(effect.player, casterId, chosenTargets);
+      const newPlayers = state.players.map(p =>
+        p.id !== winnerId ? { ...p, hasLost: true } : p
+      );
+      return { ...state, players: newPlayers };
+    }
+    // LoseGame: the specified player loses
+    case 'LoseGame': {
+      const loserId = resolveTargetRef(effect.player, casterId, chosenTargets);
+      const newPlayers = state.players.map(p =>
+        p.id === loserId ? { ...p, hasLost: true } : p
+      );
+      return { ...state, players: newPlayers };
+    }
+    // AddMana: add mana to a player's pool
+    case 'AddMana': {
       const playerId = resolveTargetRef(effect.player, casterId, chosenTargets);
-      return executeShuffleLibrary(state, playerId);
+      const playerIdx = state.players.findIndex(p => p.id === playerId);
+      if (playerIdx === -1) return state;
+      const player = state.players[playerIdx];
+      const newPool = { ...player.manaPool };
+      for (const [color, amount] of Object.entries(effect.mana)) {
+        if (amount && amount > 0) {
+          newPool[color as keyof typeof newPool] += amount;
+        }
+      }
+      const newPlayers = state.players.map((p, i) =>
+        i === playerIdx ? { ...p, manaPool: newPool } : p
+      );
+      return { ...state, players: newPlayers };
     }
     default:
       // Exhaustiveness

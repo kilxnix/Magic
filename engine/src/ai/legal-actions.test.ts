@@ -6,6 +6,7 @@ import {
   getLegalTargets,
 } from './legal-actions';
 import { GameState, CardDefinition, emptyManaPool, createPlayer, Phase, Step } from '../types';
+import { populateParsedCache } from '../cards/card-parser-cache';
 
 // Helper to create minimal game state
 function createTestState(overrides: Partial<GameState> = {}): GameState {
@@ -40,7 +41,7 @@ function addCard(
   zone: 'hand' | 'battlefield' | 'library' | 'graveyard' | 'command',
   def: Partial<CardDefinition>,
 ): void {
-  const fullDef: CardDefinition = {
+  const baseDef: CardDefinition = {
     id: def.id ?? instanceId,
     name: def.name ?? 'Test Card',
     type_line: def.type_line ?? 'Creature',
@@ -55,6 +56,7 @@ function addCard(
     toughness: def.toughness,
   };
 
+  const fullDef = populateParsedCache(baseDef);
   state.cardDefinitions.set(fullDef.id, fullDef);
   state.cards.set(instanceId, {
     instanceId,

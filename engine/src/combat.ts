@@ -8,6 +8,8 @@ import {
   instanceHasKeyword,
   isLethalDamage,
 } from './keywords';
+import { getEffectivePower } from './effects/continuous';
+import { checkTriggersForEvent } from './stack';
 import { checkStateBasedActions } from './state-based';
 
 export function canDeclareAttacker(state: GameState, playerId: string, cardInstanceId: string): boolean {
@@ -55,13 +57,24 @@ export function declareAttackers(state: GameState, playerId: string, attacks: At
     damageAssignment: new Map(),
   };
 
-  return {
+  let resultState: GameState = {
     ...state,
     cards: newCards,
     combat,
     hasPriorityPassed: new Array(state.players.length).fill(false),
     priorityPlayerIndex: state.activePlayerIndex,
   };
+
+  // Fire "whenever ~ attacks" triggers for each attacker
+  for (const attack of attacks) {
+    resultState = checkTriggersForEvent(resultState, {
+      kind: 'Attacks',
+      attackerInstanceId: attack.cardInstanceId,
+      controllerId: playerId,
+    });
+  }
+
+  return resultState;
 }
 
 export function canDeclareBlocker(
@@ -259,8 +272,7 @@ function resolveDamageStep(state: GameState, step: 'first' | 'normal'): GameStat
     const attackerCard = newCards.get(attacker.cardInstanceId);
     if (!attackerCard || attackerCard.zone !== 'battlefield') continue;
 
-    const attackerDef = state.cardDefinitions.get(attackerCard.definitionId);
-    const attackerPower = attackerDef?.power ?? 0;
+    const attackerPower = getEffectivePower(state, attacker.cardInstanceId);
 
     // Check if attacker deals damage in this step
     const attackerDeals = creatureDealsInStep(state, attacker.cardInstanceId, step);
@@ -330,8 +342,7 @@ function resolveDamageStep(state: GameState, step: 'first' | 'normal'): GameStat
         // Check if blocker deals damage in this step
         if (!creatureDealsInStep(state, blocker.cardInstanceId, step)) continue;
 
-        const blockerDef = state.cardDefinitions.get(blockerCard.definitionId);
-        const blockerPower = blockerDef?.power ?? 0;
+        const blockerPower = getEffectivePower(state, blocker.cardInstanceId);
 
         const currentAttacker = newCards.get(attacker.cardInstanceId);
         if (!currentAttacker || currentAttacker.zone !== 'battlefield') continue;
