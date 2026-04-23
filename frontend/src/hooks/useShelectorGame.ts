@@ -41,6 +41,15 @@ import {
   type ManaCost,
   type ManaPool,
   type TriggeredAbilityStackItem,
+  tryPlayLand,
+  tryTapLandForMana,
+  tryCastSpell,
+  tryActivateAbility,
+  tryPassPriority,
+  tryDeclareAttackers,
+  tryDeclareBlockers,
+  tryEquip,
+  type ActionGameEvent,
 } from 'commander-engine';
 
 // ========== Simplified Game Types (consumed by GameBoard.tsx) ==========
@@ -732,6 +741,10 @@ export function useShelectorGame() {
   const aiIdsRef = useRef<string[]>(['ai1']);
   const discardCountRef = useRef(0);
   const [coachMode, setCoachMode] = useState(true); // On by default — this is a learning tool
+
+  // try* action error state (Task 7 — game-reliability-refactor)
+  const [actionError, setActionError] = useState<{ reason: string; message: string } | null>(null);
+  const [lastEvents, setLastEvents] = useState<ActionGameEvent[]>([]);
 
   // Track which mana sources were tapped but mana not yet spent on a spell
   // These can be untapped. Once a spell is cast, the taps become "committed" and can't be reversed.
@@ -2267,10 +2280,13 @@ export function useShelectorGame() {
         }
 
         let newState: GameState;
+        const collectedEvents: ActionGameEvent[] = [];
 
         // For DeclareAttackers with no actual attacks, skip combat via passPriority
         if (engineAction.kind === 'DeclareAttackers' && engineAction.attacks.length === 0) {
-          // Skip combat — pass both players through all remaining combat steps
+          // Skip combat — pass both players through all remaining combat steps.
+          // These are internal state-machine passes (not a single user action), so
+          // we use the raw passPriority loop rather than tryPassPriority.
           newState = engine as GameState;
           let combatSafety = 20;
           while (
@@ -2291,6 +2307,8 @@ export function useShelectorGame() {
           const card = engine.cards.get(engineAction.cardInstanceId);
           const player = engine.players.find(p => p.id === humanId);
 
+          let precastState: GameState = engine as GameState;
+
           if (card && player) {
             const def = getCardDefinition(engine, card);
             const baseCost = parseManaString(def.mana_cost);
@@ -2305,14 +2323,22 @@ export function useShelectorGame() {
               const landsToTap = findLandsToTap(engine, humanId, totalCost, manaActions);
 
               if (landsToTap && landsToTap.length > 0) {
-                // Apply each mana ability action sequentially, narrating each tap
-                let tapState: GameState = engine;
+                // Apply each mana ability action sequentially via tryTapLandForMana
+                let tapState: GameState = engine as GameState;
                 for (const manaAction of landsToTap) {
+                  if (manaAction.kind !== 'ActivateManaAbility') continue;
                   const beforePool = tapState.players.find(p => p.id === humanId)?.manaPool;
-                  tapState = applyAction(tapState, humanId, manaAction);
+                  const tapResult = tryTapLandForMana(tapState, humanId, manaAction.cardInstanceId, manaAction.color);
+                  if (!tapResult.ok) {
+                    // Fallback: skip this tap (should not happen if findLandsToTap is correct)
+                    console.warn('Auto-tap failed:', tapResult.message);
+                    continue;
+                  }
+                  tapState = tapResult.state;
+                  collectedEvents.push(...tapResult.events);
                   const afterPool = tapState.players.find(p => p.id === humanId)?.manaPool;
                   // Narrate the tap
-                  const tappedCard = 'cardInstanceId' in manaAction ? tapState.cards.get(manaAction.cardInstanceId) : undefined;
+                  const tappedCard = tapState.cards.get(manaAction.cardInstanceId);
                   const tappedDef = tappedCard ? getCardDefinition(tapState, tappedCard) : undefined;
                   const gained: string[] = [];
                   if (afterPool && beforePool) {
@@ -2325,24 +2351,111 @@ export function useShelectorGame() {
                 }
                 const poolBeforeCast = tapState.players.find(p => p.id === humanId)?.manaPool;
                 addMessage('system', `Mana available: ${poolBeforeCast ? formatManaPool(poolBeforeCast) : '?'}`);
-                // Now cast the spell on the state with mana in the pool
-                newState = applyAction(tapState, humanId, engineAction);
-              } else {
-                // Couldn't find lands to tap — try anyway, engine will throw if impossible
-                newState = applyAction(engine, humanId, engineAction);
+                precastState = tapState;
               }
+              // If no lands found, fall through with original state (tryCastSpell will report error)
             } else {
               // Already have enough mana in pool
               const poolBeforeCast = player.manaPool;
               addMessage('system', `Using floating mana: ${formatManaPool(poolBeforeCast)}`);
-              newState = applyAction(engine, humanId, engineAction);
             }
-          } else {
-            newState = applyAction(engine, humanIdRef.current, engineAction);
           }
+
+          // Cast the spell via tryCastSpell (manaPayment=empty; pool-check is done internally)
+          const emptyPayment: ManaCost = { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0, generic: 0 };
+          const castResult = tryCastSpell(
+            precastState,
+            humanIdRef.current,
+            engineAction.cardInstanceId,
+            engineAction.targets,
+            emptyPayment,
+          );
+          if (!castResult.ok) {
+            setActionError({ reason: castResult.reason, message: castResult.message });
+            addMessage('system', `Cannot cast: ${castResult.message}`);
+            syncState();
+            return;
+          }
+          newState = castResult.state;
+          collectedEvents.push(...castResult.events);
+        } else if (engineAction.kind === 'PlayLand') {
+          const result = tryPlayLand(engine as GameState, humanIdRef.current, engineAction.cardInstanceId);
+          if (!result.ok) {
+            setActionError({ reason: result.reason, message: result.message });
+            addMessage('system', `Cannot play land: ${result.message}`);
+            syncState();
+            return;
+          }
+          newState = result.state;
+          collectedEvents.push(...result.events);
+        } else if (engineAction.kind === 'ActivateManaAbility') {
+          const result = tryTapLandForMana(engine as GameState, humanIdRef.current, engineAction.cardInstanceId, engineAction.color);
+          if (!result.ok) {
+            setActionError({ reason: result.reason, message: result.message });
+            addMessage('system', `Cannot tap for mana: ${result.message}`);
+            syncState();
+            return;
+          }
+          newState = result.state;
+          collectedEvents.push(...result.events);
+        } else if (engineAction.kind === 'ActivateAbility') {
+          const result = tryActivateAbility(engine as GameState, humanIdRef.current, engineAction.cardInstanceId, engineAction.abilityIndex, engineAction.targets);
+          if (!result.ok) {
+            setActionError({ reason: result.reason, message: result.message });
+            addMessage('system', `Cannot activate ability: ${result.message}`);
+            syncState();
+            return;
+          }
+          newState = result.state;
+          collectedEvents.push(...result.events);
+        } else if (engineAction.kind === 'PassPriority') {
+          const result = tryPassPriority(engine as GameState, humanIdRef.current);
+          if (!result.ok) {
+            setActionError({ reason: result.reason, message: result.message });
+            addMessage('system', `Cannot pass priority: ${result.message}`);
+            syncState();
+            return;
+          }
+          newState = result.state;
+          collectedEvents.push(...result.events);
+        } else if (engineAction.kind === 'DeclareAttackers') {
+          const result = tryDeclareAttackers(engine as GameState, humanIdRef.current, engineAction.attacks);
+          if (!result.ok) {
+            setActionError({ reason: result.reason, message: result.message });
+            addMessage('system', `Cannot declare attackers: ${result.message}`);
+            syncState();
+            return;
+          }
+          newState = result.state;
+          collectedEvents.push(...result.events);
+        } else if (engineAction.kind === 'DeclareBlockers') {
+          const result = tryDeclareBlockers(engine as GameState, humanIdRef.current, engineAction.blocks);
+          if (!result.ok) {
+            setActionError({ reason: result.reason, message: result.message });
+            addMessage('system', `Cannot declare blockers: ${result.message}`);
+            syncState();
+            return;
+          }
+          newState = result.state;
+          collectedEvents.push(...result.events);
+        } else if (engineAction.kind === 'Equip') {
+          const result = tryEquip(engine as GameState, humanIdRef.current, engineAction.equipmentInstanceId, engineAction.targetCreatureId);
+          if (!result.ok) {
+            setActionError({ reason: result.reason, message: result.message });
+            addMessage('system', `Cannot equip: ${result.message}`);
+            syncState();
+            return;
+          }
+          newState = result.state;
+          collectedEvents.push(...result.events);
         } else {
-          // Apply human action through the engine normally
+          // Fallback: apply through the engine dispatcher (covers any future action kinds)
           newState = applyAction(engine, humanIdRef.current, engineAction);
+        }
+
+        // Accumulate events from this action
+        if (collectedEvents.length > 0) {
+          setLastEvents(prev => [...prev, ...collectedEvents]);
         }
 
         // Track uncommitted mana taps (can be untapped) vs committed (used for a spell)
@@ -2517,6 +2630,9 @@ export function useShelectorGame() {
     undosRemaining,
     coachMode,
     untappableCardIds: [...uncommittedTapsRef.current],
+    // try* error state (Task 7)
+    actionError,
+    lastEvents,
 
     // Actions
     spawnOpponent,
@@ -2529,5 +2645,6 @@ export function useShelectorGame() {
     undoAction,
     setCoachMode,
     untapManaSource,
+    clearActionError: () => setActionError(null),
   };
 }

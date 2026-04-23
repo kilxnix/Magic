@@ -32,3 +32,26 @@ export * from './cards';
 
 // Game initialization (Phase 13)
 export * from './game-init';
+
+// Public try* action wrappers (Task 7 — game-reliability-refactor)
+// Note: actions-public also exports GameEvent, which conflicts with stack.ts's GameEvent.
+// We re-export everything except GameEvent to avoid the ambiguity, then re-export
+// actions-public's GameEvent under the alias ActionGameEvent.
+export {
+  type ActionFailure,
+  type WinReason,
+  type LoopCategory,
+  type LoopSignature,
+  type ActionResult,
+  type GameEvent as ActionGameEvent,
+  fail as actionFail,
+  success as actionSuccess,
+  tryPlayLand,
+  tryTapLandForMana,
+  tryCastSpell,
+  tryActivateAbility,
+  tryPassPriority,
+  tryDeclareAttackers,
+  tryDeclareBlockers,
+  tryEquip,
+} from './actions-public';
