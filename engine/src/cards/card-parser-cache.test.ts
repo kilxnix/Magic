@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { populateParsedCache } from './card-parser-cache';
 import { PARSER_FIXTURES } from './card-parser-fixtures';
 import type { CardDefinition } from '../types';
+import { entersTheBattlefieldTappedForTest } from '../actions';
 
 function defFrom(name: string, oracle: string, typeLine: string): CardDefinition {
   return {
@@ -56,6 +57,15 @@ describe('card-parser-cache — unlessTax', () => {
     it(`parses unless-tax for ${f.name}`, () => {
       const parsed = populateParsedCache(defFrom(f.name, f.oracleText, f.typeLine));
       expect(parsed.unlessTax).toEqual(f.expected.unlessTax);
+    });
+  }
+});
+
+describe('actions — entersTheBattlefieldTapped', () => {
+  for (const f of PARSER_FIXTURES) {
+    if (f.expected.entersTapped === undefined) continue;
+    it(`returns ${f.expected.entersTapped} for ${f.name}`, () => {
+      expect(entersTheBattlefieldTappedForTest(f.oracleText)).toBe(f.expected.entersTapped);
     });
   }
 });

@@ -58,11 +58,21 @@ export function playLand(state: GameState, playerId: string, cardInstanceId: str
   return resultState;
 }
 
+export function entersTheBattlefieldTappedForTest(oracleText: string): boolean {
+  return entersTheBattlefieldTapped(oracleText);
+}
+
 /** Check if a permanent's oracle text indicates it enters the battlefield tapped. */
 function entersTheBattlefieldTapped(oracleText: string): boolean {
   if (!oracleText) return false;
   const lower = oracleText.toLowerCase();
-  return lower.includes('enters the battlefield tapped') || lower.includes('enters tapped');
+  // If any clause says "doesn't enter" or "does not enter" tapped, treat as not-always-tapped.
+  if (/\bdo(?:es)?n'?t\s+enter\s+(?:the\s+battlefield\s+)?tapped\b/.test(lower)) return false;
+  if (/\bdoes\s+not\s+enter\s+(?:the\s+battlefield\s+)?tapped\b/.test(lower)) return false;
+  // "If you don't, it enters tapped" is conditional — default to not-always-tapped.
+  if (/\bif\s+you\s+don'?t\b[^.]*enters?\s+tapped/.test(lower)) return false;
+  // Otherwise, look for affirmative "enters tapped" / "enters the battlefield tapped".
+  return /\benters?(?:\s+the\s+battlefield)?\s+tapped\b/.test(lower);
 }
 
 export function tapLandForMana(state: GameState, playerId: string, cardInstanceId: string, color: ManaColor): GameState {
