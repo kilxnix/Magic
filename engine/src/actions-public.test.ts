@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { tryPlayLand, tryTapLandForMana, tryCastSpell } from './actions-public';
+import { tryPlayLand, tryTapLandForMana, tryCastSpell, tryActivateAbility } from './actions-public';
 import { makeTestState } from './__tests__/test-helpers';
 
 describe('tryPlayLand', () => {
@@ -100,5 +100,30 @@ describe('tryCastSpell', () => {
     const result = tryCastSpell(state, 'human', spellId, [], { G: 1, C: 0, W: 0, U: 0, B: 0, R: 0, generic: 0 });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.reason).toBe('wrong_phase');
+  });
+});
+
+describe('tryActivateAbility', () => {
+  it('returns ok with AbilityActivated event on valid activation', () => {
+    const state = makeTestState({ battlefieldCreatureWithAbility: true, manaPool: { C: 1 } });
+    const creature = [...state.cards.values()].find(c => c.zone === 'battlefield')!;
+    const result = tryActivateAbility(state, 'human', creature.instanceId, 0, []);
+    expect(result.ok).toBe(true);
+  });
+
+  it('returns already_tapped for tap-cost ability when already tapped', () => {
+    const state = makeTestState({ battlefieldCreatureWithAbility: true, tapCreatures: true });
+    const creature = [...state.cards.values()].find(c => c.zone === 'battlefield')!;
+    const result = tryActivateAbility(state, 'human', creature.instanceId, 0, []);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe('already_tapped');
+  });
+
+  it('returns summoning_sick for tap-cost creature ability just summoned', () => {
+    const state = makeTestState({ battlefieldCreatureWithAbility: true, summoningSick: true });
+    const creature = [...state.cards.values()].find(c => c.zone === 'battlefield')!;
+    const result = tryActivateAbility(state, 'human', creature.instanceId, 0, []);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe('summoning_sick');
   });
 });

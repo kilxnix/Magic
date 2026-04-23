@@ -1,6 +1,6 @@
 // engine/src/actions-public.ts
 import type { GameState, ManaColor, Phase, ManaCost } from './types';
-import { playLand, canPlayLand, tapLandForMana } from './actions';
+import { playLand, canPlayLand, tapLandForMana, activateAbility, getActivatedAbilities } from './actions';
 import { castSpell, canCastSpell } from './stack';
 import { canPayCost, parseManaString } from './mana';
 import { getCardDefinition } from './game-state';
@@ -148,6 +148,41 @@ export function tryCastSpell(
   try {
     const next = castSpell(state, playerId, cardInstanceId, targets);
     return success(next, [{ kind: 'SpellCast', playerId, cardId: cardInstanceId }]);
+  } catch (e) {
+    return fail('internal_error', (e as Error).message);
+  }
+}
+
+export function tryActivateAbility(
+  state: GameState,
+  playerId: string,
+  cardInstanceId: string,
+  abilityIndex: number,
+  targets: string[],
+): ActionResult {
+  const card = state.cards.get(cardInstanceId);
+  if (!card) return fail('card_not_found', 'Card not found');
+  if (card.ownerId !== playerId) return fail('card_not_found', 'Not your card');
+  if (card.zone !== 'battlefield') return fail('not_in_zone', 'Card not on battlefield');
+
+  const abilities = getActivatedAbilities(state, cardInstanceId);
+  if (abilityIndex >= abilities.length) return fail('card_not_found', `Ability ${abilityIndex} not found`);
+  const ability = abilities[abilityIndex];
+  const def = getCardDefinition(state, card);
+
+  if (ability.cost.tap && card.tapped) return fail('already_tapped', 'Already tapped');
+  if (ability.cost.tap && card.summoningSick && def.card_types.includes('creature')) {
+    return fail('summoning_sick', 'Summoning sick');
+  }
+  if (ability.cost.mana) {
+    const cost = parseManaString(ability.cost.mana);
+    const player = state.players.find(p => p.id === playerId)!;
+    if (!canPayCost(player.manaPool, cost)) return fail('insufficient_mana', 'Cannot pay mana cost');
+  }
+
+  try {
+    const next = activateAbility(state, playerId, cardInstanceId, abilityIndex, targets);
+    return success(next, [{ kind: 'AbilityActivated', playerId, cardId: cardInstanceId, abilityIndex }]);
   } catch (e) {
     return fail('internal_error', (e as Error).message);
   }

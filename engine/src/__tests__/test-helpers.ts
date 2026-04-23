@@ -13,6 +13,9 @@ export interface MakeTestStateOpts {
   handInstant?: string;
   handSorcery?: string;
   manaPool?: Partial<ManaPool>;
+  battlefieldCreatureWithAbility?: boolean;
+  summoningSick?: boolean;
+  tapCreatures?: boolean;
 }
 
 function stepForPhase(phase: Phase): Step {
@@ -153,6 +156,38 @@ export function makeTestState(opts: MakeTestStateOpts): GameState {
       zone: 'hand',
       tapped: false,
       summoningSick: false,
+      counters: {},
+      damage: 0,
+      isCommander: false,
+    });
+  }
+
+  // Creature with activated ability on battlefield
+  if (opts.battlefieldCreatureWithAbility) {
+    const creatureDefId = 'def_test_creature';
+    const creatureDef: CardDefinition = {
+      id: creatureDefId,
+      name: 'Test Creature',
+      type_line: 'Creature — Test',
+      oracle_text: '{T}: ~ deals 1 damage to any target.',
+      mana_cost: '{1}',
+      cmc: 1,
+      colors: [],
+      color_identity: [],
+      keywords: [],
+      card_types: ['creature'],
+      power: 1,
+      toughness: 1,
+    };
+    cardDefinitions.set(creatureDefId, creatureDef);
+    const instanceId = 'creature_0';
+    cards.set(instanceId, {
+      instanceId,
+      definitionId: creatureDefId,
+      ownerId: 'human',
+      zone: 'battlefield',
+      tapped: opts.tapCreatures ?? false,
+      summoningSick: opts.summoningSick ?? false,
       counters: {},
       damage: 0,
       isCommander: false,
