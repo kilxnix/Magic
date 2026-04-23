@@ -92,7 +92,21 @@ export function performUntapStep(state: GameState): GameState {
   const newCards = new Map(state.cards);
 
   for (const [id, card] of newCards) {
-    if (card.ownerId === activePlayerId && card.zone === 'battlefield') {
+    if (card.zone !== 'battlefield') continue;
+    if (card.ownerId !== activePlayerId) continue;
+    if (!card.tapped) {
+      // Not tapped — still clear summoningSick so it can act this turn
+      newCards.set(id, { ...card, summoningSick: false });
+      continue;
+    }
+
+    const stunCount = card.counters['stun'] ?? 0;
+    if (stunCount > 0) {
+      const newCounters = { ...card.counters, stun: stunCount - 1 };
+      if (newCounters.stun === 0) delete newCounters.stun;
+      newCards.set(id, { ...card, counters: newCounters });
+      // stays tapped
+    } else {
       newCards.set(id, { ...card, tapped: false, summoningSick: false });
     }
   }
