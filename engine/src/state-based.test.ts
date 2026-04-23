@@ -243,3 +243,19 @@ describe('Poison Counter Loss', () => {
     expect(next.players[0].hasLost).toBe(false);
   });
 });
+
+describe('Planeswalker Loyalty SBA', () => {
+  it('planeswalker with 0 loyalty goes to graveyard', () => {
+    const state = makeTestState({ battlefieldPlaneswalker: { loyalty: 0 } });
+    const next = checkStateBasedActions(state);
+    const pw = [...next.cards.values()].find(c => c.instanceId === 'pw_0');
+    expect(pw?.zone).toBe('graveyard');
+  });
+
+  it('planeswalker with positive loyalty stays on battlefield', () => {
+    const state = makeTestState({ battlefieldPlaneswalker: { loyalty: 3 } });
+    const next = checkStateBasedActions(state);
+    const pw = [...next.cards.values()].find(c => c.instanceId === 'pw_0');
+    expect(pw?.zone).toBe('battlefield');
+  });
+});

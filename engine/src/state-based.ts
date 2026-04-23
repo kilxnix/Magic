@@ -79,6 +79,18 @@ export function checkStateBasedActions(state: GameState): GameState {
       }
     }
 
+    // 2b. Planeswalkers with 0 loyalty go to the graveyard
+    for (const [id, card] of newCards) {
+      if (card.zone !== 'battlefield') continue;
+      const def = state.cardDefinitions.get(card.definitionId);
+      if (!def || !def.card_types.includes('planeswalker')) continue;
+      const loyalty = card.counters['loyalty'] ?? 0;
+      if (loyalty <= 0) {
+        newCards.set(id, { ...card, zone: graveyardDest(id), counters: {}, tapped: false });
+        stateChanged = true;
+      }
+    }
+
     // 3. Creatures with lethal damage die (unless indestructible)
     for (const [id, card] of newCards) {
       if (card.zone !== 'battlefield') continue;

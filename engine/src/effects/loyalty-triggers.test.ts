@@ -323,12 +323,9 @@ describe('executeLoyaltyAbility', () => {
 
     const result = executeLoyaltyAbility(state, 'inst_1', ability, 'p1');
 
-    // Loyalty should be 0 and planeswalker should be in graveyard (SBA)
-    // Note: this depends on state-based actions checking planeswalker loyalty.
-    // If SBA doesn't check loyalty yet, the planeswalker stays on battlefield with 0 loyalty.
-    // Either way, the loyalty counter should be 0.
+    // SBA fires: planeswalker with 0 loyalty moves to graveyard.
     const card = result.cards.get('inst_1')!;
-    expect(card.counters['loyalty']).toBe(0);
+    expect(card.zone).toBe('graveyard');
   });
 });
 

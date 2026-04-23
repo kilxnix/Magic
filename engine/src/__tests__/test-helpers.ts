@@ -18,6 +18,7 @@ export interface MakeTestStateOpts {
   tapCreatures?: boolean;
   battlefieldCreature?: boolean;
   handEquipment?: boolean;
+  battlefieldPlaneswalker?: { loyalty: number };
 }
 
 function stepForPhase(phase: Phase): Step {
@@ -255,6 +256,36 @@ export function makeTestState(opts: MakeTestStateOpts): GameState {
       tapped: false,
       summoningSick: false,
       counters: {},
+      damage: 0,
+      isCommander: false,
+    });
+  }
+
+  // Planeswalker on battlefield
+  if (opts.battlefieldPlaneswalker !== undefined) {
+    const pwDefId = 'def_test_planeswalker';
+    const pwDef: CardDefinition = {
+      id: pwDefId,
+      name: 'Test Planeswalker',
+      type_line: 'Legendary Planeswalker — Test',
+      oracle_text: '',
+      mana_cost: '{3}',
+      cmc: 3,
+      colors: [],
+      color_identity: [],
+      keywords: [],
+      card_types: ['planeswalker'],
+    };
+    cardDefinitions.set(pwDefId, pwDef);
+    const instanceId = 'pw_0';
+    cards.set(instanceId, {
+      instanceId,
+      definitionId: pwDefId,
+      ownerId: 'human',
+      zone: 'battlefield',
+      tapped: false,
+      summoningSick: false,
+      counters: { loyalty: opts.battlefieldPlaneswalker.loyalty },
       damage: 0,
       isCommander: false,
     });
