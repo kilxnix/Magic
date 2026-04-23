@@ -177,6 +177,7 @@ export interface Player {
   id: string;
   name: string;
   life: number;
+  poisonCounters: number; // NEW — for infect/poison loss condition (>=10 loses)
   commanderDamage: Record<string, number>; // commanderInstanceId -> damage taken
   commanderTax: number;
   commanderInstanceId: string | null; // player's commander card instance
@@ -234,6 +235,7 @@ export function createPlayer(id: string, name: string, life: number = 40): Playe
     id,
     name,
     life,
+    poisonCounters: 0,
     commanderDamage: {},
     commanderTax: 0,
     commanderInstanceId: null,

@@ -13,6 +13,7 @@ export interface Player {
   id: string;
   name: string;
   life: number;
+  poisonCounters: number; // for infect/poison loss condition (>=10 loses)
   manaPool: ManaPool;
   hasPlayedLand: boolean;
   hasPriority: boolean;
@@ -199,6 +200,7 @@ function emptyManaPool(): ManaPool {
 function createPlayer(id: string, name: string, life: number = 40): Player {
   return {
     id, name, life,
+    poisonCounters: 0,
     manaPool: emptyManaPool(),
     hasPlayedLand: false,
     hasPriority: false,

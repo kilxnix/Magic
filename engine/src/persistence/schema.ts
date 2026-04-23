@@ -31,6 +31,7 @@ export interface SerializedPlayerV1 {
   id: string;
   name: string;
   life: number;
+  poisonCounters?: number; // optional for backward compat with existing saves
   commanderDamage: Record<string, number>;
   commanderTax: number;
   commanderInstanceId: string | null;

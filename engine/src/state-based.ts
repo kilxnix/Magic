@@ -150,6 +150,15 @@ export function checkStateBasedActions(state: GameState): GameState {
         }
       }
     }
+
+    // 7. Players with 10+ poison counters lose
+    for (let i = 0; i < newPlayers.length; i++) {
+      if (newPlayers[i].hasLost) continue;
+      if (newPlayers[i].poisonCounters >= 10) {
+        newPlayers[i].hasLost = true;
+        stateChanged = true;
+      }
+    }
   }
 
   // Create pending triggers for creatures that died with dies abilities

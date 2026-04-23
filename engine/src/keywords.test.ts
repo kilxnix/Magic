@@ -60,6 +60,7 @@ function makeTestState(
         id: 'player-1',
         name: 'Player 1',
         life: 40,
+        poisonCounters: 0,
         commanderDamage: {},
         commanderTax: 0,
         manaPool: { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 },

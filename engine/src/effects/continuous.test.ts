@@ -24,6 +24,7 @@ import { emptyManaPool } from '../types';
 function makePlayer(id: string, life = 40): Player {
   return {
     id, name: id, life,
+    poisonCounters: 0,
     commanderDamage: {}, commanderTax: 0,
     commanderInstanceId: null, commanderCastCount: 0,
     manaPool: emptyManaPool(),

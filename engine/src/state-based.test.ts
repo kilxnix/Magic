@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { checkStateBasedActions, cleanupDamage } from './state-based';
 import { initGameState, getCardsInZone } from './game-state';
 import { CardDefinition } from './types';
+import { makeTestState } from './__tests__/test-helpers';
 
 function makeBear(id: string = 'bear-1'): CardDefinition {
   return {
@@ -224,5 +225,21 @@ describe('cleanupDamage', () => {
 
     const next = cleanupDamage(state);
     expect(next.cards.get(card.instanceId)!.damage).toBe(3);
+  });
+});
+
+describe('Poison Counter Loss', () => {
+  it('player with 10+ poison counters loses', () => {
+    const state = makeTestState({});
+    state.players[0] = { ...state.players[0], poisonCounters: 10 };
+    const next = checkStateBasedActions(state);
+    expect(next.players[0].hasLost).toBe(true);
+  });
+
+  it('player with 9 poison counters does not lose', () => {
+    const state = makeTestState({});
+    state.players[0] = { ...state.players[0], poisonCounters: 9 };
+    const next = checkStateBasedActions(state);
+    expect(next.players[0].hasLost).toBe(false);
   });
 });
