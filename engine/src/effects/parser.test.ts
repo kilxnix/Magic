@@ -1199,3 +1199,70 @@ describe('regex edge cases (task 14)', () => {
     expect(re.test('0: Flip a coin')).toBe(true);
   });
 });
+
+describe('counter pattern matchers (task 17)', () => {
+  it('parses "put a +1/+1 counter on ~"', () => {
+    const result = parseOracleText('Put a +1/+1 counter on ~.');
+
+    expect(result.kind).toBe('Spell');
+    if (result.kind !== 'Spell') return;
+
+    expect(result.effects).toHaveLength(1);
+    expect(result.effects[0].kind).toBe('AddCounters');
+
+    const add = result.effects[0];
+    if (add.kind !== 'AddCounters') return;
+    expect(add.counterType).toBe('+1/+1');
+    expect(add.count).toBe(1);
+    // targets array should be empty since ~ refers to the card itself
+    expect(result.targets).toHaveLength(0);
+  });
+
+  it('parses "put a flying counter on target creature"', () => {
+    const result = parseOracleText('Put a flying counter on target creature.');
+
+    expect(result.kind).toBe('Spell');
+    if (result.kind !== 'Spell') return;
+
+    expect(result.effects).toHaveLength(1);
+    expect(result.effects[0].kind).toBe('AddCounters');
+
+    const add = result.effects[0];
+    if (add.kind !== 'AddCounters') return;
+    expect(add.counterType).toBe('flying');
+    expect(add.count).toBe(1);
+    expect(result.targets[0].type).toBe('Creature');
+  });
+
+  it('parses "target player gets 3 poison counters"', () => {
+    const result = parseOracleText('Target player gets 3 poison counters.');
+
+    expect(result.kind).toBe('Spell');
+    if (result.kind !== 'Spell') return;
+
+    expect(result.effects).toHaveLength(1);
+    expect(result.effects[0].kind).toBe('AddCounters');
+
+    const add = result.effects[0];
+    if (add.kind !== 'AddCounters') return;
+    expect(add.counterType).toBe('poison');
+    expect(add.count).toBe(3);
+    expect(result.targets[0].type).toBe('Player');
+  });
+
+  it('parses "put a stun counter on target permanent"', () => {
+    const result = parseOracleText('Put a stun counter on target permanent.');
+
+    expect(result.kind).toBe('Spell');
+    if (result.kind !== 'Spell') return;
+
+    expect(result.effects).toHaveLength(1);
+    expect(result.effects[0].kind).toBe('AddCounters');
+
+    const add = result.effects[0];
+    if (add.kind !== 'AddCounters') return;
+    expect(add.counterType).toBe('stun');
+    expect(add.count).toBe(1);
+    expect(result.targets[0].type).toBe('Permanent');
+  });
+});

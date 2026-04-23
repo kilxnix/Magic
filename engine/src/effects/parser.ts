@@ -480,49 +480,127 @@ function matchMill(tokens: string[], startIndex: number): PatternResult {
 function matchAddCounters(tokens: string[], startIndex: number): PatternResult {
   const slice = tokens.slice(startIndex);
 
-  if (slice.length < 6) return null;
-  if (slice[0] !== 'put') return null;
+  // ── Pattern A: "put a/N <type> counter(s) on <target>" ──────────────────────
+  if (slice[0] === 'put' && slice.length >= 6) {
+    let count: number;
+    let counterStartIdx: number;
 
-  let count: number;
-  let counterStartIdx: number;
+    if (slice[1] === 'a') {
+      count = 1;
+      counterStartIdx = 2;
+    } else {
+      const n = parseInt(slice[1], 10);
+      if (isNaN(n)) return null;
+      count = n;
+      counterStartIdx = 2;
+    }
 
-  // "put a +1/+1 counter"
-  if (slice[1] === 'a') {
-    count = 1;
-    counterStartIdx = 2;
+    // Parse counter type — can be multi-token (e.g. "first strike", "double strike")
+    let counterType: string | null = null;
+    let typeEndIdx = counterStartIdx;
+
+    if (
+      (slice[counterStartIdx] === 'first' || slice[counterStartIdx] === 'double') &&
+      slice[counterStartIdx + 1] === 'strike'
+    ) {
+      counterType = `${slice[counterStartIdx]} strike`;
+      typeEndIdx = counterStartIdx + 2;
+    } else if (slice[counterStartIdx]) {
+      counterType = slice[counterStartIdx];
+      typeEndIdx = counterStartIdx + 1;
+    } else {
+      return null;
+    }
+
+    // "counter" or "counters"
+    const counterWord = slice[typeEndIdx];
+    if (counterWord !== 'counter' && counterWord !== 'counters') return null;
+
+    if (slice[typeEndIdx + 1] !== 'on') return null;
+
+    const afterOn = typeEndIdx + 2;
+
+    // Sub-case A1: "put a +1/+1 counter on ~" (self-target)
+    if (slice[afterOn] === '~') {
+      let consumed = afterOn + 1;
+      if (tokens[startIndex + consumed] === '.') consumed++;
+
+      const effect: Effect = {
+        kind: 'AddCounters',
+        target: { kind: 'Controller' },
+        counterType,
+        count,
+      };
+      return { effects: [effect], targets: [], consumed };
+    }
+
+    // Sub-case A2: "put a X counter on target <type>"
+    if (slice[afterOn] === 'target' && slice[afterOn + 1]) {
+      const typeWord = slice[afterOn + 1];
+      const targetType: TargetType =
+        typeWord === 'creature' ? 'Creature' :
+        typeWord === 'permanent' ? 'Permanent' :
+        typeWord === 'player' ? 'Player' :
+        typeWord === 'artifact' ? 'Artifact' :
+        typeWord === 'enchantment' ? 'Enchantment' : null as unknown as TargetType;
+
+      if (!targetType) return null;
+
+      let consumed = afterOn + 2;
+      if (tokens[startIndex + consumed] === '.') consumed++;
+
+      const spec = makeTargetSpec(targetType);
+      const effect: Effect = {
+        kind: 'AddCounters',
+        target: makeChosenRef(spec),
+        counterType,
+        count,
+      };
+      return { effects: [effect], targets: [spec], consumed };
+    }
+
+    return null;
   }
-  // "put N +1/+1 counters"
-  else {
-    const n = parseInt(slice[1], 10);
-    if (isNaN(n)) return null;
-    count = n;
-    counterStartIdx = 2;
+
+  // ── Pattern B: "target player gets N/a poison counter(s)" ────────────────────
+  if (
+    slice[0] === 'target' &&
+    slice[1] === 'player' &&
+    slice[2] === 'gets' &&
+    slice.length >= 5
+  ) {
+    let idx = 3;
+    let count = 1;
+
+    if (/^\d+$/.test(slice[idx])) {
+      count = parseInt(slice[idx], 10);
+      idx++;
+    } else if (slice[idx] === 'a') {
+      idx++;
+    } else {
+      return null;
+    }
+
+    const counterType = slice[idx];
+    if (!counterType) return null;
+    idx++;
+
+    if (slice[idx] !== 'counter' && slice[idx] !== 'counters') return null;
+    idx++;
+
+    if (tokens[startIndex + idx] === '.') idx++;
+
+    const spec = makeTargetSpec('Player');
+    const effect: Effect = {
+      kind: 'AddCounters',
+      target: makeChosenRef(spec),
+      counterType,
+      count,
+    };
+    return { effects: [effect], targets: [spec], consumed: idx };
   }
 
-  // Parse counter type (e.g., "+1/+1")
-  const counterType = slice[counterStartIdx];
-  if (!counterType) return null;
-
-  // "counter" or "counters"
-  const counterWord = slice[counterStartIdx + 1];
-  if (counterWord !== 'counter' && counterWord !== 'counters') return null;
-
-  if (slice[counterStartIdx + 2] !== 'on') return null;
-  if (slice[counterStartIdx + 3] !== 'target') return null;
-  if (slice[counterStartIdx + 4] !== 'creature') return null;
-
-  let consumed = counterStartIdx + 5;
-  if (tokens[startIndex + consumed] === '.') consumed++;
-
-  const spec = makeTargetSpec('Creature');
-  const effect: Effect = {
-    kind: 'AddCounters',
-    target: makeChosenRef(spec),
-    counterType,
-    count,
-  };
-
-  return { effects: [effect], targets: [spec], consumed };
+  return null;
 }
 
 /**

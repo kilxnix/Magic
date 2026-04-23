@@ -348,6 +348,22 @@ function executeAddCounters(
   const finalCount = replaced.amount ?? count;
   if (finalCount <= 0) return state;
 
+  // Check if the target is a player (for poison counters and similar)
+  const playerIndex = state.players.findIndex(p => p.id === targetId);
+  if (playerIndex !== -1) {
+    // Only poison counters are tracked on players via poisonCounters
+    if (counterType === 'poison') {
+      const newPlayers = state.players.map((p, i) =>
+        i === playerIndex
+          ? { ...p, poisonCounters: p.poisonCounters + finalCount }
+          : p
+      );
+      return { ...state, players: newPlayers };
+    }
+    // Other player-targeted counter types: no-op for now
+    return state;
+  }
+
   const card = state.cards.get(targetId);
   if (!card || card.zone !== 'battlefield') return state;
 
