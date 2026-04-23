@@ -1,6 +1,6 @@
 // engine/src/actions-public.ts
 import type { GameState, ManaColor, Phase } from './types';
-import { playLand, canPlayLand } from './actions';
+import { playLand, canPlayLand, tapLandForMana } from './actions';
 
 export type ActionFailure =
   | 'not_your_turn'
@@ -75,6 +75,26 @@ export function tryPlayLand(
   try {
     const next = playLand(state, playerId, cardInstanceId);
     return success(next, [{ kind: 'LandPlayed', playerId, cardId: cardInstanceId }]);
+  } catch (e) {
+    return fail('internal_error', (e as Error).message);
+  }
+}
+
+export function tryTapLandForMana(
+  state: GameState,
+  playerId: string,
+  cardInstanceId: string,
+  color: ManaColor,
+): ActionResult {
+  const card = state.cards.get(cardInstanceId);
+  if (!card) return fail('card_not_found', 'Card not found');
+  if (card.ownerId !== playerId) return fail('card_not_found', 'Not your card');
+  if (card.zone !== 'battlefield') return fail('not_in_zone', 'Card not on battlefield');
+  if (card.tapped) return fail('already_tapped', 'Already tapped');
+
+  try {
+    const next = tapLandForMana(state, playerId, cardInstanceId, color);
+    return success(next, [{ kind: 'ManaTapped', playerId, cardId: cardInstanceId, color }]);
   } catch (e) {
     return fail('internal_error', (e as Error).message);
   }

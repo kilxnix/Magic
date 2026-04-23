@@ -8,6 +8,8 @@ export interface MakeTestStateOpts {
   step?: Step;
   activePlayerIndex?: number;
   priorityPlayerIndex?: number;
+  battlefieldLands?: number;
+  tapLands?: boolean;
 }
 
 function stepForPhase(phase: Phase): Step {
@@ -40,7 +42,8 @@ export function makeTestState(opts: MakeTestStateOpts): GameState {
 
   // Forest definition
   const forestDefId = 'def_forest';
-  if (handLands > 0) {
+  const needForestDef = (handLands > 0) || ((opts.battlefieldLands ?? 0) > 0);
+  if (needForestDef) {
     const forestDef: CardDefinition = {
       id: forestDefId,
       name: 'Forest',
@@ -63,6 +66,23 @@ export function makeTestState(opts: MakeTestStateOpts): GameState {
         ownerId: 'human',
         zone: 'hand',
         tapped: false,
+        summoningSick: false,
+        counters: {},
+        damage: 0,
+        isCommander: false,
+      };
+      cards.set(instanceId, instance);
+    }
+
+    const battlefieldLands = opts.battlefieldLands ?? 0;
+    for (let i = 0; i < battlefieldLands; i++) {
+      const instanceId = `bf_land_${i}`;
+      const instance: CardInstance = {
+        instanceId,
+        definitionId: forestDefId,
+        ownerId: 'human',
+        zone: 'battlefield',
+        tapped: opts.tapLands ?? false,
         summoningSick: false,
         counters: {},
         damage: 0,
