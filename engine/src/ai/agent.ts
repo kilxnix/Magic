@@ -6,14 +6,25 @@
  */
 
 import { GameState } from '../types';
-import { playLand, tapLandForMana, activateAbility, equipCreature } from '../actions';
-import { castSpell } from '../stack';
-import { declareAttackers, declareBlockers } from '../combat';
-import { passPriority } from '../priority';
 import { getLegalActions, getSpellTargetSpecs } from './legal-actions';
 import { evaluateActions, getBestAction } from './evaluate';
 import { selectTargetsForSpell, selectBestAttackTarget } from './targeting';
 import type { AIAction, AIDifficulty, AIPlayerConfig, ActionEvaluation } from './types';
+import {
+  tryPlayLand,
+  tryTapLandForMana,
+  tryCastSpell,
+  tryActivateAbility,
+  tryPassPriority,
+  tryDeclareAttackers,
+  tryDeclareBlockers,
+  tryEquip,
+  fail,
+} from '../actions-public';
+import type { ActionResult } from '../actions-public';
+
+/** Maximum consecutive failed dispatches before the AI forces a priority pass. */
+const AI_RETRY_BUDGET = 5;
 
 /**
  * AI decision result including the chosen action and new game state.
@@ -25,39 +36,74 @@ export interface AIDecision {
 }
 
 /**
- * Apply an AI action to the game state.
+ * Dispatch an AI action through the try* API, returning an ActionResult.
+ *
+ * This is the canonical action-application layer: it validates and applies
+ * state mutations through the public try* wrappers rather than calling raw
+ * action functions directly.
  */
-export function applyAction(state: GameState, playerId: string, action: AIAction): GameState {
+export function dispatchAIAction(
+  state: GameState,
+  playerId: string,
+  action: AIAction,
+): ActionResult {
   switch (action.kind) {
     case 'PlayLand':
-      return playLand(state, playerId, action.cardInstanceId);
+      return tryPlayLand(state, playerId, action.cardInstanceId);
 
     case 'ActivateManaAbility':
-      return tapLandForMana(state, playerId, action.cardInstanceId, action.color);
+      return tryTapLandForMana(state, playerId, action.cardInstanceId, action.color);
 
     case 'CastSpell':
-      return castSpell(state, playerId, action.cardInstanceId, action.targets, action.chosenModes);
+      // CastSpell in the AIAction doesn't carry a manaPayment — the mana pool
+      // is expected to have been pre-loaded via ActivateManaAbility actions.
+      // tryCastSpell checks the pool against the card's cost; pass an empty
+      // payment object so the wrapper uses the pool as-is.
+      return tryCastSpell(state, playerId, action.cardInstanceId, action.targets, {
+        W: 0, U: 0, B: 0, R: 0, G: 0, C: 0, generic: 0,
+      });
 
     case 'DeclareAttackers':
-      return declareAttackers(state, playerId, action.attacks);
+      return tryDeclareAttackers(state, playerId, action.attacks);
 
     case 'DeclareBlockers':
-      return declareBlockers(state, playerId, action.blocks);
+      return tryDeclareBlockers(state, playerId, action.blocks);
 
     case 'ActivateAbility':
-      return activateAbility(state, playerId, action.cardInstanceId, action.abilityIndex, action.targets);
+      return tryActivateAbility(
+        state,
+        playerId,
+        action.cardInstanceId,
+        action.abilityIndex,
+        action.targets,
+      );
 
     case 'Equip':
-      return equipCreature(state, playerId, action.equipmentInstanceId, action.targetCreatureId);
+      return tryEquip(state, playerId, action.equipmentInstanceId, action.targetCreatureId);
 
     case 'PassPriority':
-      return passPriority(state);
+      return tryPassPriority(state, playerId);
 
-    default:
+    default: {
       // Exhaustiveness check
       const _never: never = action;
-      throw new Error(`Unknown action kind: ${(_never as AIAction).kind}`);
+      return fail('internal_error', `Unknown AI action kind: ${(_never as AIAction).kind}`);
+    }
   }
+}
+
+/**
+ * Apply an AI action to the game state (legacy shim for backward compatibility).
+ *
+ * Prefer dispatchAIAction for new call sites.  This wrapper throws on failure
+ * so that existing callers that expect a raw GameState keep working unchanged.
+ */
+export function applyAction(state: GameState, playerId: string, action: AIAction): GameState {
+  const result = dispatchAIAction(state, playerId, action);
+  if (result.ok) {
+    return result.state;
+  }
+  throw new Error(`AI action ${action.kind} failed: ${result.message}`);
 }
 
 /**
@@ -151,7 +197,14 @@ function enhanceAttackTargets(
 }
 
 /**
- * Make a decision for an AI player.
+ * Make a single decision for an AI player, dispatching the chosen action
+ * through the try* API.
+ *
+ * Returns:
+ *   - An AIDecision when an action was successfully applied.
+ *   - null when no legal actions exist or the chosen action could not be
+ *     applied and no fallback was available.  The loop in runAITurn counts
+ *     these null returns against the retry budget.
  */
 export function makeDecision(
   state: GameState,
@@ -188,33 +241,42 @@ export function makeDecision(
     return null;
   }
 
-  // Apply the action
-  try {
-    const newState = applyAction(state, playerId, bestEvaluation.action);
+  // Dispatch through the try* API
+  const result = dispatchAIAction(state, playerId, bestEvaluation.action);
+  if (result.ok) {
     return {
       action: bestEvaluation.action,
-      newState,
+      newState: result.state,
       reasoning: bestEvaluation.reasoning,
     };
-  } catch (error) {
-    // If the action fails, try to fall back to passing priority
-    const passAction = actions.find(a => a.kind === 'PassPriority');
-    if (passAction) {
-      const newState = applyAction(state, playerId, passAction);
+  }
+
+  // Action failed — fall back to PassPriority if it was among the legal actions.
+  const passAction = actions.find(a => a.kind === 'PassPriority');
+  if (passAction) {
+    const passResult = dispatchAIAction(state, playerId, passAction);
+    if (passResult.ok) {
       return {
         action: passAction,
-        newState,
-        reasoning: 'Fallback to pass',
+        newState: passResult.state,
+        reasoning: `Fallback to pass (${result.reason}: ${result.message})`,
       };
     }
-    return null;
   }
+
+  // Both the chosen action and the fallback pass failed; signal failure to the
+  // loop so it can count against the retry budget.
+  return null;
 }
 
 /**
  * Run the AI until it passes priority or changes phase.
  *
  * Returns the sequence of decisions made.
+ *
+ * A 5-action retry budget guards against stalling: if makeDecision returns
+ * null (dispatch failed and no fallback was available) five times in a row,
+ * the loop forces a PassPriority directly through tryPassPriority and exits.
  */
 export function runAITurn(
   initialState: GameState,
@@ -223,16 +285,43 @@ export function runAITurn(
 ): { finalState: GameState; decisions: AIDecision[] } {
   let state = initialState;
   const decisions: AIDecision[] = [];
+  let consecutiveFailures = 0;
 
   for (let i = 0; i < maxIterations; i++) {
+    // Retry budget: if too many consecutive dispatches have failed, stop
+    // trying and force a priority pass so the game can progress.
+    if (consecutiveFailures >= AI_RETRY_BUDGET) {
+      const passResult = tryPassPriority(state, config.playerId);
+      if (passResult.ok) {
+        decisions.push({
+          action: { kind: 'PassPriority' },
+          newState: passResult.state,
+          reasoning: `Retry budget (${AI_RETRY_BUDGET}) exhausted — passing priority`,
+        });
+        state = passResult.state;
+      }
+      // Whether or not the forced pass succeeded, exit the loop.
+      break;
+    }
+
     const decision = makeDecision(state, config);
 
     if (!decision) {
-      break; // No legal actions
+      // null can mean "no legal actions" (clean exit) or "dispatch failed
+      // and no fallback" (count against budget and retry).
+      consecutiveFailures++;
+      // If we've now hit the budget, the top of the loop will handle it.
+      // Exit immediately only when there genuinely are no legal actions at all.
+      const actions = getLegalActions(state, config.playerId);
+      if (actions.length === 0) {
+        break;
+      }
+      continue;
     }
 
     decisions.push(decision);
     state = decision.newState;
+    consecutiveFailures = 0; // Reset budget on every successful dispatch.
 
     // Stop if we passed priority (let the game loop handle the rest)
     if (decision.action.kind === 'PassPriority') {
