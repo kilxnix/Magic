@@ -4,6 +4,7 @@ import { ArrowLeft, ClipboardPaste, Loader2, Swords, Link as LinkIcon, History, 
 import { useShelectorGame } from '../hooks/useShelectorGame';
 import { GameBoard } from '../components/GameBoard';
 import { GameReview } from '../components/GameReview';
+import { EndGameModal } from '../components/shelector/EndGameModal';
 import { cacheSet, cacheGet } from '../lib/cache';
 
 interface DeckImportResult {
@@ -66,6 +67,13 @@ export function PlayPage() {
     setCoachMode,
     untapManaSource,
     untappableCardIds,
+    endGame,
+    closeEndGame,
+    newGame,
+    declareDraw,
+    concedeGame,
+    playItOut,
+    reviewLog,
   } = useShelectorGame();
 
   // Pre-game state
@@ -322,6 +330,20 @@ export function PlayPage() {
             onClose={() => setShowReview(false)}
           />
         )}
+
+        {/* End-game modal (win / loss / possible loop) */}
+        <EndGameModal
+          open={endGame.open}
+          kind={endGame.kind}
+          reason={endGame.reason}
+          loopSources={endGame.loopSources}
+          onPlayItOut={playItOut}
+          onDeclareDraw={declareDraw}
+          onConcede={concedeGame}
+          onNewGame={newGame}
+          onReviewLog={() => { reviewLog(); setShowReview(true); }}
+          onClose={closeEndGame}
+        />
       </div>
     );
   }
