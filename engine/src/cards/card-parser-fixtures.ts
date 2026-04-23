@@ -1,0 +1,102 @@
+import type { EquipCostInfo, EquipmentBonusInfo, ManaProductionInfo, SearchAbilityInfo, UnlessTaxInfo } from '../effects/ast';
+
+export interface ParserFixture {
+  name: string;
+  oracleText: string;
+  typeLine: string;
+  expected: {
+    equipCost?: EquipCostInfo;
+    equipmentBonus?: EquipmentBonusInfo;
+    manaProduction?: ManaProductionInfo;
+    searchAbility?: SearchAbilityInfo;
+    unlessTax?: UnlessTaxInfo;
+    entersTapped?: boolean;
+  };
+}
+
+export const PARSER_FIXTURES: ParserFixture[] = [
+  // --- entersTheBattlefieldTapped ---
+  {
+    name: 'Sacred Foundry',
+    oracleText: 'As Sacred Foundry enters the battlefield, you may pay 2 life. If you don\'t, it enters tapped.',
+    typeLine: 'Land — Mountain Plains',
+    expected: { entersTapped: false },
+  },
+  {
+    name: 'Tranquil Cove',
+    oracleText: 'Tranquil Cove enters the battlefield tapped.\n{T}: Add {W} or {U}.',
+    typeLine: 'Land',
+    expected: { entersTapped: true },
+  },
+  {
+    name: 'Shock Land (negated)',
+    oracleText: 'This land doesn\'t enter the battlefield tapped.',
+    typeLine: 'Land',
+    expected: { entersTapped: false },
+  },
+  // --- Equip cost ---
+  {
+    name: 'Sword of Fire and Ice',
+    oracleText: 'Equipped creature gets +2/+2 and has protection from red and from blue.\nEquip {2}',
+    typeLine: 'Legendary Artifact — Equipment',
+    expected: { equipCost: { generic: 2, W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 } },
+  },
+  {
+    name: 'Shadowspear',
+    oracleText: 'Equipped creature gets +1/+1 and has trample and lifelink.\nEquip {1}',
+    typeLine: 'Legendary Artifact — Equipment',
+    expected: {
+      equipCost: { generic: 1, W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 },
+      equipmentBonus: { power: 1, toughness: 1, keywords: ['Trample', 'Lifelink'] },
+    },
+  },
+  // --- Mana production ---
+  {
+    name: 'Sol Ring',
+    oracleText: '{T}: Add {C}{C}.',
+    typeLine: 'Artifact',
+    expected: {
+      manaProduction: {
+        colors: ['C'],
+        amounts: { C: 2 },
+        isTapAbility: true,
+        requiresSacrifice: false,
+      },
+    },
+  },
+  {
+    name: 'Chromatic Lantern',
+    oracleText: 'Lands you control have "{T}: Add one mana of any color."\n{T}: Add one mana of any color.',
+    typeLine: 'Artifact',
+    expected: {
+      manaProduction: {
+        colors: ['W', 'U', 'B', 'R', 'G'],
+        amounts: { W: 1, U: 1, B: 1, R: 1, G: 1 },
+        isTapAbility: true,
+        requiresSacrifice: false,
+      },
+    },
+  },
+  // --- Search ability ---
+  {
+    name: 'Cultivate',
+    oracleText: 'Search your library for up to two basic land cards, reveal those cards, put one onto the battlefield tapped and the other into your hand, then shuffle.',
+    typeLine: 'Sorcery',
+    expected: {
+      searchAbility: { filter: 'basic land', destination: 'battlefield', tapped: true, shuffle: true },
+    },
+  },
+  // --- Unless tax ---
+  {
+    name: 'Rhystic Study',
+    oracleText: 'Whenever an opponent casts a spell, you may draw a card unless that player pays {1}.',
+    typeLine: 'Enchantment',
+    expected: {
+      unlessTax: { triggerKind: 'OpponentCastSpell', taxAmount: 1, effect: 'draw', effectCount: 1 },
+    },
+  },
+];
+
+export function fixturesFor(field: keyof ParserFixture['expected']): ParserFixture[] {
+  return PARSER_FIXTURES.filter(f => f.expected[field] !== undefined);
+}
