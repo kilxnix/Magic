@@ -53,6 +53,30 @@ export class LoopDetector {
   }
 }
 
+import type { WinReason } from './actions-public';
+
+export interface WinConditionResult {
+  losers: { playerId: string; reason: WinReason }[];
+  loop?: LoopSignature;
+}
+
+export function checkWinConditions(state: GameState, detector: LoopDetector): WinConditionResult {
+  const losers: { playerId: string; reason: WinReason }[] = [];
+
+  for (const p of state.players) {
+    if (!p.hasLost) continue;
+    let reason: WinReason;
+    if (p.life <= 0) reason = 'life';
+    else if ((p.poisonCounters ?? 0) >= 10) reason = 'poison';
+    else if (Object.values(p.commanderDamage ?? {}).some(v => v >= 21)) reason = 'commander_damage';
+    else reason = 'empty_library'; // fallback — executor sets hasLost directly for this case
+    losers.push({ playerId: p.id, reason });
+  }
+
+  const loop = detector.observe(state, 'check') ?? undefined;
+  return { losers, loop };
+}
+
 export function fingerprint(state: GameState): string {
   const parts: string[] = [];
   for (const p of state.players) {
