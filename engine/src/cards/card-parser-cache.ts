@@ -160,34 +160,28 @@ function parseManaProduction(oracle: string, typeLine: string): ManaProductionIn
 // ========== Search Ability ==========
 
 function parseSearchAbility(oracle: string): SearchAbilityInfo | undefined {
-  if (!oracle.includes('search your library') && !oracle.includes('search their library')) {
-    return undefined;
-  }
+  if (!/search\s+(?:your|their)\s+library/i.test(oracle)) return undefined;
 
   let filter: string | undefined;
-  const forMatch = oracle.match(/search your library for (?:an? |up to \w+ )?(.+?)(?:\s+card)?(?:,|\.|and put| then| with| reveal)/);
+  // Anchor the card-type phrase on "card" or a comma/period
+  const forMatch = oracle.match(/search your library for (?:an?\s+|up to \w+\s+)?([^,.]+?)\s+cards?/i);
   if (forMatch) {
-    const target = forMatch[1].trim();
-    if (target.includes('basic land')) filter = 'basic land';
-    else if (target.includes('artifact or enchantment')) filter = 'artifact or enchantment';
-    else if (target.includes('artifact')) filter = 'artifact';
-    else if (target.includes('enchantment')) filter = 'enchantment';
-    else if (target.includes('creature')) filter = 'creature';
-    else if (target.includes('instant or sorcery')) filter = 'instant or sorcery';
-    else if (target.includes('instant')) filter = 'instant';
-    else if (target.includes('sorcery')) filter = 'sorcery';
-    else if (target.includes('land')) filter = 'land';
-    else if (target.includes('planeswalker')) filter = 'planeswalker';
+    const target = forMatch[1].toLowerCase();
+    const filters = [
+      'basic land', 'artifact or enchantment', 'artifact', 'enchantment',
+      'creature', 'instant or sorcery', 'instant', 'sorcery', 'land', 'planeswalker',
+    ];
+    filter = filters.find(f => target.includes(f));
   }
 
   let destination: SearchAbilityInfo['destination'] = 'hand';
-  if (oracle.includes('onto the battlefield') || oracle.includes('put it onto the battlefield')) destination = 'battlefield';
-  else if (oracle.includes('on top of your library') || oracle.includes('on top')) destination = 'top';
-  else if (oracle.includes('into your graveyard') || oracle.includes('put that card into your graveyard')) destination = 'graveyard';
-  else if (oracle.includes('put it into your hand') || oracle.includes('put that card into your hand')) destination = 'hand';
+  if (/onto the battlefield/i.test(oracle)) destination = 'battlefield';
+  else if (/on top of your library/i.test(oracle)) destination = 'top';
+  else if (/into your graveyard/i.test(oracle)) destination = 'graveyard';
+  else if (/into your hand/i.test(oracle)) destination = 'hand';
 
-  const tapped = destination === 'battlefield' && oracle.includes('tapped');
-  const shuffle = oracle.includes('shuffle');
+  const tapped = destination === 'battlefield' && /onto the battlefield tapped/i.test(oracle);
+  const shuffle = /\bshuffle\b/i.test(oracle);
 
   return { filter, destination, tapped: tapped || undefined, shuffle };
 }
@@ -195,29 +189,24 @@ function parseSearchAbility(oracle: string): SearchAbilityInfo | undefined {
 // ========== Tax Triggers ==========
 
 function parseUnlessTax(oracle: string): UnlessTaxInfo | undefined {
-  // "whenever an opponent casts a spell, you may draw a card unless that player pays {1}"
-  // "whenever an opponent casts a spell, create a Treasure token unless that player pays {2}"
-  if (!oracle.includes('unless') || !oracle.includes('pays')) return undefined;
+  if (!/\bunless\b/i.test(oracle) || !/\bpays?\b/i.test(oracle)) return undefined;
 
   let triggerKind = '';
-  if (oracle.includes('whenever an opponent casts a spell')) triggerKind = 'OpponentCastSpell';
-  else if (oracle.includes('whenever a player draws a card')) triggerKind = 'CardDrawn';
-  else if (oracle.includes('whenever an opponent draws a card')) triggerKind = 'CardDrawn';
+  if (/whenever an opponent casts a spell/i.test(oracle)) triggerKind = 'OpponentCastSpell';
+  else if (/whenever a player draws a card/i.test(oracle)) triggerKind = 'CardDrawn';
+  else if (/whenever an opponent draws a card/i.test(oracle)) triggerKind = 'CardDrawn';
   else return undefined;
 
-  // Parse tax amount
-  const taxMatch = oracle.match(/pays?\s*\{(\d+)\}/);
-  const taxAmount = taxMatch ? parseInt(taxMatch[1]) : 1;
+  const taxMatch = oracle.match(/pays?\s*\{(\d+|[wubrgcxWUBRGCX])\}/);
+  const taxAmount = taxMatch
+    ? (/^\d+$/.test(taxMatch[1]) ? parseInt(taxMatch[1], 10) : 1)
+    : 1;
 
-  // Parse effect
   let effect: UnlessTaxInfo['effect'] = 'other';
   let effectCount = 1;
-  if (oracle.includes('draw a card') || oracle.includes('draw two')) {
-    effect = 'draw';
-    effectCount = oracle.includes('draw two') ? 2 : 1;
-  } else if (oracle.includes('treasure')) {
-    effect = 'treasure';
-  }
+  if (/draw\s+two\s+cards?/i.test(oracle)) { effect = 'draw'; effectCount = 2; }
+  else if (/draw\s+a\s+card/i.test(oracle)) { effect = 'draw'; effectCount = 1; }
+  else if (/\btreasure\b/i.test(oracle)) { effect = 'treasure'; }
 
   return { triggerKind, taxAmount, effect, effectCount };
 }

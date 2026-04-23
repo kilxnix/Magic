@@ -39,3 +39,23 @@ describe('card-parser-cache — manaProduction', () => {
     });
   }
 });
+
+describe('card-parser-cache — searchAbility', () => {
+  for (const f of PARSER_FIXTURES) {
+    if (f.expected.searchAbility === undefined) continue;
+    it(`parses search ability for ${f.name}`, () => {
+      const parsed = populateParsedCache(defFrom(f.name, f.oracleText, f.typeLine));
+      expect(parsed.searchAbility).toEqual(f.expected.searchAbility);
+    });
+  }
+});
+
+describe('card-parser-cache — unlessTax', () => {
+  for (const f of PARSER_FIXTURES) {
+    if (f.expected.unlessTax === undefined) continue;
+    it(`parses unless-tax for ${f.name}`, () => {
+      const parsed = populateParsedCache(defFrom(f.name, f.oracleText, f.typeLine));
+      expect(parsed.unlessTax).toEqual(f.expected.unlessTax);
+    });
+  }
+});
