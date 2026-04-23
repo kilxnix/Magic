@@ -102,7 +102,7 @@ export function performUntapStep(state: GameState): GameState {
 
     const stunCount = card.counters['stun'] ?? 0;
     if (stunCount > 0) {
-      const newCounters = { ...card.counters, stun: stunCount - 1 };
+      const newCounters: Record<string, number> = { ...card.counters, stun: stunCount - 1 };
       if (newCounters.stun === 0) delete newCounters.stun;
       newCards.set(id, { ...card, counters: newCounters });
       // stays tapped
