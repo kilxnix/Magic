@@ -16,6 +16,8 @@ export interface MakeTestStateOpts {
   battlefieldCreatureWithAbility?: boolean;
   summoningSick?: boolean;
   tapCreatures?: boolean;
+  battlefieldCreature?: boolean;
+  handEquipment?: boolean;
 }
 
 function stepForPhase(phase: Phase): Step {
@@ -188,6 +190,70 @@ export function makeTestState(opts: MakeTestStateOpts): GameState {
       zone: 'battlefield',
       tapped: opts.tapCreatures ?? false,
       summoningSick: opts.summoningSick ?? false,
+      counters: {},
+      damage: 0,
+      isCommander: false,
+    });
+  }
+
+  // Generic 2/2 vanilla creature on battlefield
+  if (opts.battlefieldCreature) {
+    const vanillaDefId = 'def_vanilla_creature';
+    if (!cardDefinitions.has(vanillaDefId)) {
+      const vanillaDef: CardDefinition = {
+        id: vanillaDefId,
+        name: 'Vanilla Creature',
+        type_line: 'Creature — Test',
+        oracle_text: '',
+        mana_cost: '{1}{G}',
+        cmc: 2,
+        colors: ['G'],
+        color_identity: ['G'],
+        keywords: [],
+        card_types: ['creature'],
+        power: 2,
+        toughness: 2,
+      };
+      cardDefinitions.set(vanillaDefId, vanillaDef);
+    }
+    const instanceId = 'vanilla_creature_0';
+    cards.set(instanceId, {
+      instanceId,
+      definitionId: vanillaDefId,
+      ownerId: 'human',
+      zone: 'battlefield',
+      tapped: false,
+      summoningSick: false,
+      counters: {},
+      damage: 0,
+      isCommander: false,
+    });
+  }
+
+  // Equipment card in hand
+  if (opts.handEquipment) {
+    const equipDefId = 'def_test_equipment';
+    const equipDef: CardDefinition = {
+      id: equipDefId,
+      name: 'Test Equipment',
+      type_line: 'Artifact — Equipment',
+      oracle_text: 'Equipped creature gets +1/+1. Equip {1}.',
+      mana_cost: '{1}',
+      cmc: 1,
+      colors: [],
+      color_identity: [],
+      keywords: [],
+      card_types: ['artifact'],
+    };
+    cardDefinitions.set(equipDefId, equipDef);
+    const instanceId = 'equipment_0';
+    cards.set(instanceId, {
+      instanceId,
+      definitionId: equipDefId,
+      ownerId: 'human',
+      zone: 'hand',
+      tapped: false,
+      summoningSick: false,
       counters: {},
       damage: 0,
       isCommander: false,

@@ -1,9 +1,11 @@
 // engine/src/actions-public.ts
-import type { GameState, ManaColor, Phase, ManaCost } from './types';
-import { playLand, canPlayLand, tapLandForMana, activateAbility, getActivatedAbilities } from './actions';
+import type { GameState, ManaColor, Phase, ManaCost, AttackerDeclaration, BlockerDeclaration } from './types';
+import { playLand, canPlayLand, tapLandForMana, activateAbility, getActivatedAbilities, equipCreature } from './actions';
 import { castSpell, canCastSpell } from './stack';
 import { canPayCost, parseManaString } from './mana';
 import { getCardDefinition } from './game-state';
+import { passPriority } from './priority';
+import { declareAttackers, declareBlockers } from './combat';
 
 export type ActionFailure =
   | 'not_your_turn'
@@ -183,6 +185,68 @@ export function tryActivateAbility(
   try {
     const next = activateAbility(state, playerId, cardInstanceId, abilityIndex, targets);
     return success(next, [{ kind: 'AbilityActivated', playerId, cardId: cardInstanceId, abilityIndex }]);
+  } catch (e) {
+    return fail('internal_error', (e as Error).message);
+  }
+}
+
+export function tryPassPriority(state: GameState, playerId: string): ActionResult {
+  const playerIndex = state.players.findIndex(p => p.id === playerId);
+  if (playerIndex === -1) return fail('card_not_found', 'Player not found');
+  if (state.priorityPlayerIndex !== playerIndex) return fail('priority_not_yours', 'You do not have priority');
+  try {
+    return success(passPriority(state));
+  } catch (e) {
+    return fail('internal_error', (e as Error).message);
+  }
+}
+
+export function tryDeclareAttackers(
+  state: GameState,
+  playerId: string,
+  attackers: AttackerDeclaration[],
+): ActionResult {
+  const playerIndex = state.players.findIndex(p => p.id === playerId);
+  if (playerIndex === -1) return fail('card_not_found', 'Player not found');
+  if (state.activePlayerIndex !== playerIndex) return fail('not_your_turn', 'Only active player declares attackers');
+  if (state.step !== 'declare_attackers') return fail('wrong_phase', 'Not declare-attackers step');
+  try {
+    return success(declareAttackers(state, playerId, attackers));
+  } catch (e) {
+    return fail('internal_error', (e as Error).message);
+  }
+}
+
+export function tryDeclareBlockers(
+  state: GameState,
+  playerId: string,
+  blockers: BlockerDeclaration[],
+): ActionResult {
+  if (state.step !== 'declare_blockers') return fail('wrong_phase', 'Not declare-blockers step');
+  try {
+    return success(declareBlockers(state, playerId, blockers));
+  } catch (e) {
+    return fail('internal_error', (e as Error).message);
+  }
+}
+
+export function tryEquip(
+  state: GameState,
+  playerId: string,
+  equipmentId: string,
+  creatureId: string,
+): ActionResult {
+  const equip = state.cards.get(equipmentId);
+  if (!equip) return fail('card_not_found', 'Equipment not found');
+  if (equip.zone !== 'battlefield') return fail('not_in_zone', 'Equipment not on battlefield');
+  if (equip.ownerId !== playerId) return fail('card_not_found', 'Not your equipment');
+
+  const target = state.cards.get(creatureId);
+  if (!target) return fail('card_not_found', 'Target creature not found');
+  if (target.zone !== 'battlefield') return fail('not_in_zone', 'Target not on battlefield');
+
+  try {
+    return success(equipCreature(state, playerId, equipmentId, creatureId));
   } catch (e) {
     return fail('internal_error', (e as Error).message);
   }

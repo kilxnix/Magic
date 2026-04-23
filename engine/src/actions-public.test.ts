@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { tryPlayLand, tryTapLandForMana, tryCastSpell, tryActivateAbility } from './actions-public';
+import { tryPlayLand, tryTapLandForMana, tryCastSpell, tryActivateAbility, tryPassPriority, tryDeclareAttackers, tryDeclareBlockers, tryEquip } from './actions-public';
 import { makeTestState } from './__tests__/test-helpers';
 
 describe('tryPlayLand', () => {
@@ -125,5 +125,49 @@ describe('tryActivateAbility', () => {
     const result = tryActivateAbility(state, 'human', creature.instanceId, 0, []);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.reason).toBe('summoning_sick');
+  });
+});
+
+describe('tryPassPriority', () => {
+  it('returns ok when player has priority', () => {
+    const state = makeTestState({});
+    const result = tryPassPriority(state, 'human');
+    expect(result.ok).toBe(true);
+  });
+
+  it('returns priority_not_yours when another player has priority', () => {
+    const state = makeTestState({ priorityPlayerIndex: 1 });
+    const result = tryPassPriority(state, 'human');
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe('priority_not_yours');
+  });
+});
+
+describe('tryDeclareAttackers', () => {
+  it('returns wrong_phase outside declare_attackers step', () => {
+    const state = makeTestState({});
+    const result = tryDeclareAttackers(state, 'human', []);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe('wrong_phase');
+  });
+});
+
+describe('tryDeclareBlockers', () => {
+  it('returns wrong_phase outside declare_blockers step', () => {
+    const state = makeTestState({});
+    const result = tryDeclareBlockers(state, 'human', []);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe('wrong_phase');
+  });
+});
+
+describe('tryEquip', () => {
+  it('returns not_in_zone when equipment not on battlefield', () => {
+    const state = makeTestState({ handEquipment: true, battlefieldCreature: true });
+    const equip = [...state.cards.values()].find(c => c.zone === 'hand')!;
+    const creature = [...state.cards.values()].find(c => c.zone === 'battlefield')!;
+    const result = tryEquip(state, 'human', equip.instanceId, creature.instanceId);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe('not_in_zone');
   });
 });
