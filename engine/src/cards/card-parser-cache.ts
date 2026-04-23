@@ -38,39 +38,59 @@ export function populateParsedCache(def: CardDefinition): CardDefinition {
 // ========== Equipment ==========
 
 function parseEquipCost(oracle: string): EquipCostInfo | undefined {
-  // "equip {2}" or "equip {1}{W}" or "equip 2"
-  const match = oracle.match(/equip\s+(?:\{(\d+)\}|\{([wubrgc])\}|(\d+))/i);
-  if (!match) return undefined;
+  // Match the whole cost chunk after "equip" — handles:
+  //  equip {2}, equip {1}{W}, equip {W}{W}, equip {U/R}, equip 2
+  const m = oracle.match(/equip\s+((?:\{[^}]+\}\s*)+|\d+)/i);
+  if (!m) return undefined;
+  const tail = m[1].trim();
   const cost: EquipCostInfo = { generic: 0, W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 };
-  if (match[1]) cost.generic = parseInt(match[1]);
-  else if (match[2]) cost[match[2].toUpperCase() as keyof EquipCostInfo] = 1;
-  else if (match[3]) cost.generic = parseInt(match[3]);
+
+  if (/^\d+$/.test(tail)) { cost.generic = parseInt(tail, 10); return cost; }
+
+  const symbols = tail.match(/\{[^}]+\}/g) ?? [];
+  for (const sym of symbols) {
+    const inner = sym.slice(1, -1).toUpperCase();
+    if (/^\d+$/.test(inner)) {
+      cost.generic += parseInt(inner, 10);
+    } else if (['W', 'U', 'B', 'R', 'G', 'C'].includes(inner)) {
+      cost[inner as keyof EquipCostInfo] += 1;
+    } else if (inner.includes('/')) {
+      const first = inner.split('/')[0];
+      if (['W', 'U', 'B', 'R', 'G', 'C'].includes(first)) cost[first as keyof EquipCostInfo] += 1;
+    }
+  }
   return cost;
 }
 
 function parseEquipmentBonus(oracle: string): EquipmentBonusInfo | undefined {
-  if (!oracle.includes('equipped creature')) return undefined;
+  if (!oracle.toLowerCase().includes('equipped creature')) return undefined;
   let power = 0, toughness = 0;
-  const keywords: string[] = [];
 
-  // "+N/+N" patterns
-  const ptMatch = oracle.match(/equipped creature gets? ([+-]\d+)\/([+-]\d+)/);
-  if (ptMatch) {
-    power = parseInt(ptMatch[1]);
-    toughness = parseInt(ptMatch[2]);
-  }
+  const ptMatch = oracle.match(/equipped creature gets? ([+-]\d+)\/([+-]\d+)/i);
+  if (ptMatch) { power = parseInt(ptMatch[1], 10); toughness = parseInt(ptMatch[2], 10); }
 
-  // Keyword grants
-  const kwPatterns = [
+  // Extract keyword clause: "equipped creature has X, Y, and Z" or "gains X, Y, and Z"
+  // Also handles "equipped creature gets +N/+N and has X, Y, and Z"
+  const kwList = [
     'flying', 'trample', 'deathtouch', 'lifelink', 'vigilance', 'haste',
     'first strike', 'double strike', 'menace', 'hexproof', 'shroud',
     'indestructible', 'reach', 'protection', 'ward', 'fear', 'intimidate',
     'unblockable',
   ];
-  for (const kw of kwPatterns) {
-    if (oracle.includes('equipped creature has ' + kw) ||
-        oracle.includes('equipped creature gains ' + kw)) {
-      keywords.push(kw.split(' ').map(w => w[0].toUpperCase() + w.slice(1)).join(' '));
+  const keywords: string[] = [];
+  // Search for any "has" or "gains" clause in the sentence containing "equipped creature"
+  const sentenceMatch = oracle.match(/equipped creature[^.]+/i);
+  if (sentenceMatch) {
+    const sentence = sentenceMatch[0].toLowerCase();
+    // Find "has" or "gains" keyword clause within the sentence
+    const clauseMatch = sentence.match(/(?:has|gains) ([^.]+)/);
+    if (clauseMatch) {
+      const clause = clauseMatch[1];
+      for (const kw of kwList) {
+        if (new RegExp(`\\b${kw}\\b`, 'i').test(clause)) {
+          keywords.push(kw.split(' ').map(w => w[0].toUpperCase() + w.slice(1)).join(' '));
+        }
+      }
     }
   }
 
