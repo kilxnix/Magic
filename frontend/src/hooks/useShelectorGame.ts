@@ -1766,8 +1766,12 @@ export function useShelectorGame() {
 
         if (aiData?.cardData) dataMaps.push(aiData.cardData);
 
+        // For partner commanders, filter out both individual partner names
+        const aiCmdrNames = aiCommanderName.includes(' // ')
+          ? aiCommanderName.split(' // ').map((s: string) => s.trim().toLowerCase())
+          : [aiCommanderName.toLowerCase()];
         const aiList = padDeckTo99(
-          aiCards.filter(n => n.toLowerCase() !== aiCommanderName.toLowerCase()),
+          aiCards.filter(n => !aiCmdrNames.includes(n.toLowerCase())),
           aiColors,
         );
 
@@ -1784,8 +1788,12 @@ export function useShelectorGame() {
       const lookup = buildCardLookup(dataMaps);
 
       // Pad human deck to exactly 99 cards (excluding commander)
+      // For partner commanders ("A // B"), filter out both individual partner names
+      const humanCmdrNames = humanCommanderName.includes(' // ')
+        ? humanCommanderName.split(' // ').map(n => n.trim().toLowerCase())
+        : [humanCommanderName.toLowerCase()];
       const humanList = padDeckTo99(
-        humanCards.filter(n => n.toLowerCase() !== humanCommanderName.toLowerCase()),
+        humanCards.filter(n => !humanCmdrNames.includes(n.toLowerCase())),
         humanColors,
       );
 
