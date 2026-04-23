@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { tryPlayLand, tryTapLandForMana, tryCastSpell, tryActivateAbility, tryPassPriority, tryDeclareAttackers, tryDeclareBlockers, tryEquip } from './actions-public';
+import { describe, it, expect, beforeEach } from 'vitest';
+import { tryPlayLand, tryTapLandForMana, tryCastSpell, tryActivateAbility, tryPassPriority, tryDeclareAttackers, tryDeclareBlockers, tryEquip, resetLoopDetector } from './actions-public';
 import { makeTestState } from './__tests__/test-helpers';
 
 describe('tryPlayLand', () => {
@@ -169,5 +169,29 @@ describe('tryEquip', () => {
     const result = tryEquip(state, 'human', equip.instanceId, creature.instanceId);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.reason).toBe('not_in_zone');
+  });
+});
+
+describe('try* wraps checkWinConditions', () => {
+  beforeEach(() => {
+    resetLoopDetector();
+  });
+
+  it('tryPassPriority emits PlayerLost event when a player has life <= 0', () => {
+    const state = makeTestState({});
+    // Mark human as lost from life damage
+    state.players[0] = { ...state.players[0], life: 0, hasLost: true };
+    const result = tryPassPriority(state, 'human');
+    // tryPassPriority returns state, and runs checkWinConditions → emits PlayerLost
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.events.some(e => e.kind === 'PlayerLost' && e.reason === 'life')).toBe(true);
+    }
+  });
+
+  it('resetLoopDetector clears prior observations', () => {
+    // Just confirms the export exists and doesn't throw
+    resetLoopDetector();
+    expect(typeof resetLoopDetector).toBe('function');
   });
 });

@@ -6,6 +6,7 @@ import { canPayCost, parseManaString } from './mana';
 import { getCardDefinition } from './game-state';
 import { passPriority } from './priority';
 import { declareAttackers, declareBlockers } from './combat';
+import { LoopDetector, checkWinConditions } from './win-conditions';
 
 export type ActionFailure =
   | 'not_your_turn'
@@ -52,6 +53,26 @@ export function success(state: GameState, events: GameEvent[] = []): ActionResul
   return { ok: true, state, events };
 }
 
+const globalDetector = new LoopDetector();
+
+export function resetLoopDetector(): void {
+  globalDetector.reset();
+}
+
+function runWinCheck(state: GameState): GameEvent[] {
+  try {
+    const { losers, loop } = checkWinConditions(state, globalDetector);
+    const events: GameEvent[] = [];
+    for (const l of losers) {
+      events.push({ kind: 'PlayerLost', playerId: l.playerId, reason: l.reason });
+    }
+    if (loop) events.push({ kind: 'PossibleLoop', signature: loop });
+    return events;
+  } catch (e) {
+    return [{ kind: 'WinCheckFailed', message: (e as Error).message }];
+  }
+}
+
 const MAIN_PHASES: Phase[] = ['precombat_main', 'postcombat_main'];
 
 export function tryPlayLand(
@@ -79,7 +100,7 @@ export function tryPlayLand(
 
   try {
     const next = playLand(state, playerId, cardInstanceId);
-    return success(next, [{ kind: 'LandPlayed', playerId, cardId: cardInstanceId }]);
+    return success(next, [{ kind: 'LandPlayed', playerId, cardId: cardInstanceId }, ...runWinCheck(next)]);
   } catch (e) {
     return fail('internal_error', (e as Error).message);
   }
@@ -99,7 +120,7 @@ export function tryTapLandForMana(
 
   try {
     const next = tapLandForMana(state, playerId, cardInstanceId, color);
-    return success(next, [{ kind: 'ManaTapped', playerId, cardId: cardInstanceId, color }]);
+    return success(next, [{ kind: 'ManaTapped', playerId, cardId: cardInstanceId, color }, ...runWinCheck(next)]);
   } catch (e) {
     return fail('internal_error', (e as Error).message);
   }
@@ -149,7 +170,7 @@ export function tryCastSpell(
 
   try {
     const next = castSpell(state, playerId, cardInstanceId, targets);
-    return success(next, [{ kind: 'SpellCast', playerId, cardId: cardInstanceId }]);
+    return success(next, [{ kind: 'SpellCast', playerId, cardId: cardInstanceId }, ...runWinCheck(next)]);
   } catch (e) {
     return fail('internal_error', (e as Error).message);
   }
@@ -184,7 +205,7 @@ export function tryActivateAbility(
 
   try {
     const next = activateAbility(state, playerId, cardInstanceId, abilityIndex, targets);
-    return success(next, [{ kind: 'AbilityActivated', playerId, cardId: cardInstanceId, abilityIndex }]);
+    return success(next, [{ kind: 'AbilityActivated', playerId, cardId: cardInstanceId, abilityIndex }, ...runWinCheck(next)]);
   } catch (e) {
     return fail('internal_error', (e as Error).message);
   }
@@ -195,7 +216,8 @@ export function tryPassPriority(state: GameState, playerId: string): ActionResul
   if (playerIndex === -1) return fail('card_not_found', 'Player not found');
   if (state.priorityPlayerIndex !== playerIndex) return fail('priority_not_yours', 'You do not have priority');
   try {
-    return success(passPriority(state));
+    const next = passPriority(state);
+    return success(next, runWinCheck(next));
   } catch (e) {
     return fail('internal_error', (e as Error).message);
   }
@@ -211,7 +233,8 @@ export function tryDeclareAttackers(
   if (state.activePlayerIndex !== playerIndex) return fail('not_your_turn', 'Only active player declares attackers');
   if (state.step !== 'declare_attackers') return fail('wrong_phase', 'Not declare-attackers step');
   try {
-    return success(declareAttackers(state, playerId, attackers));
+    const next = declareAttackers(state, playerId, attackers);
+    return success(next, runWinCheck(next));
   } catch (e) {
     return fail('internal_error', (e as Error).message);
   }
@@ -224,7 +247,8 @@ export function tryDeclareBlockers(
 ): ActionResult {
   if (state.step !== 'declare_blockers') return fail('wrong_phase', 'Not declare-blockers step');
   try {
-    return success(declareBlockers(state, playerId, blockers));
+    const next = declareBlockers(state, playerId, blockers);
+    return success(next, runWinCheck(next));
   } catch (e) {
     return fail('internal_error', (e as Error).message);
   }
@@ -246,7 +270,8 @@ export function tryEquip(
   if (target.zone !== 'battlefield') return fail('not_in_zone', 'Target not on battlefield');
 
   try {
-    return success(equipCreature(state, playerId, equipmentId, creatureId));
+    const next = equipCreature(state, playerId, equipmentId, creatureId);
+    return success(next, runWinCheck(next));
   } catch (e) {
     return fail('internal_error', (e as Error).message);
   }
