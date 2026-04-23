@@ -3165,7 +3165,7 @@ export function parseActivatedAbilities(oracleText: string): ActivatedAbility[] 
     if (lower.startsWith('when ') || lower.startsWith('whenever ') || lower.startsWith('at ')) continue;
 
     // Skip loyalty abilities (handled by parseLoyaltyAbilities)
-    if (/^[+\-]?\d+\s*:/.test(trimmed)) continue;
+    if (/^[+\-−–]?\d+\s*:/.test(trimmed)) continue;
 
     // Look for colon separator (but not inside mana symbols like {T})
     // An activated ability has the form: <cost> : <effect>
@@ -3230,7 +3230,7 @@ function findAbilityColon(text: string): number {
 // ============================================================================
 
 /** Regex to match loyalty ability cost prefix: "+1:", "-3:", "0:", "+2:" */
-const LOYALTY_COST_RE = /^([+\-]?\d+)\s*:/;
+const LOYALTY_COST_RE = /^([+\-−–]?\d+)\s*:/;
 
 /**
  * Parse planeswalker loyalty abilities from oracle text.

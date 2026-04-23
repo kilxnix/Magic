@@ -1174,3 +1174,28 @@ describe('parseOracleText', () => {
       });
     });
   });
+
+describe('regex edge cases (task 14)', () => {
+  it('P/T modifier +0/+2 is parsed as power=0 toughness=2', () => {
+    const match = '+0/+2'.match(/^([+-]\d+)\/([+-]\d+)$/);
+    expect(match).not.toBeNull();
+    expect(parseInt(match![1], 10)).toBe(0);
+    expect(parseInt(match![2], 10)).toBe(2);
+  });
+
+  it('P/T modifier -1/+0 is parsed', () => {
+    const match = '-1/+0'.match(/^([+-]\d+)\/([+-]\d+)$/);
+    expect(match).not.toBeNull();
+    expect(parseInt(match![1], 10)).toBe(-1);
+    expect(parseInt(match![2], 10)).toBe(0);
+  });
+
+  it('loyalty regex accepts ASCII hyphen, em-dash, en-dash, plus, zero', () => {
+    const re = /^([+\-−–]?\d+)\s*:/;
+    expect(re.test('−3: Exile target permanent')).toBe(true);   // U+2212 MINUS SIGN
+    expect(re.test('–1: Create a token')).toBe(true);           // U+2013 EN DASH
+    expect(re.test('+2: Draw a card')).toBe(true);
+    expect(re.test('-3: Destroy target')).toBe(true);            // ASCII hyphen
+    expect(re.test('0: Flip a coin')).toBe(true);
+  });
+});
