@@ -8,6 +8,19 @@
  */
 
 import { describe, it, expect } from 'vitest';
+
+const API_URL = 'http://localhost:8100/health';
+
+async function checkApi(): Promise<boolean> {
+  try {
+    const r = await fetch(API_URL, { signal: AbortSignal.timeout(500) });
+    return r.ok;
+  } catch {
+    return false;
+  }
+}
+
+const apiAvailable = await checkApi();
 import { initGameFromDecks, resetInstanceCounter } from '../game-init';
 import { createCardLookup } from '../cards/deck-loader';
 import { getCardsInZone, getCardDefinition } from '../game-state';
@@ -508,7 +521,7 @@ function describeAction(state: GameState, action: AIAction): string {
 // Main Test
 // ---------------------------------------------------------------------------
 
-describe('Shelector REAL Playtest: Red Goblins vs Green Bears', () => {
+describe.skipIf(!apiAvailable)('Shelector REAL Playtest: Red Goblins vs Green Bears', () => {
   it('plays 10 rounds with LLM decisions from localhost:8100', async () => {
     resetInstanceCounter();
 
