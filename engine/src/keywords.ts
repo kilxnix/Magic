@@ -46,10 +46,55 @@ const KEYWORD_MAP: Record<string, Keyword> = {
   'flash': 'Flash',
 };
 
+// Set of keyword names that can be granted by keyword counters
+const KEYWORD_COUNTER_NAMES = new Set([
+  'flying', 'trample', 'deathtouch', 'lifelink', 'vigilance', 'menace',
+  'reach', 'firststrike', 'doublestrike', 'haste', 'hexproof',
+  'indestructible', 'unblockable', 'defender', 'shroud', 'ward', 'flash',
+]);
+
 /**
  * Check if a card definition has a specific keyword.
+ * Overload: hasKeyword(state, instanceId, keyword) — checks definition, continuous effects,
+ * equipment, AND keyword counters.
  */
-export function hasKeyword(def: CardDefinition, keyword: Keyword): boolean {
+export function hasKeyword(def: CardDefinition, keyword: Keyword): boolean;
+export function hasKeyword(state: GameState, instanceId: string, keyword: string): boolean;
+export function hasKeyword(
+  defOrState: CardDefinition | GameState,
+  keywordOrInstanceId: Keyword | string,
+  keywordStr?: string,
+): boolean {
+  // 3-arg form: (state, instanceId, keyword)
+  if (keywordStr !== undefined) {
+    const state = defOrState as GameState;
+    const instanceId = keywordOrInstanceId as string;
+
+    // Check via instanceHasKeyword (definition + continuous effects + equipment)
+    const normalizedLookup = normalizeKeyword(keywordStr);
+    const canonicalKeyword = KEYWORD_MAP[normalizedLookup] as Keyword | undefined;
+    if (canonicalKeyword && instanceHasKeyword(state, instanceId, canonicalKeyword)) {
+      return true;
+    }
+
+    // Keyword counter grant
+    const card = state.cards.get(instanceId);
+    if (card?.counters) {
+      for (const counterName of Object.keys(card.counters)) {
+        const counterNorm = normalizeKeyword(counterName);
+        if (!KEYWORD_COUNTER_NAMES.has(counterNorm)) continue;
+        if (counterNorm === normalizedLookup && (card.counters[counterName] ?? 0) > 0) {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  }
+
+  // 2-arg form: (def, keyword)
+  const def = defOrState as CardDefinition;
+  const keyword = keywordOrInstanceId as Keyword;
   const normalizedTarget = normalizeKeyword(keyword);
   for (const k of def.keywords) {
     if (normalizeKeyword(k) === normalizedTarget) {
