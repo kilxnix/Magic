@@ -49,8 +49,18 @@ import {
   tryDeclareAttackers,
   tryDeclareBlockers,
   tryEquip,
+  resetLoopDetector,
   type ActionGameEvent,
 } from 'commander-engine';
+
+// ========== End-Game Modal State (Task 27 — game-reliability-refactor) ==========
+
+export interface EndGameState {
+  open: boolean;
+  kind: 'win' | 'loss' | 'loop';
+  reason?: 'life' | 'commander_damage' | 'empty_library' | 'poison' | 'concede';
+  loopSources?: string[];
+}
 
 // ========== Simplified Game Types (consumed by GameBoard.tsx) ==========
 
@@ -746,6 +756,9 @@ export function useShelectorGame() {
   const [actionError, setActionError] = useState<{ reason: string; message: string } | null>(null);
   const [lastEvents, setLastEvents] = useState<ActionGameEvent[]>([]);
 
+  // End-game modal state (Task 27 — game-reliability-refactor)
+  const [endGame, setEndGame] = useState<EndGameState>({ open: false, kind: 'loss' });
+
   // Track which mana sources were tapped but mana not yet spent on a spell
   // These can be untapped. Once a spell is cast, the taps become "committed" and can't be reversed.
   const uncommittedTapsRef = useRef<Set<string>>(new Set());
@@ -757,6 +770,37 @@ export function useShelectorGame() {
   const appendLog = useCallback((entry: GameLogEntry) => {
     setGameLog(prev => [...prev, entry]);
   }, []);
+
+  /**
+   * Process engine events after a try* call and open the EndGameModal when
+   * a PlayerLost or PossibleLoop event is present.
+   * (Task 27 — game-reliability-refactor)
+   */
+  const applyEvents = useCallback(
+    (events: ActionGameEvent[], postState: GameState) => {
+      if (events.length === 0) return;
+      setLastEvents(prev => [...prev, ...events]);
+      const humanId = humanIdRef.current;
+      for (const ev of events) {
+        if (ev.kind === 'PlayerLost') {
+          if (ev.playerId === humanId) {
+            setEndGame({ open: true, kind: 'loss', reason: ev.reason });
+          } else {
+            // Check if ALL opponents have now lost (using post-action state)
+            const allOpponentsLost = postState.players
+              .filter(p => p.id !== humanId)
+              .every(p => p.hasLost || p.id === ev.playerId);
+            if (allOpponentsLost) {
+              setEndGame({ open: true, kind: 'win' });
+            }
+          }
+        } else if (ev.kind === 'PossibleLoop') {
+          setEndGame({ open: true, kind: 'loop', loopSources: ev.signature.sources });
+        }
+      }
+    },
+    [],
+  );
 
   /** Sync the React state from the engine ref and compute legal actions */
   const syncState = useCallback(() => {
@@ -2453,10 +2497,8 @@ export function useShelectorGame() {
           newState = applyAction(engine, humanIdRef.current, engineAction);
         }
 
-        // Accumulate events from this action
-        if (collectedEvents.length > 0) {
-          setLastEvents(prev => [...prev, ...collectedEvents]);
-        }
+        // Accumulate events from this action and open the EndGameModal if needed
+        applyEvents(collectedEvents, newState);
 
         // Track uncommitted mana taps (can be untapped) vs committed (used for a spell)
         if (engineAction.kind === 'ActivateManaAbility' && 'cardInstanceId' in engineAction) {
@@ -2601,7 +2643,7 @@ export function useShelectorGame() {
         syncState();
       }
     },
-    [gameState, addMessage, appendLog, syncState, advanceGameLoop],
+    [gameState, addMessage, appendLog, syncState, advanceGameLoop, applyEvents],
   );
 
   const isHumanTurn = gameState?.priorityPlayerId === humanIdRef.current;
@@ -2633,6 +2675,22 @@ export function useShelectorGame() {
     // try* error state (Task 7)
     actionError,
     lastEvents,
+
+    // End-game modal state and handlers (Task 27)
+    endGame,
+    closeEndGame: () => setEndGame(prev => ({ ...prev, open: false })),
+    newGame: () => {
+      resetLoopDetector();
+      setEndGame({ open: false, kind: 'loss' });
+      setLastEvents([]);
+    },
+    declareDraw: () => setEndGame({ open: false, kind: 'loop' }),
+    concedeGame: () => setEndGame({ open: true, kind: 'loss', reason: 'concede' }),
+    playItOut: () => {
+      resetLoopDetector();
+      setEndGame(prev => ({ ...prev, open: false }));
+    },
+    reviewLog: () => setEndGame(prev => ({ ...prev, open: false })),
 
     // Actions
     spawnOpponent,

@@ -14,6 +14,7 @@ import type { SpawnOptions } from '../hooks/useShelectorGame';
 import { GameBoard } from '../components/GameBoard';
 import { GameChat } from '../components/GameChat';
 import { GameReview } from '../components/GameReview';
+import { EndGameModal } from '../components/shelector/EndGameModal';
 import { cacheSet, cacheGet } from '../lib/cache';
 
 // Types for deck import response
@@ -86,6 +87,13 @@ export function ShelectorGamePage() {
     setCoachMode,
     untapManaSource,
     untappableCardIds,
+    endGame,
+    closeEndGame,
+    newGame,
+    declareDraw,
+    concedeGame,
+    playItOut,
+    reviewLog,
   } = useShelectorGame();
 
   // Deck import state
@@ -834,6 +842,20 @@ export function ShelectorGamePage() {
           onClose={() => setShowReview(false)}
         />
       )}
+
+      {/* End-Game Modal (Task 27 — game-reliability-refactor) */}
+      <EndGameModal
+        open={endGame.open}
+        kind={endGame.kind}
+        reason={endGame.reason}
+        loopSources={endGame.loopSources}
+        onPlayItOut={playItOut}
+        onDeclareDraw={declareDraw}
+        onConcede={concedeGame}
+        onNewGame={newGame}
+        onReviewLog={() => { reviewLog(); setShowReview(true); }}
+        onClose={closeEndGame}
+      />
     </div>
   );
 }

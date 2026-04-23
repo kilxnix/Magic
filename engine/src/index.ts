@@ -54,4 +54,5 @@ export {
   tryDeclareAttackers,
   tryDeclareBlockers,
   tryEquip,
+  resetLoopDetector,
 } from './actions-public';
