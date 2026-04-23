@@ -8,6 +8,8 @@ const LIFE_SWING_THRESHOLD = 1000;
 export class LoopDetector {
   private fingerprints: string[] = [];
   private prevLifeTotals: number[] = [];
+  private triggerCounts = new Map<string, number>();
+  private static TRIGGER_LOOP_THRESHOLD = 50;
 
   observe(state: GameState, _actionKind: string): LoopSignature | null {
     const fp = fingerprint(state);
@@ -31,9 +33,23 @@ export class LoopDetector {
     return null;
   }
 
+  recordTrigger(sourceInstanceId: string): LoopSignature | null {
+    const n = (this.triggerCounts.get(sourceInstanceId) ?? 0) + 1;
+    this.triggerCounts.set(sourceInstanceId, n);
+    if (n > LoopDetector.TRIGGER_LOOP_THRESHOLD) {
+      return { category: 'trigger_self_loop', sources: [sourceInstanceId], hash: `trig:${sourceInstanceId}:${n}` };
+    }
+    return null;
+  }
+
+  resetTriggers(): void {
+    this.triggerCounts.clear();
+  }
+
   reset(): void {
     this.fingerprints = [];
     this.prevLifeTotals = [];
+    this.triggerCounts.clear();
   }
 }
 

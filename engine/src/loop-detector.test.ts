@@ -50,3 +50,30 @@ describe('LoopDetector reset', () => {
     expect(detector.observe(state, 'a')).toBeNull();
   });
 });
+
+describe('LoopDetector trigger_self_loop', () => {
+  it('flags loop when same source triggers > 50 times', () => {
+    const detector = new LoopDetector();
+    for (let i = 0; i < 50; i++) {
+      expect(detector.recordTrigger('worldgorger_dragon_1')).toBeNull();
+    }
+    const sig = detector.recordTrigger('worldgorger_dragon_1');
+    expect(sig).not.toBeNull();
+    expect(sig?.category).toBe('trigger_self_loop');
+    expect(sig?.sources).toContain('worldgorger_dragon_1');
+  });
+
+  it('resetTriggers clears per-source counts', () => {
+    const detector = new LoopDetector();
+    for (let i = 0; i < 50; i++) detector.recordTrigger('source_a');
+    detector.resetTriggers();
+    expect(detector.recordTrigger('source_a')).toBeNull();
+  });
+
+  it('reset also clears trigger counts', () => {
+    const detector = new LoopDetector();
+    for (let i = 0; i < 50; i++) detector.recordTrigger('source_a');
+    detector.reset();
+    expect(detector.recordTrigger('source_a')).toBeNull();
+  });
+});
