@@ -101,51 +101,52 @@ function parseEquipmentBonus(oracle: string): EquipmentBonusInfo | undefined {
 // ========== Mana Production ==========
 
 function parseManaProduction(oracle: string, typeLine: string): ManaProductionInfo | undefined {
-  // Check land subtypes first
+  // Basic-land subtype shortcut
   const subtypeColors: Array<'W' | 'U' | 'B' | 'R' | 'G' | 'C'> = [];
-  if (typeLine.includes('plains')) subtypeColors.push('W');
-  if (typeLine.includes('island')) subtypeColors.push('U');
-  if (typeLine.includes('swamp')) subtypeColors.push('B');
-  if (typeLine.includes('mountain')) subtypeColors.push('R');
-  if (typeLine.includes('forest')) subtypeColors.push('G');
-
+  const tl = typeLine.toLowerCase();
+  if (tl.includes('plains')) subtypeColors.push('W');
+  if (tl.includes('island')) subtypeColors.push('U');
+  if (tl.includes('swamp')) subtypeColors.push('B');
+  if (tl.includes('mountain')) subtypeColors.push('R');
+  if (tl.includes('forest')) subtypeColors.push('G');
   if (subtypeColors.length > 0) {
     const amounts: Record<string, number> = {};
     for (const c of subtypeColors) amounts[c] = 1;
     return { colors: subtypeColors, amounts, isTapAbility: true, requiresSacrifice: false };
   }
 
-  // Check "{T}: Add" patterns
-  const tapAddMatch = oracle.match(/\{t\}:\s*add\s+([^."\n]+)/i);
-  if (!tapAddMatch) return undefined;
+  // Find a "{T}: Add ..." clause (stop at . " or newline)
+  const tapAdd = oracle.match(/\{t\}\s*(?:,\s*[^:]+)?:\s*add\s+([^."\n]+)/i);
+  if (!tapAdd) return undefined;
 
-  const addPart = tapAddMatch[1];
-  const colors: Array<'W' | 'U' | 'B' | 'R' | 'G' | 'C'> = [];
-  const amounts: Record<string, number> = {};
+  const requiresSacrifice = /\{t\}\s*,\s*sacrifice[^:]*:\s*add/i.test(oracle);
+  const addPart = tapAdd[1];
 
-  // "any color" / "any one color"
-  if (addPart.includes('any color') || addPart.includes('any one color')) {
-    const textNumbers: Record<string, number> = { two: 2, three: 3, four: 4, five: 5 };
+  // "any color" / "any one color" variants
+  if (/any\s+(?:one\s+)?color/i.test(addPart)) {
+    const textNumbers: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5 };
     let amount = 1;
-    for (const [word, num] of Object.entries(textNumbers)) {
-      if (addPart.includes(word)) { amount = num; break; }
-    }
+    const numMatch = addPart.match(/\b(one|two|three|four|five)\b/i);
+    if (numMatch) amount = textNumbers[numMatch[1].toLowerCase()];
     return {
       colors: ['W', 'U', 'B', 'R', 'G'],
       amounts: { W: amount, U: amount, B: amount, R: amount, G: amount },
       isTapAbility: true,
-      requiresSacrifice: oracle.includes('sacrifice') && oracle.indexOf('sacrifice') < oracle.indexOf('add'),
+      requiresSacrifice,
     };
   }
 
-  // Count individual mana symbols
-  for (const [symbol, color] of Object.entries({ '{w}': 'W', '{u}': 'U', '{b}': 'B', '{r}': 'R', '{g}': 'G', '{c}': 'C' })) {
-    const regex = new RegExp(symbol.replace('{', '\\{').replace('}', '\\}'), 'gi');
-    const matches = addPart.match(regex);
-    if (matches && matches.length > 0) {
-      colors.push(color as 'W' | 'U' | 'B' | 'R' | 'G' | 'C');
-      amounts[color] = matches.length;
-    }
+  // Count explicit mana symbols
+  const colors: Array<'W' | 'U' | 'B' | 'R' | 'G' | 'C'> = [];
+  const amounts: Record<string, number> = {};
+  const symbolMap: Record<string, 'W' | 'U' | 'B' | 'R' | 'G' | 'C'> = {
+    w: 'W', u: 'U', b: 'B', r: 'R', g: 'G', c: 'C',
+  };
+  const syms = addPart.match(/\{([wubrgc])\}/gi) ?? [];
+  for (const sym of syms) {
+    const color = symbolMap[sym.slice(1, -1).toLowerCase()];
+    if (!amounts[color]) { colors.push(color); amounts[color] = 0; }
+    amounts[color] += 1;
   }
 
   if (colors.length === 0) {
@@ -153,12 +154,7 @@ function parseManaProduction(oracle: string, typeLine: string): ManaProductionIn
     amounts['C'] = 1;
   }
 
-  return {
-    colors,
-    amounts,
-    isTapAbility: true,
-    requiresSacrifice: oracle.includes('sacrifice') && oracle.indexOf('sacrifice') < oracle.indexOf('add'),
-  };
+  return { colors, amounts, isTapAbility: true, requiresSacrifice };
 }
 
 // ========== Search Ability ==========

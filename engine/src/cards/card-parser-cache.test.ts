@@ -29,3 +29,13 @@ describe('card-parser-cache — equipmentBonus', () => {
     });
   }
 });
+
+describe('card-parser-cache — manaProduction', () => {
+  for (const f of PARSER_FIXTURES) {
+    if (f.expected.manaProduction === undefined) continue;
+    it(`parses mana production for ${f.name}`, () => {
+      const parsed = populateParsedCache(defFrom(f.name, f.oracleText, f.typeLine));
+      expect(parsed.manaProduction).toEqual(f.expected.manaProduction);
+    });
+  }
+});
