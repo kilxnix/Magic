@@ -1,5 +1,5 @@
 // engine/src/actions-public.ts
-import type { GameState, ManaColor, AttackerDeclaration, BlockerDeclaration } from './types';
+import type { GameState, ManaColor } from './types';
 
 export type ActionFailure =
   | 'not_your_turn'
@@ -45,7 +45,3 @@ export function fail(reason: ActionFailure, message: string): ActionResult {
 export function success(state: GameState, events: GameEvent[] = []): ActionResult {
   return { ok: true, state, events };
 }
-
-// Pre-imported for later tasks that will add wrapper functions for combat actions.
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-type _CombatTypesPreImport = AttackerDeclaration | BlockerDeclaration;
