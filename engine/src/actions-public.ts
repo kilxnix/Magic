@@ -1,6 +1,9 @@
 // engine/src/actions-public.ts
-import type { GameState, ManaColor, Phase } from './types';
+import type { GameState, ManaColor, Phase, ManaCost } from './types';
 import { playLand, canPlayLand, tapLandForMana } from './actions';
+import { castSpell, canCastSpell } from './stack';
+import { canPayCost, parseManaString } from './mana';
+import { getCardDefinition } from './game-state';
 
 export type ActionFailure =
   | 'not_your_turn'
@@ -95,6 +98,56 @@ export function tryTapLandForMana(
   try {
     const next = tapLandForMana(state, playerId, cardInstanceId, color);
     return success(next, [{ kind: 'ManaTapped', playerId, cardId: cardInstanceId, color }]);
+  } catch (e) {
+    return fail('internal_error', (e as Error).message);
+  }
+}
+
+export function tryCastSpell(
+  state: GameState,
+  playerId: string,
+  cardInstanceId: string,
+  targets: string[],
+  manaPayment: ManaCost,
+): ActionResult {
+  const card = state.cards.get(cardInstanceId);
+  if (!card) return fail('card_not_found', 'Card not found');
+  if (card.ownerId !== playerId) return fail('card_not_found', 'Not your card');
+  if (card.zone !== 'hand' && card.zone !== 'command') return fail('not_in_zone', 'Card not in hand or command zone');
+
+  const playerIndex = state.players.findIndex(p => p.id === playerId);
+  if (playerIndex === -1) return fail('card_not_found', 'Player not found');
+  const player = state.players[playerIndex];
+
+  const def = getCardDefinition(state, card);
+  if (!def) return fail('card_not_found', 'Card definition missing');
+
+  const isSorceryLike =
+    def.card_types.includes('sorcery') ||
+    def.card_types.includes('creature') ||
+    def.card_types.includes('enchantment') ||
+    def.card_types.includes('artifact') ||
+    def.card_types.includes('planeswalker');
+
+  if (isSorceryLike) {
+    if (state.activePlayerIndex !== playerIndex) return fail('not_your_turn', 'Sorcery speed requires your turn');
+    if (state.phase !== 'precombat_main' && state.phase !== 'postcombat_main') {
+      return fail('wrong_phase', 'Sorcery speed requires main phase');
+    }
+    if (state.stack.length > 0) return fail('wrong_phase', 'Stack must be empty for sorcery speed');
+  }
+
+  if (state.priorityPlayerIndex !== playerIndex) return fail('priority_not_yours', 'You do not have priority');
+
+  // Check that the player's mana pool can cover the spell's mana cost
+  const spellCost = parseManaString(def.mana_cost);
+  if (!canPayCost(player.manaPool, spellCost)) {
+    return fail('insufficient_mana', 'Insufficient mana in pool');
+  }
+
+  try {
+    const next = castSpell(state, playerId, cardInstanceId, targets);
+    return success(next, [{ kind: 'SpellCast', playerId, cardId: cardInstanceId }]);
   } catch (e) {
     return fail('internal_error', (e as Error).message);
   }

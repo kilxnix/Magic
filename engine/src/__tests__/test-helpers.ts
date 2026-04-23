@@ -1,4 +1,4 @@
-import type { GameState, CardDefinition, CardInstance, Phase, Step } from '../types';
+import type { GameState, CardDefinition, CardInstance, Phase, Step, ManaPool } from '../types';
 import { createPlayer, emptyManaPool } from '../types';
 
 export interface MakeTestStateOpts {
@@ -10,6 +10,9 @@ export interface MakeTestStateOpts {
   priorityPlayerIndex?: number;
   battlefieldLands?: number;
   tapLands?: boolean;
+  handInstant?: string;
+  handSorcery?: string;
+  manaPool?: Partial<ManaPool>;
 }
 
 function stepForPhase(phase: Phase): Step {
@@ -35,6 +38,10 @@ export function makeTestState(opts: MakeTestStateOpts): GameState {
 
   if (opts.landAlreadyPlayed) {
     humanPlayer.hasPlayedLand = true;
+  }
+
+  if (opts.manaPool) {
+    humanPlayer.manaPool = { ...emptyManaPool(), ...opts.manaPool };
   }
 
   const cards = new Map<string, CardInstance>();
@@ -90,6 +97,66 @@ export function makeTestState(opts: MakeTestStateOpts): GameState {
       };
       cards.set(instanceId, instance);
     }
+  }
+
+  // Instant card in hand
+  if (opts.handInstant !== undefined) {
+    const instantDefId = 'def_test_instant';
+    const instantDef: CardDefinition = {
+      id: instantDefId,
+      name: 'Test Instant',
+      type_line: 'Instant',
+      oracle_text: '',
+      mana_cost: opts.handInstant,
+      cmc: (opts.handInstant.match(/\{[^}]+\}/g) || []).length,
+      colors: [],
+      color_identity: [],
+      keywords: [],
+      card_types: ['instant'],
+    };
+    cardDefinitions.set(instantDefId, instantDef);
+    const instanceId = 'instant_0';
+    cards.set(instanceId, {
+      instanceId,
+      definitionId: instantDefId,
+      ownerId: 'human',
+      zone: 'hand',
+      tapped: false,
+      summoningSick: false,
+      counters: {},
+      damage: 0,
+      isCommander: false,
+    });
+  }
+
+  // Sorcery card in hand
+  if (opts.handSorcery !== undefined) {
+    const sorceryDefId = 'def_test_sorcery';
+    const sorceryDef: CardDefinition = {
+      id: sorceryDefId,
+      name: 'Test Sorcery',
+      type_line: 'Sorcery',
+      oracle_text: '',
+      mana_cost: opts.handSorcery,
+      cmc: (opts.handSorcery.match(/\{[^}]+\}/g) || []).length,
+      colors: [],
+      color_identity: [],
+      keywords: [],
+      card_types: ['sorcery'],
+    };
+    cardDefinitions.set(sorceryDefId, sorceryDef);
+    const instanceId = 'sorcery_0';
+    cards.set(instanceId, {
+      instanceId,
+      definitionId: sorceryDefId,
+      ownerId: 'human',
+      zone: 'hand',
+      tapped: false,
+      summoningSick: false,
+      counters: {},
+      damage: 0,
+      isCommander: false,
+    });
   }
 
   const players = [humanPlayer, ai1Player];

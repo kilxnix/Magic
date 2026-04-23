@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { tryPlayLand, tryTapLandForMana } from './actions-public';
+import { tryPlayLand, tryTapLandForMana, tryCastSpell } from './actions-public';
 import { makeTestState } from './__tests__/test-helpers';
 
 describe('tryPlayLand', () => {
@@ -72,5 +72,33 @@ describe('tryTapLandForMana', () => {
     const result = tryTapLandForMana(state, 'human', landId, 'G');
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.reason).toBe('not_in_zone');
+  });
+});
+
+describe('tryCastSpell', () => {
+  it('returns ok with SpellCast event when mana sufficient', () => {
+    const state = makeTestState({ handInstant: '{1}{G}', manaPool: { G: 1, C: 1 } });
+    const spellId = [...state.cards.values()].find(c => c.zone === 'hand')!.instanceId;
+    const result = tryCastSpell(state, 'human', spellId, [], { C: 1, G: 1, W: 0, U: 0, B: 0, R: 0, generic: 0 });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.events.some(e => e.kind === 'SpellCast')).toBe(true);
+    }
+  });
+
+  it('returns insufficient_mana when pool is empty', () => {
+    const state = makeTestState({ handInstant: '{1}{G}' });
+    const spellId = [...state.cards.values()].find(c => c.zone === 'hand')!.instanceId;
+    const result = tryCastSpell(state, 'human', spellId, [], { C: 0, G: 0, W: 0, U: 0, B: 0, R: 0, generic: 0 });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe('insufficient_mana');
+  });
+
+  it('returns wrong_phase for sorcery during combat', () => {
+    const state = makeTestState({ handSorcery: '{G}', manaPool: { G: 1 }, phase: 'combat' });
+    const spellId = [...state.cards.values()].find(c => c.zone === 'hand')!.instanceId;
+    const result = tryCastSpell(state, 'human', spellId, [], { G: 1, C: 0, W: 0, U: 0, B: 0, R: 0, generic: 0 });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe('wrong_phase');
   });
 });
