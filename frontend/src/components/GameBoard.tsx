@@ -61,6 +61,7 @@ interface GameBoardProps {
   tutorCards?: { instanceId: string; name: string; typeLine: string; manaCost: string }[];
   tutorTitle?: string;
   onTutorPick?: (cardInstanceId: string) => void;
+  onTutorCancel?: () => void;
   undosRemaining?: number;
   onUndo?: () => void;
   coachMode?: boolean;
@@ -371,6 +372,7 @@ export function GameBoard({
   tutorCards,
   tutorTitle,
   onTutorPick,
+  onTutorCancel,
   undosRemaining,
   onUndo,
   coachMode,
@@ -423,6 +425,7 @@ export function GameBoard({
           title={tutorTitle || 'Search your library'}
           cards={tutorCards}
           onPick={onTutorPick}
+          onCancel={onTutorCancel}
         />
       )}
       {/* Phase Bar -- compact on mobile */}

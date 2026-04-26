@@ -61,6 +61,7 @@ export function PlayPage() {
     mulligan,
     discardCard,
     resolveTutor,
+    cancelTutor,
     undosRemaining,
     undoAction,
     coachMode,
@@ -312,6 +313,7 @@ export function PlayPage() {
             tutorCards={tutorCards}
             tutorTitle={tutorTitle}
             onTutorPick={resolveTutor}
+            onTutorCancel={cancelTutor}
             undosRemaining={undosRemaining}
             onUndo={undoAction}
             coachMode={coachMode}

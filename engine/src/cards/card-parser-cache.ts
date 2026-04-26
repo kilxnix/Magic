@@ -174,6 +174,25 @@ function parseSearchAbility(oracle: string): SearchAbilityInfo | undefined {
     filter = filters.find(f => target.includes(f));
   }
 
+  // Extract the count: "a card" / "an X" / "up to two", "up to N" / "N basic land cards"
+  let count = 1;
+  const TEXT_NUMBERS: Record<string, number> = {
+    one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
+  };
+  // "up to N basic land cards" or "up to two basic land cards"
+  const upToMatch = oracle.match(/search your library for up to (\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+/i);
+  if (upToMatch) {
+    const n = upToMatch[1].toLowerCase();
+    count = /^\d+$/.test(n) ? parseInt(n, 10) : (TEXT_NUMBERS[n] ?? 1);
+  } else {
+    // "search your library for two basic land cards" (no "up to")
+    const numberedMatch = oracle.match(/search your library for (\d+|two|three|four|five|six|seven|eight|nine|ten)\s+(?!color)/i);
+    if (numberedMatch) {
+      const n = numberedMatch[1].toLowerCase();
+      count = /^\d+$/.test(n) ? parseInt(n, 10) : (TEXT_NUMBERS[n] ?? 1);
+    }
+  }
+
   let destination: SearchAbilityInfo['destination'] = 'hand';
   if (/onto the battlefield/i.test(oracle)) destination = 'battlefield';
   else if (/on top of your library/i.test(oracle)) destination = 'top';
@@ -183,7 +202,13 @@ function parseSearchAbility(oracle: string): SearchAbilityInfo | undefined {
   const tapped = destination === 'battlefield' && /onto the battlefield tapped/i.test(oracle);
   const shuffle = /\bshuffle\b/i.test(oracle);
 
-  return { filter, destination, tapped: tapped || undefined, shuffle };
+  return {
+    filter,
+    destination,
+    tapped: tapped || undefined,
+    shuffle,
+    count: count > 1 ? count : undefined,
+  };
 }
 
 // ========== Tax Triggers ==========

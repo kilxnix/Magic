@@ -734,6 +734,11 @@ export function useShelectorGame() {
   const [tutorCards, setTutorCards] = useState<{ instanceId: string; name: string; typeLine: string; manaCost: string }[]>([]);
   const [tutorTitle, setTutorTitle] = useState('');
   const tutorDestinationRef = useRef<string>('hand');
+  // Number of additional cards the active tutor can still find (for "up to N" searches).
+  // 0 means the current pick is the last one; > 0 means the picker re-opens after each pick.
+  const tutorRemainingRef = useRef<number>(0);
+  const tutorFilterRef = useRef<string | undefined>(undefined);
+  const tutorSourceNameRef = useRef<string>('Search');
   const [undosRemaining, setUndosRemaining] = useState(10);
 
   // Undo history — snapshots of engine state + chat messages before each human action
@@ -1212,7 +1217,7 @@ export function useShelectorGame() {
         }
 
         if (!controllerId || !searchInfo) return false;
-        const search = searchInfo as { filter?: string; destination: string; tapped?: boolean; shuffle: boolean };
+        const search = searchInfo as { filter?: string; destination: string; tapped?: boolean; shuffle: boolean; count?: number };
 
         // Remove the item from stack
         const newStack = state.stack.slice(0, -1);
@@ -1238,11 +1243,17 @@ export function useShelectorGame() {
         }).sort((a, b) => a.name.localeCompare(b.name));
 
         tutorDestinationRef.current = search.destination as 'hand' | 'battlefield' | 'top' | 'graveyard';
+        // For "up to N" searches: track how many additional picks remain after this one.
+        const totalCount = Math.max(1, search.count ?? 1);
+        tutorRemainingRef.current = totalCount - 1;
+        tutorFilterRef.current = search.filter;
+        tutorSourceNameRef.current = sourceName;
         const filterDesc = search.filter ? ` for ${search.filter}` : '';
-        setTutorTitle(`${sourceName}: Search your library${filterDesc}`);
+        const countSuffix = totalCount > 1 ? ` (pick 1 of up to ${totalCount})` : '';
+        setTutorTitle(`${sourceName}: Search your library${filterDesc}${countSuffix}`);
         setTutorCards(pickerCards);
         setTutorPhase(true);
-        messages.push({ role: 'system', text: `${sourceName} — search your library${filterDesc}.` });
+        messages.push({ role: 'system', text: `${sourceName} — search your library${filterDesc}${countSuffix}.` });
         return true;
       };
 
@@ -2163,8 +2174,36 @@ export function useShelectorGame() {
       engineRef.current = newEngine;
       addMessage('player', `Found ${cardName} and put it into hand. Library shuffled.`);
     }
+
+    // For "up to N" searches: re-open the picker if more picks remain.
+    if (tutorRemainingRef.current > 0) {
+      tutorRemainingRef.current -= 1;
+      const remaining = tutorRemainingRef.current + 1; // +1 because we're about to pick again
+      const filter = tutorFilterRef.current;
+      const sourceName = tutorSourceNameRef.current;
+      const updatedEngine = engineRef.current!;
+      const libraryCards = getCardsInZone(updatedEngine, humanIdRef.current, 'library');
+      const pickerCards = libraryCards.map(c => {
+        const d = getCardDefinition(updatedEngine, c);
+        return { instanceId: c.instanceId, name: d.name, typeLine: d.type_line, manaCost: d.mana_cost };
+      }).filter(c => {
+        if (!filter) return true;
+        return c.typeLine.toLowerCase().includes(filter);
+      }).sort((a, b) => a.name.localeCompare(b.name));
+
+      const filterDesc = filter ? ` for ${filter}` : '';
+      const countSuffix = ` (${remaining} more — Cancel to stop here)`;
+      setTutorTitle(`${sourceName}: Search your library${filterDesc}${countSuffix}`);
+      setTutorCards(pickerCards);
+      // tutorPhase stays true; UI re-shows picker with new options
+      syncState();
+      return;
+    }
+
     setTutorPhase(false);
     setTutorCards([]);
+    tutorRemainingRef.current = 0;
+    tutorFilterRef.current = undefined;
 
     // Continue game loop
     const loopMessages: { role: ChatMessage['role']; text: string }[] = [];
@@ -2174,6 +2213,26 @@ export function useShelectorGame() {
     for (const msg of loopMessages) addMessage(msg.role, msg.text);
     if (loopLogEntries.length > 0) setGameLog(prev => [...prev, ...loopLogEntries]);
 
+    syncState();
+  }, [addMessage, syncState, advanceGameLoop]);
+
+  /** Cancel the active tutor — useful for "up to N" searches when the user wants
+   * fewer than N picks, or to skip the search entirely. */
+  const cancelTutor = useCallback(() => {
+    if (!engineRef.current) return;
+    setTutorPhase(false);
+    setTutorCards([]);
+    tutorRemainingRef.current = 0;
+    tutorFilterRef.current = undefined;
+    addMessage('player', `Stopped searching${tutorSourceNameRef.current ? ` (${tutorSourceNameRef.current})` : ''}.`);
+
+    // Resume game loop after the tutor ends
+    const loopMessages: { role: ChatMessage['role']; text: string }[] = [];
+    const loopLogEntries: GameLogEntry[] = [];
+    const state: GameState = advanceGameLoop(engineRef.current, loopMessages, loopLogEntries);
+    engineRef.current = state as GameStateWithAI;
+    for (const msg of loopMessages) addMessage(msg.role, msg.text);
+    if (loopLogEntries.length > 0) setGameLog(prev => [...prev, ...loopLogEntries]);
     syncState();
   }, [addMessage, syncState, advanceGameLoop]);
 
@@ -2703,6 +2762,7 @@ export function useShelectorGame() {
     mulligan,
     discardCard,
     resolveTutor,
+    cancelTutor,
     undoAction,
     setCoachMode,
     untapManaSource,

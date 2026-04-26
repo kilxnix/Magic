@@ -83,7 +83,24 @@ export const PARSER_FIXTURES: ParserFixture[] = [
     oracleText: 'Search your library for up to two basic land cards, reveal those cards, put one onto the battlefield tapped and the other into your hand, then shuffle.',
     typeLine: 'Sorcery',
     expected: {
-      searchAbility: { filter: 'basic land', destination: 'battlefield', tapped: true, shuffle: true },
+      searchAbility: { filter: 'basic land', destination: 'battlefield', tapped: true, shuffle: true, count: 2 },
+    },
+  },
+  {
+    name: 'Demonic Tutor',
+    oracleText: 'Search your library for a card, put that card into your hand, then shuffle.',
+    typeLine: 'Sorcery',
+    expected: {
+      // Single-card search — count omitted (defaults to 1)
+      searchAbility: { destination: 'hand', shuffle: true },
+    },
+  },
+  {
+    name: 'Kodama\'s Reach',
+    oracleText: 'Search your library for up to two basic land cards, reveal those cards, put one onto the battlefield tapped and the other into your hand, then shuffle.',
+    typeLine: 'Sorcery — Arcane',
+    expected: {
+      searchAbility: { filter: 'basic land', destination: 'battlefield', tapped: true, shuffle: true, count: 2 },
     },
   },
   // --- Unless tax ---

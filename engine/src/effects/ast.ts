@@ -450,4 +450,6 @@ export interface SearchAbilityInfo {
   destination: 'hand' | 'battlefield' | 'top' | 'graveyard';
   tapped?: boolean;
   shuffle: boolean;
+  /** Maximum cards searchable. 1 for "a card", 2 for "up to two ... cards", etc. Defaults to 1. */
+  count?: number;
 }
