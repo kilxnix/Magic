@@ -32,12 +32,19 @@ describe('checkWinConditions terminal reasons', () => {
 });
 
 describe('checkWinConditions loop detection', () => {
-  it('returns loop signature when LoopDetector flags state repeat', () => {
-    const state = makeTestState({});
+  it('returns loop signature when LoopDetector flags a cyclic state repeat', () => {
+    // Loop detector only flags genuine cycles (A → B → A → B → A → B), not static stalls.
     const detector = new LoopDetector();
-    checkWinConditions(state, detector);
-    checkWinConditions(state, detector);
-    const result = checkWinConditions(state, detector);
+    const stateA = makeTestState({});
+    const stateB = makeTestState({});
+    stateA.players[0] = { ...stateA.players[0], life: 40 };
+    stateB.players[0] = { ...stateB.players[0], life: 41 };
+
+    checkWinConditions(stateA, detector); // 1st A
+    checkWinConditions(stateB, detector); // 1st B
+    checkWinConditions(stateA, detector); // 2nd A
+    checkWinConditions(stateB, detector); // 2nd B
+    const result = checkWinConditions(stateA, detector); // 3rd A — flags
     expect(result.loop?.category).toBe('state_repeat');
   });
 });

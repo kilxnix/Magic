@@ -24,6 +24,16 @@ export class LoopDetector {
     this.prevLifeTotals.push(lifeNow);
     if (this.prevLifeTotals.length > FINGERPRINT_BUFFER_SIZE) this.prevLifeTotals.shift();
 
+    // A genuine infinite loop cycles through distinct states (A → B → A → B → ...).
+    // A static stall (the same state observed many times because the user hasn't acted)
+    // would also repeat the same fingerprint, but is not a loop. Only count a fingerprint
+    // if it differs from the immediately preceding one — that way a stall never accumulates,
+    // but a real cycle still trips the threshold.
+    const lastFp = this.fingerprints[this.fingerprints.length - 1];
+    if (lastFp === fp) {
+      return null;
+    }
+
     this.fingerprints.push(fp);
     if (this.fingerprints.length > FINGERPRINT_BUFFER_SIZE) this.fingerprints.shift();
     const count = this.fingerprints.filter(f => f === fp).length;

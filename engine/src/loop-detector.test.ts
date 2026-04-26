@@ -3,14 +3,32 @@ import { LoopDetector } from './win-conditions';
 import { makeTestState } from './__tests__/test-helpers';
 
 describe('LoopDetector state_repeat', () => {
-  it('flags loop after same fingerprint appears 3 times', () => {
+  it('flags loop when a cycle of two states repeats 3 times', () => {
+    // A genuine infinite loop cycles through distinct states, e.g. A → B → A → B → A → B.
+    // The third occurrence of A trips the threshold.
     const detector = new LoopDetector();
-    const state = makeTestState({});
-    expect(detector.observe(state, 'pass')).toBeNull();
-    expect(detector.observe(state, 'pass')).toBeNull();
-    const sig = detector.observe(state, 'pass');
+    const stateA = makeTestState({});
+    const stateB = makeTestState({});
+    stateA.players[0] = { ...stateA.players[0], life: 40 };
+    stateB.players[0] = { ...stateB.players[0], life: 41 };
+
+    expect(detector.observe(stateA, 'a')).toBeNull(); // 1st A
+    expect(detector.observe(stateB, 'b')).toBeNull(); // 1st B
+    expect(detector.observe(stateA, 'a')).toBeNull(); // 2nd A
+    expect(detector.observe(stateB, 'b')).toBeNull(); // 2nd B
+    const sig = detector.observe(stateA, 'a');         // 3rd A — flags
     expect(sig).not.toBeNull();
     expect(sig?.category).toBe('state_repeat');
+  });
+
+  it('static stalls do not flag a loop (same state observed many times)', () => {
+    // The user is stuck on a step (e.g. cleanup-discard) and the engine observes the
+    // same state repeatedly. This is not a loop — count only when fingerprint changes.
+    const detector = new LoopDetector();
+    const state = makeTestState({});
+    for (let i = 0; i < 10; i++) {
+      expect(detector.observe(state, 'pass')).toBeNull();
+    }
   });
 
   it('distinct states do not flag a loop', () => {
