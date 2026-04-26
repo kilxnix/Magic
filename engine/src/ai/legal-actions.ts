@@ -269,7 +269,8 @@ function generateManaActions(state: GameState, playerId: string): ActivateManaAb
     const def = getCardDefinition(state, card);
 
     if (!def.manaProduction) continue;
-    if (def.manaProduction.requiresSacrifice) continue;
+    // Sacrifice-cost mana abilities (Lotus Petal, Tinder Wall, etc.) are now
+    // legal actions — tapLandForMana sacrifices the card as part of activation.
 
     for (const color of def.manaProduction.colors) {
       actions.push({

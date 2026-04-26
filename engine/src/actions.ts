@@ -85,8 +85,16 @@ export function tapLandForMana(state: GameState, playerId: string, cardInstanceI
   const def = getCardDefinition(state, card);
   const amount = def.manaProduction?.amounts[color] ?? 1;
 
+  // Sacrifice-cost mana abilities (Lotus Petal, Tinder Wall, Lotus Bloom, etc.):
+  // tap, then move the card from the battlefield to its owner's graveyard.
+  const requiresSacrifice = def.manaProduction?.requiresSacrifice === true;
+
   const newCards = new Map(state.cards);
-  newCards.set(cardInstanceId, { ...card, tapped: true });
+  newCards.set(cardInstanceId, {
+    ...card,
+    tapped: true,
+    zone: requiresSacrifice ? 'graveyard' : card.zone,
+  });
 
   const playerIndex = state.players.findIndex(p => p.id === playerId);
   const newPlayers = state.players.map((p, i) =>
