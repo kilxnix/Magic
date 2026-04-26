@@ -69,7 +69,7 @@ export function advanceToNextTurn(state: GameState): GameState {
 
   const updatedPlayers = state.players.map((p, i) => {
     if (i === nextIndex) {
-      return { ...p, hasPlayedLand: false, manaPool: { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 } };
+      return { ...p, hasPlayedLand: false, landsPlayedThisTurn: 0, manaPool: { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 } };
     }
     return { ...p, manaPool: { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 } };
   });

@@ -1,6 +1,6 @@
 // engine/src/actions-public.ts
 import type { GameState, ManaColor, Phase, ManaCost, AttackerDeclaration, BlockerDeclaration } from './types';
-import { playLand, canPlayLand, tapLandForMana, activateAbility, getActivatedAbilities, equipCreature } from './actions';
+import { playLand, canPlayLand, tapLandForMana, activateAbility, getActivatedAbilities, equipCreature, maxLandsThisTurn } from './actions';
 import { castSpell, canCastSpell } from './stack';
 import { canPayCost, parseManaString } from './mana';
 import { getCardDefinition } from './game-state';
@@ -91,8 +91,14 @@ export function tryPlayLand(
   if (!MAIN_PHASES.includes(state.phase)) {
     return fail('wrong_phase', 'Lands can only be played in main phases');
   }
-  if (state.players[playerIndex].hasPlayedLand) {
-    return fail('land_already_played', 'Already played a land this turn');
+  // Check land-drop cap (1 + Exploration-style "additional land" effects).
+  const player = state.players[playerIndex];
+  const playedSoFar = Math.max(
+    player.landsPlayedThisTurn ?? 0,
+    player.hasPlayedLand ? 1 : 0,
+  );
+  if (playedSoFar >= maxLandsThisTurn(state, playerId)) {
+    return fail('land_already_played', 'Already played the maximum lands this turn');
   }
   if (!canPlayLand(state, playerId, cardInstanceId)) {
     return fail('internal_error', 'canPlayLand returned false for unknown reason');

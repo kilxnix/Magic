@@ -10,13 +10,48 @@ import type { TargetSpec } from './effects/targets';
 
 const MAIN_PHASES: Phase[] = ['precombat_main', 'postcombat_main'];
 
+/**
+ * Number of lands the player may play this turn.
+ * Defaults to 1, plus one extra per battlefield permanent the player controls
+ * whose oracle text reads "you may play an additional land" (Exploration,
+ * Mina and Denn, Oracle of Mul Daya, Wayward Swordtooth, Azusa Lost But Seeking, etc.).
+ *
+ * Note: Azusa says "two additional lands" — we count those occurrences, not just cards.
+ */
+export function maxLandsThisTurn(state: GameState, playerId: string): number {
+  let extra = 0;
+  for (const [, card] of state.cards) {
+    if (card.zone !== 'battlefield') continue;
+    if (card.ownerId !== playerId) continue;
+    const def = state.cardDefinitions.get(card.definitionId);
+    if (!def) continue;
+    const oracle = def.oracle_text.toLowerCase();
+    // "play an additional land" → +1
+    if (/\byou may play an additional land\b/.test(oracle)) extra += 1;
+    // "play two additional lands" → +2 (Azusa, Lost but Seeking)
+    const twoMatch = oracle.match(/\byou may play (\d+|two|three|four)\s+additional lands\b/);
+    if (twoMatch) {
+      const n = twoMatch[1].toLowerCase();
+      const TEXT_NUMBERS: Record<string, number> = { two: 2, three: 3, four: 4 };
+      const count = /^\d+$/.test(n) ? parseInt(n, 10) : (TEXT_NUMBERS[n] ?? 1);
+      extra += Math.max(0, count);
+    }
+  }
+  return 1 + extra;
+}
+
 export function canPlayLand(state: GameState, playerId: string, cardInstanceId: string): boolean {
   const playerIndex = state.players.findIndex(p => p.id === playerId);
   if (playerIndex === -1) return false;
 
   if (state.activePlayerIndex !== playerIndex) return false;
   if (!MAIN_PHASES.includes(state.phase)) return false;
-  if (state.players[playerIndex].hasPlayedLand) return false;
+  // Treat hasPlayedLand=true as at-least-one even if landsPlayedThisTurn isn't tracked.
+  const playedSoFar = Math.max(
+    state.players[playerIndex].landsPlayedThisTurn ?? 0,
+    state.players[playerIndex].hasPlayedLand ? 1 : 0,
+  );
+  if (playedSoFar >= maxLandsThisTurn(state, playerId)) return false;
 
   const card = state.cards.get(cardInstanceId);
   if (!card || card.zone !== 'hand' || card.ownerId !== playerId) return false;
@@ -40,7 +75,9 @@ export function playLand(state: GameState, playerId: string, cardInstanceId: str
 
   const playerIndex = state.players.findIndex(p => p.id === playerId);
   const newPlayers = state.players.map((p, i) =>
-    i === playerIndex ? { ...p, hasPlayedLand: true } : p
+    i === playerIndex
+      ? { ...p, hasPlayedLand: true, landsPlayedThisTurn: (p.landsPlayedThisTurn ?? 0) + 1 }
+      : p,
   );
 
   let resultState: GameState = { ...state, cards: newCards, players: newPlayers };

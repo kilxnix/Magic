@@ -184,6 +184,10 @@ export interface Player {
   commanderCastCount: number; // times commander has been cast from command zone
   manaPool: ManaPool;
   hasPlayedLand: boolean;
+  /** Count of lands played this turn. Independent of hasPlayedLand so that
+   * Exploration / Mina and Denn / Oracle of Mul Daya can grant additional
+   * land plays beyond the normal one. Defaults to 0; reset each turn. */
+  landsPlayedThisTurn?: number;
   hasPriority: boolean;
   hasLost: boolean;
 }
@@ -242,6 +246,7 @@ export function createPlayer(id: string, name: string, life: number = 40): Playe
     commanderCastCount: 0,
     manaPool: emptyManaPool(),
     hasPlayedLand: false,
+    landsPlayedThisTurn: 0,
     hasPriority: false,
     hasLost: false,
   };
