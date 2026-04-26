@@ -1265,4 +1265,24 @@ describe('counter pattern matchers (task 17)', () => {
     expect(add.count).toBe(1);
     expect(result.targets[0].type).toBe('Permanent');
   });
+
+  describe('landfall (concise modern phrasing)', () => {
+    it('parses "Whenever a land you control enters," as a Landfall trigger', () => {
+      const result = parseOracleText(
+        'Whenever a land you control enters, create a 5/5 red and green Elemental creature token.',
+      );
+      expect(result.kind).toBe('Triggered');
+      if (result.kind !== 'Triggered') return;
+      expect(result.ability.trigger.kind).toBe('Landfall');
+    });
+
+    it('still parses "Whenever a land enters the battlefield under your control," as Landfall', () => {
+      const result = parseOracleText(
+        'Whenever a land enters the battlefield under your control, you gain 1 life.',
+      );
+      expect(result.kind).toBe('Triggered');
+      if (result.kind !== 'Triggered') return;
+      expect(result.ability.trigger.kind).toBe('Landfall');
+    });
+  });
 });

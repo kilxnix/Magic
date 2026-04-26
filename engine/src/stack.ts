@@ -14,14 +14,34 @@ const PERMANENT_TYPES = ['creature', 'artifact', 'enchantment', 'planeswalker', 
 let stackCounter = 0;
 
 /**
- * Normalize oracle text for the parser by replacing the card's own name with '~'.
+ * Strip keyword-ability name prefixes that decorate triggered abilities.
+ * Cards like Omnath, Locus of Rage write "Landfall — Whenever a land you control enters, ...".
+ * The parser only recognizes "Whenever ...", so we strip the leading "<KeywordName> — " on each line.
+ *
+ * Matches a leading capitalized word (optionally with internal hyphens, like "Jump-start")
+ * optionally followed by 1-2 more lowercase words (e.g. "Devotion to red"), then an em-dash
+ * (or en-dash / ASCII hyphen) surrounded by whitespace.
+ */
+function stripKeywordAbilityPrefix(oracleText: string): string {
+  // Negative lookahead excludes "Choose " — that's a modal-spell delimiter, not a keyword ability.
+  return oracleText.replace(
+    /^(?!Choose\b)[A-Z][A-Za-z\-]*(?:\s+[a-z]+){0,2}\s+[—–-]\s+/gm,
+    '',
+  );
+}
+
+/**
+ * Normalize oracle text for the parser by replacing the card's own name with '~'
+ * and stripping keyword-ability prefixes the parser does not understand.
  * Scryfall oracle text uses the literal card name; the parser expects '~'.
  */
 function normalizeOracleText(oracleText: string, cardName: string): string {
-  if (!cardName) return oracleText;
-  // Escape any regex special characters in the card name
-  const escaped = cardName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return oracleText.replace(new RegExp(escaped, 'gi'), '~');
+  let text = stripKeywordAbilityPrefix(oracleText);
+  if (cardName) {
+    const escaped = cardName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    text = text.replace(new RegExp(escaped, 'gi'), '~');
+  }
+  return text;
 }
 
 /**

@@ -2744,26 +2744,45 @@ function matchEachPlayerUpkeepPrefix(tokens: string[]): number {
 }
 
 /**
- * Check if tokens start with "Whenever a land enters the battlefield under your control ,"
+ * Check if tokens start with a landfall trigger prefix.
+ * Handles both the verbose phrasing
+ *   "whenever a land enters the battlefield under your control ,"
+ * and the modern concise phrasing
+ *   "whenever a land you control enters ,"
  * Returns the index after the trigger prefix, or -1 if no match.
  */
 function matchLandfallPrefix(tokens: string[]): number {
-  // "whenever a land enters the battlefield under your control ,"
-  if (tokens.length < 10) return -1;
+  if (tokens.length < 6) return -1;
   if (tokens[0] !== 'whenever') return -1;
   if (tokens[1] !== 'a') return -1;
   if (tokens[2] !== 'land') return -1;
-  if (tokens[3] !== 'enters') return -1;
-  if (tokens[4] !== 'the') return -1;
-  if (tokens[5] !== 'battlefield') return -1;
-  if (tokens[6] !== 'under') return -1;
-  if (tokens[7] !== 'your') return -1;
-  if (tokens[8] !== 'control') return -1;
 
-  let idx = 9;
-  if (tokens[idx] === ',') idx++;
+  // Verbose: "whenever a land enters the battlefield under your control ,"
+  if (
+    tokens[3] === 'enters' &&
+    tokens[4] === 'the' &&
+    tokens[5] === 'battlefield' &&
+    tokens[6] === 'under' &&
+    tokens[7] === 'your' &&
+    tokens[8] === 'control'
+  ) {
+    let idx = 9;
+    if (tokens[idx] === ',') idx++;
+    return idx;
+  }
 
-  return idx;
+  // Concise: "whenever a land you control enters ,"
+  if (
+    tokens[3] === 'you' &&
+    tokens[4] === 'control' &&
+    tokens[5] === 'enters'
+  ) {
+    let idx = 6;
+    if (tokens[idx] === ',') idx++;
+    return idx;
+  }
+
+  return -1;
 }
 
 /**
