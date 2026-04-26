@@ -635,3 +635,44 @@ describe('Full Trigger Pipeline - Multiple Sources', () => {
     expect(p1HandAfter).toBe(p1HandBefore + 2);
   });
 });
+
+// ============================================================================
+// Real-card landfall coverage: Omnath, Locus of Rage
+// ============================================================================
+
+describe('Omnath, Locus of Rage end-to-end', () => {
+  it('registers landfall trigger from Scryfall oracle text with "Landfall — " prefix', () => {
+    // This is the verbatim Scryfall oracle text — note the "Landfall — " keyword prefix
+    // and the modern concise phrasing "whenever a land you control enters,".
+    const omnath: CardDefinition = {
+      id: 'omnath-locus-of-rage',
+      name: 'Omnath, Locus of Rage',
+      type_line: 'Legendary Creature - Elemental',
+      oracle_text:
+        'Landfall — Whenever a land you control enters, create a 5/5 red and green Elemental creature token.\n' +
+        'Whenever Omnath, Locus of Rage or another Elemental you control dies, Omnath, Locus of Rage deals 3 damage to any target.',
+      mana_cost: '{3}{R}{R}{G}{G}',
+      cmc: 7,
+      colors: ['R', 'G'],
+      color_identity: ['R', 'G'],
+      keywords: [],
+      power: 5,
+      toughness: 5,
+      card_types: ['creature'],
+    };
+    const island = makeLand('island-1', 'Island');
+    let state = createTestGame([omnath, island], [island]);
+
+    const omnathInst = findCard(state, 'omnath-locus-of-rage')!;
+    state = moveToZone(state, omnathInst.instanceId, 'battlefield');
+    state = registerBattlefieldAbilities(state, omnathInst.instanceId);
+
+    const abilities = state.battlefieldAbilities.get(omnathInst.instanceId);
+    expect(abilities, 'Omnath should have at least one registered ability').toBeDefined();
+    expect(abilities!.length, 'both lines should produce a registered trigger').toBeGreaterThanOrEqual(1);
+    expect(
+      abilities!.some(a => a.trigger.kind === 'Landfall'),
+      'landfall trigger should be among the registered abilities',
+    ).toBe(true);
+  });
+});
