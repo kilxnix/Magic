@@ -1500,7 +1500,10 @@ export function useShelectorGame() {
         ) {
           // declare_attackers: let human choose or auto-skip
           if (state.step === 'declare_attackers') {
-            if (isHumanActive) {
+            // If combat is already populated (human just declared attackers via submitAction),
+            // skip re-prompting and re-declaring — that would overwrite the attacker list with [].
+            const alreadyDeclared = !!(state.combat && state.combat.attackers.length > 0);
+            if (isHumanActive && !alreadyDeclared) {
               const actions = getLegalActions(state, humanIdRef.current);
               const hasRealAttacks = actions.some(
                 a => a.kind === 'DeclareAttackers' && a.attacks.length > 0,
@@ -1513,7 +1516,7 @@ export function useShelectorGame() {
               if (emptyAttack) {
                 state = applyAction(state, humanIdRef.current, emptyAttack);
               }
-            } else {
+            } else if (!isHumanActive) {
               // AI declares attackers
               try {
                 const config = createAIConfig(activeId, 3);
