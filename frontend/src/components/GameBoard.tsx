@@ -719,15 +719,50 @@ export function GameBoard({
             {manaActions.length > 0 && (
               <>
                 <div className="w-px h-6 bg-stone-600 shrink-0 mx-0.5" />
-                {/* Tap All button */}
-                {manaActions.length > 1 && (
-                  <button
-                    onClick={() => { for (const a of manaActions) onAction(a); }}
-                    className="px-3 py-1.5 rounded bg-amber-700/70 hover:bg-amber-600/80 border border-amber-500/40 text-amber-100 text-xs font-bold transition-colors min-h-[44px] whitespace-nowrap shrink-0"
-                  >
-                    Tap All ({manaActions.length})
-                  </button>
-                )}
+                {/* Tap All button: pick one action per card, choosing the color that
+                    diversifies the resulting pool (so a Taiga + Mountain produces R + G
+                    instead of R + R). */}
+                {(() => {
+                  const tapAllPlan = (() => {
+                    // Group manaActions by card id; each card produces one tap.
+                    const byCard = new Map<string, SimpleLegalAction[]>();
+                    for (const a of manaActions) {
+                      const cardId = a.cardInstanceId;
+                      if (!cardId) continue;
+                      const arr = byCard.get(cardId) ?? [];
+                      arr.push(a);
+                      byCard.set(cardId, arr);
+                    }
+                    // Order: cards with the FEWEST color choices first (mono-color and
+                    // colorless lock in their color before duals get to choose).
+                    const ordered = [...byCard.entries()].sort(
+                      ([, a], [, b]) => a.length - b.length,
+                    );
+                    const tally: Record<string, number> = { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 };
+                    const plan: SimpleLegalAction[] = [];
+                    for (const [, options] of ordered) {
+                      // Pick the option whose color is currently least represented.
+                      const best = options.reduce((cur, opt) => {
+                        const curColor = (cur._engineAction as { color?: string }).color ?? 'C';
+                        const optColor = (opt._engineAction as { color?: string }).color ?? 'C';
+                        return (tally[optColor] ?? 0) < (tally[curColor] ?? 0) ? opt : cur;
+                      });
+                      const chosenColor = (best._engineAction as { color?: string }).color ?? 'C';
+                      tally[chosenColor] = (tally[chosenColor] ?? 0) + 1;
+                      plan.push(best);
+                    }
+                    return plan;
+                  })();
+                  if (tapAllPlan.length <= 1) return null;
+                  return (
+                    <button
+                      onClick={() => { for (const a of tapAllPlan) onAction(a); }}
+                      className="px-3 py-1.5 rounded bg-amber-700/70 hover:bg-amber-600/80 border border-amber-500/40 text-amber-100 text-xs font-bold transition-colors min-h-[44px] whitespace-nowrap shrink-0"
+                    >
+                      Tap All ({tapAllPlan.length})
+                    </button>
+                  );
+                })()}
                 {/* Individual taps — only show when 3 or fewer, otherwise too long */}
                 {manaActions.length <= 3 && manaActions.map((action, i) => (
                   <button
