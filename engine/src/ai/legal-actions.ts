@@ -286,6 +286,10 @@ function generateManaActions(state: GameState, playerId: string): ActivateManaAb
 
 /**
  * Generate activated ability actions for non-mana abilities.
+ *
+ * For abilities that require targets, enumerate one action per legal target.
+ * Abilities with no legal targets are skipped (an action with empty targets
+ * would crash the executor with "Missing chosen target").
  */
 function generateActivateAbilityActions(state: GameState, playerId: string): ActivateAbilityAction[] {
   const actions: ActivateAbilityAction[] = [];
@@ -298,12 +302,37 @@ function generateActivateAbilityActions(state: GameState, playerId: string): Act
       // Non-mana abilities only (mana abilities handled separately)
       if (abilities[i].isManaAbility) continue;
 
-      actions.push({
-        kind: 'ActivateAbility',
-        cardInstanceId: card.instanceId,
-        abilityIndex: i,
-        targets: [], // Targets will be enhanced by AI targeting logic
-      });
+      const abilityTargets = abilities[i].targets ?? [];
+      if (abilityTargets.length === 0) {
+        actions.push({
+          kind: 'ActivateAbility',
+          cardInstanceId: card.instanceId,
+          abilityIndex: i,
+          targets: [],
+        });
+        continue;
+      }
+
+      // Single-target ability: enumerate legal targets, one action each.
+      // Multi-target abilities are skipped for v0 (combinatorial blowup).
+      if (abilityTargets.length === 1) {
+        const spec: TargetSpec = {
+          id: abilityTargets[0].id,
+          type: abilityTargets[0].type as TargetSpec['type'],
+          count: 1,
+        };
+        const legalTargets = getLegalTargets(state, playerId, spec);
+        for (const target of legalTargets) {
+          actions.push({
+            kind: 'ActivateAbility',
+            cardInstanceId: card.instanceId,
+            abilityIndex: i,
+            targets: [target],
+          });
+        }
+      }
+      // (Abilities with 2+ target specs are not yet enumerated. They'll be
+      // missing from the legal-actions list rather than crash on activation.)
     }
   }
 
