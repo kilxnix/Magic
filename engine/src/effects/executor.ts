@@ -811,6 +811,7 @@ function executeCreateToken(
       counters: {},
       damage: 0,
       isCommander: false,
+      isToken: true,
     };
     newCards.set(instanceId, instance);
   }

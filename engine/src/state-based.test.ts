@@ -259,3 +259,74 @@ describe('Planeswalker Loyalty SBA', () => {
     expect(pw?.zone).toBe('battlefield');
   });
 });
+
+describe('Token cease-to-exist SBA (MTG rule 704.5d)', () => {
+  it('token in graveyard ceases to exist', () => {
+    const state = makeTestState({});
+    // Inject a token instance directly into the cards map in the graveyard
+    const tokenDef: CardDefinition = {
+      id: 'token-insect',
+      name: 'Insect',
+      type_line: 'Token Creature — Insect',
+      oracle_text: '',
+      mana_cost: '',
+      cmc: 0,
+      colors: ['G'],
+      color_identity: ['G'],
+      keywords: [],
+      card_types: ['creature'],
+      power: 1,
+      toughness: 1,
+    };
+    state.cardDefinitions.set(tokenDef.id, tokenDef);
+    state.cards.set('tok1', {
+      instanceId: 'tok1',
+      definitionId: tokenDef.id,
+      ownerId: 'human',
+      zone: 'graveyard',
+      tapped: false,
+      summoningSick: false,
+      counters: {},
+      damage: 0,
+      isCommander: false,
+      isToken: true,
+    });
+
+    const next = checkStateBasedActions(state);
+    expect(next.cards.get('tok1'), 'token in graveyard should be removed from the cards map').toBeUndefined();
+  });
+
+  it('token on battlefield stays', () => {
+    const state = makeTestState({});
+    const tokenDef: CardDefinition = {
+      id: 'token-elemental',
+      name: 'Elemental',
+      type_line: 'Token Creature — Elemental',
+      oracle_text: '',
+      mana_cost: '',
+      cmc: 0,
+      colors: ['R', 'G'],
+      color_identity: ['R', 'G'],
+      keywords: [],
+      card_types: ['creature'],
+      power: 5,
+      toughness: 5,
+    };
+    state.cardDefinitions.set(tokenDef.id, tokenDef);
+    state.cards.set('tok2', {
+      instanceId: 'tok2',
+      definitionId: tokenDef.id,
+      ownerId: 'human',
+      zone: 'battlefield',
+      tapped: false,
+      summoningSick: false,
+      counters: {},
+      damage: 0,
+      isCommander: false,
+      isToken: true,
+    });
+
+    const next = checkStateBasedActions(state);
+    expect(next.cards.get('tok2')?.zone).toBe('battlefield');
+  });
+});

@@ -163,6 +163,21 @@ export function checkStateBasedActions(state: GameState): GameState {
       }
     }
 
+    // 6b. Tokens in non-battlefield zones cease to exist (MTG rule 704.5d).
+    // Tokens that die, are exiled, are countered, or end up in any zone other than the
+    // battlefield should be removed from the game state. This prevents stale token
+    // entries from lingering in graveyards/exile and re-appearing in lookups.
+    const tokensToRemove: string[] = [];
+    for (const [id, card] of newCards) {
+      if (!card.isToken) continue;
+      if (card.zone === 'battlefield' || card.zone === 'stack') continue;
+      tokensToRemove.push(id);
+    }
+    if (tokensToRemove.length > 0) {
+      for (const id of tokensToRemove) newCards.delete(id);
+      stateChanged = true;
+    }
+
     // 7. Players with 10+ poison counters lose
     for (let i = 0; i < newPlayers.length; i++) {
       if (newPlayers[i].hasLost) continue;
