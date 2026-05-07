@@ -475,10 +475,13 @@ async function fetchDeckAndCards(deckId: string): Promise<{
   if (!deckRes.ok) throw new Error('Failed to load deck');
   const deck: ApiDeck = await deckRes.json();
 
-  // Parse deck list, expand quantities
+  // Parse deck list, expand quantities — handle partner commanders ("A // B")
+  const cmdrNames = deck.commander.includes(' // ')
+    ? new Set(deck.commander.split(' // ').map((n: string) => n.trim()))
+    : new Set([deck.commander]);
   const parsedEntries = deck.list
     .map(parseDeckListEntry)
-    .filter(e => e.name !== deck.commander);
+    .filter(e => !cmdrNames.has(e.name));
   const expandedNames: string[] = [];
   for (const entry of parsedEntries) {
     for (let i = 0; i < entry.quantity; i++) {
@@ -486,7 +489,7 @@ async function fetchDeckAndCards(deckId: string): Promise<{
     }
   }
 
-  const allNames = [deck.commander, ...expandedNames];
+  const allNames = [...cmdrNames, ...expandedNames];
   const uniqueNames = [...new Set(allNames)];
 
   const cardsRes = await fetch('/api/cards-batch', {
@@ -1665,10 +1668,13 @@ export function useCommanderEngine(): GameEngine {
       fetchDeckAndCards(config.deckId)
         .then(async ({ deck, cardLookup, scryfallCards, facesMap }) => {
           cardFacesMapRef.current = facesMap;
-          // Build human deck
+          // Build human deck — handle partner commanders ("A // B")
+          const cmdrNamesToExclude = deck.commander.includes(' // ')
+            ? new Set(deck.commander.split(' // ').map((n: string) => n.trim()))
+            : new Set([deck.commander]);
           const parsedEntries = deck.list
             .map(parseDeckListEntry)
-            .filter(e => e.name !== deck.commander);
+            .filter(e => !cmdrNamesToExclude.has(e.name));
           const expandedNames: string[] = [];
           for (const entry of parsedEntries) {
             for (let i = 0; i < entry.quantity; i++) {

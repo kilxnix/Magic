@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { initGameState, getPlayer, getActivePlayer, getCardsInZone } from './game-state';
+import {
+  initGameState,
+  getPlayer,
+  getActivePlayer,
+  getCardsInZone,
+  getSideboard,
+  moveSideboardCardIntoGame,
+  returnSideboardCardsToSideboard,
+} from './game-state';
 import { CardDefinition } from './types';
 
 function makeLand(id: string, name: string, color: 'W' | 'U' | 'B' | 'R' | 'G'): CardDefinition {
@@ -93,5 +101,28 @@ describe('Game State', () => {
     const state = initGameState(decks);
     expect(state.players).toHaveLength(4);
     expect(state.hasPriorityPassed).toHaveLength(4);
+  });
+
+  it('keeps sideboard cards outside game zones until an outside-game effect moves them', () => {
+    const forest = makeLand('l1', 'Forest', 'G');
+    const wishCard = makeCreature('c-side', 'Sideboard Bear', 2, 2);
+    const state = initGameState([
+      { playerId: 'p1', name: 'Alice', cards: [forest], commanderId: 'cmd1', sideboardCards: [wishCard] },
+      { playerId: 'p2', name: 'Bob', cards: [], commanderId: 'cmd2' },
+    ]);
+
+    expect(getCardsInZone(state, 'p1', 'library')).toHaveLength(1);
+    expect(getSideboard(state, 'p1').map(card => card.name)).toEqual(['Sideboard Bear']);
+
+    const withCard = moveSideboardCardIntoGame(state, 'p1', 'Sideboard Bear', 'library');
+
+    expect(getSideboard(withCard, 'p1')).toHaveLength(0);
+    expect(getCardsInZone(withCard, 'p1', 'library')[0].fromSideboard).toBe(true);
+    expect(withCard.cardDefinitions.get(getCardsInZone(withCard, 'p1', 'library')[0].definitionId)?.name).toBe('Sideboard Bear');
+
+    const cleaned = returnSideboardCardsToSideboard(withCard);
+
+    expect(getCardsInZone(cleaned, 'p1', 'library')).toHaveLength(1);
+    expect(getSideboard(cleaned, 'p1').map(card => card.name)).toEqual(['Sideboard Bear']);
   });
 });

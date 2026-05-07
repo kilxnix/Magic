@@ -8,7 +8,7 @@ from fastapi import FastAPI, HTTPException, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from backend.deck_generator import get_generator
+from backend.deck_generator import get_generator, reload_generator
 from backend.rules import COMMANDER_BRACKETS, PRICE_TIERS, get_core_staples_for_colors
 from backend.database import (
     init_db, save_deck, get_deck, get_recent_decks, get_decks_by_ids,
@@ -17,6 +17,7 @@ from backend.database import (
 from backend.card_alternatives import get_alternative_finder, CardAlternative
 from backend.price_service import get_card_prices, get_cheapest_price, get_price_category
 from backend.deck_url_parser import fetch_deck_from_url, detect_site
+from backend.draft import get_cards_for_draft_sets, get_draft_set_summaries
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -45,7 +46,10 @@ app.add_middleware(
 
 class DeckRequest(BaseModel):
     """Request model for deck generation."""
-    commander: str = Field(..., description="Commander name (partial match supported)")
+    commander: Optional[str] = Field(None, description="Commander name (required for Commander decks)")
+    format: str = Field("commander", description="Deck format: commander or standard")
+    colors: Optional[List[str]] = Field(None, description="Constructed deck colors, e.g. ['U', 'R']")
+    archetype: Optional[str] = Field(None, description="Constructed archetype, e.g. aggro, control, midrange")
     bracket: int = Field(2, ge=1, le=5, description="Power level bracket (1-5)")
     theme: Optional[str] = Field(None, description="Optional deck theme/strategy")
     budget_tier: Optional[str] = Field(
@@ -99,6 +103,11 @@ class DeckResponse(BaseModel):
     bracket_name: str
     theme: str
     categories: dict
+    format: str = "commander"
+    sideboard: List[str] = []
+    generation_method: Optional[str] = None
+    model_scoring: bool = False
+    synergy_queries: List[str] = []
     ai_enhanced: bool = False
     ai_reasoning: Optional[str] = None
 
@@ -120,6 +129,21 @@ class SearchResult(BaseModel):
     oracle_text: Optional[str]
     colors: List[str]
     score: float
+
+
+class DraftSetSummary(BaseModel):
+    """A set with enough local cards to synthesize draft boosters."""
+    set_code: str
+    set_name: str
+    set_type: Optional[str] = None
+    released_at: Optional[str] = None
+    card_count: int
+    rarities: dict
+
+
+class DraftCardsRequest(BaseModel):
+    """Request cards from one or more draft sets."""
+    set_codes: List[str] = Field(..., min_length=1, description="Set codes for packs in this draft")
 
 
 class BracketInfo(BaseModel):
@@ -342,7 +366,7 @@ def _shelector_rerank(
 @app.post("/api/generate-deck", response_model=DeckResponse)
 async def generate_deck(request: DeckRequest):
     """
-    Generate a Commander deck.
+    Generate a Commander or Standard deck.
 
     The deck follows Command Zone rules:
     - Max 34 lands
@@ -364,6 +388,9 @@ async def generate_deck(request: DeckRequest):
     from datetime import datetime
 
     generator = get_generator()
+    format_name = (request.format or "commander").lower()
+    if format_name not in {"commander", "standard"}:
+        raise HTTPException(status_code=400, detail="format must be 'commander' or 'standard'")
 
     # Validate budget tier if provided
     if request.budget_tier and request.budget_tier not in PRICE_TIERS:
@@ -372,12 +399,24 @@ async def generate_deck(request: DeckRequest):
             detail=f"Invalid budget_tier. Must be one of: {list(PRICE_TIERS.keys())}"
         )
 
-    result = generator.generate_deck(
-        commander_name=request.commander,
-        bracket=request.bracket,
-        theme=request.theme or "",
-        budget_tier=request.budget_tier,
-    )
+    if format_name == "standard":
+        result = generator.generate_standard_deck(
+            colors=request.colors or ["R"],
+            archetype=request.archetype or request.theme or "midrange",
+            theme=request.theme or "",
+            budget_tier=request.budget_tier,
+            use_model_scoring=request.use_ai,
+        )
+    else:
+        if not request.commander:
+            raise HTTPException(status_code=400, detail="Commander is required for Commander decks")
+        result = generator.generate_deck(
+            commander_name=request.commander,
+            bracket=request.bracket,
+            theme=request.theme or "",
+            budget_tier=request.budget_tier,
+            use_model_scoring=request.use_ai,
+        )
 
     if "error" in result:
         raise HTTPException(status_code=404, detail=result["error"])
@@ -386,7 +425,7 @@ async def generate_deck(request: DeckRequest):
     ai_reasoning = None
 
     # Optionally enhance with Shelector AI
-    if request.use_ai:
+    if request.use_ai and format_name == "commander":
         improved_list, improved_categories, reasoning = _shelector_rerank(
             commander=result["commander"],
             theme=result.get("theme", ""),
@@ -413,6 +452,11 @@ async def generate_deck(request: DeckRequest):
         bracket_name=result["bracket_name"],
         theme=result["theme"],
         categories=result["categories"],
+        format=result.get("format", format_name),
+        sideboard=result.get("sideboard", []),
+        generation_method=result.get("generation_method"),
+        model_scoring=result.get("model_scoring", False),
+        synergy_queries=result.get("synergy_queries", []),
         ai_enhanced=ai_enhanced,
         ai_reasoning=ai_reasoning,
     )
@@ -427,6 +471,8 @@ async def generate_deck(request: DeckRequest):
 @app.post("/api/generate-deck-v2")
 async def generate_deck_v2(request: DeckRequest):
     """Generate a deck using the Qwen3.5 model (falls back to FAISS if unavailable)."""
+    if not request.commander:
+        raise HTTPException(status_code=400, detail="Commander is required for Commander decks")
     generator = get_generator()
     result = generator.generate_deck_with_model(
         commander_name=request.commander,
@@ -461,6 +507,8 @@ async def regenerate_deck(request: RegenerateDeckRequest):
     original_deck = get_deck(request.deck_id)
     if not original_deck:
         raise HTTPException(status_code=404, detail="Original deck not found")
+    if original_deck.get("format", "commander") != "commander":
+        raise HTTPException(status_code=400, detail="Only Commander decks can be regenerated right now")
 
     # Check regeneration chain
     parent_id = original_deck.get('parent_deck_id') or request.deck_id
@@ -487,7 +535,11 @@ async def regenerate_deck(request: RegenerateDeckRequest):
 
     # Calculate rejected cards (cards in original deck that user didn't lock)
     # These should not appear in the regenerated deck
-    original_card_names = set(original_deck['list'].keys())
+    original_card_names = {
+        line.replace(" *CMDR*", "").split("x ", 1)[-1].strip()
+        for line in original_deck.get("list", [])
+        if line and line != "Sideboard"
+    }
     kept_set = set(request.kept_card_names)
     rejected_cards = list(
         original_card_names
@@ -1025,12 +1077,15 @@ async def get_update_status():
     """Get the status of the last data update."""
     import json
     from pathlib import Path
+    from data.data_pipeline import MTGDataPipeline
 
     stats_path = Path('data/last_update_stats.json')
+    pipeline_status = MTGDataPipeline().status()
     if not stats_path.exists():
         return {
             "status": "never_run",
             "message": "No update has been run yet",
+            "pipeline": pipeline_status,
         }
 
     try:
@@ -1039,6 +1094,7 @@ async def get_update_status():
         return {
             "status": "completed",
             "last_update": stats,
+            "pipeline": pipeline_status,
         }
     except Exception as e:
         return {
@@ -1065,11 +1121,13 @@ async def trigger_update(
 
     if cards:
         new_cards = updater.update_cards()
-        if new_cards > 0:
+        if new_cards > 0 or updater.stats.get('cards_changed'):
             updater.update_embeddings()
-        return {"status": "completed", "new_cards": new_cards}
+        reload_generator()
+        return {"status": "completed", "new_cards": new_cards, "cards_changed": updater.stats.get('cards_changed', False)}
     elif prices:
         updated = updater.update_prices()
+        reload_generator()
         return {"status": "completed", "updated_prices": updated}
     elif images:
         downloaded = updater.update_images(limit=100)
@@ -1077,6 +1135,7 @@ async def trigger_update(
     else:
         # Full update
         stats = updater.run_full_update()
+        reload_generator()
         return {"status": "completed", "stats": stats}
 
 
@@ -1114,6 +1173,25 @@ async def parse_deck_url(req: ParseDeckURLRequest):
     except Exception as e:
         logger.error(f"Failed to fetch deck from URL: {e}")
         raise HTTPException(status_code=502, detail=f"Failed to fetch deck: {str(e)}")
+
+
+# ---------------------------------------------------------------------------
+# Draft tournament endpoints
+# ---------------------------------------------------------------------------
+
+@app.get("/api/draft/sets", response_model=List[DraftSetSummary])
+async def draft_sets():
+    """Return local set codes suitable for draft tournament simulation."""
+    return get_draft_set_summaries()
+
+
+@app.post("/api/draft/cards")
+async def draft_cards(req: DraftCardsRequest):
+    """Return draftable cards from the requested local set code(s)."""
+    cards = get_cards_for_draft_sets(req.set_codes)
+    if not cards:
+        raise HTTPException(status_code=404, detail="No draftable cards found for those set codes")
+    return {"cards": cards}
 
 
 # ---------------------------------------------------------------------------

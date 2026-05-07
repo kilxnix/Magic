@@ -9,6 +9,7 @@ import {
 } from './game-init';
 import type { GeneratedDeck, ScryfallCard } from './cards/deck-loader';
 import { createCardLookup } from './cards/deck-loader';
+import { getCardsInZone, getSideboard } from './game-state';
 
 // Create test cards
 function createTestCards(): ScryfallCard[] {
@@ -107,6 +108,22 @@ function createTestDeck(commanderName: string): GeneratedDeck {
   };
 }
 
+function createLimitedDeck(id: string): GeneratedDeck {
+  const list: string[] = [];
+  for (let i = 0; i < 40; i++) {
+    list.push(`Test Card ${i}`);
+  }
+
+  return {
+    id,
+    commander: id,
+    list,
+    colors: ['U'],
+    bracket: 1,
+    theme: 'Limited',
+  };
+}
+
 describe('initGameFromDecks', () => {
   let testCards: ScryfallCard[];
   let cardLookup: ReturnType<typeof createCardLookup>;
@@ -130,6 +147,29 @@ describe('initGameFromDecks', () => {
     expect(state.players.length).toBe(2);
     expect(state.players[0].isAI).toBe(false);
     expect(state.players[1].isAI).toBe(true);
+  });
+
+  it('registers sideboards without putting those cards into game zones', () => {
+    const humanDeck = createTestDeck('Human Commander');
+    humanDeck.sideboard = ['Test Card 99'];
+    const config: GameInitConfig = {
+      humanDeck,
+      aiDecks: [createTestDeck('AI Commander 1')],
+      aiDifficulty: 3,
+      cardLookup,
+    };
+
+    const state = initGameFromDecks(config);
+
+    expect(getSideboard(state, 'human').map(card => card.name)).toEqual(['Test Card 99']);
+    expect(getCardsInZone(state, 'human', 'library').some(card => {
+      const def = state.cardDefinitions.get(card.definitionId);
+      return def?.name === 'Test Card 99';
+    })).toBe(false);
+    expect(getCardsInZone(state, 'human', 'hand').some(card => {
+      const def = state.cardDefinitions.get(card.definitionId);
+      return def?.name === 'Test Card 99';
+    })).toBe(false);
   });
 
   it('initializes a 4-player game', () => {
@@ -231,6 +271,28 @@ describe('initGameFromDecks', () => {
 
     expect(state.players[0].life).toBe(40);
     expect(state.players[1].life).toBe(40);
+  });
+
+  it('initializes limited games without commanders', () => {
+    const config: GameInitConfig = {
+      humanDeck: createLimitedDeck('You'),
+      aiDecks: [createLimitedDeck('AI Drafter 1')],
+      aiDifficulty: 2,
+      cardLookup,
+      format: 'limited',
+      startingLife: 20,
+      startingHandSize: 7,
+    };
+
+    const state = initGameFromDecks(config);
+
+    expect(state.players.length).toBe(2);
+    expect(state.players[0].life).toBe(20);
+    expect(state.players[1].life).toBe(20);
+    expect(state.players[0].commanderInstanceId).toBeNull();
+    expect(state.players[1].commanderInstanceId).toBeNull();
+    expect(Array.from(state.cards.values()).filter(c => c.zone === 'command')).toHaveLength(0);
+    expect(Array.from(state.cards.values()).filter(c => c.ownerId === 'human' && c.zone === 'library')).toHaveLength(33);
   });
 
   it('assigns AI personalities', () => {

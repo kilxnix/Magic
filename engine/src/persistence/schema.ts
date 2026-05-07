@@ -66,6 +66,7 @@ export interface SerializedCardInstanceV1 {
   attachedTo?: string;
   damage: number;
   isCommander: boolean;
+  fromSideboard?: boolean;
 }
 
 /**
@@ -142,6 +143,7 @@ export interface SerializedGameStateV1 {
   combat: SerializedCombatStateV1 | null;
   battlefieldAbilities: Array<[string, unknown[]]>;
   pendingTriggers: unknown[];
+  sideboards?: Array<[string, SerializedCardDefinitionV1[]]>;
   damageHistory?: SerializedDamageRecordV1[];
 }
 

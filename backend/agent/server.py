@@ -17,7 +17,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from backend.agent.brain import AgentBrain
-from backend.agent.deck_import import fill_missing_slots, parse_decklist, validate_deck, BASIC_LAND_NAMES
+from backend.agent.deck_import import (
+    BASIC_LAND_NAMES,
+    fill_missing_slots,
+    parse_decklist,
+    validate_constructed_deck,
+    validate_deck,
+)
 from backend.agent.game_bridge import format_decide_prompt, parse_action_choice
 
 logging.basicConfig(level=logging.INFO)
@@ -32,6 +38,7 @@ app.add_middleware(
 )
 
 brain = AgentBrain()
+_model_unavailable_reason: str | None = None
 
 
 class ChatRequest(BaseModel):
@@ -147,16 +154,31 @@ def _classify_strategy(human_commander: str | None) -> str:
     """Very simple heuristic to classify human strategy from commander name.
 
     Returns 'aggro', 'control', 'combo', or 'midrange'.
+    Handles partner commanders joined with ' // '.
     """
     if not human_commander:
         return "midrange"
 
     # Load the commander card data for a better guess
     legends = _load_legendary_creatures()
+    full_name_match = any(
+        card.get("name", "").lower() == human_commander.lower()
+        for card in legends
+    )
+    # Split partner commanders only when the full "A // B" string is not a card.
+    names = (
+        [n.strip() for n in human_commander.split(" // ")]
+        if " // " in human_commander and not full_name_match
+        else [human_commander]
+    )
     cmd_data = None
-    for card in legends:
-        if card.get("name", "").lower() == human_commander.lower():
-            cmd_data = card
+    for part in names:
+        part_lower = part.lower()
+        for card in legends:
+            if card.get("name", "").lower() == part_lower:
+                cmd_data = card
+                break
+        if cmd_data:
             break
 
     if not cmd_data:
@@ -425,9 +447,33 @@ class DecideResponse(BaseModel):
     narration: str
 
 
+def _fallback_decide_action(legal_actions: list) -> dict:
+    """Pick a simple legal action when the LLM is unavailable."""
+    if not legal_actions:
+        return {"kind": "PassPriority"}
+
+    priority = [
+        "PlayLand",
+        "CastSpell",
+        "DeclareAttackers",
+        "DeclareBlockers",
+        "ActivateAbility",
+        "ActivateManaAbility",
+        "PassPriority",
+    ]
+    for kind in priority:
+        for action in legal_actions:
+            if action.get("kind") == kind:
+                return action
+
+    return legal_actions[0]
+
+
 @app.post("/decide", response_model=DecideResponse)
 async def decide(req: DecideRequest):
     """Given game state and legal actions, pick an action and narrate it."""
+    global _model_unavailable_reason
+
     if not req.legal_actions:
         return DecideResponse(
             action={"kind": "PassPriority"},
@@ -451,16 +497,27 @@ async def decide(req: DecideRequest):
         "Format: <number> - <narration>"
     )
 
-    # Generate a response from the brain
-    brain._load_model()
-    messages = [
-        {"role": "system", "content": system_msg},
-        {"role": "user", "content": prompt},
-    ]
-    raw_response = brain._generate(messages, max_tokens=256)
-
-    # Parse out the chosen action
-    action = parse_action_choice(raw_response, req.legal_actions)
+    try:
+        if _model_unavailable_reason:
+            raise RuntimeError(_model_unavailable_reason)
+        messages = [
+            {"role": "system", "content": system_msg},
+            {"role": "user", "content": prompt},
+        ]
+        raw_response = brain._generate(messages, max_tokens=256)
+        action = parse_action_choice(raw_response, req.legal_actions)
+    except Exception as exc:
+        if not _model_unavailable_reason:
+            _model_unavailable_reason = str(exc)
+        logger.warning("Shelector model unavailable; using fallback action: %s", exc)
+        action = _fallback_decide_action(req.legal_actions)
+        return DecideResponse(
+            action=action,
+            narration=(
+                "The local model is unavailable, so I chose a basic legal "
+                f"{action.get('kind', 'action')}."
+            ),
+        )
 
     # Extract narration (everything after the number and optional dash/colon)
     narration = raw_response.strip()
@@ -482,6 +539,7 @@ class ImportDeckRequest(BaseModel):
     decklist_text: str
     bracket: int = 3
     fill_missing: bool = True  # auto-fill with Shelector picks
+    format: str = "commander"
 
 
 class CardData(BaseModel):
@@ -497,11 +555,45 @@ class CardData(BaseModel):
     keywords: list[str] = []
 
 
+def _first_card_face(db_entry: dict[str, Any]) -> dict[str, Any]:
+    faces = db_entry.get("card_faces") or []
+    return faces[0] if faces and isinstance(faces[0], dict) else {}
+
+
+def _face_fallback(db_entry: dict[str, Any], face: dict[str, Any], key: str, default: Any) -> Any:
+    value = db_entry.get(key)
+    if value is None or value == "" or value == []:
+        face_value = face.get(key)
+        if face_value is not None and face_value != "" and face_value != []:
+            return face_value
+        return default
+    return value
+
+
+def _card_data_from_db(name: str, db_entry: dict[str, Any]) -> CardData:
+    face = _first_card_face(db_entry)
+    power = _face_fallback(db_entry, face, "power", None)
+    toughness = _face_fallback(db_entry, face, "toughness", None)
+    return CardData(
+        name=db_entry.get("name") or name,
+        type_line=_face_fallback(db_entry, face, "type_line", ""),
+        mana_cost=_face_fallback(db_entry, face, "mana_cost", ""),
+        cmc=db_entry.get("cmc") or 0,
+        oracle_text=_face_fallback(db_entry, face, "oracle_text", ""),
+        power=str(power) if power is not None else None,
+        toughness=str(toughness) if toughness is not None else None,
+        colors=_face_fallback(db_entry, face, "colors", []),
+        color_identity=db_entry.get("color_identity") or [],
+        keywords=db_entry.get("keywords") or [],
+    )
+
+
 class ImportDeckResponse(BaseModel):
     commander: str | None
     commander_data: CardData | None = None
     cards: list[str]
     lands: list[str]
+    sideboard: list[str] = []
     card_data: dict[str, CardData] = {}  # name -> full card info
     total: int
     valid: bool
@@ -512,9 +604,10 @@ class ImportDeckResponse(BaseModel):
 
 @app.post("/import-deck", response_model=ImportDeckResponse)
 async def import_deck(req: ImportDeckRequest):
-    """Parse, validate, and optionally fill a pasted Commander decklist."""
+    """Parse, validate, and optionally fill a pasted decklist."""
     # Step 1: Parse
-    parsed = parse_decklist(req.decklist_text)
+    format_name = (req.format or "commander").lower()
+    parsed = parse_decklist(req.decklist_text, singleton=format_name == "commander")
 
     # Step 2: Get card_db from the deck generator
     from backend.deck_generator import get_generator
@@ -523,15 +616,23 @@ async def import_deck(req: ImportDeckRequest):
     card_db = gen.card_by_name
 
     # Step 3: Validate
-    validation = validate_deck(parsed, card_db)
+    if format_name == "standard":
+        validation = validate_constructed_deck(parsed, card_db, format_name="standard")
+    else:
+        validation = validate_deck(parsed, card_db)
 
     # Step 4: Fill missing slots if requested
     filled_cards: list[str] = []
-    if req.fill_missing and validation["missing_slots"] > 0 and parsed.get("commander"):
+    if format_name == "commander" and req.fill_missing and validation["missing_slots"] > 0 and parsed.get("commander"):
         parsed = fill_missing_slots(parsed, card_db, bracket=req.bracket)
         filled_cards = parsed.get("filled_cards", [])
         # Re-validate after filling — remove any cards that violate color identity
-        commander_names = parsed.get("commanders") or parsed.get("commander", "").split(" // ")
+        raw_commander = parsed.get("commander", "")
+        commander_names = parsed.get("commanders") or (
+            [raw_commander]
+            if raw_commander in card_db
+            else [n.strip() for n in raw_commander.split(" // ") if n.strip()]
+        )
         cmd_colors: set[str] = set()
         for cmd_name in commander_names:
             cmd_entry = card_db.get(cmd_name)
@@ -550,26 +651,20 @@ async def import_deck(req: ImportDeckRequest):
         validation = validate_deck(parsed, card_db)
 
     # Build full card data for every card in the deck
-    all_names = set(parsed.get("cards", []) + parsed.get("lands", []))
-    commander_names = parsed.get("commanders") or (parsed.get("commander", "").split(" // ") if parsed.get("commander") else [])
+    all_names = set(parsed.get("cards", []) + parsed.get("lands", []) + parsed.get("sideboard", []))
+    raw_commander = parsed.get("commander") or ""
+    commander_names = parsed.get("commanders") or (
+        [raw_commander]
+        if raw_commander in card_db
+        else [n.strip() for n in raw_commander.split(" // ") if n.strip()]
+    )
     for cmd_name in commander_names:
         all_names.add(cmd_name)
     card_data_map: dict[str, CardData] = {}
     for name in all_names:
         db_entry = card_db.get(name)
         if db_entry:
-            card_data_map[name] = CardData(
-                name=db_entry.get("name") or name,
-                type_line=db_entry.get("type_line") or "",
-                mana_cost=db_entry.get("mana_cost") or "",
-                cmc=db_entry.get("cmc") or 0,
-                oracle_text=db_entry.get("oracle_text") or "",
-                power=str(db_entry["power"]) if db_entry.get("power") is not None else None,
-                toughness=str(db_entry["toughness"]) if db_entry.get("toughness") is not None else None,
-                colors=db_entry.get("colors") or [],
-                color_identity=db_entry.get("color_identity") or [],
-                keywords=db_entry.get("keywords") or [],
-            )
+            card_data_map[name] = _card_data_from_db(name, db_entry)
 
     commander_data = None
     for cmd_name in commander_names:
@@ -582,6 +677,7 @@ async def import_deck(req: ImportDeckRequest):
         commander_data=commander_data,
         cards=parsed.get("cards", []),
         lands=parsed.get("lands", []),
+        sideboard=parsed.get("sideboard", []),
         card_data=card_data_map,
         total=parsed.get("total", 0),
         valid=validation["valid"],
@@ -618,10 +714,22 @@ async def generate_ai_deck(req: GenerateAIDeckRequest):
     if "error" in result:
         raise HTTPException(status_code=404, detail=result["error"])
 
-    # Get commander's color identity for filtering
+    # Get commander's color identity for filtering (handle partner ' // ' names)
     commander_name = result.get("commander", req.commander)
-    cmd_data = gen.card_by_name.get(commander_name, {})
-    cmd_colors = set(cmd_data.get("color_identity") or [])
+    commander_names = (
+        [commander_name]
+        if commander_name in gen.card_by_name
+        else [n.strip() for n in commander_name.split(" // ") if n.strip()]
+    )
+    if len(commander_names) > 1:
+        cmd_colors: set[str] = set()
+        for pn in commander_names:
+            pd = gen.card_by_name.get(pn, {})
+            cmd_colors.update(pd.get("color_identity") or [])
+        cmd_data = gen.card_by_name.get(commander_names[0], {})
+    else:
+        cmd_data = gen.card_by_name.get(commander_name, {})
+        cmd_colors = set(cmd_data.get("color_identity") or [])
 
     # Extract card names from the categories dict (type-based categories)
     categories = result.get("categories", {})
@@ -655,7 +763,7 @@ async def generate_ai_deck(req: GenerateAIDeckRequest):
         # Search for more color-legal cards
         oracle = cmd_data.get("oracle_text") or commander_name
         existing = set(card_names + land_names)
-        existing.add(commander_name)
+        existing.update(commander_names)
         extra = gen.search_cards(oracle, k=(99 - total_nonland - len(land_names)) * 3)
         for card in extra:
             if len(card_names) + len(land_names) >= 99:
@@ -687,25 +795,14 @@ async def generate_ai_deck(req: GenerateAIDeckRequest):
             land_names.append(basics[idx % len(basics)])
             idx += 1
 
-    # Build full card data for every card (including commander)
+    # Build full card data for every card (including commander(s))
     all_names = set(card_names + land_names)
-    all_names.add(commander_name)
+    all_names.update(commander_names)
     card_data_map: dict[str, CardData] = {}
     for name in all_names:
         db_entry = gen.card_by_name.get(name)
         if db_entry:
-            card_data_map[name] = CardData(
-                name=db_entry.get("name") or name,
-                type_line=db_entry.get("type_line") or "",
-                mana_cost=db_entry.get("mana_cost") or "",
-                cmc=db_entry.get("cmc") or 0,
-                oracle_text=db_entry.get("oracle_text") or "",
-                power=str(db_entry["power"]) if db_entry.get("power") is not None else None,
-                toughness=str(db_entry["toughness"]) if db_entry.get("toughness") is not None else None,
-                colors=db_entry.get("colors") or [],
-                color_identity=db_entry.get("color_identity") or [],
-                keywords=db_entry.get("keywords") or [],
-            )
+            card_data_map[name] = _card_data_from_db(name, db_entry)
 
     return GenerateAIDeckResponse(
         commander=result.get("commander", req.commander),

@@ -6,15 +6,17 @@ Runs at 3 AM daily via cron:
 
 Steps:
 1. Fetch new cards from Scryfall bulk data
-2. Update prices from Scryfall API
-3. Regenerate embeddings for new cards
-4. Rebuild FAISS index
-5. Download images for new cards
-6. Generate functional tags
+2. Refresh draft set metadata and card printings
+3. Update prices from Scryfall API
+4. Regenerate embeddings for new cards
+5. Rebuild FAISS index
+6. Download images for new cards
+7. Generate functional tags
 
 Usage:
     python backend/daily_update.py              # Run full update
     python backend/daily_update.py --cards      # Cards + embeddings only
+    python backend/daily_update.py --draft      # Draft set/card data only
     python backend/daily_update.py --prices     # Prices only
     python backend/daily_update.py --images     # Images only
     python backend/daily_update.py --dry-run    # Check what would be updated
@@ -32,7 +34,12 @@ from typing import Dict, List, Optional, Set
 # Add parent to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from data.data_pipeline import MTGDataPipeline, CARDS_JSONL_PATH, BULK_JSON_PATH
+from data.data_pipeline import (
+    CARDS_JSONL_PATH,
+    DRAFT_CARDS_JSONL_PATH,
+    MTGDataPipeline,
+    SETS_JSON_PATH,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -53,6 +60,9 @@ class DailyUpdater:
         self.pipeline = MTGDataPipeline()
         self.stats = {
             'new_cards': 0,
+            'cards_changed': False,
+            'draft_cards': 0,
+            'draft_sets': 0,
             'updated_prices': 0,
             'new_images': 0,
             'errors': [],
@@ -71,6 +81,23 @@ class DailyUpdater:
                 ids.add(card['id'])
         return ids
 
+    def _load_card_fingerprint(self) -> List[str]:
+        """Fingerprint card rows that affect deck search/index alignment."""
+        if not CARDS_JSONL_PATH.exists():
+            return []
+        fingerprint = []
+        with open(CARDS_JSONL_PATH, 'r', encoding='utf-8') as f:
+            for line in f:
+                card = json.loads(line)
+                fingerprint.append("|".join([
+                    str(card.get('id') or ''),
+                    str(card.get('name') or ''),
+                    str(card.get('type_line') or ''),
+                    str(card.get('oracle_text') or ''),
+                    json.dumps(card.get('legalities') or {}, sort_keys=True),
+                ]))
+        return fingerprint
+
     def update_cards(self) -> int:
         """
         Fetch new cards from Scryfall and update the database.
@@ -81,6 +108,7 @@ class DailyUpdater:
 
         # Get existing card IDs
         existing_ids = self._load_existing_card_ids()
+        existing_fingerprint = self._load_card_fingerprint()
         logger.info(f"Found {len(existing_ids)} existing cards")
 
         if self.dry_run:
@@ -97,7 +125,7 @@ class DailyUpdater:
 
         # Extract cards (this will rebuild cards_min.jsonl)
         try:
-            self.pipeline.extract_cards(force=True, legal_in=['commander'])
+            self.pipeline.extract_cards(force=True)
         except Exception as e:
             logger.error(f"Failed to extract cards: {e}")
             self.stats['errors'].append(f"Card extraction: {e}")
@@ -105,15 +133,51 @@ class DailyUpdater:
 
         # Count new cards
         new_ids = self._load_existing_card_ids()
+        new_fingerprint = self._load_card_fingerprint()
         new_count = len(new_ids - existing_ids)
+        cards_changed = new_fingerprint != existing_fingerprint
         self.stats['new_cards'] = new_count
+        self.stats['cards_changed'] = cards_changed
 
         if new_count > 0:
             logger.info(f"Found {new_count} new cards")
+        elif cards_changed:
+            logger.info("Card data changed without new card IDs")
         else:
             logger.info("No new cards found")
 
         return new_count
+
+    def update_draft_data(self) -> int:
+        """Refresh set metadata and set-printing card data for Limited draft."""
+        logger.info("Refreshing draft set data from Scryfall...")
+
+        if self.dry_run:
+            logger.info("[DRY RUN] Would refresh Scryfall sets and default card printings")
+            return 0
+
+        try:
+            self.pipeline.download_sets(force=True)
+            self.pipeline.download_default_cards(force=True)
+            self.pipeline.extract_draft_cards(force=True)
+        except Exception as e:
+            logger.error(f"Failed to refresh draft data: {e}")
+            self.stats['errors'].append(f"Draft data: {e}")
+            return 0
+
+        draft_cards = 0
+        draft_sets = 0
+        if DRAFT_CARDS_JSONL_PATH.exists():
+            with open(DRAFT_CARDS_JSONL_PATH, 'r', encoding='utf-8') as f:
+                draft_cards = sum(1 for line in f if line.strip())
+        if SETS_JSON_PATH.exists():
+            with open(SETS_JSON_PATH, 'r', encoding='utf-8') as f:
+                draft_sets = len(json.load(f))
+
+        self.stats['draft_cards'] = draft_cards
+        self.stats['draft_sets'] = draft_sets
+        logger.info(f"Draft data refreshed: {draft_cards} card printings across {draft_sets} sets")
+        return draft_cards
 
     def update_embeddings(self) -> bool:
         """Regenerate embeddings and FAISS index."""
@@ -145,21 +209,12 @@ class DailyUpdater:
             logger.info("[DRY RUN] Would update prices")
             return 0
 
-        if not CARDS_JSONL_PATH.exists():
-            logger.error("No cards file found - run update_cards first")
+        try:
+            updated = self.pipeline.refresh_prices(force=True)
+        except Exception as e:
+            logger.error(f"Failed to refresh prices: {e}")
+            self.stats['errors'].append(f"Price refresh: {e}")
             return 0
-
-        # Prices are already included in Scryfall bulk data
-        # The extract_cards step pulls them automatically
-        # Here we just count cards with prices
-
-        updated = 0
-        with open(CARDS_JSONL_PATH, 'r', encoding='utf-8') as f:
-            for line in f:
-                card = json.loads(line)
-                prices = card.get('prices', {})
-                if prices and prices.get('usd'):
-                    updated += 1
 
         self.stats['updated_prices'] = updated
         logger.info(f"Updated prices for {updated} cards")
@@ -308,17 +363,20 @@ class DailyUpdater:
         # Step 1: Update cards
         new_cards = self.update_cards()
 
-        # Step 2: Rebuild embeddings if there are new cards
-        if new_cards > 0 or not Path('mtg_data/card_embeddings.npy').exists():
+        # Step 2: Refresh draft set data
+        self.update_draft_data()
+
+        # Step 3: Rebuild embeddings if searchable card rows changed
+        if new_cards > 0 or self.stats.get('cards_changed') or not Path('mtg_data/card_embeddings.npy').exists():
             self.update_embeddings()
 
-        # Step 3: Update prices (included in bulk data)
+        # Step 4: Update prices (included in bulk data)
         self.update_prices()
 
-        # Step 4: Download new images (limit to 500 per run to avoid long runtime)
+        # Step 5: Download new images (limit to 500 per run to avoid long runtime)
         self.update_images(limit=500)
 
-        # Step 5: Generate functional tags
+        # Step 6: Generate functional tags
         self.update_functional_tags()
 
         # Summary
@@ -326,6 +384,8 @@ class DailyUpdater:
         logger.info("=" * 50)
         logger.info("Update complete!")
         logger.info(f"New cards: {self.stats['new_cards']}")
+        logger.info(f"Draft cards: {self.stats['draft_cards']}")
+        logger.info(f"Draft sets: {self.stats['draft_sets']}")
         logger.info(f"Cards with prices: {self.stats['updated_prices']}")
         logger.info(f"New images: {self.stats['new_images']}")
         if self.stats['errors']:
@@ -341,6 +401,7 @@ def main():
     parser = argparse.ArgumentParser(description="Daily update for MTG card data")
     parser.add_argument('--dry-run', action='store_true', help="Check what would be updated")
     parser.add_argument('--cards', action='store_true', help="Update cards and embeddings only")
+    parser.add_argument('--draft', action='store_true', help="Update draft set/card data only")
     parser.add_argument('--prices', action='store_true', help="Update prices only")
     parser.add_argument('--images', action='store_true', help="Download new images only")
     parser.add_argument('--image-limit', type=int, default=500, help="Max images to download")
@@ -352,8 +413,10 @@ def main():
     # Run specific steps or full update
     if args.cards:
         new_cards = updater.update_cards()
-        if new_cards > 0:
+        if new_cards > 0 or updater.stats.get('cards_changed') or not Path('mtg_data/card_embeddings.npy').exists():
             updater.update_embeddings()
+    elif args.draft:
+        updater.update_draft_data()
     elif args.prices:
         updater.update_prices()
     elif args.images:

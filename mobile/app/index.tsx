@@ -1,97 +1,113 @@
-import { View, Text, Pressable, StyleSheet } from 'react-native';
-import { useRouter } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRef, useState } from 'react';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
+import { WebView } from 'react-native-webview';
 
-export default function HomeScreen() {
-  const router = useRouter();
+const PLAY_URL = process.env.EXPO_PUBLIC_PLAY_URL || 'http://127.0.0.1:5173/play';
+
+export default function PlayWebViewScreen() {
+  const webViewRef = useRef<WebView>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.content}>
-        <Text style={styles.title}>Commander</Text>
-        <Text style={styles.subtitle}>Game Engine</Text>
+    <View style={styles.container}>
+      <StatusBar hidden />
+      <WebView
+        ref={webViewRef}
+        source={{ uri: PLAY_URL }}
+        style={styles.webview}
+        originWhitelist={['http://*', 'https://*']}
+        javaScriptEnabled
+        domStorageEnabled
+        allowsBackForwardNavigationGestures
+        setSupportMultipleWindows={false}
+        mixedContentMode="always"
+        onError={() => setLoadFailed(true)}
+        onHttpError={() => setLoadFailed(true)}
+        onLoadStart={() => setLoadFailed(false)}
+        startInLoadingState
+        renderLoading={() => (
+          <View style={styles.loading}>
+            <ActivityIndicator color="#f59e0b" />
+          </View>
+        )}
+      />
 
-        <View style={styles.buttonContainer}>
+      {loadFailed && (
+        <View style={styles.errorPanel}>
+          <Text style={styles.errorTitle}>Play UI is not reachable</Text>
+          <Text style={styles.errorText}>
+            Start the web app, then keep USB debugging connected for adb reverse.
+          </Text>
+          <Text style={styles.urlText}>{PLAY_URL}</Text>
           <Pressable
-            style={styles.primaryButton}
-            onPress={() => router.push('/setup')}
-          >
-            <Text style={styles.primaryButtonText}>New Game</Text>
-          </Pressable>
-
-          <Pressable
-            style={styles.secondaryButton}
+            style={styles.reloadButton}
             onPress={() => {
-              // TODO: Navigate to saved games
+              setLoadFailed(false);
+              webViewRef.current?.reload();
             }}
           >
-            <Text style={styles.secondaryButtonText}>Continue Game</Text>
+            <Text style={styles.reloadText}>Reload</Text>
           </Pressable>
         </View>
-      </View>
-
-      <Text style={styles.version}>Phase 9 - Mobile UI</Text>
-    </SafeAreaView>
+      )}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#1a1a1a',
+    backgroundColor: '#0c0a09',
   },
-  content: {
+  webview: {
     flex: 1,
+    backgroundColor: '#0c0a09',
+  },
+  loading: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
     justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 24,
+    backgroundColor: '#0c0a09',
   },
-  title: {
-    fontSize: 48,
-    fontWeight: '700',
-    color: '#ffffff',
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontSize: 18,
-    color: '#a1a1aa',
-    marginBottom: 64,
-  },
-  buttonContainer: {
-    width: '100%',
-    maxWidth: 300,
-    gap: 16,
-  },
-  primaryButton: {
-    backgroundColor: '#7c3aed',
-    paddingVertical: 16,
-    paddingHorizontal: 32,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  primaryButtonText: {
-    color: '#ffffff',
-    fontSize: 18,
-    fontWeight: '600',
-  },
-  secondaryButton: {
-    backgroundColor: 'transparent',
+  errorPanel: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    bottom: 16,
+    borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#3f3f46',
-    paddingVertical: 16,
-    paddingHorizontal: 32,
-    borderRadius: 12,
-    alignItems: 'center',
+    borderColor: '#92400e',
+    backgroundColor: 'rgba(12, 10, 9, 0.96)',
+    padding: 14,
   },
-  secondaryButtonText: {
-    color: '#a1a1aa',
-    fontSize: 18,
-    fontWeight: '600',
+  errorTitle: {
+    color: '#fbbf24',
+    fontSize: 15,
+    fontWeight: '800',
+    marginBottom: 6,
   },
-  version: {
-    color: '#52525b',
+  errorText: {
+    color: '#d6d3d1',
     fontSize: 12,
-    textAlign: 'center',
-    paddingBottom: 16,
+    lineHeight: 17,
+  },
+  urlText: {
+    color: '#a8a29e',
+    fontSize: 11,
+    marginTop: 8,
+  },
+  reloadButton: {
+    alignSelf: 'flex-start',
+    minHeight: 40,
+    justifyContent: 'center',
+    borderRadius: 6,
+    backgroundColor: '#d97706',
+    marginTop: 12,
+    paddingHorizontal: 14,
+  },
+  reloadText: {
+    color: '#fff7ed',
+    fontWeight: '800',
   },
 });

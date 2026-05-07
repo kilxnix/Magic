@@ -7,7 +7,7 @@
 import type { GameState, Player, CardInstance, CardDefinition } from './types';
 import { createPlayer, emptyManaPool } from './types';
 import type { GeneratedDeck, CardLookup, EngineDeck } from './cards/deck-loader';
-import { convertGeneratedDeck } from './cards/deck-loader';
+import { convertGeneratedDeck, convertLimitedDeck } from './cards/deck-loader';
 import type { AIPersonality } from './ai/types';
 
 /**
@@ -19,6 +19,7 @@ export interface GameInitConfig {
   aiDifficulty: number;               // bracket 1-5
   aiPersonalities?: AIPersonality[];  // Per-AI personality (defaults to Balanced)
   cardLookup: CardLookup;             // Function to look up card data
+  format?: 'commander' | 'limited';   // Default: commander
   humanGoesFirst?: boolean;           // Default: true
   startingLife?: number;              // Default: 40
   startingHandSize?: number;          // Default: 7
@@ -91,30 +92,44 @@ function setupPlayer(
     difficulty: options.difficulty,
   };
 
-  // Add commander definition
-  state.cardDefinitions.set(deck.commander.id, deck.commander);
+  if (deck.commander) {
+    // Add commander definition
+    state.cardDefinitions.set(deck.commander.id, deck.commander);
 
-  // Create commander instance in command zone
-  const commanderInstanceId = generateInstanceId('cmd');
-  const commanderInstance: CardInstance = {
-    instanceId: commanderInstanceId,
-    definitionId: deck.commander.id,
-    ownerId: id,
-    zone: 'command',
-    tapped: false,
-    summoningSick: false,
-    counters: {},
-    damage: 0,
-    isCommander: true,
-  };
-  state.cards.set(commanderInstanceId, commanderInstance);
-  player.commanderInstanceId = commanderInstanceId;
+    // Create commander instance in command zone
+    const commanderInstanceId = generateInstanceId('cmd');
+    const commanderInstance: CardInstance = {
+      instanceId: commanderInstanceId,
+      definitionId: deck.commander.id,
+      ownerId: id,
+      zone: 'command',
+      tapped: false,
+      summoningSick: false,
+      counters: {},
+      damage: 0,
+      isCommander: true,
+    };
+    state.cards.set(commanderInstanceId, commanderInstance);
+    player.commanderInstanceId = commanderInstanceId;
+  }
 
   // Add library card definitions
   for (const cardDef of deck.library) {
     if (!state.cardDefinitions.has(cardDef.id)) {
       state.cardDefinitions.set(cardDef.id, cardDef);
     }
+  }
+
+  // Register sideboard definitions without creating game objects. Sideboard
+  // cards are outside the game until an explicit "outside the game" effect
+  // brings one in.
+  if (deck.sideboard.length > 0) {
+    for (const cardDef of deck.sideboard) {
+      if (!state.cardDefinitions.has(cardDef.id)) {
+        state.cardDefinitions.set(cardDef.id, cardDef);
+      }
+    }
+    state.sideboards?.set(id, [...deck.sideboard]);
   }
 
   // Create library instances (shuffled)
@@ -162,6 +177,7 @@ export function initGameFromDecks(config: GameInitConfig): GameStateWithAI {
     aiDifficulty,
     aiPersonalities = [],
     cardLookup,
+    format = 'commander',
     humanGoesFirst = true,
     startingLife = 40,
     startingHandSize = 7,
@@ -178,14 +194,16 @@ export function initGameFromDecks(config: GameInitConfig): GameStateWithAI {
   }
 
   // Convert decks
-  const humanEngineDeck = convertGeneratedDeck(humanDeck, cardLookup);
-  const aiEngineDecks = aiDecks.map(deck => convertGeneratedDeck(deck, cardLookup));
+  const convertDeck = format === 'limited' ? convertLimitedDeck : convertGeneratedDeck;
+  const humanEngineDeck = convertDeck(humanDeck, cardLookup);
+  const aiEngineDecks = aiDecks.map(deck => convertDeck(deck, cardLookup));
 
   // Initialize empty game state
   const state: GameStateWithAI = {
     players: [],
     cards: new Map(),
     cardDefinitions: new Map(),
+    sideboards: new Map(),
     activePlayerIndex: 0,
     priorityPlayerIndex: 0,
     phase: 'beginning',

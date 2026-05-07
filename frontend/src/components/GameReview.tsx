@@ -232,11 +232,12 @@ export interface GameReviewProps {
   finalState: SimpleGameState;
   winner: string | null;
   onClose: () => void;
+  embedded?: boolean;
 }
 
 // ========== Component ==========
 
-export function GameReview({ gameLog, finalState, winner, onClose }: GameReviewProps) {
+export function GameReview({ gameLog, finalState, winner, onClose, embedded = false }: GameReviewProps) {
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [filterPlayer, setFilterPlayer] = useState<'all' | 'human' | 'ai'>('human');
 
@@ -272,21 +273,32 @@ export function GameReview({ gameLog, finalState, winner, onClose }: GameReviewP
   const selectedEntry = selectedIndex !== null ? ratedEntries[selectedIndex] : null;
 
   // Determine result text
-  const resultText = winner === finalState.humanPlayer.id
+  const isFinished = finalState.gameOver || winner !== null;
+  const resultText = !isFinished
+    ? 'In Progress'
+    : winner === finalState.humanPlayer.id
     ? 'Victory'
     : winner === finalState.aiPlayer.id
     ? 'Defeat'
     : 'Draw';
 
-  const resultColor = winner === finalState.humanPlayer.id
+  const resultColor = !isFinished
+    ? 'text-amber-400'
+    : winner === finalState.humanPlayer.id
     ? 'text-green-400'
     : winner === finalState.aiPlayer.id
     ? 'text-red-400'
     : 'text-stone-400';
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-2 sm:p-4">
-      <div className="bg-stone-900 border border-stone-700 rounded-2xl w-full max-w-5xl max-h-[95vh] flex flex-col overflow-hidden">
+    <div className={embedded
+      ? 'h-full min-h-0 bg-stone-900 text-stone-100 flex flex-col overflow-hidden'
+      : 'fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-2 sm:p-4'
+    }>
+      <div className={embedded
+        ? 'h-full min-h-0 w-full flex flex-col overflow-hidden'
+        : 'bg-stone-900 border border-stone-700 rounded-2xl w-full max-w-5xl max-h-[95vh] flex flex-col overflow-hidden'
+      }>
         {/* Header */}
         <div className="flex items-center justify-between px-3 sm:px-6 py-3 sm:py-4 border-b border-stone-700">
           <div className="min-w-0 flex-1 mr-2">
@@ -295,13 +307,15 @@ export function GameReview({ gameLog, finalState, winner, onClose }: GameReviewP
               {finalState.humanCommander} vs {finalState.aiCommander}
             </p>
           </div>
-          <button
-            onClick={onClose}
-            className="p-2.5 rounded-lg text-stone-400 hover:text-stone-200 hover:bg-stone-700 transition-colors shrink-0 min-w-[44px] min-h-[44px] flex items-center justify-center"
-            aria-label="Close review"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          {!embedded && (
+            <button
+              onClick={onClose}
+              className="p-2.5 rounded-lg text-stone-400 hover:text-stone-200 hover:bg-stone-700 transition-colors shrink-0 min-w-[44px] min-h-[44px] flex items-center justify-center"
+              aria-label="Close review"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          )}
         </div>
 
         {/* Summary Bar */}
@@ -348,7 +362,7 @@ export function GameReview({ gameLog, finalState, winner, onClose }: GameReviewP
 
           {/* Life total summary */}
           <div className="flex flex-wrap gap-2 sm:gap-4 mt-3 text-[10px] sm:text-xs text-stone-400">
-            <span>Final Life: You {finalState.humanPlayer.life} | AI {finalState.aiPlayer.life}</span>
+            <span>{isFinished ? 'Final' : 'Current'} Life: You {finalState.humanPlayer.life} | AI {finalState.aiPlayer.life}</span>
             <span>Turns: {finalState.turnNumber}</span>
             <span>Moves: {ratedEntries.filter(e => e.player === 'human').length}h / {ratedEntries.filter(e => e.player === 'ai').length}ai</span>
           </div>

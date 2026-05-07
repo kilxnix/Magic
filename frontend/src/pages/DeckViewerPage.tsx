@@ -20,6 +20,13 @@ async function fetchDeck(id: string): Promise<Deck> {
 
 type ViewMode = 'visual' | 'list';
 
+function countDeckLines(lines: string[] = []): number {
+  return lines.reduce((total, line) => {
+    const match = line.match(/^(\d+)x\s+/);
+    return total + (match ? Number(match[1]) : line === 'Sideboard' ? 0 : 1);
+  }, 0);
+}
+
 export function DeckViewerPage() {
   const { id } = useParams<{ id: string }>();
   const [deck, setDeck] = useState<Deck | null>(null);
@@ -166,7 +173,10 @@ export function DeckViewerPage() {
                     </div>
                     <span className="text-sm text-stone-500">|</span>
                     <span className="text-sm text-stone-600">
-                      Bracket {deck.bracket}: {deck.bracket_name}
+                      {deck.format === 'standard'
+                        ? deck.bracket_name || 'Standard'
+                        : `Bracket ${deck.bracket}: ${deck.bracket_name}`
+                      }
                     </span>
                     {deck.theme && (
                       <>
@@ -176,7 +186,11 @@ export function DeckViewerPage() {
                     )}
                   </div>
                   <div className="text-sm text-stone-500 mt-1">
-                    {deck.card_count} cards | {deck.estimated_price}
+                    {deck.card_count} cards
+                    {deck.format === 'standard' && deck.sideboard?.length
+                      ? ` | Sideboard ${countDeckLines(deck.sideboard)}`
+                      : ''
+                    } | {deck.estimated_price}
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
@@ -215,6 +229,7 @@ export function DeckViewerPage() {
                     Play This Deck
                   </Link>
                   {/* Regeneration Controls */}
+                  {deck.format !== 'standard' && (
                   <div className="flex items-center gap-2 border-l border-stone-300 pl-2">
                     <span className="text-xs text-stone-500 flex items-center gap-1">
                       <Lock className="w-3 h-3" />
@@ -239,6 +254,7 @@ export function DeckViewerPage() {
                       {useCheckboxFallback ? 'Click mode' : 'Checkboxes'}
                     </button>
                   </div>
+                  )}
                   <Link
                     to="/"
                     className="px-4 py-2 bg-stone-900 text-stone-50 text-sm font-medium rounded hover:bg-stone-800 transition-colors"
@@ -251,7 +267,7 @@ export function DeckViewerPage() {
           </header>
 
           {/* Regeneration Error */}
-          {regenerationError && (
+          {deck.format !== 'standard' && regenerationError && (
             <div className="bg-red-50 border-b border-red-200 px-4 py-2">
               <div className="max-w-6xl mx-auto text-sm text-red-600">
                 Regeneration failed: {regenerationError}
@@ -264,7 +280,7 @@ export function DeckViewerPage() {
             {viewMode === 'visual' ? (
               <DeckVisualView
                 deck={deck}
-                selectionMode={true}
+                selectionMode={deck.format !== 'standard'}
                 lockedCards={lockedCards}
                 newCards={newCards}
                 coreStaples={coreStaples}

@@ -34,6 +34,7 @@ export interface GeneratedDeck {
   id: string;
   commander: string;        // Commander card name
   list: string[];           // 99 card names (excluding commander)
+  sideboard?: string[];      // Constructed sideboard. Not part of the starting library.
   colors: string[];
   bracket: number;
   theme: string;
@@ -43,8 +44,9 @@ export interface GeneratedDeck {
  * Deck ready for game engine initialization.
  */
 export interface EngineDeck {
-  commander: CardDefinition;
+  commander?: CardDefinition;
   library: CardDefinition[];
+  sideboard: CardDefinition[];
 }
 
 /**
@@ -63,6 +65,15 @@ const BASIC_LANDS: Record<string, string> = {
  * Valid mana colors for type conversion.
  */
 const MANA_COLORS = new Set(['W', 'U', 'B', 'R', 'G', 'C']);
+
+function resolveCommanderNames(commander: string, lookup: CardLookup): string[] {
+  if (lookup(commander)) {
+    return [commander];
+  }
+  return commander.includes(' // ')
+    ? commander.split(' // ').map(n => n.trim()).filter(Boolean)
+    : [commander];
+}
 
 /**
  * Convert color string array to typed ManaColor array.
@@ -123,6 +134,28 @@ export function convertCard(card: ScryfallCard): CardDefinition {
   return populateParsedCache(baseDef);
 }
 
+function convertSideboard(cardNames: string[], lookup: CardLookup): CardDefinition[] {
+  const sideboard: CardDefinition[] = [];
+  const missingCards: string[] = [];
+
+  for (const cardName of cardNames) {
+    const card = lookup(cardName);
+    if (!card) {
+      missingCards.push(cardName);
+      continue;
+    }
+    sideboard.push(convertCard(card));
+  }
+
+  if (missingCards.length > 0) {
+    throw new Error(
+      `Sideboard cards not found: ${missingCards.slice(0, 5).join(', ')}${missingCards.length > 5 ? ` (and ${missingCards.length - 5} more)` : ''}`,
+    );
+  }
+
+  return sideboard;
+}
+
 /**
  * Convert a generated deck to engine format.
  *
@@ -135,18 +168,23 @@ export function convertGeneratedDeck(
   deck: GeneratedDeck,
   lookup: CardLookup,
 ): EngineDeck {
-  // Look up commander
-  const commanderCard = lookup(deck.commander);
+  const commanderNames = resolveCommanderNames(deck.commander, lookup);
+
+  // Look up primary commander (first partner)
+  const commanderCard = lookup(commanderNames[0]);
   if (!commanderCard) {
-    throw new Error(`Commander not found: ${deck.commander}`);
+    throw new Error(`Commander not found: ${commanderNames[0]}`);
   }
 
   // Pad short decks with basic lands (handles decks saved without lands)
   const deckList = [...deck.list];
-  if (deckList.length < 99) {
+  // For partners, the target library size is 100 - number_of_commanders
+  const targetLibrarySize = 100 - commanderNames.length;
+  if (deckList.length < targetLibrarySize) {
     const colors = deck.colors.length > 0 ? deck.colors : ['U'];
-    const landsPerColor = Math.floor((99 - deckList.length) / colors.length);
-    const remainder = (99 - deckList.length) % colors.length;
+    const deficit = targetLibrarySize - deckList.length;
+    const landsPerColor = Math.floor(deficit / colors.length);
+    const remainder = deficit % colors.length;
     for (let i = 0; i < colors.length; i++) {
       const landName = BASIC_LANDS[colors[i]] || 'Island';
       const count = landsPerColor + (i < remainder ? 1 : 0);
@@ -159,6 +197,14 @@ export function convertGeneratedDeck(
   // Convert all cards
   const commander = convertCard(commanderCard);
   const library: CardDefinition[] = [];
+
+  // Add second partner to the library (it will be a playable card)
+  if (commanderNames.length > 1) {
+    const partnerCard = lookup(commanderNames[1]);
+    if (partnerCard) {
+      library.push(convertCard(partnerCard));
+    }
+  }
   const missingCards: string[] = [];
 
   for (const cardName of deckList) {
@@ -187,7 +233,41 @@ export function convertGeneratedDeck(
     );
   }
 
-  return { commander, library };
+  return { commander, library, sideboard: convertSideboard(deck.sideboard || [], lookup) };
+}
+
+/**
+ * Convert a Limited deck to engine format.
+ *
+ * Limited decks have no commander and use the full deck list as the library.
+ */
+export function convertLimitedDeck(
+  deck: GeneratedDeck,
+  lookup: CardLookup,
+): EngineDeck {
+  const library: CardDefinition[] = [];
+  const missingCards: string[] = [];
+
+  for (const cardName of deck.list) {
+    const card = lookup(cardName);
+    if (!card) {
+      missingCards.push(cardName);
+      continue;
+    }
+    library.push(convertCard(card));
+  }
+
+  if (missingCards.length > 0) {
+    throw new Error(
+      `Cards not found: ${missingCards.slice(0, 5).join(', ')}${missingCards.length > 5 ? ` (and ${missingCards.length - 5} more)` : ''}`,
+    );
+  }
+
+  if (library.length < 40) {
+    throw new Error(`Limited deck must contain at least 40 cards, got ${library.length}`);
+  }
+
+  return { library, sideboard: convertSideboard(deck.sideboard || [], lookup) };
 }
 
 /**

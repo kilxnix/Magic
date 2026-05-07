@@ -60,6 +60,13 @@ function saveHistory(deckIds: string[]) {
   localStorage.setItem(HISTORY_KEY, JSON.stringify(data));
 }
 
+function countDeckLines(lines: string[] = []): number {
+  return lines.reduce((total, line) => {
+    const match = line.match(/^(\d+)x\s+/);
+    return total + (match ? Number(match[1]) : line === 'Sideboard' ? 0 : 1);
+  }, 0);
+}
+
 async function hydrateHistory(deckIds: string[]): Promise<Deck[]> {
   if (deckIds.length === 0) return [];
   try {
@@ -86,6 +93,26 @@ const BUDGET_TIERS = [
   { value: 'high_end', label: 'High-End (> $50 per card)' },
 ];
 
+const STANDARD_ARCHETYPES = [
+  { value: 'midrange', label: 'Midrange' },
+  { value: 'aggro', label: 'Aggro' },
+  { value: 'control', label: 'Control' },
+  { value: 'tempo', label: 'Tempo' },
+  { value: 'ramp', label: 'Ramp' },
+  { value: 'tokens', label: 'Tokens' },
+  { value: 'graveyard', label: 'Graveyard' },
+  { value: 'artifacts', label: 'Artifacts' },
+  { value: 'spells', label: 'Spells' },
+];
+
+const STANDARD_COLORS = [
+  { value: 'W', label: 'White' },
+  { value: 'U', label: 'Blue' },
+  { value: 'B', label: 'Black' },
+  { value: 'R', label: 'Red' },
+  { value: 'G', label: 'Green' },
+];
+
 export function GeneratorPage() {
   const navigate = useNavigate();
   const [history, setHistory] = useState<Deck[]>([]);
@@ -98,6 +125,9 @@ export function GeneratorPage() {
   const [selectedCommander, setSelectedCommander] = useState<Commander | null>(null);
   const [brackets, setBrackets] = useState<Bracket[]>([]);
   const [selectedBracket, setSelectedBracket] = useState(2);
+  const [deckFormat, setDeckFormat] = useState<'commander' | 'standard'>('commander');
+  const [standardColors, setStandardColors] = useState<string[]>(['R']);
+  const [standardArchetype, setStandardArchetype] = useState('midrange');
   const [theme, setTheme] = useState('');
   const [budgetTier, setBudgetTier] = useState('');
   const [useAI, setUseAI] = useState(false);
@@ -147,7 +177,7 @@ export function GeneratorPage() {
   // Search commanders when query changes
   useEffect(() => {
     const timer = setTimeout(() => {
-      if (commanderSearch.length >= 1) {
+      if (deckFormat === 'commander' && commanderSearch.length >= 1) {
         fetchCommanders(commanderSearch)
           .then((results) => {
             setCommanders(results);
@@ -160,11 +190,15 @@ export function GeneratorPage() {
       }
     }, 150);
     return () => clearTimeout(timer);
-  }, [commanderSearch]);
+  }, [commanderSearch, deckFormat]);
 
   const handleGenerate = async () => {
-    if (!selectedCommander) {
+    if (deckFormat === 'commander' && !selectedCommander) {
       setError('Please select a commander');
+      return;
+    }
+    if (deckFormat === 'standard' && standardColors.length === 0) {
+      setError('Please select at least one color');
       return;
     }
 
@@ -172,13 +206,24 @@ export function GeneratorPage() {
     setError(null);
 
     try {
-      const deck = await generateDeck({
-        commander: selectedCommander.name,
-        bracket: selectedBracket,
-        theme: theme || undefined,
-        budget_tier: budgetTier || undefined,
-        use_ai: useAI || undefined,
-      });
+      const request: DeckRequest = deckFormat === 'standard'
+        ? {
+            format: 'standard',
+            colors: standardColors,
+            archetype: standardArchetype,
+            theme: theme || undefined,
+            budget_tier: budgetTier || undefined,
+            use_ai: useAI || undefined,
+          }
+        : {
+            format: 'commander',
+            commander: selectedCommander?.name,
+            bracket: selectedBracket,
+            theme: theme || undefined,
+            budget_tier: budgetTier || undefined,
+            use_ai: useAI || undefined,
+          };
+      const deck = await generateDeck(request);
 
       setHistory(prev => {
         const newHistory = [deck, ...prev.filter(d => d.id !== deck.id)];
@@ -263,6 +308,14 @@ export function GeneratorPage() {
     setShowCommanderDropdown(false);
   };
 
+  const toggleStandardColor = (color: string) => {
+    setStandardColors(prev => (
+      prev.includes(color)
+        ? prev.filter(c => c !== color)
+        : [...prev, color]
+    ));
+  };
+
   const handleViewDeck = (deckId: string) => {
     navigate(`/deck/${deckId}`);
   };
@@ -278,6 +331,8 @@ export function GeneratorPage() {
   };
 
   const selectedDeck = history.find(d => d.id === selectedDeckId) || null;
+  const canGenerate = deckFormat === 'commander' ? Boolean(selectedCommander) : standardColors.length > 0;
+  const selectedDeckIsCommander = selectedDeck?.format !== 'standard';
 
   const colorSymbols: Record<string, string> = {
     W: 'text-amber-100 bg-amber-50',
@@ -345,57 +400,146 @@ export function GeneratorPage() {
             <div className="flex-1 flex flex-col items-center justify-center p-6 bg-stone-100">
               <div className="w-full max-w-md space-y-6">
                 <div className="text-center space-y-2">
-                  <h2 className="text-2xl font-serif text-stone-800">Commander Deck Generator</h2>
-                  <p className="text-stone-500">Build decks following Command Zone rules</p>
+                  <h2 className="text-2xl font-serif text-stone-800">
+                    {deckFormat === 'standard' ? 'Standard Deck Generator' : 'Commander Deck Generator'}
+                  </h2>
+                  <p className="text-stone-500">
+                    {deckFormat === 'standard'
+                      ? 'Build 60-card Standard decks with a 15-card sideboard'
+                      : 'Build decks following Command Zone rules'
+                    }
+                  </p>
+                </div>
+
+                {/* Format Selection */}
+                <div>
+                  <label className="block text-sm font-medium text-stone-700 mb-1">
+                    Format
+                  </label>
+                  <div className="grid grid-cols-2 gap-2 rounded-lg bg-stone-200 p-1">
+                    <button
+                      type="button"
+                      onClick={() => setDeckFormat('commander')}
+                      className={`px-3 py-2 text-sm font-medium rounded-md transition-colors ${
+                        deckFormat === 'commander'
+                          ? 'bg-white text-stone-900 shadow-sm'
+                          : 'text-stone-600 hover:text-stone-900'
+                      }`}
+                    >
+                      Commander
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDeckFormat('standard');
+                        setShowCommanderDropdown(false);
+                      }}
+                      className={`px-3 py-2 text-sm font-medium rounded-md transition-colors ${
+                        deckFormat === 'standard'
+                          ? 'bg-white text-stone-900 shadow-sm'
+                          : 'text-stone-600 hover:text-stone-900'
+                      }`}
+                    >
+                      Standard
+                    </button>
+                  </div>
                 </div>
 
                 {/* Commander Search */}
-                <div className="relative" ref={dropdownRef}>
-                  <label className="block text-sm font-medium text-stone-700 mb-1">
-                    Commander
-                  </label>
-                  <input
-                    type="text"
-                    value={commanderSearch}
-                    onChange={(e) => {
-                      setCommanderSearch(e.target.value);
-                      if (!e.target.value) setSelectedCommander(null);
-                    }}
-                    onFocus={() => commanderSearch.length >= 1 && setShowCommanderDropdown(true)}
-                    placeholder="Start typing to search..."
-                    className="w-full px-3 py-2 border border-stone-300 rounded-md shadow-sm focus:ring-stone-500 focus:border-stone-500"
-                  />
-                  {showCommanderDropdown && commanders.length > 0 && (
-                    <div className="absolute z-10 w-full mt-1 bg-white border border-stone-200 rounded-md shadow-lg max-h-60 overflow-y-auto">
-                      {commanders.map((c) => (
-                        <button
-                          key={c.name}
-                          onClick={() => handleCommanderSelect(c)}
-                          className="w-full px-3 py-2 text-left hover:bg-stone-100 flex items-center gap-2"
-                        >
-                          <span className="flex gap-0.5">
-                            {c.colors.map(color => (
-                              <span
-                                key={color}
-                                className={`w-4 h-4 rounded-full text-xs flex items-center justify-center ${colorSymbols[color] || 'bg-gray-300'}`}
-                              >
-                                {color}
-                              </span>
-                            ))}
-                          </span>
-                          <span className="font-medium">{c.name}</span>
-                        </button>
-                      ))}
+                {deckFormat === 'commander' ? (
+                  <div className="relative" ref={dropdownRef}>
+                    <label className="block text-sm font-medium text-stone-700 mb-1">
+                      Commander
+                    </label>
+                    <input
+                      type="text"
+                      value={commanderSearch}
+                      onChange={(e) => {
+                        setCommanderSearch(e.target.value);
+                        if (!e.target.value) setSelectedCommander(null);
+                      }}
+                      onFocus={() => commanderSearch.length >= 1 && setShowCommanderDropdown(true)}
+                      placeholder="Start typing to search..."
+                      className="w-full px-3 py-2 border border-stone-300 rounded-md shadow-sm focus:ring-stone-500 focus:border-stone-500"
+                    />
+                    {showCommanderDropdown && commanders.length > 0 && (
+                      <div className="absolute z-10 w-full mt-1 bg-white border border-stone-200 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                        {commanders.map((c) => (
+                          <button
+                            key={c.name}
+                            onClick={() => handleCommanderSelect(c)}
+                            className="w-full px-3 py-2 text-left hover:bg-stone-100 flex items-center gap-2"
+                          >
+                            <span className="flex gap-0.5">
+                              {c.colors.map(color => (
+                                <span
+                                  key={color}
+                                  className={`w-4 h-4 rounded-full text-xs flex items-center justify-center ${colorSymbols[color] || 'bg-gray-300'}`}
+                                >
+                                  {color}
+                                </span>
+                              ))}
+                            </span>
+                            <span className="font-medium">{c.name}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {selectedCommander && (
+                      <div className="mt-1 text-xs text-stone-500">
+                        {selectedCommander.type_line}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium text-stone-700 mb-1">
+                        Colors
+                      </label>
+                      <div className="grid grid-cols-5 gap-2">
+                        {STANDARD_COLORS.map(color => {
+                          const selected = standardColors.includes(color.value);
+                          return (
+                            <button
+                              key={color.value}
+                              type="button"
+                              onClick={() => toggleStandardColor(color.value)}
+                              className={`px-3 py-2 rounded-md border text-sm font-medium transition-colors ${
+                                selected
+                                  ? 'border-stone-900 bg-stone-900 text-white'
+                                  : 'border-stone-300 bg-white text-stone-700 hover:bg-stone-100'
+                              }`}
+                              title={color.label}
+                            >
+                              {color.value}
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
-                  )}
-                  {selectedCommander && (
-                    <div className="mt-1 text-xs text-stone-500">
-                      {selectedCommander.type_line}
+
+                    <div>
+                      <label className="block text-sm font-medium text-stone-700 mb-1">
+                        Archetype
+                      </label>
+                      <select
+                        value={standardArchetype}
+                        onChange={(e) => setStandardArchetype(e.target.value)}
+                        className="w-full px-3 py-2 border border-stone-300 rounded-md shadow-sm focus:ring-stone-500 focus:border-stone-500"
+                      >
+                        {STANDARD_ARCHETYPES.map((archetype) => (
+                          <option key={archetype.value} value={archetype.value}>
+                            {archetype.label}
+                          </option>
+                        ))}
+                      </select>
                     </div>
-                  )}
-                </div>
+                  </>
+                )}
 
                 {/* Bracket Selection */}
+                {deckFormat === 'commander' && (
                 <div>
                   <label className="block text-sm font-medium text-stone-700 mb-1">
                     Power Level Bracket
@@ -424,17 +568,22 @@ export function GeneratorPage() {
                     </div>
                   )}
                 </div>
+                )}
 
                 {/* Theme */}
                 <div>
                   <label className="block text-sm font-medium text-stone-700 mb-1">
-                    Theme / Strategy (optional)
+                    {deckFormat === 'standard' ? 'Theme / Card Focus (optional)' : 'Theme / Strategy (optional)'}
                   </label>
                   <input
                     type="text"
                     value={theme}
                     onChange={(e) => setTheme(e.target.value)}
-                    placeholder="e.g., tokens, graveyard, +1/+1 counters..."
+                    placeholder={
+                      deckFormat === 'standard'
+                        ? 'e.g., burn, flyers, sacrifice...'
+                        : 'e.g., tokens, graveyard, +1/+1 counters...'
+                    }
                     className="w-full px-3 py-2 border border-stone-300 rounded-md shadow-sm focus:ring-stone-500 focus:border-stone-500"
                   />
                 </div>
@@ -469,8 +618,15 @@ export function GeneratorPage() {
                   <label htmlFor="use-ai-toggle" className="flex items-center gap-2 text-sm text-stone-700 cursor-pointer select-none">
                     <Brain className="w-4 h-4 text-violet-500" />
                     <span>
-                      <span className="font-medium">Use Shelector AI</span>
-                      <span className="text-stone-500 ml-1">— LLM re-ranks cards for better synergy</span>
+                      <span className="font-medium">
+                        {deckFormat === 'standard' ? 'Use local model scoring' : 'Use Shelector AI'}
+                      </span>
+                      <span className="text-stone-500 ml-1">
+                        {deckFormat === 'standard'
+                          ? '- scores card fit against your colors, archetype, and theme'
+                          : '- local model scores theme fit, then reviews synergy'
+                        }
+                      </span>
                     </span>
                   </label>
                 </div>
@@ -485,29 +641,42 @@ export function GeneratorPage() {
                 {/* Generate Button */}
                 <button
                   onClick={handleGenerate}
-                  disabled={loading || !selectedCommander}
+                  disabled={loading || !canGenerate}
                   className={`w-full px-6 py-3 text-sm font-medium rounded shadow-sm transition-colors
-                    ${loading || !selectedCommander
+                    ${loading || !canGenerate
                       ? 'bg-stone-400 text-stone-200 cursor-not-allowed'
                       : 'bg-stone-900 text-stone-50 hover:bg-stone-800'
                     }`}
                 >
                   {loading
-                    ? (useAI ? 'Shelector is thinking...' : 'Generating...')
+                    ? (useAI ? 'Model is thinking...' : 'Generating...')
                     : (useAI ? 'Generate with AI' : 'Generate Deck')
                   }
                 </button>
 
                 {/* Rules Info */}
                 <div className="text-xs text-stone-400 space-y-1">
-                  <p>Decks are built following Command Zone rules:</p>
-                  <ul className="list-disc list-inside pl-2">
-                    <li>Max 34 lands</li>
-                    <li>10+ ramp cards</li>
-                    <li>10+ card draw</li>
-                    <li>8+ removal spells</li>
-                    <li>2+ wincons</li>
-                  </ul>
+                  {deckFormat === 'standard' ? (
+                    <>
+                      <p>Standard decks use the current legality data:</p>
+                      <ul className="list-disc list-inside pl-2">
+                        <li>60-card main deck</li>
+                        <li>15-card sideboard</li>
+                        <li>4-copy combined deck and sideboard limit</li>
+                      </ul>
+                    </>
+                  ) : (
+                    <>
+                      <p>Decks are built following Command Zone rules:</p>
+                      <ul className="list-disc list-inside pl-2">
+                        <li>Max 34 lands</li>
+                        <li>10+ ramp cards</li>
+                        <li>10+ card draw</li>
+                        <li>8+ removal spells</li>
+                        <li>2+ wincons</li>
+                      </ul>
+                    </>
+                  )}
                 </div>
 
                 {/* Card Optimizer Link */}
@@ -524,7 +693,12 @@ export function GeneratorPage() {
             <div className="flex-1 flex flex-col min-w-0">
               <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 p-4 border-b border-stone-200 bg-white">
                 <div className="text-sm text-stone-500">
-                  {selectedDeck.bracket_name && (
+                  {selectedDeck.format === 'standard' ? (
+                    <span className="font-medium">
+                      {selectedDeck.bracket_name || 'Standard'} | {selectedDeck.card_count} cards
+                      {selectedDeck.sideboard?.length ? ` | Sideboard ${countDeckLines(selectedDeck.sideboard)}` : ''}
+                    </span>
+                  ) : selectedDeck.bracket_name && (
                     <span className="font-medium">
                       Bracket {selectedDeck.bracket}: {selectedDeck.bracket_name}
                     </span>
@@ -535,6 +709,7 @@ export function GeneratorPage() {
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   {/* Regeneration Controls */}
+                  {selectedDeckIsCommander && (
                   <div className="flex items-center gap-2 pr-2 border-r border-stone-300">
                     <span className="text-xs text-stone-500 flex items-center gap-1">
                       <Lock className="w-3 h-3" />
@@ -559,6 +734,7 @@ export function GeneratorPage() {
                       {useCheckboxFallback ? 'Click mode' : 'Checkboxes'}
                     </button>
                   </div>
+                  )}
                   <button
                     onClick={() => handleViewDeck(selectedDeck.id)}
                     className="px-3 py-2 bg-stone-700 text-stone-50 text-xs font-medium rounded hover:bg-stone-600 transition-colors"
@@ -581,7 +757,7 @@ export function GeneratorPage() {
               </div>
 
               {/* Regeneration Error */}
-              {regenerationError && (
+              {selectedDeckIsCommander && regenerationError && (
                 <div className="bg-red-50 border-b border-red-200 px-4 py-2">
                   <div className="text-sm text-red-600">
                     Regeneration failed: {regenerationError}
@@ -590,7 +766,7 @@ export function GeneratorPage() {
               )}
 
               {/* Shelector AI Reasoning */}
-              {selectedDeck.ai_enhanced && selectedDeck.ai_reasoning && (
+              {selectedDeckIsCommander && selectedDeck.ai_enhanced && selectedDeck.ai_reasoning && (
                 <div className="bg-violet-50 border-b border-violet-200 px-4 py-2">
                   <button
                     onClick={() => setShowAiReasoning(!showAiReasoning)}
@@ -612,17 +788,19 @@ export function GeneratorPage() {
               )}
 
               {/* Lock/Regenerate Tip */}
+              {selectedDeckIsCommander && (
               <div className="bg-blue-50 border-b border-blue-100 px-4 py-2">
                 <div className="text-xs text-blue-700">
                   <strong>Tip:</strong> Click cards to lock them, then hit Regenerate to replace the unlocked cards with new options.
                 </div>
               </div>
+              )}
 
               {/* Deck Visual View with Locking */}
               <div className="flex-1 overflow-y-auto">
                 <DeckVisualView
                   deck={selectedDeck}
-                  selectionMode={true}
+                  selectionMode={selectedDeckIsCommander}
                   lockedCards={lockedCards}
                   newCards={newCards}
                   coreStaples={coreStaples}

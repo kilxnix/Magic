@@ -75,6 +75,7 @@ function serializeCardInstance(card: CardInstance): SerializedCardInstanceV1 {
     attachedTo: card.attachedTo,
     damage: card.damage,
     isCommander: card.isCommander,
+    fromSideboard: card.fromSideboard,
   };
 }
 
@@ -93,6 +94,7 @@ function deserializeCardInstance(data: SerializedCardInstanceV1): CardInstance {
     attachedTo: data.attachedTo,
     damage: data.damage,
     isCommander: data.isCommander,
+    fromSideboard: data.fromSideboard,
   };
 }
 
@@ -236,6 +238,12 @@ export function serializeGameState(state: GameState): SerializedGameStateV1 {
     combat: state.combat ? serializeCombatState(state.combat) : null,
     battlefieldAbilities: Array.from(state.battlefieldAbilities.entries()),
     pendingTriggers: [...state.pendingTriggers],
+    sideboards: state.sideboards
+      ? Array.from(state.sideboards.entries()).map(([playerId, defs]) => [
+          playerId,
+          defs.map(serializeCardDefinition),
+        ])
+      : undefined,
   };
 
   // Include grudge data if present
@@ -269,6 +277,10 @@ export function deserializeGameState(data: SerializedGameStateV1): GameState {
     combat: data.combat ? deserializeCombatState(data.combat) : null,
     battlefieldAbilities: new Map(data.battlefieldAbilities) as GameState['battlefieldAbilities'],
     pendingTriggers: [...data.pendingTriggers] as GameState['pendingTriggers'],
+    sideboards: new Map((data.sideboards || []).map(([playerId, defs]) => [
+      playerId,
+      defs.map(deserializeCardDefinition),
+    ])),
   };
 
   // Restore grudge data if present

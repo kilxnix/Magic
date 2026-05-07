@@ -5,11 +5,17 @@ export interface DeckInput {
   name: string;
   cards: CardDefinition[];
   commanderId: string;
+  sideboardCards?: CardDefinition[];
 }
 
 let instanceCounter = 0;
 function nextInstanceId(): string {
   return `inst_${++instanceCounter}`;
+}
+
+let sideboardInstanceCounter = 0;
+function nextSideboardInstanceId(): string {
+  return `sideboard_inst_${++sideboardInstanceCounter}_${Date.now().toString(36)}`;
 }
 
 export function initGameState(decks: DeckInput[]): GameState {
@@ -18,6 +24,7 @@ export function initGameState(decks: DeckInput[]): GameState {
   const players: Player[] = decks.map(d => createPlayer(d.playerId, d.name));
   const cards = new Map<string, CardInstance>();
   const cardDefinitions = new Map<string, CardDefinition>();
+  const sideboards = new Map<string, CardDefinition[]>();
 
   // Track commander instance IDs to set on players
   const commanderByPlayer = new Map<string, string>();
@@ -46,6 +53,13 @@ export function initGameState(decks: DeckInput[]): GameState {
         commanderByPlayer.set(deck.playerId, instanceId);
       }
     }
+
+    if (deck.sideboardCards && deck.sideboardCards.length > 0) {
+      for (const def of deck.sideboardCards) {
+        cardDefinitions.set(def.id, def);
+      }
+      sideboards.set(deck.playerId, [...deck.sideboardCards]);
+    }
   }
 
   // Set commander instance IDs on players
@@ -58,6 +72,7 @@ export function initGameState(decks: DeckInput[]): GameState {
     players: updatedPlayers,
     cards,
     cardDefinitions,
+    sideboards,
     activePlayerIndex: 0,
     priorityPlayerIndex: 0,
     phase: 'beginning',
@@ -89,6 +104,86 @@ export function getCardsInZone(state: GameState, playerId: string, zone: Zone): 
     }
   }
   return result;
+}
+
+export function getSideboard(state: GameState, playerId: string): CardDefinition[] {
+  return state.sideboards?.get(playerId) || [];
+}
+
+export type SideboardEntryZone = Extract<Zone, 'library' | 'hand' | 'battlefield' | 'graveyard' | 'exile'>;
+
+export interface SideboardEntryOptions {
+  libraryPosition?: 'top' | 'bottom';
+}
+
+export function moveSideboardCardIntoGame(
+  state: GameState,
+  playerId: string,
+  cardName: string,
+  destinationZone: SideboardEntryZone,
+  options: SideboardEntryOptions = {},
+): GameState {
+  const sideboards = new Map(state.sideboards || []);
+  const sideboard = [...(sideboards.get(playerId) || [])];
+  const sideboardIndex = sideboard.findIndex(card => card.name === cardName);
+  if (sideboardIndex < 0) {
+    throw new Error(`Sideboard card not found for ${playerId}: ${cardName}`);
+  }
+
+  const [cardDef] = sideboard.splice(sideboardIndex, 1);
+  sideboards.set(playerId, sideboard);
+
+  const instance = {
+    instanceId: nextSideboardInstanceId(),
+    definitionId: cardDef.id,
+    ownerId: playerId,
+    zone: destinationZone,
+    tapped: false,
+    summoningSick: destinationZone === 'battlefield',
+    counters: {},
+    damage: 0,
+    isCommander: false,
+    fromSideboard: true,
+  };
+
+  const cardDefinitions = new Map(state.cardDefinitions);
+  cardDefinitions.set(cardDef.id, cardDef);
+
+  let cards = new Map(state.cards);
+  if (destinationZone === 'library' && options.libraryPosition !== 'bottom') {
+    const ordered = new Map<string, CardInstance>();
+    for (const [id, card] of cards.entries()) {
+      if (card.ownerId === playerId && card.zone === 'library') continue;
+      ordered.set(id, card);
+    }
+    ordered.set(instance.instanceId, instance);
+    for (const [id, card] of cards.entries()) {
+      if (card.ownerId === playerId && card.zone === 'library') ordered.set(id, card);
+    }
+    cards = ordered;
+  } else {
+    cards.set(instance.instanceId, instance);
+  }
+
+  return { ...state, cards, cardDefinitions, sideboards };
+}
+
+export function returnSideboardCardsToSideboard(state: GameState): GameState {
+  const cards = new Map(state.cards);
+  const sideboards = new Map(state.sideboards || []);
+
+  for (const [instanceId, card] of state.cards.entries()) {
+    if (!card.fromSideboard) continue;
+    const def = state.cardDefinitions.get(card.definitionId);
+    if (def) {
+      const sideboard = [...(sideboards.get(card.ownerId) || [])];
+      sideboard.push(def);
+      sideboards.set(card.ownerId, sideboard);
+    }
+    cards.delete(instanceId);
+  }
+
+  return { ...state, cards, sideboards };
 }
 
 export function getCardDefinition(state: GameState, card: CardInstance): CardDefinition {

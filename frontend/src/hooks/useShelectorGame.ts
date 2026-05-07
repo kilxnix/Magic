@@ -110,6 +110,7 @@ export interface SimpleGameState {
 
   // Multiplayer AI support: arrays/records keyed by AI player ID
   aiPlayers: SimplePlayer[];
+  aiHands: Record<string, SimpleCard[]>;
   aiBattlefields: Record<string, SimpleCard[]>;
   aiGraveyards: Record<string, SimpleCard[]>;
   aiCommandZones: Record<string, SimpleCard[]>;
@@ -118,6 +119,7 @@ export interface SimpleGameState {
   // Backward-compatible single-AI aliases (first AI)
   aiPlayer: SimplePlayer;
   aiCommander: string;
+  aiHand: SimpleCard[];
   aiBattlefield: SimpleCard[];
   aiGraveyard: SimpleCard[];
   aiCommandZone: SimpleCard[];
@@ -130,6 +132,14 @@ export interface SimpleLegalAction {
   label: string;
   /** The raw engine action stored for applying back to the engine */
   _engineAction: AIAction;
+}
+
+export interface LastPlayedCard {
+  card: SimpleCard;
+  playerId: string;
+  playerName: string;
+  action: 'Played' | 'Cast' | 'Activated';
+  turnNumber: number;
 }
 
 export interface GameLogEntry {
@@ -187,7 +197,15 @@ export interface ImportedCards {
   commander: string;
   cards: string[];
   lands: string[];
+  sideboard?: string[];
   cardData?: Record<string, CardDataFromAPI>;
+}
+
+export interface StartGameOptions {
+  format?: 'commander' | 'limited';
+  startingLife?: number;
+  startingHandSize?: number;
+  aiDifficulty?: number;
 }
 
 // ========== Helpers ==========
@@ -441,6 +459,7 @@ function deriveSimpleState(
 
   // Build per-AI data
   const aiPlayers: SimplePlayer[] = [];
+  const aiHands: Record<string, SimpleCard[]> = {};
   const aiBattlefields: Record<string, SimpleCard[]> = {};
   const aiGraveyards: Record<string, SimpleCard[]> = {};
   const aiCommandZones: Record<string, SimpleCard[]> = {};
@@ -454,6 +473,7 @@ function deriveSimpleState(
       handCount: getCardsInZone(engine, aiId, 'hand').length,
       libraryCount: getCardsInZone(engine, aiId, 'library').length,
     });
+    aiHands[aiId] = mapCards(engine, 'hand', aiId);
     aiBattlefields[aiId] = mapCards(engine, 'battlefield', aiId);
     aiGraveyards[aiId] = mapCards(engine, 'graveyard', aiId);
     aiCommandZones[aiId] = mapCards(engine, 'command', aiId);
@@ -539,6 +559,7 @@ function deriveSimpleState(
 
     // Multiplayer AI fields
     aiPlayers,
+    aiHands,
     aiBattlefields,
     aiGraveyards,
     aiCommandZones,
@@ -547,6 +568,7 @@ function deriveSimpleState(
     // Backward-compatible single-AI aliases
     aiPlayer: firstAiPlayer,
     aiCommander: aiCommanderNames[firstAiId] || 'AI',
+    aiHand: aiHands[firstAiId] || [],
     aiBattlefield: aiBattlefields[firstAiId] || [],
     aiGraveyard: aiGraveyards[firstAiId] || [],
     aiCommandZone: aiCommandZones[firstAiId] || [],
@@ -667,10 +689,16 @@ function toSimpleLegalAction(action: AIAction, engineState: GameState): SimpleLe
         const def = inst ? engineState.cardDefinitions.get(inst.definitionId) : undefined;
         return def?.name || '?';
       });
+      const defenderNames = [
+        ...new Set(action.attacks.map(a => {
+          const defender = engineState.players.find(p => p.id === a.defendingPlayerId);
+          return defender?.name.replace(/\s+\(AI\)$/, '') || a.defendingPlayerId;
+        })),
+      ];
       return {
         kind: 'DeclareAttackers',
         label: action.attacks.length > 0
-          ? `Attack with ${names.join(', ')}`
+          ? `Attack ${defenderNames.join(', ')} with ${names.join(', ')}`
           : 'Skip attacks',
         _engineAction: action,
       };
@@ -728,6 +756,7 @@ export function useShelectorGame() {
   const [mulliganPhase, setMulliganPhase] = useState(false);
   const [mulliganCount, setMulliganCount] = useState(0);
   const [gameLog, setGameLog] = useState<GameLogEntry[]>([]);
+  const [lastPlayedCard, setLastPlayedCard] = useState<LastPlayedCard | null>(null);
   const [discardPhase, setDiscardPhase] = useState(false);
   const [discardCount, setDiscardCount] = useState(0);
   const [tutorPhase, setTutorPhase] = useState(false);
@@ -742,7 +771,12 @@ export function useShelectorGame() {
   const [undosRemaining, setUndosRemaining] = useState(10);
 
   // Undo history — snapshots of engine state + chat messages before each human action
-  const undoStackRef = useRef<{ engine: GameStateWithAI; messages: ChatMessage[]; log: GameLogEntry[] }[]>([]);
+  const undoStackRef = useRef<{
+    engine: GameStateWithAI;
+    messages: ChatMessage[];
+    log: GameLogEntry[];
+    lastPlayedCard: LastPlayedCard | null;
+  }[]>([]);
 
   // Engine state ref (mutable, not in React state to avoid re-serializing Map objects)
   const engineRef = useRef<GameStateWithAI | null>(null);
@@ -774,6 +808,29 @@ export function useShelectorGame() {
 
   const appendLog = useCallback((entry: GameLogEntry) => {
     setGameLog(prev => [...prev, entry]);
+  }, []);
+
+  const rememberLastPlayedCard = useCallback((
+    state: GameState,
+    cardInstanceId: string | undefined,
+    playerId: string,
+    action: LastPlayedCard['action'],
+  ) => {
+    if (!cardInstanceId) return;
+    const inst = state.cards.get(cardInstanceId);
+    if (!inst) return;
+    const def = state.cardDefinitions.get(inst.definitionId);
+    if (!def) return;
+
+    setLastPlayedCard({
+      card: toSimpleCard(inst, def),
+      playerId,
+      playerName: playerId === humanIdRef.current
+        ? 'You'
+        : aiCommanderNamesRef.current[playerId] || 'AI',
+      action,
+      turnNumber: Math.ceil(state.turnNumber / Math.max(1, state.players.length)),
+    });
   }, []);
 
   /**
@@ -951,6 +1008,7 @@ export function useShelectorGame() {
           const def = inst ? state.cardDefinitions.get(inst.definitionId) : undefined;
           actionText = `Played ${def?.name || 'a land'}`;
           messages.push({ role: 'shelector', text: `${actionText}.` });
+          rememberLastPlayedCard(state, a.cardInstanceId, inst?.ownerId || aiIdsRef.current[0], 'Played');
         } else if (a.kind === 'CastSpell') {
           const inst = state.cards.get(a.cardInstanceId);
           const def = inst ? state.cardDefinitions.get(inst.definitionId) : undefined;
@@ -961,6 +1019,7 @@ export function useShelectorGame() {
             manaSpent = cost.W + cost.U + cost.B + cost.R + cost.G + cost.C + cost.generic;
           }
           messages.push({ role: 'shelector', text: `${actionText} (cost: ${costStr}). Floating: ${aiPoolStr}` });
+          rememberLastPlayedCard(state, a.cardInstanceId, inst?.ownerId || aiIdsRef.current[0], 'Cast');
         } else if (a.kind === 'ActivateManaAbility') {
           const inst = state.cards.get(a.cardInstanceId);
           const def = inst ? state.cardDefinitions.get(inst.definitionId) : undefined;
@@ -970,7 +1029,9 @@ export function useShelectorGame() {
             const names = a.attacks.map(atk => {
               const inst = state.cards.get(atk.cardInstanceId);
               const def = inst ? state.cardDefinitions.get(inst.definitionId) : undefined;
-              return def?.name || '?';
+              const defender = state.players.find(p => p.id === atk.defendingPlayerId);
+              const defenderName = defender?.name.replace(/\s+\(AI\)$/, '') || atk.defendingPlayerId;
+              return `${def?.name || '?'} at ${defenderName}`;
             });
             actionText = `Attacked with ${names.join(', ')}`;
             messages.push({ role: 'shelector', text: `${actionText}.` });
@@ -985,6 +1046,7 @@ export function useShelectorGame() {
           const def = inst ? state.cardDefinitions.get(inst.definitionId) : undefined;
           actionText = `Activated ${def?.name || 'an ability'}`;
           messages.push({ role: 'shelector', text: `${actionText}.` });
+          rememberLastPlayedCard(state, a.cardInstanceId, inst?.ownerId || aiIdsRef.current[0], 'Activated');
         }
 
         if (actionText) {
@@ -995,7 +1057,7 @@ export function useShelectorGame() {
         }
       }
     },
-    [],
+    [rememberLastPlayedCard],
   );
 
   /**
@@ -1768,15 +1830,17 @@ export function useShelectorGame() {
       humanDeck: GeneratedDeck,
       aiDecks: GeneratedDeck[],
       lookup: (name: string) => ScryfallCard | undefined,
+      options?: StartGameOptions,
     ): GameStateWithAI => {
       return initGameFromDecks({
         humanDeck,
         aiDecks,
-        aiDifficulty: 3,
+        aiDifficulty: options?.aiDifficulty ?? 3,
         cardLookup: lookup,
+        format: options?.format ?? 'commander',
         humanGoesFirst: true,
-        startingLife: 40,
-        startingHandSize: 7,
+        startingLife: options?.startingLife ?? 40,
+        startingHandSize: options?.startingHandSize ?? 7,
       });
     },
     [],
@@ -1784,10 +1848,12 @@ export function useShelectorGame() {
 
   // Initialize a new game with real decks for all players
   const startGame = useCallback(
-    (importedCards?: ImportedCards, aiDeckDataArray?: ImportedCards | ImportedCards[]) => {
+    (importedCards?: ImportedCards, aiDeckDataArray?: ImportedCards | ImportedCards[], options?: StartGameOptions) => {
       setError(null);
       setChatMessages([]);
       setGameLog([]);
+      setLastPlayedCard(null);
+      const format = options?.format ?? 'commander';
 
       // Normalize aiDeckDataArray to always be an array
       const aiDeckDatas: (ImportedCards | undefined)[] = aiDeckDataArray
@@ -1841,15 +1907,18 @@ export function useShelectorGame() {
         const aiCmdrNames = aiCommanderName.includes(' // ')
           ? aiCommanderName.split(' // ').map((s: string) => s.trim().toLowerCase())
           : [aiCommanderName.toLowerCase()];
-        const aiList = padDeckTo99(
-          aiCards.filter(n => !aiCmdrNames.includes(n.toLowerCase())),
-          aiColors,
-        );
+        const aiList = format === 'limited'
+          ? aiCards
+          : padDeckTo99(
+              aiCards.filter(n => !aiCmdrNames.includes(n.toLowerCase())),
+              aiColors,
+            );
 
         aiDecks.push({
           id: `ai-deck-${i + 1}`,
           commander: aiCommanderName,
           list: aiList,
+          sideboard: aiData?.sideboard || [],
           colors: aiColors,
           bracket: 3,
           theme: '',
@@ -1863,15 +1932,18 @@ export function useShelectorGame() {
       const humanCmdrNames = humanCommanderName.includes(' // ')
         ? humanCommanderName.split(' // ').map(n => n.trim().toLowerCase())
         : [humanCommanderName.toLowerCase()];
-      const humanList = padDeckTo99(
-        humanCards.filter(n => !humanCmdrNames.includes(n.toLowerCase())),
-        humanColors,
-      );
+      const humanList = format === 'limited'
+        ? humanCards
+        : padDeckTo99(
+            humanCards.filter(n => !humanCmdrNames.includes(n.toLowerCase())),
+            humanColors,
+          );
 
       const humanDeck: GeneratedDeck = {
         id: 'human-deck',
         commander: humanCommanderName,
         list: humanList,
+        sideboard: importedCards?.sideboard || [],
         colors: humanColors,
         bracket: 3,
         theme: '',
@@ -1887,7 +1959,7 @@ export function useShelectorGame() {
       aiIdsRef.current = aiIds;
 
       try {
-        const engine = initEngine(humanDeck, aiDecks, lookup);
+        const engine = initEngine(humanDeck, aiDecks, lookup, options);
         engineRef.current = engine;
 
         setMulliganPhase(true);
@@ -2244,6 +2316,7 @@ export function useShelectorGame() {
     engineRef.current = snapshot.engine;
     setChatMessages([...snapshot.messages, { role: 'system', text: `Undo! (${undosRemaining - 1} remaining)`, timestamp: Date.now() }]);
     setGameLog(snapshot.log);
+    setLastPlayedCard(snapshot.lastPlayedCard);
     setUndosRemaining(prev => prev - 1);
 
     // Clear any special phases
@@ -2310,6 +2383,7 @@ export function useShelectorGame() {
       ...s,
       cards: new Map(s.cards),
       cardDefinitions: new Map(s.cardDefinitions),
+      sideboards: s.sideboards ? new Map([...s.sideboards.entries()].map(([playerId, cards]) => [playerId, [...cards]])) : undefined,
       battlefieldAbilities: new Map(s.battlefieldAbilities),
       players: s.players.map(p => ({ ...p, manaPool: { ...p.manaPool }, commanderDamage: { ...p.commanderDamage } })),
       stack: [...s.stack],
@@ -2338,6 +2412,7 @@ export function useShelectorGame() {
           engine: cloneEngineState(engine),
           messages: [...chatMessages],
           log: [...gameLog],
+          lastPlayedCard,
         });
         if (undoStackRef.current.length > 10) {
           undoStackRef.current.shift();
@@ -2559,6 +2634,14 @@ export function useShelectorGame() {
           newState = applyAction(engine, humanIdRef.current, engineAction);
         }
 
+        if (action.kind === 'PlayLand') {
+          rememberLastPlayedCard(newState, action.cardInstanceId, humanIdRef.current, 'Played');
+        } else if (action.kind === 'CastSpell') {
+          rememberLastPlayedCard(newState, action.cardInstanceId, humanIdRef.current, 'Cast');
+        } else if (action.kind === 'ActivateAbility') {
+          rememberLastPlayedCard(newState, action.cardInstanceId, humanIdRef.current, 'Activated');
+        }
+
         // Accumulate events from this action and open the EndGameModal if needed
         applyEvents(collectedEvents, newState);
 
@@ -2705,7 +2788,7 @@ export function useShelectorGame() {
         syncState();
       }
     },
-    [gameState, addMessage, appendLog, syncState, advanceGameLoop, applyEvents],
+    [gameState, addMessage, appendLog, syncState, advanceGameLoop, applyEvents, lastPlayedCard, rememberLastPlayedCard],
   );
 
   const isHumanTurn = gameState?.priorityPlayerId === humanIdRef.current;
@@ -2731,6 +2814,7 @@ export function useShelectorGame() {
     tutorCards,
     tutorTitle,
     gameLog,
+    lastPlayedCard,
     undosRemaining,
     coachMode,
     untappableCardIds: [...uncommittedTapsRef.current],

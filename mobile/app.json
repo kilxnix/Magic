@@ -3,7 +3,7 @@
     "name": "Commander Mobile",
     "slug": "commander-mobile",
     "version": "0.1.0",
-    "orientation": "portrait",
+    "orientation": "landscape",
     "icon": "./src/assets/images/icon.png",
     "scheme": "commander",
     "userInterfaceStyle": "dark",
@@ -19,6 +19,7 @@
       "adaptiveIcon": {
         "backgroundColor": "#1a1a1a"
       },
+      "usesCleartextTraffic": true,
       "package": "com.commander.mobile"
     },
     "web": {
@@ -26,7 +27,8 @@
       "output": "static"
     },
     "plugins": [
-      "expo-router"
+      "expo-router",
+      "expo-asset"
     ],
     "experiments": {
       "typedRoutes": true

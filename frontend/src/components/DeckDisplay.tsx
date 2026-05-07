@@ -19,8 +19,20 @@ const CATEGORY_ORDER = [
   'Enchantments',
   'Planeswalkers',
   'Lands',
-  'Other'
+  'Other',
+  'Sideboard',
 ];
+
+function displayCardLine(card: string): string {
+  const withoutCommanderMark = card.replace(' *CMDR*', '');
+  return /^\d+x\s+/.test(withoutCommanderMark)
+    ? withoutCommanderMark.replace(/^(\d+)x\s+/, '$1 ')
+    : `1 ${withoutCommanderMark}`;
+}
+
+function cardSearchName(card: string): string {
+  return card.replace(' *CMDR*', '').replace(/^\d+x\s+/, '');
+}
 
 export function DeckDisplay({ deck }: DeckDisplayProps) {
   const [format, setFormat] = useState<CopyFormat>('Plain');
@@ -40,6 +52,7 @@ export function DeckDisplay({ deck }: DeckDisplayProps) {
       'Planeswalkers': [],
       'Lands': [],
       'Other': [],
+      'Sideboard': [],
     };
 
     // If deck has categories from backend, use those
@@ -54,6 +67,7 @@ export function DeckDisplay({ deck }: DeckDisplayProps) {
         'planeswalkers': 'Planeswalkers',
         'lands': 'Lands',
         'other': 'Other',
+        'sideboard': 'Sideboard',
       };
 
       for (const [backendCat, cards] of Object.entries(deck.categories)) {
@@ -111,7 +125,9 @@ export function DeckDisplay({ deck }: DeckDisplayProps) {
         {/* Header Stats */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 border-b border-stone-200 pb-6">
           <div>
-            <div className="text-xs uppercase tracking-widest text-stone-500">Commander</div>
+            <div className="text-xs uppercase tracking-widest text-stone-500">
+              {deck.format === 'standard' ? 'Deck' : 'Commander'}
+            </div>
             <div className="text-sm font-medium text-stone-900 truncate" title={deck.commander}>{deck.commander}</div>
           </div>
           <div>
@@ -127,9 +143,14 @@ export function DeckDisplay({ deck }: DeckDisplayProps) {
             <div className="text-xl font-medium text-stone-900">{deck.colors.join('')}</div>
           </div>
           <div>
-            <div className="text-xs uppercase tracking-widest text-stone-500">Power Level</div>
+            <div className="text-xs uppercase tracking-widest text-stone-500">
+              {deck.format === 'standard' ? 'Format' : 'Power Level'}
+            </div>
             <div className="text-sm font-medium text-stone-900">
-              Bracket {deck.bracket}: {deck.bracket_name}
+              {deck.format === 'standard'
+                ? deck.bracket_name || 'Standard'
+                : `Bracket ${deck.bracket}: ${deck.bracket_name}`
+              }
             </div>
           </div>
         </div>
@@ -148,9 +169,9 @@ export function DeckDisplay({ deck }: DeckDisplayProps) {
                 <ul className="space-y-1">
                   {cards.sort().map((card, idx) => (
                     <li key={idx} className="text-sm text-stone-700 flex justify-between items-center group hover:bg-stone-50 px-1 rounded">
-                      <span>1 {card.replace(' *CMDR*', '')}</span>
+                      <span>{displayCardLine(card)}</span>
                       <a 
-                        href={`https://scryfall.com/search?q=!"${encodeURIComponent(card.replace(' *CMDR*', ''))}"}`}
+                        href={`https://scryfall.com/search?q=!"${encodeURIComponent(cardSearchName(card))}"}`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="opacity-0 group-hover:opacity-100 text-stone-400 hover:text-stone-600 text-xs transition-opacity"

@@ -12,6 +12,11 @@ export interface Deck {
   bracket_name: string;
   theme: string;
   categories: Record<string, string[]>;
+  format?: 'commander' | 'standard' | string;
+  sideboard?: string[];
+  generation_method?: string | null;
+  model_scoring?: boolean;
+  synergy_queries?: string[];
   ai_enhanced?: boolean;
   ai_reasoning?: string | null;
 }
@@ -38,8 +43,11 @@ export interface Bracket {
 }
 
 export interface DeckRequest {
-  commander: string;
-  bracket: number;
+  commander?: string;
+  format?: 'commander' | 'standard';
+  colors?: string[];
+  archetype?: string;
+  bracket?: number;
   theme?: string;
   budget_tier?: string;
   use_ai?: boolean;

@@ -24,27 +24,133 @@ _NAME_SUBS = [
 ]
 
 
+def _exact_card_name(name: str, card_db: dict) -> Optional[str]:
+    """Resolve exact/case-insensitive card names without fuzzy matching."""
+    if not name:
+        return None
+
+    if name in card_db:
+        return name
+
+    for old, new in _NAME_SUBS:
+        alt = name.replace(old, new)
+        if alt in card_db:
+            return alt
+
+    name_lower = name.lower()
+    for db_name in card_db:
+        if db_name.lower() == name_lower:
+            return db_name
+
+    return None
+
+
+def _is_playable_printing(data: dict) -> bool:
+    """Return True for real deck cards, false for art-card style extras."""
+    layout = (data.get("layout") or "").lower()
+    type_line = (data.get("type_line") or "").lower()
+    if layout == "art_series":
+        return False
+    if type_line in {"card", "card // card"}:
+        return False
+    return True
+
+
+def _face_match_priority(item: Tuple[str, dict]) -> tuple:
+    """Prefer playable, Commander-legal printings when face names collide."""
+    name, data = item
+    legalities = data.get("legalities") or {}
+    commander_status = legalities.get("commander")
+    return (
+        0 if _is_playable_printing(data) else 1,
+        0 if commander_status == "legal" else 1,
+        name,
+    )
+
+
+def _resolve_card_face_name(name: str, card_db: dict) -> Optional[str]:
+    """Resolve an exact card-face name to its full Scryfall card name."""
+    name_lower = name.lower()
+    matches: List[Tuple[str, dict]] = []
+
+    for db_name, data in card_db.items():
+        for face in data.get("card_faces") or []:
+            face_name = face.get("name")
+            if face_name and face_name.lower() == name_lower:
+                matches.append((db_name, data))
+                break
+
+    if not matches:
+        return None
+
+    matches.sort(key=_face_match_priority)
+    return matches[0][0]
+
+
+def _commander_name_parts(commander: Optional[str], commanders: Optional[List[str]]) -> List[str]:
+    """Return raw commander names from parsed data."""
+    if commanders:
+        return [str(name).strip() for name in commanders if str(name).strip()]
+    if commander:
+        return [str(commander).strip()]
+    return []
+
+
+def _normalize_commander_names(
+    commander: Optional[str],
+    commanders: Optional[List[str]],
+    card_db: dict,
+) -> List[str]:
+    """Distinguish partner commanders from double-faced card names."""
+    names = _commander_name_parts(commander, commanders)
+    if not names:
+        return []
+
+    if len(names) == 1:
+        exact = _exact_card_name(names[0], card_db)
+        if exact:
+            return [exact]
+        if " // " in names[0]:
+            names = [part.strip() for part in names[0].split(" // ") if part.strip()]
+
+    normalized: List[str] = []
+    i = 0
+    while i < len(names):
+        matched_name: Optional[str] = None
+        matched_end = i + 1
+
+        # Longest adjacent "A // B" exact card name wins over partner splitting.
+        for end in range(len(names), i + 1, -1):
+            candidate = " // ".join(names[i:end])
+            exact = _exact_card_name(candidate, card_db)
+            if exact:
+                matched_name = exact
+                matched_end = end
+                break
+
+        if matched_name:
+            normalized.append(matched_name)
+            i = matched_end
+        else:
+            normalized.append(names[i])
+            i += 1
+
+    return normalized
+
+
 def _resolve_card_name(name: str, card_db: dict) -> Tuple[Optional[str], Optional[str]]:
     """Try to find a card in the database, with fuzzy matching.
 
     Returns (resolved_name, warning_or_none).
     If not found at all, returns (None, error_message).
     """
-    # Exact match
-    if name in card_db:
-        return name, None
+    exact = _exact_card_name(name, card_db)
+    if exact:
+        return exact, None
 
-    # Try common character substitutions
-    for old, new in _NAME_SUBS:
-        alt = name.replace(old, new)
-        if alt in card_db:
-            return alt, None
-
-    # Case-insensitive match
-    name_lower = name.lower()
-    for db_name in card_db:
-        if db_name.lower() == name_lower:
-            return db_name, None
+    face_match = _resolve_card_face_name(name, card_db)
+    if face_match:
+        return face_match, None
 
     # Fuzzy match using difflib (close matches from all card names)
     matches = get_close_matches(name, card_db.keys(), n=1, cutoff=0.85)
@@ -59,7 +165,7 @@ def _resolve_card_name(name: str, card_db: dict) -> Tuple[Optional[str], Optiona
     return None, f"Card '{name}' not found in card database"
 
 
-def parse_decklist(text: str) -> dict:
+def parse_decklist(text: str, singleton: bool = True) -> dict:
     """Parse a pasted decklist text into structured data.
 
     Supported formats:
@@ -72,7 +178,7 @@ def parse_decklist(text: str) -> dict:
     - Sideboard section (after a line containing "Sideboard" or after a double blank
       line) collects cards into the sideboard list
     - ``Companion``, ``Considering``, ``Maybeboard`` sections are skipped
-    - Quantity > 1 is allowed only for basic lands
+    - For singleton formats, quantity > 1 is allowed only for basic lands
 
     Returns a dict with keys: commander, cards, lands, sideboard, total, errors.
     """
@@ -180,8 +286,8 @@ def parse_decklist(text: str) -> dict:
         # Check for basic land
         is_basic = name in BASIC_LAND_NAMES
 
-        # Duplicate check for non-basics
-        if not is_basic:
+        # Duplicate check for singleton formats
+        if singleton and not is_basic:
             if qty > 1:
                 errors.append(
                     f"Non-basic card '{name}' has quantity {qty} (only 1 allowed)"
@@ -200,7 +306,8 @@ def parse_decklist(text: str) -> dict:
             for _ in range(qty):
                 lands.append(name)
         else:
-            cards.append(name)
+            for _ in range(qty):
+                cards.append(name)
 
     # Finalize commander — join partners with " // "
     if commander_names:
@@ -216,6 +323,100 @@ def parse_decklist(text: str) -> dict:
         "sideboard": sideboard,
         "total": total,
         "errors": errors,
+    }
+
+
+def validate_constructed_deck(parsed: dict, card_db: dict, format_name: str = "standard") -> dict:
+    """Validate a parsed deck against basic Constructed rules for a format.
+
+    Currently used for Standard tournament deck registration:
+    - Main deck minimum 60 cards
+    - Sideboard maximum 15 cards
+    - Up to four copies of a non-basic card across main + sideboard
+    - Cards must be legal in the requested format according to Scryfall legalities
+    """
+    errors: List[str] = list(parsed.get("errors", []))
+    warnings: List[str] = []
+    format_key = format_name.lower()
+
+    parsed["commander"] = None
+    parsed["commanders"] = []
+
+    def resolve_names(names: List[str], zone_name: str) -> List[str]:
+        resolved_names: List[str] = []
+        for name in names:
+            if name in BASIC_LAND_NAMES:
+                resolved_names.append(name)
+                continue
+            resolved, warning = _resolve_card_name(name, card_db)
+            if resolved:
+                if warning:
+                    warnings.append(warning)
+                resolved_names.append(resolved)
+            else:
+                errors.append(warning or f"Card '{name}' not found in {zone_name}")
+                resolved_names.append(name)
+        return resolved_names
+
+    cards = resolve_names(parsed.get("cards", []), "main deck")
+    lands = resolve_names(parsed.get("lands", []), "main deck")
+    sideboard = resolve_names(parsed.get("sideboard", []), "sideboard")
+
+    reclassified_cards: List[str] = []
+    for name in cards:
+        data = card_db.get(name)
+        if data and "land" in (data.get("type_line") or "").lower():
+            lands.append(name)
+        else:
+            reclassified_cards.append(name)
+
+    parsed["cards"] = reclassified_cards
+    parsed["lands"] = lands
+    parsed["sideboard"] = sideboard
+
+    main_total = len(reclassified_cards) + len(lands)
+    parsed["total"] = main_total
+
+    if main_total < 60:
+        errors.append(f"Deck has only {main_total} main-deck cards (minimum is 60)")
+    if len(sideboard) > 15:
+        errors.append(f"Sideboard has {len(sideboard)} cards (maximum is 15)")
+
+    all_registered = reclassified_cards + lands + sideboard
+    counts: Dict[str, int] = {}
+    for name in all_registered:
+        if name in BASIC_LAND_NAMES:
+            continue
+        counts[name] = counts.get(name, 0) + 1
+
+        data = card_db.get(name)
+        if not data:
+            continue
+        if not _is_playable_printing(data):
+            errors.append(f"Card '{name}' is not an authorized deck card")
+        legalities = data.get("legalities") or {}
+        if legalities.get(format_key) != "legal":
+            errors.append(f"Card '{name}' is not legal in {format_name.title()}")
+
+    for name, count in counts.items():
+        if count > 4:
+            errors.append(f"Card '{name}' has {count} copies across main deck and sideboard (maximum is 4)")
+
+    color_identity: List[str] = []
+    for name in all_registered:
+        data = card_db.get(name)
+        if not data:
+            continue
+        for color in data.get("color_identity") or []:
+            if color not in color_identity:
+                color_identity.append(color)
+
+    return {
+        "valid": len(errors) == 0,
+        "errors": errors,
+        "warnings": warnings,
+        "missing_slots": max(0, 60 - main_total),
+        "color_identity": color_identity,
     }
 
 
@@ -294,8 +495,11 @@ def validate_deck(parsed: dict, card_db: dict) -> dict:
     # ── Commander checks ──────────────────────────────────────────────
     color_identity: List[str] = []
 
-    # Support partner commanders stored as "Name A // Name B"
-    commander_names: List[str] = parsed.get("commanders") or (commander.split(" // ") if commander else [])
+    commander_names = _normalize_commander_names(
+        commander,
+        parsed.get("commanders"),
+        card_db,
+    )
 
     if not commander_names:
         errors.append("No commander specified")
@@ -453,8 +657,14 @@ def fill_missing_slots(parsed: dict, card_db: dict, bracket: int = 3) -> dict:
         parsed["filled_cards"] = []
         return parsed
 
-    # Support partner commanders — look up each individually
-    commander_names = parsed.get("commanders") or commander.split(" // ")
+    # Support partner commanders while preserving exact double-faced names.
+    commander_names = _normalize_commander_names(
+        commander,
+        parsed.get("commanders"),
+        card_db,
+    )
+    parsed["commander"] = " // ".join(commander_names)
+    parsed["commanders"] = commander_names
     commander_colors: Set[str] = set()
     oracle_parts: List[str] = []
     found_any = False

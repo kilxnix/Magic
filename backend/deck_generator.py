@@ -39,6 +39,32 @@ from backend.rules import (
     PRICE_TIERS,
 )
 
+CONSTRUCTED_BASIC_LANDS = {"Plains", "Island", "Swamp", "Mountain", "Forest", "Wastes"}
+
+STANDARD_ARCHETYPE_QUERIES = {
+    "aggro": "cheap aggressive creatures haste burn combat damage",
+    "midrange": "efficient creatures removal card advantage value",
+    "control": "counter target spell destroy exile sweeper draw cards",
+    "tempo": "cheap threats counterspell bounce flash draw",
+    "ramp": "search your library land add mana big creature",
+    "tokens": "create tokens anthem go wide creature tokens",
+    "graveyard": "graveyard return reanimate sacrifice dies",
+    "artifacts": "artifact synergy create artifact tokens sacrifice artifact",
+    "spells": "instant sorcery cast noncreature spell draw damage",
+}
+
+STANDARD_ARCHETYPE_PROFILES = {
+    "aggro": {"lands": 22, "creatures": 24, "interaction": 10, "value": 2},
+    "tempo": {"lands": 23, "creatures": 18, "interaction": 14, "value": 5},
+    "control": {"lands": 26, "creatures": 8, "interaction": 18, "value": 8},
+    "ramp": {"lands": 26, "creatures": 16, "interaction": 8, "value": 10},
+    "tokens": {"lands": 24, "creatures": 20, "interaction": 8, "value": 8},
+    "graveyard": {"lands": 24, "creatures": 20, "interaction": 8, "value": 8},
+    "artifacts": {"lands": 24, "creatures": 16, "interaction": 8, "value": 12},
+    "spells": {"lands": 23, "creatures": 10, "interaction": 16, "value": 11},
+    "midrange": {"lands": 24, "creatures": 20, "interaction": 10, "value": 6},
+}
+
 # CMC distribution targets for a balanced mana curve
 MANA_CURVE_TARGETS = {
     0: 0.02,   # 0 CMC: ~2% of nonland cards
@@ -69,6 +95,8 @@ class DeckGenerator:
         self.cards: List[Dict] = []
         self.card_by_name: Dict[str, Dict] = {}
         self.card_ids: List[str] = []
+        self._model_fit_cache: Dict[str, float] = {}
+        self._model_scoring_unavailable = False
         self._loaded = False
 
     def load(self) -> None:
@@ -146,18 +174,40 @@ class DeckGenerator:
         return commanders
 
     def find_commander(self, name: str) -> Optional[Dict]:
-        """Find a commander by name (case-insensitive partial match)."""
+        """Find a commander by name (case-insensitive partial match).
+
+        For partner commanders joined with ' // ', looks up each partner
+        individually and returns the first match.
+        """
         if not self._loaded:
             self.load()
 
-        name_lower = name.lower()
-        for card in self.cards:
-            if name_lower in (card.get('name') or '').lower():
-                type_line = (card.get('type_line') or '').lower()
-                oracle_text = (card.get('oracle_text') or '').lower()
-                if 'legendary' in type_line and ('creature' in type_line or 'can be your commander' in oracle_text):
-                    return card
+        names = [n.strip() for n in name.split(" // ")] if " // " in name else [name]
+        for part in names:
+            part_lower = part.lower()
+            for card in self.cards:
+                if part_lower in (card.get('name') or '').lower():
+                    type_line = (card.get('type_line') or '').lower()
+                    oracle_text = (card.get('oracle_text') or '').lower()
+                    if 'legendary' in type_line and ('creature' in type_line or 'can be your commander' in oracle_text):
+                        return card
         return None
+
+    def find_partner_commanders(self, name: str) -> list[Dict]:
+        """Find all partner commanders from a ' // '-joined name string.
+
+        Returns a list of card dicts (1 for solo commander, 2 for partners).
+        """
+        if not self._loaded:
+            self.load()
+
+        names = [n.strip() for n in name.split(" // ")] if " // " in name else [name]
+        results = []
+        for part in names:
+            card = self.find_commander(part)
+            if card:
+                results.append(card)
+        return results
 
     def _get_card_price(self, card: Dict) -> float:
         """Get USD price for a card, defaulting to 0."""
@@ -187,6 +237,118 @@ class DeckGenerator:
             if card_identity.issubset(commander_set):
                 valid.append(card)
         return valid
+
+    def _is_commander_legal(self, card: Dict) -> bool:
+        legalities = card.get('legalities') or {}
+        return legalities.get('commander') == 'legal' and self._is_constructed_playable(card)
+
+    def _card_text(self, card: Dict) -> str:
+        parts = [
+            card.get('name') or '',
+            card.get('mana_cost') or '',
+            card.get('type_line') or '',
+            card.get('oracle_text') or '',
+            " ".join(card.get('keywords') or []),
+        ]
+        return "\n".join(part for part in parts if part)
+
+    def _theme_query_expansions(self, theme: str) -> List[str]:
+        """Turn user theme words into stronger search phrases."""
+        text = (theme or "").lower()
+        expansions = []
+        theme_map = {
+            "landfall": "landfall land enters battlefield play additional lands search library land",
+            "lands": "lands matter landfall play additional lands land recursion",
+            "graveyard": "graveyard recursion reanimate self mill sacrifice dies escape flashback",
+            "reanimator": "graveyard reanimate return creature card from graveyard",
+            "exile": "exile cards cast from exile impulse draw blink exile target",
+            "blink": "exile return battlefield enters the battlefield flicker blink",
+            "tokens": "create token populate go wide anthem creature tokens",
+            "token": "create token populate go wide anthem creature tokens",
+            "sacrifice": "sacrifice aristocrats dies death triggers blood artist",
+            "aristocrats": "sacrifice creature dies each opponent loses life death triggers",
+            "artifacts": "artifact synergy mana rock treasure sacrifice artifact affinity",
+            "artifact": "artifact synergy mana rock treasure sacrifice artifact affinity",
+            "enchantments": "enchantment aura constellation enchantress",
+            "enchantment": "enchantment aura constellation enchantress",
+            "lifegain": "gain life whenever you gain life lifelink life total",
+            "life gain": "gain life whenever you gain life lifelink life total",
+            "counters": "+1/+1 counters proliferate counter synergy",
+            "+1/+1": "+1/+1 counters proliferate counter synergy",
+            "spellslinger": "instant sorcery cast noncreature spell magecraft storm",
+            "spells": "instant sorcery cast noncreature spell magecraft storm",
+            "draw": "draw cards whenever you draw card advantage",
+            "discard": "discard madness reanimator draw discard",
+            "mill": "mill cards graveyard self mill opponent mills",
+            "voltron": "equipment aura commander damage protection double strike",
+            "dragons": "dragon tribal flying big creatures treasure",
+            "zombies": "zombie tribal graveyard sacrifice death triggers",
+            "goblins": "goblin tribal tokens sacrifice haste",
+            "elves": "elf tribal mana dork +1/+1 counters",
+        }
+        for key, query in theme_map.items():
+            if key in text:
+                expansions.append(query)
+        if theme:
+            expansions.insert(0, theme)
+        return list(dict.fromkeys(expansions))[:6]
+
+    def _score_theme_rule_fit(self, card: Dict, theme: str) -> float:
+        """Fast text/tag score for explicit theme terms."""
+        if not theme:
+            return 0.0
+        haystack = " ".join([
+            (card.get('name') or '').lower(),
+            (card.get('type_line') or '').lower(),
+            (card.get('oracle_text') or '').lower(),
+            " ".join(card.get('keywords') or []).lower(),
+        ])
+        score = 0.0
+        for query in self._theme_query_expansions(theme):
+            terms = [t for t in query.lower().replace("+1/+1", "counter").split() if len(t) >= 4]
+            if not terms:
+                continue
+            hits = sum(1 for term in set(terms) if term in haystack)
+            score += min(1.0, hits / max(3, len(set(terms)))) * 0.8
+        return min(score, 2.5)
+
+    def _build_theme_queries(self, theme: str, commander: Optional[Dict] = None) -> List[str]:
+        queries = self._theme_query_expansions(theme)
+        if commander:
+            queries.extend(self._extract_synergy_keywords(commander))
+        return list(dict.fromkeys(q for q in queries if q))[:8]
+
+    def _score_model_fit(self, card: Dict, model_context: Optional[Dict]) -> Optional[float]:
+        """Use the trained local scorer for top candidate reranking when enabled."""
+        if not model_context or self._model_scoring_unavailable:
+            return None
+        name = card.get('name') or ''
+        if not name:
+            return None
+        cache_key = "|".join([
+            model_context.get('source_card', ''),
+            model_context.get('theme', ''),
+            "".join(model_context.get('colors', []) or []),
+            name,
+        ]).lower()
+        if cache_key in self._model_fit_cache:
+            return self._model_fit_cache[cache_key]
+        try:
+            from backend.model_scorers import get_qwen35_scorer
+            scorer = get_qwen35_scorer()
+            score = scorer.score_similarity(
+                source_card=model_context.get('source_card', 'Theme'),
+                candidate_card=name,
+                source_text=model_context.get('source_text', ''),
+                candidate_text=self._card_text(card),
+                commander_name=model_context.get('commander_name', ''),
+                commander_colors="".join(model_context.get('colors', []) or []),
+            )
+            self._model_fit_cache[cache_key] = score
+            return score
+        except Exception:
+            self._model_scoring_unavailable = True
+            return None
 
     def _filter_by_bracket(
         self,
@@ -315,6 +477,8 @@ class DeckGenerator:
         category: str,
         colors: List[str],
         search_score: float = 0.0,
+        theme_score: float = 0.0,
+        model_score: Optional[float] = None,
         current_curve: Dict[int, int] = None,
         target_curve: Dict[int, float] = None,
         total_nonlands: int = 65
@@ -334,6 +498,9 @@ class DeckGenerator:
         # Base score from semantic search (0-1 range typically)
         # Boost synergy weight: 50% influence (was 30%)
         score += search_score * 3.5
+        score += theme_score * 2.0
+        if model_score is not None:
+            score += model_score * 3.0
 
         # Staple bonus: +3 for known staples
         # Reduced staple bonus (was +3.0) to let synergy dominate
@@ -451,7 +618,9 @@ class DeckGenerator:
         deck: Dict[str, int],
         current_curve: Dict[int, int],
         budget_tier: Optional[str] = None,
-        randomness: float = 0.15
+        randomness: float = 0.15,
+        theme: str = "",
+        model_context: Optional[Dict] = None,
     ) -> List[Dict]:
         """
         Select the best cards from candidates using scoring with controlled randomness.
@@ -492,15 +661,33 @@ class DeckGenerator:
 
             # Calculate score
             search_score = card.get('score', 0.5)
+            theme_score = self._score_theme_rule_fit(card, theme)
             score = self._score_card(
-                card, category, colors, search_score,
-                current_curve, MANA_CURVE_TARGETS, 65
+                card,
+                category,
+                colors,
+                search_score=search_score,
+                theme_score=theme_score,
+                current_curve=current_curve,
+                target_curve=MANA_CURVE_TARGETS,
+                total_nonlands=65,
             ) + budget_penalty
 
             scored.append((score, card))
 
         # Sort by score descending
         scored.sort(key=lambda x: x[0], reverse=True)
+
+        if model_context and count > 0 and scored:
+            rerank_limit = min(len(scored), max(24, count * 4))
+            reranked = []
+            for score, card in scored[:rerank_limit]:
+                model_score = self._score_model_fit(card, model_context)
+                if model_score is not None:
+                    score += model_score * 3.0
+                    card['model_fit_score'] = model_score
+                reranked.append((score, card))
+            scored = sorted(reranked + scored[rerank_limit:], key=lambda x: x[0], reverse=True)
 
         # Apply controlled randomness: take top 3x candidates, shuffle within score tiers
         if randomness > 0 and len(scored) > count:
@@ -517,12 +704,419 @@ class DeckGenerator:
 
         return [card for _, card in scored[:count]]
 
+    def _is_constructed_playable(self, card: Dict) -> bool:
+        """Return True for real cards that can be registered in a constructed deck."""
+        layout = (card.get("layout") or "").lower()
+        type_line = (card.get("type_line") or "").lower()
+        if self._is_token_card(card):
+            return False
+        if layout == "art_series":
+            return False
+        if type_line in {"card", "card // card"}:
+            return False
+        return True
+
+    def _is_standard_legal(self, card: Dict) -> bool:
+        legalities = card.get("legalities") or {}
+        return legalities.get("standard") == "legal" and self._is_constructed_playable(card)
+
+    def _standard_card_pool(self, colors: List[str], budget_tier: Optional[str]) -> List[Dict]:
+        color_set = set(colors)
+        pool = []
+        for card in self.cards:
+            if not self._is_standard_legal(card):
+                continue
+            identity = set(card.get("color_identity") or [])
+            if not identity.issubset(color_set):
+                continue
+            if budget_tier:
+                _, high = PRICE_TIERS.get(budget_tier, (0, float("inf")))
+                if self._get_card_price(card) > high * 2:
+                    continue
+            pool.append(card)
+        return pool
+
+    def _is_constructed_interaction(self, card: Dict) -> bool:
+        oracle = (card.get("oracle_text") or "").lower()
+        interaction_terms = [
+            "destroy target", "exile target", "counter target", "deals damage to",
+            "gets -", "sacrifice a creature", "return target", "destroy all",
+            "exile all", "can't be blocked", "prevent",
+        ]
+        return any(term in oracle for term in interaction_terms)
+
+    def _is_constructed_value(self, card: Dict) -> bool:
+        oracle = (card.get("oracle_text") or "").lower()
+        value_terms = [
+            "draw a card", "draw two", "look at the top", "surveil", "scry",
+            "return target card", "create a token", "whenever", "at the beginning",
+            "search your library", "add one mana", "add {",
+        ]
+        return any(term in oracle for term in value_terms)
+
+    def _is_sideboard_card(self, card: Dict) -> bool:
+        oracle = (card.get("oracle_text") or "").lower()
+        sideboard_terms = [
+            "destroy target artifact", "destroy target enchantment", "exile target graveyard",
+            "graveyard", "counter target", "can't be countered", "gain life",
+            "damage to each", "destroy all creatures", "exile all creatures",
+            "hexproof", "protection from",
+        ]
+        return any(term in oracle for term in sideboard_terms)
+
+    def _score_standard_sideboard_card(self, card: Dict, query_scores: Dict[str, float]) -> float:
+        """Score cards by how useful they are as post-board answers."""
+        name = card.get("name") or ""
+        oracle = (card.get("oracle_text") or "").lower()
+        type_line = (card.get("type_line") or "").lower()
+        cmc = self._get_cmc(card)
+        score = query_scores.get(name, 0.0) * 0.5
+
+        if "destroy target artifact" in oracle or "destroy target enchantment" in oracle:
+            score += 3.0
+        if "exile target card from a graveyard" in oracle or "exile each opponent's graveyard" in oracle:
+            score += 3.0
+        elif "graveyard" in oracle and any(term in oracle for term in ["exile", "shuffle", "bottom"]):
+            score += 2.0
+        if "counter target" in oracle:
+            score += 2.6
+        if any(term in oracle for term in ["destroy all creatures", "exile all creatures", "damage to each creature"]):
+            score += 2.4
+        if "can't be countered" in oracle:
+            score += 1.4
+        if "gain life" in oracle or "players can't gain life" in oracle:
+            score += 1.2
+        if any(term in oracle for term in ["deals damage to target creature", "deals 6 damage to target creature", "gets -"]):
+            score += 1.1
+        if "instant" in type_line:
+            score += 0.4
+        if cmc <= 3:
+            score += 0.4
+        elif cmc >= 6:
+            score -= 0.6
+        return score
+
+    def _standard_archetype_key(self, archetype: str, theme: str) -> str:
+        text = f"{archetype} {theme}".lower()
+        for key in STANDARD_ARCHETYPE_PROFILES:
+            if key in text:
+                return key
+        return "midrange"
+
+    def _standard_search_scores(self, query: str, pool: List[Dict]) -> Dict[str, float]:
+        if not query.strip():
+            return {}
+        allowed = {card.get("name") for card in pool}
+        scores: Dict[str, float] = {}
+        for result in self.search_cards(query, k=120):
+            name = result.get("name")
+            if name in allowed:
+                scores[name] = max(scores.get(name, 0.0), float(result.get("score") or 0.0))
+        return scores
+
+    def _score_standard_card(
+        self,
+        card: Dict,
+        archetype_key: str,
+        query_scores: Dict[str, float],
+        current_curve: Dict[int, int],
+        theme: str = "",
+    ) -> float:
+        name = card.get("name") or ""
+        oracle = (card.get("oracle_text") or "").lower()
+        type_line = (card.get("type_line") or "").lower()
+        cmc = self._get_cmc(card)
+        score = query_scores.get(name, 0.0) * 4.0
+        score += self._score_theme_rule_fit(card, theme) * 1.8
+
+        # Standard decks care a lot about early plays.
+        if cmc <= 2:
+            score += 1.0
+        elif cmc == 3:
+            score += 0.5
+        elif cmc >= 6:
+            score -= 0.8
+
+        if archetype_key == "aggro":
+            if "creature" in type_line:
+                score += 1.5
+            if any(term in oracle for term in ["haste", "can't block", "damage to any target", "combat damage"]):
+                score += 1.2
+            if cmc > 4:
+                score -= 1.0
+        elif archetype_key == "control":
+            if self._is_constructed_interaction(card):
+                score += 1.6
+            if any(term in oracle for term in ["draw", "counter target", "destroy all", "exile all"]):
+                score += 1.2
+        elif archetype_key == "ramp":
+            if any(term in oracle for term in ["search your library for a basic land", "add one mana", "add {"]):
+                score += 1.5
+            if "creature" in type_line and cmc >= 5:
+                score += 1.0
+        elif archetype_key == "tokens":
+            if "create" in oracle and "token" in oracle:
+                score += 1.8
+            if any(term in oracle for term in ["creatures you control get", "+1/+1"]):
+                score += 1.0
+        elif archetype_key == "graveyard":
+            if "graveyard" in oracle or "dies" in oracle or "sacrifice" in oracle:
+                score += 1.6
+        elif archetype_key == "artifacts":
+            if "artifact" in type_line or "artifact" in oracle:
+                score += 1.7
+        elif archetype_key == "spells":
+            if "instant" in type_line or "sorcery" in type_line or "noncreature" in oracle:
+                score += 1.5
+
+        target_for_cmc = {0: 0, 1: 8, 2: 12, 3: 9, 4: 5, 5: 3, 6: 2, 7: 1}
+        if current_curve.get(cmc, 0) < target_for_cmc.get(cmc, 1):
+            score += 0.6
+
+        price = self._get_card_price(card)
+        if price < 1:
+            score += 0.2
+        elif price > 30:
+            score -= 0.2
+
+        return score
+
+    def _add_standard_card(
+        self,
+        deck: Dict[str, int],
+        card: Dict,
+        qty: int,
+        current_curve: Dict[int, int],
+    ) -> int:
+        name = card.get("name")
+        if not name:
+            return 0
+        max_copies = 99 if name in CONSTRUCTED_BASIC_LANDS else 4
+        current = deck.get(name, 0)
+        add = max(0, min(qty, max_copies - current))
+        if add <= 0:
+            return 0
+        deck[name] = current + add
+        if not self._is_land(card):
+            cmc = self._get_cmc(card)
+            current_curve[cmc] = current_curve.get(cmc, 0) + add
+        return add
+
+    def generate_standard_deck(
+        self,
+        colors: Optional[List[str]] = None,
+        archetype: str = "midrange",
+        theme: str = "",
+        budget_tier: Optional[str] = None,
+        use_model_scoring: bool = False,
+    ) -> Dict:
+        """Generate a Standard-legal 60-card deck with a 15-card sideboard."""
+        if not self._loaded:
+            self.load()
+
+        colors = [c for c in (colors or ["R"]) if c in BASIC_LANDS]
+        if not colors:
+            colors = ["R"]
+
+        archetype_key = self._standard_archetype_key(archetype, theme)
+        profile = STANDARD_ARCHETYPE_PROFILES[archetype_key]
+        pool = self._standard_card_pool(colors, budget_tier)
+        if not pool:
+            return {"error": "No Standard-legal cards found for those colors"}
+
+        theme_queries = self._build_theme_queries(theme or archetype_key)
+        query = " ".join([
+            STANDARD_ARCHETYPE_QUERIES.get(archetype_key, archetype_key),
+            theme,
+            " ".join(theme_queries),
+            " ".join(colors),
+        ]).strip()
+        query_scores = self._standard_search_scores(query, pool)
+
+        nonlands = [card for card in pool if not self._is_land(card)]
+        creatures = [card for card in nonlands if "creature" in (card.get("type_line") or "").lower()]
+        interaction = [card for card in nonlands if self._is_constructed_interaction(card)]
+        value = [card for card in nonlands if self._is_constructed_value(card)]
+
+        current_curve: Dict[int, int] = {i: 0 for i in range(8)}
+        main: Dict[str, int] = {}
+        model_context = None
+        if use_model_scoring:
+            model_context = {
+                "source_card": f"Standard {archetype_key.title()} deck",
+                "source_text": query,
+                "theme": theme or archetype_key,
+                "colors": colors,
+                "commander_name": "",
+            }
+
+        def ranked(candidates: List[Dict]) -> List[Dict]:
+            seen = {}
+            for card in candidates:
+                seen[card.get("name")] = card
+            scored = sorted(
+                (
+                    (self._score_standard_card(card, archetype_key, query_scores, current_curve, theme or archetype_key), card)
+                    for card in seen.values()
+                ),
+                key=lambda item: item[0],
+                reverse=True,
+            )
+            if model_context and scored:
+                rerank_limit = min(len(scored), 36)
+                reranked = []
+                for score, card in scored[:rerank_limit]:
+                    model_score = self._score_model_fit(card, model_context)
+                    if model_score is not None:
+                        score += model_score * 3.0
+                        card["model_fit_score"] = model_score
+                    reranked.append((score, card))
+                scored = sorted(reranked + scored[rerank_limit:], key=lambda item: item[0], reverse=True)
+            return [card for _, card in scored]
+
+        def fill_from(candidates: List[Dict], target_cards: int, preferred_qty: int) -> None:
+            added = 0
+            for card in ranked(candidates):
+                remaining_slots = (60 - profile["lands"]) - sum(main.values())
+                remaining_target = target_cards - added
+                if remaining_slots <= 0 or remaining_target <= 0:
+                    break
+                qty = min(preferred_qty, remaining_slots, remaining_target)
+                if self._get_cmc(card) >= 5:
+                    qty = min(qty, 2)
+                added += self._add_standard_card(main, card, qty, current_curve)
+
+        fill_from(creatures, profile["creatures"], 4 if archetype_key in {"aggro", "tempo"} else 3)
+        fill_from(interaction, profile["interaction"], 3)
+        fill_from(value, profile["value"], 2)
+
+        # Fill any remaining nonland slots with the best overall cards.
+        nonland_target = 60 - profile["lands"]
+        for card in ranked(nonlands):
+            if sum(main.values()) >= nonland_target:
+                break
+            self._add_standard_card(main, card, min(2, nonland_target - sum(main.values())), current_curve)
+
+        # Add lands. Prefer useful non-basics, then basics.
+        lands_to_add = profile["lands"]
+        nonbasic_lands = [
+            card for card in pool
+            if self._is_land(card)
+            and card.get("name") not in CONSTRUCTED_BASIC_LANDS
+            and is_land_useful_for_colors(card.get("name", ""), card.get("oracle_text", ""), colors)
+        ]
+        for land in ranked(nonbasic_lands):
+            if lands_to_add <= max(12, len(colors) * 4):
+                break
+            lands_to_add -= self._add_standard_card(main, land, 2, current_curve)
+
+        if colors:
+            basics_per_color = lands_to_add // len(colors)
+            remainder = lands_to_add % len(colors)
+            for i, color in enumerate(colors):
+                basic = BASIC_LANDS.get(color, "Wastes")
+                count = basics_per_color + (1 if i < remainder else 0)
+                if count > 0:
+                    main[basic] = main.get(basic, 0) + count
+
+        # Sideboard: targeted interaction and resilient/value cards.
+        sideboard: Dict[str, int] = {}
+        combined_counts = dict(main)
+        sideboard_seen = {}
+        for card in nonlands:
+            if self._is_sideboard_card(card):
+                sideboard_seen[card.get("name")] = card
+        sideboard_candidates = sorted(
+            sideboard_seen.values(),
+            key=lambda card: self._score_standard_sideboard_card(card, query_scores),
+            reverse=True,
+        )
+        for card in sideboard_candidates:
+            if sum(sideboard.values()) >= 15:
+                break
+            name = card.get("name")
+            if not name:
+                continue
+            max_add = 4 - combined_counts.get(name, 0)
+            if max_add <= 0:
+                continue
+            qty = min(2, max_add, 15 - sum(sideboard.values()))
+            sideboard[name] = sideboard.get(name, 0) + qty
+            combined_counts[name] = combined_counts.get(name, 0) + qty
+
+        # If sideboard is short, add best legal cards that fit the combined copy rule.
+        for card in ranked(nonlands):
+            if sum(sideboard.values()) >= 15:
+                break
+            name = card.get("name")
+            if not name:
+                continue
+            max_add = 4 - combined_counts.get(name, 0)
+            if max_add <= 0:
+                continue
+            qty = min(1, max_add, 15 - sum(sideboard.values()))
+            sideboard[name] = sideboard.get(name, 0) + qty
+            combined_counts[name] = combined_counts.get(name, 0) + qty
+
+        type_categories = {
+            "Creatures": [],
+            "Instants": [],
+            "Sorceries": [],
+            "Artifacts": [],
+            "Enchantments": [],
+            "Planeswalkers": [],
+            "Lands": [],
+            "Other": [],
+            "Sideboard": [],
+        }
+
+        def line(name: str, qty: int) -> str:
+            return f"{qty}x {name}"
+
+        for name, qty in sorted(main.items()):
+            card = self.card_by_name.get(name)
+            if card:
+                category = self._get_type_category(card)
+                type_categories[category].append(line(name, qty))
+        for name, qty in sorted(sideboard.items()):
+            type_categories["Sideboard"].append(line(name, qty))
+
+        main_list = [line(name, qty) for name, qty in sorted(main.items())]
+        sideboard_list = [line(name, qty) for name, qty in sorted(sideboard.items())]
+        deck_list = [*main_list, "Sideboard", *sideboard_list]
+        all_counts = {**main, **sideboard}
+        total_price = sum(
+            self._get_card_price(self.card_by_name.get(name, {})) * qty
+            for name, qty in all_counts.items()
+        )
+        display_name = f"Standard {''.join(colors)} {archetype_key.title()}"
+
+        return {
+            "commander": display_name,
+            "colors": colors,
+            "bracket": 0,
+            "bracket_name": "Standard",
+            "theme": theme or archetype_key.title(),
+            "card_count": sum(main.values()),
+            "estimated_price": f"${total_price:.2f}",
+            "categories": type_categories,
+            "sideboard": sideboard_list,
+            "list": deck_list,
+            "legal_status": "Legal",
+            "archetype": archetype_key.title(),
+            "format": "standard",
+            "generation_method": "faiss+theme+model" if use_model_scoring and not self._model_scoring_unavailable else "faiss+theme",
+            "model_scoring": use_model_scoring and not self._model_scoring_unavailable,
+            "mana_curve": {str(k): v for k, v in current_curve.items()},
+        }
+
     def generate_deck(
         self,
         commander_name: str,
         bracket: int = 2,
         theme: str = "",
         budget_tier: Optional[str] = None,
+        use_model_scoring: bool = False,
     ) -> Dict:
         """
         Generate a Commander deck following Command Zone rules.
@@ -539,16 +1133,36 @@ class DeckGenerator:
         if not self._loaded:
             self.load()
 
-        # Find commander
-        commander = self.find_commander(commander_name)
-        if not commander:
-            return {"error": f"Commander not found: {commander_name}"}
+        # Find commander(s) — supports partner pairs like "Tymna // Dargo"
+        is_partners = " // " in commander_name
+        commanders = self.find_partner_commanders(commander_name) if is_partners else []
+        if is_partners and len(commanders) < 2:
+            commander = self.find_commander(commander_name)
+            if not commander:
+                return {"error": f"Commander not found: {commander_name}"}
+            commanders = [commander]
+            is_partners = False
+        elif not is_partners:
+            commander = self.find_commander(commander_name)
+            if not commander:
+                return {"error": f"Commander not found: {commander_name}"}
+            commanders = [commander]
 
-        commander_identity = commander.get('color_identity', []) or []
+        # Primary commander (used for synergy extraction etc.)
+        commander = commanders[0]
+        # Union color identity across all partners
+        commander_identity = list(dict.fromkeys(
+            c for cmd in commanders for c in (cmd.get('color_identity', []) or [])
+        ))
+        commander_names = [cmd.get('name') for cmd in commanders]
         bracket_info = get_bracket_restrictions(bracket)
 
         # Track counts for bracket restrictions
         counts = {'game_changers': 0, 'tutors': 0, 'extra_turns': 0}
+
+        # 100-card deck: commanders live in command zone, so non-commander target
+        # is 99 for solo or 98 for partners
+        non_cmdr_target = 100 - len(commanders)
 
         # Build the deck
         deck: Dict[str, int] = {}
@@ -580,10 +1194,12 @@ class DeckGenerator:
         # Get cards matching color identity
         valid_cards = self._filter_by_color_identity(self.cards, commander_identity)
 
-        # Remove banned cards and the commander itself (don't filter by bracket/budget yet - we'll score instead)
+        # Remove banned cards and the commander(s) (don't filter by bracket/budget yet - we'll score instead)
+        commander_name_set = set(commander_names)
         valid_cards = [c for c in valid_cards
                       if c.get('name') not in COMMANDER_BANNED_CARDS
-                      and c.get('name') != commander.get('name')]
+                      and c.get('name') not in commander_name_set
+                      and self._is_commander_legal(c)]
 
         # Categorize available cards
         # Filter lands to only include those useful for our color identity
@@ -673,9 +1289,19 @@ class DeckGenerator:
 
         # === STEP 2: Generate synergy queries from commander ===
 
-        synergy_queries = self._extract_synergy_keywords(commander)
-        if theme:
-            synergy_queries.insert(0, theme)
+        synergy_queries = self._build_theme_queries(theme, commander)
+        if not synergy_queries:
+            synergy_queries = self._extract_synergy_keywords(commander)
+        model_context = None
+        if use_model_scoring:
+            commander_text = "\n\n".join(self._card_text(cmd) for cmd in commanders)
+            model_context = {
+                "source_card": " // ".join(commander_names),
+                "source_text": f"{commander_text}\n\nTheme: {theme or 'General synergy'}",
+                "theme": theme or "General synergy",
+                "colors": commander_identity,
+                "commander_name": " // ".join(commander_names),
+            }
 
         # Gather all synergy cards from multiple queries
         all_synergy_cards: Dict[str, Dict] = {}
@@ -695,10 +1321,53 @@ class DeckGenerator:
         synergy_cards = self._filter_by_color_identity(synergy_cards, commander_identity)
         synergy_cards = [c for c in synergy_cards
                         if c.get('name') not in COMMANDER_BANNED_CARDS
-                        and c.get('name') != commander.get('name')
+                        and c.get('name') not in commander_name_set
+                        and self._is_commander_legal(c)
                         and not self._is_land(c)]
 
-        # === STEP 3: Fill remaining category slots with scored selection ===
+        # === STEP 3: Add a theme package before generic template fill ===
+
+        if theme:
+            theme_package = self._select_best_cards(
+                synergy_cards,
+                16,
+                'synergy',
+                commander_identity,
+                bracket,
+                counts,
+                deck,
+                current_curve,
+                budget_tier,
+                randomness=0.05,
+                theme=theme,
+                model_context=model_context,
+            )
+            for card in theme_package:
+                name = card.get('name')
+                if not name or name in deck:
+                    continue
+                if name in GAME_CHANGER_CARDS:
+                    counts['game_changers'] += 1
+                if name in TUTOR_CARDS:
+                    counts['tutors'] += 1
+                if name in EXTRA_TURN_SPELLS:
+                    counts['extra_turns'] += 1
+                deck[name] = 1
+                if self._is_ramp(card):
+                    func_categories['ramp'].append(name)
+                elif self._is_removal(card):
+                    func_categories['removal'].append(name)
+                elif self._is_card_draw(card):
+                    func_categories['card_draw'].append(name)
+                elif self._is_wincon(card):
+                    func_categories['wincons'].append(name)
+                else:
+                    func_categories['synergy'].append(name)
+                self._add_card_to_type_category(name, type_categories)
+                cmc = self._get_cmc(card)
+                current_curve[cmc] = current_curve.get(cmc, 0) + 1
+
+        # === STEP 4: Fill remaining category slots with scored selection ===
 
         # Fill remaining ramp slots
         ramp_needed = COMMAND_ZONE_TEMPLATE['ramp']['min'] - len(func_categories['ramp'])
@@ -708,7 +1377,9 @@ class DeckGenerator:
                 card['score'] = card.get('score', 0.5)
             best_ramp = self._select_best_cards(
                 ramp, ramp_needed, 'ramp', commander_identity,
-                bracket, counts, deck, current_curve, budget_tier
+                bracket, counts, deck, current_curve, budget_tier,
+                theme=theme,
+                model_context=model_context,
             )
             for card in best_ramp:
                 name = card.get('name')
@@ -725,7 +1396,9 @@ class DeckGenerator:
                 card['score'] = card.get('score', 0.5)
             best_removal = self._select_best_cards(
                 removal, removal_needed, 'removal', commander_identity,
-                bracket, counts, deck, current_curve, budget_tier
+                bracket, counts, deck, current_curve, budget_tier,
+                theme=theme,
+                model_context=model_context,
             )
             for card in best_removal:
                 name = card.get('name')
@@ -744,7 +1417,9 @@ class DeckGenerator:
                 card['score'] = card.get('score', 0.5)
             best_draw = self._select_best_cards(
                 draw, draw_needed, 'card_draw', commander_identity,
-                bracket, counts, deck, current_curve, budget_tier
+                bracket, counts, deck, current_curve, budget_tier,
+                theme=theme,
+                model_context=model_context,
             )
             for card in best_draw:
                 name = card.get('name')
@@ -760,7 +1435,9 @@ class DeckGenerator:
         target_wincons = COMMAND_ZONE_TEMPLATE['wincons']['min']
         best_wincons = self._select_best_cards(
             wincons, target_wincons, 'wincons', commander_identity,
-            bracket, counts, deck, current_curve, budget_tier
+            bracket, counts, deck, current_curve, budget_tier,
+            theme=theme,
+            model_context=model_context,
         )
         for card in best_wincons:
             name = card.get('name')
@@ -783,7 +1460,8 @@ class DeckGenerator:
             land['score'] = land.get('score', 0.5)
         best_lands = self._select_best_cards(
             non_basic_lands, num_nonbasics, 'lands', commander_identity,
-            bracket, counts, deck, {}, budget_tier
+            bracket, counts, deck, {}, budget_tier,
+            theme=theme,
         )
         for land in best_lands:
             name = land.get('name')
@@ -816,13 +1494,15 @@ class DeckGenerator:
         # === STEP 5: Fill remaining with synergy cards ===
 
         current_count = sum(deck.values())
-        remaining = 99 - current_count
+        remaining = non_cmdr_target - current_count
 
         # Select best synergy cards using scoring
         best_synergy = self._select_best_cards(
             synergy_cards, remaining + 10,  # Get extra in case some are filtered
             'synergy', commander_identity,
-            bracket, counts, deck, current_curve, budget_tier
+            bracket, counts, deck, current_curve, budget_tier,
+            theme=theme,
+            model_context=model_context,
         )
 
         for card in best_synergy:
@@ -843,10 +1523,10 @@ class DeckGenerator:
                 current_curve[cmc] = current_curve.get(cmc, 0) + 1
                 remaining -= 1
 
-        # If still not at 99, add more basics
+        # If still not at target, add more basics
         current_count = sum(deck.values())
-        if current_count < 99:
-            fill_count = 99 - current_count
+        if current_count < non_cmdr_target:
+            fill_count = non_cmdr_target - current_count
             if commander_identity:
                 basic = BASIC_LANDS.get(commander_identity[0], 'Wastes')
             else:
@@ -862,24 +1542,27 @@ class DeckGenerator:
         )
 
         # Build deck list
-        commander_name = commander.get('name')
-        deck_list = [f"1x {commander_name} *CMDR*"]
+        deck_list = [f"1x {cn} *CMDR*" for cn in commander_names]
         for name, qty in sorted(deck.items()):
             deck_list.append(f"{qty}x {name}")
 
-        # Add commander to type categories
-        type_categories['Commander'].append(commander_name)
+        # Add commander(s) to type categories
+        for cn in commander_names:
+            type_categories['Commander'].append(cn)
+
+        # Use " // "-joined name for partner commanders in the response
+        display_commander_name = " // ".join(commander_names)
 
         # Format mana curve for response (CMC 7 represents 7+)
         mana_curve = {str(k): v for k, v in current_curve.items()}
 
         return {
-            "commander": commander_name,
+            "commander": display_commander_name,
             "colors": commander_identity,
             "bracket": bracket,
             "bracket_name": bracket_info['name'],
             "theme": theme or "General synergy",
-            "card_count": sum(deck.values()) + 1,  # +1 for commander
+            "card_count": sum(deck.values()) + len(commanders),  # +N for commander(s)
             "estimated_price": f"${total_price:.2f}",
             "categories": type_categories,  # Now returns type-based categories
             "functional_categories": {k: len(v) for k, v in func_categories.items()},  # Optional: keep functional counts
@@ -888,6 +1571,8 @@ class DeckGenerator:
             "list": deck_list,
             "legal_status": "Legal",
             "archetype": theme or commander.get('type_line', ''),
+            "generation_method": "faiss+theme+model" if use_model_scoring and not self._model_scoring_unavailable else "faiss+theme",
+            "model_scoring": use_model_scoring and not self._model_scoring_unavailable,
         }
 
     def generate_deck_with_model(
@@ -921,12 +1606,24 @@ class DeckGenerator:
         if not self._loaded:
             self.load()
 
-        # ── Step 1: Find the commander ────────────────────────────────────────
-        commander = self.find_commander(commander_name)
-        if not commander:
-            return {"error": f"Commander not found: {commander_name}"}
-
-        commander_identity = commander.get('color_identity', []) or []
+        # ── Step 1: Find the commander(s) — supports partner pairs ───────────
+        is_partners = " // " in commander_name
+        commanders = self.find_partner_commanders(commander_name) if is_partners else []
+        if is_partners and len(commanders) < 2:
+            commander = self.find_commander(commander_name)
+            if not commander:
+                return {"error": f"Commander not found: {commander_name}"}
+            commanders = [commander]
+        elif not is_partners:
+            commander = self.find_commander(commander_name)
+            if not commander:
+                return {"error": f"Commander not found: {commander_name}"}
+            commanders = [commander]
+        commander = commanders[0]
+        commander_identity = list(dict.fromkeys(
+            c for cmd in commanders for c in (cmd.get('color_identity', []) or [])
+        ))
+        commander_names_model = [cmd.get('name') for cmd in commanders]
         bracket_info = get_bracket_restrictions(bracket)
 
         try:
@@ -970,6 +1667,9 @@ class DeckGenerator:
                 if card is None:
                     logger.debug(f"generate_deck_with_model: card not in database {name!r}")
                     return False
+                if not self._is_commander_legal(card):
+                    logger.debug(f"generate_deck_with_model: card not Commander legal {name!r}")
+                    return False
                 deck[name] = 1
                 self._add_card_to_type_category(name, type_categories)
                 if not self._is_land(card):
@@ -1004,7 +1704,7 @@ class DeckGenerator:
                     f"generate_deck_with_model: {len(deck)} cards from model, "
                     f"backfilling {remaining} slots via FAISS."
                 )
-                synergy_queries = self._extract_synergy_keywords(commander)
+                synergy_queries = self._build_theme_queries(theme, commander)
                 backfill_candidates: Dict[str, Dict] = {}
                 for query in synergy_queries:
                     for card in self.search_cards(query, k=60):
@@ -1020,7 +1720,7 @@ class DeckGenerator:
                     if remaining <= 0:
                         break
                     name = card.get('name')
-                    if name and name != commander.get('name') and name not in deck:
+                    if name and name not in set(commander_names_model) and name not in deck:
                         if _add_card(name):
                             remaining -= 1
 
@@ -1041,21 +1741,22 @@ class DeckGenerator:
                 for name, qty in deck.items()
             )
 
-            actual_commander_name = commander.get('name')
-            deck_list = [f"1x {actual_commander_name} *CMDR*"]
+            display_cmdr = " // ".join(commander_names_model)
+            deck_list = [f"1x {cn} *CMDR*" for cn in commander_names_model]
             for name, qty in sorted(deck.items()):
                 deck_list.append(f"{qty}x {name}")
 
-            type_categories['Commander'].append(actual_commander_name)
+            for cn in commander_names_model:
+                type_categories['Commander'].append(cn)
             mana_curve = {str(k): v for k, v in current_curve.items()}
 
             return {
-                "commander": actual_commander_name,
+                "commander": display_cmdr,
                 "colors": commander_identity,
                 "bracket": bracket,
                 "bracket_name": bracket_info['name'],
                 "theme": theme or "General synergy",
-                "card_count": sum(deck.values()) + 1,  # +1 for commander
+                "card_count": sum(deck.values()) + len(commanders),
                 "estimated_price": f"${total_price:.2f}",
                 "categories": type_categories,
                 "mana_curve": mana_curve,
@@ -1100,12 +1801,25 @@ class DeckGenerator:
         if not self._loaded:
             self.load()
 
-        # Find commander
-        commander = self.find_commander(commander_name)
-        if not commander:
-            return {"error": f"Commander not found: {commander_name}"}
-
-        commander_identity = commander.get('color_identity', []) or []
+        # Find commander(s) — supports partner pairs
+        is_partners = " // " in commander_name
+        commanders = self.find_partner_commanders(commander_name) if is_partners else []
+        if is_partners and len(commanders) < 2:
+            commander = self.find_commander(commander_name)
+            if not commander:
+                return {"error": f"Commander not found: {commander_name}"}
+            commanders = [commander]
+        elif not is_partners:
+            commander = self.find_commander(commander_name)
+            if not commander:
+                return {"error": f"Commander not found: {commander_name}"}
+            commanders = [commander]
+        commander = commanders[0]
+        commander_identity = list(dict.fromkeys(
+            c for cmd in commanders for c in (cmd.get('color_identity', []) or [])
+        ))
+        commander_names = [cmd.get('name') for cmd in commanders]
+        commander_name_set = set(commander_names)
         bracket_info = get_bracket_restrictions(bracket)
         core_staples = get_core_staples_for_colors(commander_identity)
 
@@ -1155,9 +1869,10 @@ class DeckGenerator:
         excluded_set = set(excluded_cards) if excluded_cards else set()
         valid_cards = [c for c in valid_cards
                       if c.get('name') not in COMMANDER_BANNED_CARDS
-                      and c.get('name') != commander.get('name')
+                      and c.get('name') not in commander_name_set
                       and c.get('name') not in kept_set
-                      and c.get('name') not in excluded_set]
+                      and c.get('name') not in excluded_set
+                      and self._is_commander_legal(c)]
 
         # Categorize available cards
         lands = [
@@ -1195,7 +1910,8 @@ class DeckGenerator:
                 card['score'] = card.get('score', 0.5)
             best_ramp = self._select_best_cards(
                 ramp, ramp_needed, 'ramp', commander_identity,
-                bracket, counts, deck, current_curve, budget_tier
+                bracket, counts, deck, current_curve, budget_tier,
+                theme=theme,
             )
             for card in best_ramp:
                 name = card.get('name')
@@ -1212,7 +1928,8 @@ class DeckGenerator:
                 card['score'] = card.get('score', 0.5)
             best_removal = self._select_best_cards(
                 removal, removal_needed, 'removal', commander_identity,
-                bracket, counts, deck, current_curve, budget_tier
+                bracket, counts, deck, current_curve, budget_tier,
+                theme=theme,
             )
             for card in best_removal:
                 name = card.get('name')
@@ -1231,7 +1948,8 @@ class DeckGenerator:
                 card['score'] = card.get('score', 0.5)
             best_draw = self._select_best_cards(
                 draw, draw_needed, 'card_draw', commander_identity,
-                bracket, counts, deck, current_curve, budget_tier
+                bracket, counts, deck, current_curve, budget_tier,
+                theme=theme,
             )
             for card in best_draw:
                 name = card.get('name')
@@ -1244,9 +1962,9 @@ class DeckGenerator:
                 current_curve[cmc] = current_curve.get(cmc, 0) + 1
 
         # Generate synergy queries and add synergy cards
-        synergy_queries = self._extract_synergy_keywords(commander)
-        if theme:
-            synergy_queries.insert(0, theme)
+        synergy_queries = self._build_theme_queries(theme, commander)
+        if not synergy_queries:
+            synergy_queries = self._extract_synergy_keywords(commander)
 
         all_synergy_cards: Dict[str, Dict] = {}
         for query in synergy_queries:
@@ -1264,7 +1982,8 @@ class DeckGenerator:
         synergy_cards = self._filter_by_color_identity(synergy_cards, commander_identity)
         synergy_cards = [c for c in synergy_cards
                         if c.get('name') not in COMMANDER_BANNED_CARDS
-                        and c.get('name') != commander.get('name')
+                        and c.get('name') not in commander_name_set
+                        and self._is_commander_legal(c)
                         and not self._is_land(c)]
 
         # Fill remaining non-land slots
@@ -1276,7 +1995,8 @@ class DeckGenerator:
             best_synergy = self._select_best_cards(
                 synergy_cards, remaining_nonlands + 10,
                 'synergy', commander_identity,
-                bracket, counts, deck, current_curve, budget_tier
+                bracket, counts, deck, current_curve, budget_tier,
+                theme=theme,
             )
             for card in best_synergy:
                 if remaining_nonlands <= 0:
@@ -1309,7 +2029,8 @@ class DeckGenerator:
                     land['score'] = land.get('score', 0.5)
                 best_lands = self._select_best_cards(
                     non_basic_lands, num_nonbasics, 'lands', commander_identity,
-                    bracket, counts, deck, {}, budget_tier
+                    bracket, counts, deck, {}, budget_tier,
+                    theme=theme,
                 )
                 for land in best_lands:
                     name = land.get('name')
@@ -1354,21 +2075,22 @@ class DeckGenerator:
             for name, qty in deck.items()
         )
 
-        commander_name_actual = commander.get('name')
-        deck_list = [f"1x {commander_name_actual} *CMDR*"]
+        display_cmdr_regen = " // ".join(commander_names)
+        deck_list = [f"1x {cn} *CMDR*" for cn in commander_names]
         for name, qty in sorted(deck.items()):
             deck_list.append(f"{qty}x {name}")
 
-        type_categories['Commander'].append(commander_name_actual)
+        for cn in commander_names:
+            type_categories['Commander'].append(cn)
         mana_curve = {str(k): v for k, v in current_curve.items()}
 
         return {
-            "commander": commander_name_actual,
+            "commander": display_cmdr_regen,
             "colors": commander_identity,
             "bracket": bracket,
             "bracket_name": bracket_info['name'],
             "theme": theme or "General synergy",
-            "card_count": sum(deck.values()) + 1,
+            "card_count": sum(deck.values()) + len(commanders),
             "estimated_price": f"${total_price:.2f}",
             "categories": type_categories,
             "mana_curve": mana_curve,
@@ -1391,4 +2113,12 @@ def get_generator() -> DeckGenerator:
     if _generator is None:
         _generator = DeckGenerator()
         _generator.load()
+    return _generator
+
+
+def reload_generator() -> DeckGenerator:
+    """Reload card data, embeddings, and FAISS index after a data update."""
+    global _generator
+    _generator = DeckGenerator()
+    _generator.load()
     return _generator

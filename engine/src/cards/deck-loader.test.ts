@@ -214,6 +214,77 @@ describe('convertGeneratedDeck', () => {
     expect(result.library.length).toBe(99);
   });
 
+  it('keeps sideboard cards outside the starting library', () => {
+    const testCards = create99Cards();
+    const allCards = [sampleCommander, sampleInstant, ...testCards];
+    const lookup = createCardLookup(allCards);
+
+    const deck: GeneratedDeck = {
+      id: 'deck-sideboard',
+      commander: 'Atraxa, Praetors\' Voice',
+      list: testCards.map(c => c.name),
+      sideboard: ['Lightning Bolt'],
+      colors: ['W', 'U', 'B', 'G'],
+      bracket: 3,
+      theme: 'Counters',
+    };
+
+    const result = convertGeneratedDeck(deck, lookup);
+
+    expect(result.library.length).toBe(99);
+    expect(result.library.some(card => card.name === 'Lightning Bolt')).toBe(false);
+    expect(result.sideboard.map(card => card.name)).toEqual(['Lightning Bolt']);
+  });
+
+  it('throws when a sideboard card is missing', () => {
+    const testCards = create99Cards();
+    const lookup = createCardLookup([sampleCommander, ...testCards]);
+
+    const deck: GeneratedDeck = {
+      id: 'deck-missing-sideboard',
+      commander: 'Atraxa, Praetors\' Voice',
+      list: testCards.map(c => c.name),
+      sideboard: ['Missing Sideboard Card'],
+      colors: ['W', 'U', 'B', 'G'],
+      bracket: 3,
+      theme: 'Counters',
+    };
+
+    expect(() => convertGeneratedDeck(deck, lookup)).toThrow('Sideboard cards not found');
+  });
+
+  it('keeps double-faced commander names intact', () => {
+    const testCards = create99Cards();
+    const aclazotz: ScryfallCard = {
+      id: 'aclazotz',
+      name: 'Aclazotz, Deepest Betrayal // Temple of the Dead',
+      type_line: 'Legendary Creature - Bat God // Land',
+      oracle_text: 'Flying, lifelink',
+      mana_cost: '{3}{B}{B}',
+      cmc: 5,
+      colors: ['B'],
+      color_identity: ['B'],
+      keywords: ['Flying', 'Lifelink', 'Transform'],
+      power: '4',
+      toughness: '4',
+    };
+    const lookup = createCardLookup([aclazotz, ...testCards]);
+
+    const deck: GeneratedDeck = {
+      id: 'deck-dfc',
+      commander: 'Aclazotz, Deepest Betrayal // Temple of the Dead',
+      list: testCards.map(c => c.name),
+      colors: ['B'],
+      bracket: 3,
+      theme: 'Discard',
+    };
+
+    const result = convertGeneratedDeck(deck, lookup);
+
+    expect(result.commander.name).toBe('Aclazotz, Deepest Betrayal // Temple of the Dead');
+    expect(result.library.length).toBe(99);
+  });
+
   it('throws for missing commander', () => {
     const testCards = create99Cards();
     const lookup = createCardLookup(testCards); // No commander

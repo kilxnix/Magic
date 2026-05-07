@@ -30,6 +30,11 @@ def init_db():
                 estimated_price TEXT,
                 cards TEXT NOT NULL,
                 categories TEXT,
+                format TEXT DEFAULT 'commander',
+                sideboard TEXT DEFAULT '[]',
+                generation_method TEXT,
+                model_scoring INTEGER DEFAULT 0,
+                synergy_queries TEXT DEFAULT '[]',
                 legal_status TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 parent_deck_id TEXT,
@@ -47,6 +52,26 @@ def init_db():
             pass  # Column already exists
         try:
             conn.execute("ALTER TABLE decks ADD COLUMN regeneration_number INTEGER DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass  # Column already exists
+        try:
+            conn.execute("ALTER TABLE decks ADD COLUMN format TEXT DEFAULT 'commander'")
+        except sqlite3.OperationalError:
+            pass  # Column already exists
+        try:
+            conn.execute("ALTER TABLE decks ADD COLUMN sideboard TEXT DEFAULT '[]'")
+        except sqlite3.OperationalError:
+            pass  # Column already exists
+        try:
+            conn.execute("ALTER TABLE decks ADD COLUMN generation_method TEXT")
+        except sqlite3.OperationalError:
+            pass  # Column already exists
+        try:
+            conn.execute("ALTER TABLE decks ADD COLUMN model_scoring INTEGER DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass  # Column already exists
+        try:
+            conn.execute("ALTER TABLE decks ADD COLUMN synergy_queries TEXT DEFAULT '[]'")
         except sqlite3.OperationalError:
             pass  # Column already exists
         conn.commit()
@@ -114,8 +139,10 @@ def save_deck(deck_data: dict) -> str:
             INSERT INTO decks (
                 id, commander, colors, bracket, bracket_name, theme,
                 archetype, card_count, estimated_price, cards, categories,
-                legal_status, created_at, parent_deck_id, regeneration_number
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                format, sideboard, generation_method, model_scoring,
+                synergy_queries, legal_status, created_at, parent_deck_id,
+                regeneration_number
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             deck_data['id'],
             deck_data['commander'],
@@ -128,6 +155,11 @@ def save_deck(deck_data: dict) -> str:
             deck_data.get('estimated_price', ''),
             json.dumps(deck_data['list']),
             json.dumps(deck_data.get('categories', {})),
+            deck_data.get('format', 'commander'),
+            json.dumps(deck_data.get('sideboard', [])),
+            deck_data.get('generation_method'),
+            1 if deck_data.get('model_scoring') else 0,
+            json.dumps(deck_data.get('synergy_queries', [])),
             deck_data.get('legal_status', ''),
             deck_data.get('timestamp', datetime.now().isoformat()),
             deck_data.get('parent_deck_id'),
@@ -192,6 +224,11 @@ def _row_to_deck(row: sqlite3.Row) -> dict:
         'estimated_price': row['estimated_price'] or '',
         'list': json.loads(row['cards']),
         'categories': json.loads(row['categories']) if row['categories'] else {},
+        'format': row['format'] if 'format' in row.keys() else 'commander',
+        'sideboard': json.loads(row['sideboard']) if 'sideboard' in row.keys() and row['sideboard'] else [],
+        'generation_method': row['generation_method'] if 'generation_method' in row.keys() else None,
+        'model_scoring': bool(row['model_scoring']) if 'model_scoring' in row.keys() else False,
+        'synergy_queries': json.loads(row['synergy_queries']) if 'synergy_queries' in row.keys() and row['synergy_queries'] else [],
         'legal_status': row['legal_status'] or '',
         'timestamp': row['created_at'],
         'parent_deck_id': row['parent_deck_id'] if 'parent_deck_id' in row.keys() else None,

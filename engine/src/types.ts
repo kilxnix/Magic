@@ -62,6 +62,7 @@ export interface CardInstance {
   grantedKeywords?: string[]; // Phase 16: temporarily granted keywords (e.g. "until end of turn")
   isToken?: boolean; // Phase 16: true for token copies / token creatures
   copiedFromDefinitionId?: string; // Phase 16: original definition for copy tokens
+  fromSideboard?: boolean; // True when an outside-the-game effect brought this card in.
 }
 
 // Import TriggeredAbility from effects/ast (forward declaration for type safety)
@@ -213,6 +214,10 @@ export interface GameState {
   players: Player[];
   cards: Map<string, CardInstance>;
   cardDefinitions: Map<string, CardDefinition>;
+  /** Sideboards are registered deck cards outside the game. They are not card
+   * instances and are unavailable to normal gameplay actions unless an effect
+   * explicitly refers to cards from outside the game. */
+  sideboards?: Map<string, CardDefinition[]>;
   activePlayerIndex: number;
   priorityPlayerIndex: number;
   phase: Phase;

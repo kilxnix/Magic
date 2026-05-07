@@ -27,6 +27,7 @@ const CATEGORY_ORDER = [
   { key: 'planeswalkers', label: 'Planeswalkers' },
   { key: 'lands', label: 'Lands' },
   { key: 'other', label: 'Other' },
+  { key: 'sideboard', label: 'Sideboard' },
 ];
 
 interface CardPrinting {
@@ -114,6 +115,7 @@ export function DeckVisualView({
       planeswalkers: [],
       lands: [],
       other: [],
+      sideboard: [],
     };
 
     // If deck has categories from backend, use those
@@ -129,6 +131,7 @@ export function DeckVisualView({
         'planeswalkers': 'planeswalkers',
         'lands': 'lands',
         'other': 'other',
+        'sideboard': 'sideboard',
       };
 
       for (const [backendCat, cards] of Object.entries(deck.categories)) {

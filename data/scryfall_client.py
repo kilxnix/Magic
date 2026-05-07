@@ -9,6 +9,7 @@ from typing import Dict, Iterator, Optional
 import requests
 
 BULK_DATA_URL = "https://api.scryfall.com/bulk-data"
+SETS_URL = "https://api.scryfall.com/sets"
 DEFAULT_BULK_NAME = "Oracle Cards"
 
 
@@ -31,6 +32,10 @@ def get_bulk_data_url(bulk_name: str = DEFAULT_BULK_NAME) -> str:
         if item.get("name") == bulk_name:
             return item["download_uri"]
     raise ValueError(f"bulk data name not found: {bulk_name}")
+
+
+def get_sets_data() -> Dict:
+    return _request_json(SETS_URL)
 
 
 def download_bulk_data(dest_path: Path, bulk_name: str = DEFAULT_BULK_NAME) -> Path:
