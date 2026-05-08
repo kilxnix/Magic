@@ -8,6 +8,8 @@ import { EndGameModal } from '../components/shelector/EndGameModal';
 import { DraftTournament } from '../components/DraftTournament';
 import { StandardTournament } from '../components/StandardTournament';
 import { cacheSet, cacheGet } from '../lib/cache';
+import { importDeckUrlLocally } from '../lib/deckUrlImport';
+import { FLOATING_TABLE_LAYOUT } from '../lib/gameBoardLayout';
 
 interface DeckImportResult {
   commander: string | null;
@@ -112,6 +114,7 @@ export function PlayPage() {
   const [importResult, setImportResult] = useState<DeckImportResult | null>(null);
   const [isImporting, setIsImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
+  const [standardDeckText, setStandardDeckText] = useState('');
 
   // Opponent config
   const [opponentCount, setOpponentCount] = useState<OpponentCount>(1);
@@ -164,6 +167,13 @@ export function PlayPage() {
     setImportError(null);
     setImportResult(null);
     try {
+      const localDeck = importDeckUrlLocally(deckUrl);
+      if (localDeck?.format === 'standard') {
+        setStandardDeckText(localDeck.deckText);
+        setStep('standard');
+        return;
+      }
+
       // Step 1: Fetch card list from URL
       const parseRes = await fetch('/api/parse-deck-url', {
         method: 'POST',
@@ -355,63 +365,58 @@ export function PlayPage() {
     setStep('game');
   };
 
+  const handleStartStandardMatch = (humanDeck: ImportedCards, aiDecks: ImportedCards[]) => {
+    startGame(humanDeck, aiDecks, {
+      format: 'limited',
+      startingLife: 20,
+      startingHandSize: 7,
+      aiDifficulty: 2,
+    });
+    setStep('game');
+  };
+
   // ----- RENDER -----
 
-  // Game view: board plus a live review rail.
+  // Game view: floating-table board with review available as an overlay.
   if (step === 'game' && gameState) {
     return (
-      <div className="h-screen bg-stone-900 text-stone-100 flex flex-col overflow-hidden">
-        {/* Top bar */}
-        <div className="flex items-center justify-between px-3 py-2 bg-stone-800 border-b border-stone-700">
+      <div className={FLOATING_TABLE_LAYOUT.shell}>
+        <div className={FLOATING_TABLE_LAYOUT.reviewButton}>
           <button
             onClick={() => setShowReview(true)}
-            className="text-sm text-stone-400 hover:text-stone-200"
+            className="rounded border border-amber-500/40 bg-neutral-950/90 px-3 py-2 text-xs font-bold uppercase tracking-wider text-amber-200 shadow-xl shadow-black/40 backdrop-blur hover:border-amber-300 hover:text-amber-100"
           >
             Review
           </button>
-          <span className="text-sm text-stone-500">
-            Turn {gameState.turnNumber} &middot; {gameState.phase}
-          </span>
         </div>
 
-        <div className="flex-1 min-h-0 flex">
-          <div className="flex-1 min-w-0">
-            <GameBoard
-              gameState={gameState}
-              legalActions={legalActions}
-              isHumanTurn={isHumanTurn}
-              isLoading={isLoading}
-              onAction={submitAction}
-              mulliganPhase={mulliganPhase}
-              mulliganCount={mulliganCount}
-              onKeepHand={keepHand}
-              onMulligan={mulligan}
-              discardPhase={discardPhase}
-              discardCount={discardCount}
-              onDiscardCard={discardCard}
-              tutorPhase={tutorPhase}
-              tutorCards={tutorCards}
-              tutorTitle={tutorTitle}
-              onTutorPick={resolveTutor}
-              onTutorCancel={cancelTutor}
-              undosRemaining={undosRemaining}
-              onUndo={undoAction}
-              coachMode={coachMode}
-              onToggleCoach={setCoachMode}
-              onUntapMana={untapManaSource}
-              untappableCardIds={untappableCardIds}
-              lastPlayedCard={lastPlayedCard}
-            />
-          </div>
-          <aside className="hidden lg:block w-[360px] xl:w-[420px] shrink-0 border-l border-stone-700 bg-stone-900">
-            <GameReview
-              gameLog={gameLog}
-              finalState={gameState}
-              winner={winner}
-              onClose={() => setShowReview(false)}
-              embedded
-            />
-          </aside>
+        <div className={FLOATING_TABLE_LAYOUT.board}>
+          <GameBoard
+            gameState={gameState}
+            legalActions={legalActions}
+            isHumanTurn={isHumanTurn}
+            isLoading={isLoading}
+            onAction={submitAction}
+            mulliganPhase={mulliganPhase}
+            mulliganCount={mulliganCount}
+            onKeepHand={keepHand}
+            onMulligan={mulligan}
+            discardPhase={discardPhase}
+            discardCount={discardCount}
+            onDiscardCard={discardCard}
+            tutorPhase={tutorPhase}
+            tutorCards={tutorCards}
+            tutorTitle={tutorTitle}
+            onTutorPick={resolveTutor}
+            onTutorCancel={cancelTutor}
+            undosRemaining={undosRemaining}
+            onUndo={undoAction}
+            coachMode={coachMode}
+            onToggleCoach={setCoachMode}
+            onUntapMana={untapManaSource}
+            untappableCardIds={untappableCardIds}
+            lastPlayedCard={lastPlayedCard}
+          />
         </div>
 
         {/* Review modal */}
@@ -470,7 +475,11 @@ export function PlayPage() {
             </Link>
             <h1 className="text-2xl font-bold">Play a Game</h1>
           </div>
-          <StandardTournament onBack={() => setStep(importResult?.valid ? 'opponent' : 'import')} />
+          <StandardTournament
+            initialDeckText={standardDeckText}
+            onBack={() => setStep(importResult?.valid ? 'opponent' : 'import')}
+            onStartMatch={handleStartStandardMatch}
+          />
         </div>
       </div>
     );

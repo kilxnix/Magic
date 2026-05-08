@@ -11,6 +11,7 @@ import type { SimpleGameState, SimpleLegalAction, SimpleCard, LastPlayedCard } f
 import { Loader2, ChevronDown, ChevronRight, Search, X } from 'lucide-react';
 import { CardPickerModal } from './CardPickerModal';
 import { CardImage } from './CardImage';
+import { CARD_TILE_LAYOUT, FLOATING_TABLE_LAYOUT } from '../lib/gameBoardLayout';
 
 // Phase display names
 const PHASE_DISPLAY: Record<string, string> = {
@@ -281,10 +282,11 @@ function CardTile({
   const isLand = card.cardTypes.includes('land');
   const counterBadges = getCounterBadges(card.counters);
   const interactive = playable || !!onClick;
-  // Mobile: even smaller cards; desktop: normal sizes
-  const w = compact
-    ? 'w-[4.5rem] h-24 md:w-24 md:h-32'
-    : 'w-20 h-28 md:w-28 md:h-40';
+  // Floating table mode: compact enough to see both boards without losing click area.
+  const w = compact ? CARD_TILE_LAYOUT.compactSize : CARD_TILE_LAYOUT.defaultSize;
+  const buttonSpacing = compact ? CARD_TILE_LAYOUT.compactButton : CARD_TILE_LAYOUT.defaultButton;
+  const titleClass = compact ? CARD_TILE_LAYOUT.compactTitle : CARD_TILE_LAYOUT.defaultTitle;
+  const metaClass = compact ? CARD_TILE_LAYOUT.compactMeta : CARD_TILE_LAYOUT.defaultMeta;
 
   // Border color: playable > token > default
   const borderClass = playable
@@ -302,25 +304,26 @@ function CardTile({
         title={playable ? 'Use card' : inspectable ? 'Inspect card' : card.name}
         className={`
           absolute inset-0 flex h-full w-full flex-col justify-between
-          rounded-lg border p-1.5 md:p-2 text-left text-[10px] md:text-xs transition-all
+          overflow-hidden rounded-lg border text-left transition-all
+          ${buttonSpacing}
           ${card.tapped ? 'rotate-6 opacity-60' : ''}
           ${borderClass}
         `}
       >
         {/* Card name */}
-        <div className="font-semibold text-stone-100 leading-tight truncate text-[10px] md:text-xs">
+        <div className={titleClass}>
           {card.name}
         </div>
 
         {/* Mana cost */}
         {card.manaCost && (
-          <div className="text-stone-400 text-[8px] md:text-[10px] mt-0.5">
+          <div className="mt-0.5 line-clamp-1 text-[8px] leading-tight text-stone-400 md:text-[10px]">
             {card.manaCost}
           </div>
         )}
 
         {/* Type line */}
-        <div className="text-stone-400 text-[8px] md:text-[10px] mt-0.5 md:mt-1 truncate">
+        <div className={metaClass}>
           {card.typeLine}
         </div>
 
@@ -613,113 +616,6 @@ function GraveyardViewer({ cards, label }: { cards: SimpleCard[]; label: string 
   );
 }
 
-function FeaturedCard({
-  card,
-  label,
-  meta,
-  emptyText,
-  compact = false,
-  playable = false,
-  onClick,
-}: {
-  card?: SimpleCard | null;
-  label: string;
-  meta?: string;
-  emptyText: string;
-  compact?: boolean;
-  playable?: boolean;
-  onClick?: () => void;
-}) {
-  return (
-    <div className={`rounded-lg border bg-neutral-950/80 p-2 ${playable ? 'border-green-500/70' : 'border-neutral-700'}`}>
-      <div className="mb-1 flex items-center justify-between gap-2">
-        <div className="text-[9px] font-bold uppercase tracking-wider text-stone-500">{label}</div>
-        {meta && <div className="truncate text-[9px] text-stone-500">{meta}</div>}
-      </div>
-      {card ? (
-        <button
-          type="button"
-          onClick={onClick}
-          disabled={!onClick}
-          className={`group w-full text-left ${onClick ? 'cursor-pointer' : 'cursor-default'}`}
-        >
-          <CardImage
-            cardName={card.name}
-            size="small"
-            showHoverZoom={false}
-            className={`mx-auto aspect-[5/7] ${compact ? 'w-24' : 'w-32'} overflow-hidden rounded-lg bg-stone-200`}
-          />
-          <div className="mt-1 truncate text-xs font-semibold text-stone-100 group-hover:text-amber-200">
-            {card.name}
-          </div>
-          <div className="truncate text-[10px] text-stone-500">{card.typeLine}</div>
-        </button>
-      ) : (
-        <div className={`flex ${compact ? 'h-32' : 'h-44'} items-center justify-center rounded-lg border border-dashed border-neutral-700 px-3 text-center text-xs text-stone-600`}>
-          {emptyText}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function CommanderPanel({
-  card,
-  commanderName,
-  life,
-  handCount,
-  libraryCount,
-  label,
-  tone,
-  playable,
-  onClick,
-}: {
-  card?: SimpleCard | null;
-  commanderName: string;
-  life: number;
-  handCount: number;
-  libraryCount: number;
-  label: string;
-  tone: 'human' | 'ai';
-  playable?: boolean;
-  onClick?: () => void;
-}) {
-  const lifeClass = tone === 'human'
-    ? 'border-green-600/50 bg-green-950/60 text-green-200'
-    : 'border-red-600/50 bg-red-950/60 text-red-200';
-
-  return (
-    <section className="border-b border-neutral-800 pb-3 last:border-b-0">
-      <div className="mb-2 flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <div className="text-[9px] font-bold uppercase tracking-wider text-stone-500">{label}</div>
-          <div className="truncate text-xs font-semibold text-stone-100">{commanderName}</div>
-        </div>
-        <div className={`rounded-lg border px-2 py-1 text-center ${lifeClass}`}>
-          <div className="text-[8px] font-bold uppercase tracking-wider opacity-70">Life</div>
-          <div className="text-2xl font-black tabular-nums leading-none">{life}</div>
-        </div>
-      </div>
-      <FeaturedCard
-        card={card}
-        label="Commander"
-        emptyText={commanderName}
-        compact
-        playable={playable}
-        onClick={playable ? onClick : undefined}
-      />
-      <div className="mt-2 grid grid-cols-2 gap-2 text-[10px] text-stone-400">
-        <div className="rounded border border-neutral-700 bg-neutral-950/80 px-2 py-1">
-          Hand <span className="font-bold text-stone-200">{handCount}</span>
-        </div>
-        <div className="rounded border border-neutral-700 bg-neutral-950/80 px-2 py-1">
-          Lib <span className="font-bold text-stone-200">{libraryCount}</span>
-        </div>
-      </div>
-    </section>
-  );
-}
-
 export function GameBoard({
   gameState,
   legalActions,
@@ -749,6 +645,7 @@ export function GameBoard({
   const [inspectedCard, setInspectedCard] = useState<SimpleCard | null>(null);
   const [stackLands, setStackLands] = useState(true);
   const [selectedOpponentId, setSelectedOpponentId] = useState<string | null>(null);
+  const [showOpponentHand, setShowOpponentHand] = useState(false);
 
   // Build set of playable card instance IDs
   const playableIds = new Set(
@@ -856,6 +753,7 @@ export function GameBoard({
                       key={group.key}
                       card={playableCard || untappableCard || group.card}
                       playable={canUse}
+                      compact={owner === 'ai'}
                       stackCount={group.cards.length}
                       onClick={
                         playableCard
@@ -910,7 +808,7 @@ export function GameBoard({
   );
 
   return (
-    <div className="flex h-full min-h-0 bg-neutral-950 text-stone-200 overflow-hidden relative">
+    <div className="relative h-full min-h-0 overflow-hidden bg-neutral-950 text-stone-200">
       {/* Tutor card picker overlay */}
       {tutorPhase && tutorCards && onTutorPick && (
         <CardPickerModal
@@ -928,47 +826,13 @@ export function GameBoard({
           onClose={() => setInspectedCard(null)}
         />
       )}
-      <aside className="hidden xl:flex w-52 shrink-0 flex-col gap-3 border-r border-neutral-800 bg-neutral-950 p-3">
-        <CommanderPanel
-          card={aiCommanderCard}
-          commanderName={selectedOpponentCommander}
-          life={selectedOpponent.life}
-          handCount={selectedOpponent.handCount}
-          libraryCount={selectedOpponent.libraryCount}
-          label={selectedOpponentLabel}
-          tone="ai"
-        />
-        <div className="flex-1 flex items-center">
-          <FeaturedCard
-            card={lastPlayedCard?.card}
-            label="Last Played"
-            meta={lastPlayedCard ? `${lastPlayedCard.action} by ${lastPlayedCard.playerName}` : undefined}
-            emptyText="No card played yet"
-          />
-        </div>
-        <CommanderPanel
-          card={humanCommanderCard}
-          commanderName={gameState.humanCommander}
-          life={gameState.humanPlayer.life}
-          handCount={gameState.humanPlayer.handCount}
-          libraryCount={gameState.humanPlayer.libraryCount}
-          label="You"
-          tone="human"
-          playable={humanCommanderPlayable}
-          onClick={
-            humanCommanderPlayable && humanCommanderCard
-              ? () => handleCardClick(humanCommanderCard)
-              : undefined
-          }
-        />
-      </aside>
-      <div className="relative flex min-w-0 flex-1 flex-col overflow-hidden bg-neutral-900">
+      <div className={FLOATING_TABLE_LAYOUT.table}>
         <div className="pointer-events-none absolute inset-x-0 top-1/2 z-0 hidden h-1 -translate-y-1/2 bg-red-500/70 xl:block" />
         <div className="pointer-events-none absolute left-1/2 top-1/2 z-0 hidden h-28 w-28 -translate-x-1/2 -translate-y-1/2 rounded-full border-4 border-red-500/70 xl:flex items-center justify-center">
           <span className="text-3xl font-black text-red-500/60">M</span>
         </div>
-      {/* Phase Bar -- compact on mobile */}
-      <div className="relative z-10 flex items-center gap-1.5 md:gap-3 px-2 md:px-4 py-1.5 md:py-2 bg-neutral-950 border-b border-neutral-800 overflow-x-auto shrink-0">
+      {/* Phase Bar */}
+      <div className="absolute left-3 right-24 top-3 z-40 flex items-center gap-1.5 overflow-x-auto rounded-lg border border-neutral-700/70 bg-neutral-950/90 px-2 py-1.5 shadow-xl shadow-black/30 backdrop-blur md:gap-3 md:px-3">
         <span className="text-amber-400 font-semibold text-xs md:text-sm whitespace-nowrap">
           T{gameState.turnNumber}
         </span>
@@ -1026,39 +890,39 @@ export function GameBoard({
       </div>
 
       {/* AI Side */}
-      <div className="relative z-10 px-2 md:px-4 py-2 md:py-3 border-b border-neutral-800/80 bg-neutral-900/80 shrink-0">
-        <div className="flex items-center gap-2 md:gap-4 mb-1.5 md:mb-2">
+      <div className={FLOATING_TABLE_LAYOUT.opponentStrip}>
+        <div className="mb-1 flex items-center gap-2 md:gap-3">
           <div className="flex items-center gap-2">
-            <div className="xl:hidden w-12 h-16 overflow-hidden rounded border border-red-700/50 bg-stone-200">
+	            <div className="h-12 w-9 overflow-hidden rounded border border-red-700/50 bg-stone-200">
               {aiCommanderCard ? (
                 <CardImage cardName={aiCommanderCard.name} size="small" showHoverZoom={false} className="h-full w-full" />
               ) : (
                 <div className="flex h-full items-center justify-center bg-red-950 text-red-300 text-xs font-bold">
-                  {selectedOpponent.name.charAt(0)}
+                  {selectedOpponentCommander.charAt(0)}
                 </div>
               )}
             </div>
             <div className="min-w-0">
-              <div className="text-xs md:text-sm font-semibold text-stone-200 truncate max-w-[120px] md:max-w-[200px]">
-                {selectedOpponent.name}
+	              <div className="max-w-[10rem] truncate text-xs font-semibold text-stone-200 md:max-w-[16rem]">
+                {selectedOpponentCommander}
               </div>
-              <div className="text-[10px] md:text-xs text-stone-500">
+	              <div className="text-[10px] text-stone-500">
                 Hand: {selectedOpponent.handCount}
                 {' / '}
                 Lib: {selectedOpponent.libraryCount}
               </div>
             </div>
           </div>
-          <div className="ml-auto flex items-center gap-2 bg-red-900/50 rounded-lg px-3 py-1 border border-red-800/50">
+	          <div className="ml-auto flex items-center gap-1.5 rounded-lg border border-red-800/50 bg-red-950/70 px-2 py-1">
             <span className="text-red-400 text-xs font-semibold">LP</span>
-            <span className="text-2xl md:text-3xl font-bold text-red-300 tabular-nums leading-none">
+	            <span className="text-xl font-bold tabular-nums leading-none text-red-300 md:text-2xl">
               {selectedOpponent.life}
             </span>
           </div>
         </div>
 
         {opponentPlayers.length > 1 && (
-          <div className="mb-2 flex gap-1.5 overflow-x-auto pb-1">
+	          <div className="mb-1 flex gap-1.5 overflow-x-auto pb-1">
             {opponentPlayers.map((player, index) => {
               const selected = player.id === selectedOpponent.id;
               return (
@@ -1095,32 +959,41 @@ export function GameBoard({
           </div>
         )}
 
-        {/* AI Hand -- intentionally visible for solo learning mode */}
-        <div className="mb-1">
-          <div className="mb-1 text-[9px] md:text-[10px] font-semibold uppercase tracking-wider text-red-300/70">
-            {selectedOpponentLabel} Hand ({selectedAiHand.length})
-          </div>
-          <div className="flex gap-1.5 md:gap-2 overflow-x-auto pb-1 min-h-[58px]">
-            {selectedAiHand.length === 0 ? (
-              <div className="text-stone-600 text-xs italic flex items-center">No cards in hand</div>
-            ) : (
-              selectedAiHand.map(card => (
-                <CardTile
-                  key={card.instanceId}
-                  card={card}
-                  playable={false}
-                  compact
-                  inspectable
-                  onClick={() => setInspectedCard(card)}
-                  onInspect={() => setInspectedCard(card)}
-                />
-              ))
-            )}
-          </div>
+        {/* AI hand is collapsed by default to keep the table visible. */}
+        <div className="mb-1 flex flex-wrap items-center gap-2 text-[10px]">
+          <button
+            type="button"
+            onClick={() => setShowOpponentHand(prev => !prev)}
+            className="rounded border border-red-800/50 bg-red-950/40 px-2 py-1 font-bold uppercase tracking-wider text-red-200 hover:border-red-500/70"
+          >
+            {showOpponentHand ? 'Hide' : 'Show'} {selectedOpponentLabel} Hand ({selectedAiHand.length})
+          </button>
+          {!showOpponentHand && selectedAiHand.length > 0 && (
+            <div className="min-w-0 flex-1 truncate text-stone-500">
+              {selectedAiHand.map(card => card.name).join(' / ')}
+            </div>
+          )}
         </div>
+        {showOpponentHand && (
+          <div className="mb-1 flex min-h-[4rem] gap-1.5 overflow-x-auto pb-1 md:gap-2">
+            {selectedAiHand.length === 0 ? (
+              <div className="flex items-center text-xs italic text-stone-600">No cards in hand</div>
+            ) : selectedAiHand.map(card => (
+              <CardTile
+                key={card.instanceId}
+                card={card}
+                playable={false}
+                compact
+                inspectable
+                onClick={() => setInspectedCard(card)}
+                onInspect={() => setInspectedCard(card)}
+              />
+            ))}
+          </div>
+        )}
 
         {/* AI Battlefield */}
-        <div className="min-h-[70px] md:min-h-[100px] py-1">
+		        <div className="min-h-[4rem] py-0.5">
           {renderBattlefieldRows(selectedAiBattlefield, 'ai')}
         </div>
 
@@ -1148,34 +1021,21 @@ export function GameBoard({
         </div>
       )}
       {gameState.stack.length === 0 && lastPlayedCard && (
-        <div className="relative z-10 hidden md:flex justify-center border-b border-neutral-800/60 bg-neutral-900/50 px-4 py-2">
-          <div className="flex items-center gap-3 rounded-lg border border-red-500/40 bg-neutral-950/80 px-3 py-2">
-            <CardImage
-              cardName={lastPlayedCard.card.name}
-              size="small"
-              showHoverZoom={false}
-              className="h-20 w-14 overflow-hidden rounded bg-stone-200"
-            />
-            <div className="min-w-0">
-              <div className="text-[9px] font-bold uppercase tracking-wider text-red-300/80">Last Played</div>
-              <div className="truncate text-sm font-semibold text-stone-100">{lastPlayedCard.card.name}</div>
-              <div className="truncate text-xs text-stone-500">
-                {lastPlayedCard.action} by {lastPlayedCard.playerName}
-              </div>
-            </div>
-          </div>
+        <div className="pointer-events-none absolute right-3 top-16 z-30 hidden rounded border border-red-500/40 bg-neutral-950/85 px-3 py-2 shadow-xl shadow-black/40 backdrop-blur md:block">
+          <div className="text-[9px] font-bold uppercase tracking-wider text-red-300/80">Last Played</div>
+          <div className="max-w-64 truncate text-xs font-semibold text-stone-100">{lastPlayedCard.card.name}</div>
         </div>
       )}
 
       {/* Human Battlefield */}
-      <div className="relative z-10 flex-1 px-2 md:px-4 py-2 md:py-3 border-b border-neutral-800/80 bg-neutral-800/75 overflow-y-auto min-h-0">
-        <div className="flex items-center gap-2 md:gap-4 mb-1.5 md:mb-2">
+      <div className="relative z-10 min-h-0 flex-1 overflow-y-auto border-b border-neutral-800/80 bg-neutral-900/70 px-3 py-1.5 pb-3 md:px-4">
+        <div className="mb-1 flex items-center gap-2 md:gap-3">
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={humanCommanderPlayable && humanCommanderCard ? () => handleCardClick(humanCommanderCard) : undefined}
               disabled={!humanCommanderPlayable}
-              className={`xl:hidden h-16 w-12 overflow-hidden rounded border bg-stone-200 ${
+              className={`h-12 w-9 overflow-hidden rounded border bg-stone-200 ${
                 humanCommanderPlayable ? 'border-green-400 ring-2 ring-green-400/40' : 'border-green-700/50'
               }`}
             >
@@ -1194,7 +1054,7 @@ export function GameBoard({
           </div>
 
           {/* Mana Pool — always visible */}
-          <div className={`flex items-center gap-0.5 md:gap-1 rounded-lg px-1.5 md:px-2 py-0.5 md:py-1 border ${
+          <div className={`flex items-center gap-0.5 rounded-lg border px-1.5 py-0.5 md:gap-1 md:px-2 ${
             totalMana > 0
               ? 'bg-amber-900/40 border-amber-700/50'
               : 'bg-stone-800/50 border-stone-700/30'
@@ -1215,9 +1075,9 @@ export function GameBoard({
             )}
           </div>
 
-          <div className="ml-auto flex items-center gap-2 bg-green-900/50 rounded-lg px-3 py-1 border border-green-800/50">
+          <div className="ml-auto flex items-center gap-1.5 rounded-lg border border-green-800/50 bg-green-950/70 px-2 py-1">
             <span className="text-green-400 text-xs font-semibold">LP</span>
-            <span className="text-2xl md:text-3xl font-bold text-green-300 tabular-nums leading-none">
+            <span className="text-xl font-bold tabular-nums leading-none text-green-300 md:text-2xl">
               {gameState.humanPlayer.life}
             </span>
           </div>
@@ -1242,7 +1102,7 @@ export function GameBoard({
         )}
 
         {/* Human Battlefield */}
-        <div className="min-h-[80px] md:min-h-[120px] py-1">
+        <div className="min-h-[7rem] py-0.5">
           {renderBattlefieldRows(gameState.humanBattlefield, 'human')}
         </div>
 
@@ -1252,16 +1112,16 @@ export function GameBoard({
 
       {/* Unified Action Bar */}
       {hasAnyAction && (
-        <div className="relative z-10 px-2 md:px-4 py-1.5 md:py-2 bg-stone-800/80 border-y border-stone-700/50 shrink-0">
-          <div className="text-amber-400 text-[10px] md:text-xs font-semibold tracking-wider uppercase mb-1">
+        <div className={FLOATING_TABLE_LAYOUT.actionsDock}>
+          <div className="mb-0.5 text-[9px] font-semibold uppercase tracking-wider text-amber-400 md:text-[10px]">
             Actions
           </div>
-          <div className="flex gap-1.5 md:gap-2 overflow-x-auto py-0.5 min-h-[44px] items-center">
+          <div className="flex min-h-10 items-center gap-1.5 overflow-x-auto py-0.5 md:gap-2">
             {/* Pass / Don't Respond / End Phase */}
             {passAction && (
               <button
                 onClick={() => onAction(passAction)}
-                className="px-3 py-1.5 rounded bg-stone-600 hover:bg-stone-500 text-stone-200 text-xs font-semibold transition-colors min-h-[44px] whitespace-nowrap shrink-0"
+	                className="min-h-8 shrink-0 whitespace-nowrap rounded bg-stone-600 px-3 py-1 text-xs font-semibold text-stone-200 transition-colors hover:bg-stone-500"
               >
                 {passAction.label}
               </button>
@@ -1271,7 +1131,7 @@ export function GameBoard({
               <button
                 key={`combat-${i}`}
                 onClick={() => onAction(action)}
-                className="px-3 py-1.5 rounded bg-red-900/60 hover:bg-red-800/70 border border-red-600/30 text-red-200 text-xs font-semibold transition-colors min-h-[44px] whitespace-nowrap shrink-0"
+	                className="min-h-8 shrink-0 whitespace-nowrap rounded border border-red-600/30 bg-red-900/60 px-3 py-1 text-xs font-semibold text-red-200 transition-colors hover:bg-red-800/70"
               >
                 {action.label}
               </button>
@@ -1290,7 +1150,7 @@ export function GameBoard({
                 <button
                   key={`cast-${i}`}
                   onClick={() => onAction(action)}
-                  className="px-3 py-1.5 rounded bg-green-900/60 hover:bg-green-800/70 border border-green-600/30 text-green-200 text-xs font-semibold transition-colors min-h-[44px] whitespace-nowrap shrink-0 flex items-center gap-1.5"
+	                  className="flex min-h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded border border-green-600/30 bg-green-900/60 px-3 py-1 text-xs font-semibold text-green-200 transition-colors hover:bg-green-800/70"
                 >
                   <span>
                     <span className="text-green-400 text-[10px] mr-1">Cast</span>
@@ -1309,7 +1169,7 @@ export function GameBoard({
               <button
                 key={`land-${i}`}
                 onClick={() => onAction(action)}
-                className="px-3 py-1.5 rounded bg-green-900/60 hover:bg-green-800/70 border border-green-600/30 text-green-200 text-xs font-semibold transition-colors min-h-[44px] whitespace-nowrap shrink-0"
+	                className="min-h-8 shrink-0 whitespace-nowrap rounded border border-green-600/30 bg-green-900/60 px-3 py-1 text-xs font-semibold text-green-200 transition-colors hover:bg-green-800/70"
               >
                 <span className="text-green-400 text-[10px] mr-1">Play</span>
                 {action.cardName || action.label}
@@ -1320,7 +1180,7 @@ export function GameBoard({
               <button
                 key={`other-${i}`}
                 onClick={() => onAction(action)}
-                className="px-3 py-1.5 rounded bg-green-900/60 hover:bg-green-800/70 border border-green-600/30 text-green-200 text-xs font-semibold transition-colors min-h-[44px] whitespace-nowrap shrink-0"
+	                className="min-h-8 shrink-0 whitespace-nowrap rounded border border-green-600/30 bg-green-900/60 px-3 py-1 text-xs font-semibold text-green-200 transition-colors hover:bg-green-800/70"
               >
                 {action.label}
               </button>
@@ -1367,7 +1227,7 @@ export function GameBoard({
                   return (
                     <button
                       onClick={() => { for (const a of tapAllPlan) onAction(a); }}
-                      className="px-3 py-1.5 rounded bg-amber-700/70 hover:bg-amber-600/80 border border-amber-500/40 text-amber-100 text-xs font-bold transition-colors min-h-[44px] whitespace-nowrap shrink-0"
+	                      className="min-h-8 shrink-0 whitespace-nowrap rounded border border-amber-500/40 bg-amber-700/70 px-3 py-1 text-xs font-bold text-amber-100 transition-colors hover:bg-amber-600/80"
                     >
                       Tap All ({tapAllPlan.length})
                     </button>
@@ -1378,7 +1238,7 @@ export function GameBoard({
                   <button
                     key={`mana-${i}`}
                     onClick={() => onAction(action)}
-                    className="px-2 py-1 rounded bg-amber-900/50 hover:bg-amber-800/60 border border-amber-600/30 text-amber-200 text-[10px] md:text-xs font-semibold transition-colors min-h-[44px] whitespace-nowrap shrink-0"
+	                    className="min-h-8 shrink-0 whitespace-nowrap rounded border border-amber-600/30 bg-amber-900/50 px-2 py-1 text-[10px] font-semibold text-amber-200 transition-colors hover:bg-amber-800/60 md:text-xs"
                   >
                     <span className="text-amber-400 text-[9px] mr-0.5">Tap</span>
                     {action.cardName || action.label}
@@ -1392,7 +1252,7 @@ export function GameBoard({
                 <div className="w-px h-6 bg-stone-600 shrink-0 mx-0.5" />
                 <button
                   onClick={onUndo}
-                  className="px-3 py-1.5 rounded bg-red-900/50 hover:bg-red-800/60 border border-red-600/30 text-red-300 text-xs font-semibold transition-colors min-h-[44px] whitespace-nowrap shrink-0"
+	                  className="min-h-8 shrink-0 whitespace-nowrap rounded border border-red-600/30 bg-red-900/50 px-3 py-1 text-xs font-semibold text-red-300 transition-colors hover:bg-red-800/60"
                 >
                   Undo ({undosRemaining})
                 </button>
@@ -1403,8 +1263,8 @@ export function GameBoard({
       )}
 
       {/* Human Hand + Actions */}
-      <div className="relative z-10 px-2 md:px-4 py-2 md:py-3 bg-neutral-950 border-t border-neutral-800 shrink-0">
-        <div className="flex items-center justify-between mb-1.5 md:mb-2 gap-2">
+      <div className={FLOATING_TABLE_LAYOUT.handDock}>
+        <div className="mb-1 flex items-center justify-between gap-2">
           <div className="text-amber-400 text-[10px] md:text-xs font-semibold tracking-wider uppercase whitespace-nowrap">
             {discardPhase
               ? `Hand (${gameState.humanHand.length}) — Discard ${discardCount} card${(discardCount ?? 0) > 1 ? 's' : ''}`
@@ -1430,7 +1290,7 @@ export function GameBoard({
           )}
         </div>
 
-        <div className="flex gap-1.5 md:gap-2 overflow-x-auto py-1 -mx-2 px-2 md:-mx-0 md:px-0">
+        <div className="-mx-1 flex gap-1.5 overflow-x-auto px-1 py-1 md:gap-2">
           {gameState.humanHand.length === 0 ? (
             <div className="text-stone-600 text-xs italic">
               Hand is empty
@@ -1439,11 +1299,12 @@ export function GameBoard({
             gameState.humanHand.map(card => {
               const cardAction = getInspectAction(card);
               return (
-                <CardTile
-                  key={card.instanceId}
-                  card={card}
-                  playable={discardPhase || (!mulliganPhase && playableIds.has(card.instanceId))}
-                  inspectable
+                  <CardTile
+                    key={card.instanceId}
+                    card={card}
+                    playable={discardPhase || (!mulliganPhase && playableIds.has(card.instanceId))}
+                    compact
+                    inspectable
                   onClick={cardAction ? cardAction.run : () => setInspectedCard(card)}
                   onInspect={() => setInspectedCard(card)}
                 />

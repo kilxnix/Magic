@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, Clock, Loader2, Shuffle, Trophy, Users } from 'lucide-react';
+import { ArrowLeft, Clock, Loader2, Shuffle, Swords, Trophy, Users } from 'lucide-react';
+import type { ImportedCards } from '../hooks/useShelectorGame';
 import {
   calculateStandings,
   createTournamentPlayers,
@@ -17,9 +18,13 @@ import {
   validateConstructedSideboardConfiguration,
   type SideboardValidation,
 } from '../lib/sideboard';
+import { importStandardDeckLocally } from '../lib/standardDeckImport';
+import { buildDefaultStandardOpponentDeck, buildStandardMatchDeck } from '../lib/standardPlayDeck';
 
 interface StandardTournamentProps {
   onBack: () => void;
+  initialDeckText?: string;
+  onStartMatch?: (humanDeck: ImportedCards, aiDecks: ImportedCards[]) => void;
 }
 
 const PLAYER_COUNTS = [4, 6, 8, 10, 12, 16];
@@ -136,7 +141,7 @@ function CardCountList({
   );
 }
 
-export function StandardTournament({ onBack }: StandardTournamentProps) {
+export function StandardTournament({ onBack, initialDeckText, onStartMatch }: StandardTournamentProps) {
   const [playerCount, setPlayerCount] = useState(8);
   const [roundCount, setRoundCount] = useState(recommendedSwissRounds(8));
   const [matchWinsRequired, setMatchWinsRequired] = useState(2);
@@ -172,6 +177,9 @@ export function StandardTournament({ onBack }: StandardTournamentProps) {
     [registeredDeck],
   );
   const currentMatches = matches.filter(match => match.round === currentRound).sort((a, b) => a.table - b.table);
+  const humanMatch = currentMatches.find(match => (
+    match.player1Id === 'human' || match.player2Id === 'human'
+  ));
   const allCurrentMatchesReported = currentMatches.length > 0 && currentMatches.every(match => match.reported);
   const phase = currentRound === 0 ? 'setup' : currentRound > roundCount ? 'complete' : 'running';
   const roundSeconds = (roundMinutes + timeExtensionMinutes) * 60;
@@ -262,29 +270,19 @@ export function StandardTournament({ onBack }: StandardTournamentProps) {
     setNow(Date.now());
   };
 
-  const importStandardDeck = async () => {
-    if (!deckText.trim()) return;
+  const registerStandardDeckText = (text: string) => {
+    if (!text.trim()) return;
     setIsImporting(true);
     setDeckStatus(null);
     try {
-      const res = await fetch('/shelector-api/import-deck', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          decklist_text: deckText,
-          format: 'standard',
-          fill_missing: false,
-        }),
-      });
-      if (!res.ok) throw new Error(`Import failed (${res.status})`);
-      const data = await res.json();
+      const data = importStandardDeckLocally(text);
       const detail = data.valid
-        ? `${data.total} main / ${(data.sideboard || []).length} sideboard`
-        : [...(data.errors || []), ...(data.warnings || [])].slice(0, 3).join(' ');
-      setDeckStatus({ valid: Boolean(data.valid), message: detail || 'Deck checked' });
+        ? `${data.total} main / ${data.sideboard.length} sideboard`
+        : [...data.errors, ...data.warnings].slice(0, 3).join(' ');
+      setDeckStatus({ valid: data.valid, message: detail || 'Deck checked' });
       if (data.valid) {
-        const mainDeck = [...(data.cards || []), ...(data.lands || [])];
-        const sideboard = [...(data.sideboard || [])];
+        const mainDeck = [...data.mainDeck];
+        const sideboard = [...data.sideboard];
         setRegisteredDeck({
           mainDeck,
           sideboard,
@@ -301,6 +299,27 @@ export function StandardTournament({ onBack }: StandardTournamentProps) {
     } finally {
       setIsImporting(false);
     }
+  };
+
+  useEffect(() => {
+    if (!initialDeckText) return;
+    setDeckText(initialDeckText);
+    registerStandardDeckText(initialDeckText);
+  }, [initialDeckText]);
+
+  const importStandardDeck = () => {
+    registerStandardDeckText(deckText);
+  };
+
+  const startPlayableMatch = (match?: TournamentMatch) => {
+    if (!onStartMatch || !registeredDeck) return;
+    if (match && (match.isBye || !match.player2Id)) {
+      setSideboardMessage('You have a bye this round. Report the match as a 2-0 bye.');
+      return;
+    }
+
+    const humanDeck = buildStandardMatchDeck('You', registeredDeck.mainDeck, registeredDeck.sideboard);
+    onStartMatch(humanDeck, [buildDefaultStandardOpponentDeck()]);
   };
 
   return (
@@ -465,15 +484,26 @@ export function StandardTournament({ onBack }: StandardTournamentProps) {
             <div className="rounded border border-neutral-700 bg-neutral-900 px-3 py-2">Round time: {roundMinutes}m</div>
           </div>
 
-          <button
-            type="button"
-            onClick={startTournament}
-            disabled={!registeredDeck || !sideboardStatus?.valid}
-            className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-lg bg-red-600 px-4 py-3 text-lg font-bold text-white transition-colors hover:bg-red-500 disabled:bg-stone-600 disabled:text-stone-400"
-          >
-            <Shuffle className="h-5 w-5" />
-            {registeredDeck ? 'Start Swiss Tournament' : 'Register Deck First'}
-          </button>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <button
+              type="button"
+              onClick={() => startPlayableMatch()}
+              disabled={!registeredDeck || !sideboardStatus?.valid || !onStartMatch}
+              className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-lg bg-green-700 px-4 py-3 text-lg font-bold text-white transition-colors hover:bg-green-600 disabled:bg-stone-600 disabled:text-stone-400"
+            >
+              <Swords className="h-5 w-5" />
+              Play Standard Match
+            </button>
+            <button
+              type="button"
+              onClick={startTournament}
+              disabled={!registeredDeck || !sideboardStatus?.valid}
+              className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-lg bg-red-600 px-4 py-3 text-lg font-bold text-white transition-colors hover:bg-red-500 disabled:bg-stone-600 disabled:text-stone-400"
+            >
+              <Shuffle className="h-5 w-5" />
+              {registeredDeck ? 'Start Swiss Tournament' : 'Register Deck First'}
+            </button>
+          </div>
         </div>
       )}
 
@@ -502,6 +532,15 @@ export function StandardTournament({ onBack }: StandardTournamentProps) {
             <div className="flex flex-wrap gap-2">
               <button
                 type="button"
+                onClick={() => startPlayableMatch(humanMatch)}
+                disabled={!onStartMatch || !humanMatch || humanMatch.isBye}
+                className="flex min-h-[40px] items-center gap-2 rounded-lg bg-green-700 px-3 py-2 text-sm font-bold text-white hover:bg-green-600 disabled:bg-stone-600 disabled:text-stone-400"
+              >
+                <Swords className="h-4 w-4" />
+                Play Your Match
+              </button>
+              <button
+                type="button"
                 onClick={() => setTimeExtensionMinutes(prev => prev + 1)}
                 className="min-h-[40px] rounded-lg bg-stone-700 px-3 py-2 text-sm font-bold text-stone-100 hover:bg-stone-600"
               >
@@ -524,6 +563,12 @@ export function StandardTournament({ onBack }: StandardTournamentProps) {
             </div>
           )}
 
+          {sideboardMessage && (
+            <div className="rounded border border-amber-800 bg-amber-950/30 px-3 py-2 text-sm text-amber-200">
+              {sideboardMessage}
+            </div>
+          )}
+
           {phase === 'running' && (
             <div className="overflow-hidden rounded-lg border border-neutral-700 bg-neutral-900">
               <div className="border-b border-neutral-700 px-3 py-2 text-xs font-bold uppercase tracking-wider text-amber-400">
@@ -543,6 +588,15 @@ export function StandardTournament({ onBack }: StandardTournamentProps) {
                     </div>
                     <div className="font-mono text-amber-200">{matchScore(match)}</div>
                     <div className="flex flex-wrap gap-1">
+                      {(match.player1Id === 'human' || match.player2Id === 'human') && onStartMatch && !match.isBye && (
+                        <button
+                          type="button"
+                          onClick={() => startPlayableMatch(match)}
+                          className="rounded bg-green-700 px-2 py-1 text-xs font-bold text-green-100 hover:bg-green-600"
+                        >
+                          Play
+                        </button>
+                      )}
                       {!match.isBye && match.player2Id && (
                         <>
                           {resultOptions(matchWinsRequired).map(option => (
