@@ -45,6 +45,7 @@ export default function RootLayout() {
         }}
       >
         <Stack.Screen name="index" />
+        <Stack.Screen name="brain-download" />
         <Stack.Screen name="setup" />
         <Stack.Screen name="game" />
       </Stack>

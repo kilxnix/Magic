@@ -2,6 +2,7 @@
 """Tests for the price service module."""
 
 import pytest
+import socket
 from unittest.mock import patch, MagicMock
 from backend.price_service import (
     fetch_mtgjson_prices,
@@ -9,6 +10,21 @@ from backend.price_service import (
     get_card_prices,
     get_cheapest_price,
     get_price_category,
+)
+
+def _can_reach(host: str, port: int = 443, timeout_s: float = 1.0) -> bool:
+    try:
+        sock = socket.create_connection((host, port), timeout=timeout_s)
+        sock.close()
+        return True
+    except OSError:
+        return False
+
+
+SCRYFALL_REACHABLE = _can_reach("api.scryfall.com")
+requires_scryfall = pytest.mark.skipif(
+    not SCRYFALL_REACHABLE,
+    reason="Scryfall unreachable (offline/CI sandbox); skipping live-network price tests",
 )
 
 
@@ -50,6 +66,7 @@ class TestFetchMtgjsonPrices:
 class TestFetchCardPricesScryfall:
     """Tests for Scryfall price fetching (uses real API)."""
 
+    @requires_scryfall
     def test_fetch_scryfall_prices_returns_dict(self):
         """Test that Scryfall price fetch returns price data."""
         result = fetch_card_prices_scryfall("Sol Ring", force_refresh=True)
@@ -57,6 +74,7 @@ class TestFetchCardPricesScryfall:
         # Scryfall returns prices with string values
         assert "usd" in result or "eur" in result
 
+    @requires_scryfall
     def test_fetch_scryfall_nonexistent_card(self):
         """Test fetching a nonexistent card returns empty dict."""
         result = fetch_card_prices_scryfall("NonexistentCardXYZ12345", force_refresh=True)
@@ -66,6 +84,7 @@ class TestFetchCardPricesScryfall:
 class TestGetCardPrices:
     """Tests for get_card_prices function (uses real Scryfall API)."""
 
+    @requires_scryfall
     def test_get_card_prices_returns_vendor_prices(self):
         """Test getting prices for a specific card."""
         prices = get_card_prices("Sol Ring")
@@ -77,6 +96,7 @@ class TestGetCardPrices:
             if isinstance(p, dict)
         )
 
+    @requires_scryfall
     def test_get_card_prices_structure(self):
         """Test that get_card_prices returns correct structure."""
         prices = get_card_prices("Lightning Bolt")
@@ -86,6 +106,7 @@ class TestGetCardPrices:
         assert "usd" in prices["tcgplayer"]
         assert "url" in prices["tcgplayer"]
 
+    @requires_scryfall
     def test_get_card_prices_nonexistent_card(self):
         """Test getting prices for nonexistent card."""
         prices = get_card_prices("NonexistentCardXYZ12345")
@@ -97,6 +118,7 @@ class TestGetCardPrices:
 class TestGetCheapestPrice:
     """Tests for get_cheapest_price function."""
 
+    @requires_scryfall
     def test_get_cheapest_price_sol_ring(self):
         """Test getting cheapest price for a common card."""
         price = get_cheapest_price("Sol Ring")
@@ -104,6 +126,7 @@ class TestGetCheapestPrice:
         assert isinstance(price, float)
         assert price > 0
 
+    @requires_scryfall
     def test_get_cheapest_price_nonexistent(self):
         """Test cheapest price for nonexistent card is None."""
         price = get_cheapest_price("NonexistentCardXYZ12345")

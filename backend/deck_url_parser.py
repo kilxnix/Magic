@@ -11,6 +11,74 @@ import cloudscraper
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
+# MTGGoldfish / flat decklist normalization
+# ---------------------------------------------------------------------------
+
+# MTGGoldfish's "Text File (Default)" export is frequently a single line like:
+#   "1 Sol Ring 1 Arcane Signet 10 Forest ..."
+# Normalize this into one entry per line so the rest of the parser can work.
+_FLAT_ENTRY_START_RE = re.compile(r"(?:^|\s)(\d+)\s*x?\s+")
+_MTGGOLDFISH_ARCHETYPE_RE = re.compile(r"Archetype:\s*(?:<a[^>]*>)?\s*([^<\r\n]+)")
+
+
+def _normalize_flat_decklist(text: str) -> str:
+    """If *text* looks like a single-line decklist, explode it into many lines."""
+    # Keep existing multi-line decklists unchanged.
+    non_empty_lines = [ln for ln in text.splitlines() if ln.strip()]
+    if len(non_empty_lines) != 1:
+        return text
+
+    line = non_empty_lines[0].strip()
+    if not line:
+        return text
+
+    # MTGGoldfish sometimes inlines section markers ("Commander", "Deck", "Sideboard")
+    # in the same line as card entries.
+    # Only treat these as section markers when followed by a quantity.
+    # This avoids splitting card names like "Commander's Sphere".
+    line = re.sub(
+        r"\b(Commander|Deck|Sideboard|Companion|Considering|Maybeboard)\b(?=\s+\d)",
+        r"\n\1\n",
+        line,
+        flags=re.IGNORECASE,
+    )
+
+    out_lines: list[str] = []
+    for segment in (seg.strip() for seg in line.splitlines() if seg.strip()):
+        matches = list(_FLAT_ENTRY_START_RE.finditer(segment))
+        # If there's only one quantity marker, it's probably already a single entry.
+        if len(matches) <= 1:
+            out_lines.append(segment)
+            continue
+
+        # Preserve any leading non-quantity text before the first entry.
+        prefix = segment[:matches[0].start(1)].strip()
+        if prefix:
+            out_lines.append(prefix)
+
+        for i, m in enumerate(matches):
+            start = m.start(1)  # start of the quantity digits
+            end = matches[i + 1].start(1) if i + 1 < len(matches) else len(segment)
+            chunk = segment[start:end].strip()
+            if chunk:
+                out_lines.append(chunk)
+
+    # If we failed to split into something meaningful, keep the original.
+    if len(out_lines) <= 1:
+        return text
+
+    return "\n".join(out_lines) + "\n"
+
+
+def _extract_mtggoldfish_commander_from_html(html: str) -> Optional[str]:
+    """Best-effort extraction of the Commander/archetype name from an MTGGoldfish deck page."""
+    m = _MTGGOLDFISH_ARCHETYPE_RE.search(html)
+    if not m:
+        return None
+    name = m.group(1).strip()
+    return name or None
+
+# ---------------------------------------------------------------------------
 # URL detection
 # ---------------------------------------------------------------------------
 
@@ -78,6 +146,7 @@ def parse_decklist_text(text: str) -> dict:
     Recognises section headers (Commander, Sideboard, etc.) and strips set
     codes / collector numbers from card lines.
     """
+    text = _normalize_flat_decklist(text)
     cards: list[str] = []
     commander_names: list[str] = []
     current_section: Optional[str] = None
@@ -218,7 +287,22 @@ def fetch_mtggoldfish(deck_id: str) -> dict:
     download_url = f"https://www.mtggoldfish.com/deck/download/{deck_id}"
     resp = requests.get(download_url, timeout=_REQUEST_TIMEOUT)
     resp.raise_for_status()
-    return parse_decklist_text(resp.text)
+    parsed = parse_decklist_text(resp.text)
+
+    # MTGGoldfish's download endpoint often omits commander section headers.
+    # For Commander decks, the deck page includes an "Archetype:" field that
+    # typically matches the commander. Use it as a best-effort hint.
+    try:
+        page_url = f"https://www.mtggoldfish.com/deck/{deck_id}"
+        page_resp = requests.get(page_url, timeout=_REQUEST_TIMEOUT)
+        page_resp.raise_for_status()
+        commander = _extract_mtggoldfish_commander_from_html(page_resp.text)
+        if commander:
+            parsed["commander"] = commander
+    except Exception as e:
+        logger.info("MTGGoldfish commander extraction failed (id=%s): %s", deck_id, e)
+
+    return parsed
 
 
 # ---------------------------------------------------------------------------

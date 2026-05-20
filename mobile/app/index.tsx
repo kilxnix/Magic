@@ -1,31 +1,60 @@
+import { useEffect, useState } from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import {
+  getShelectorBrainStatus,
+  ShelectorBrainStatus,
+  shouldPromptForShelectorBrain,
+} from '@/shelector/brainDownload';
 
 export default function HomeScreen() {
   const router = useRouter();
+  const [brainStatus, setBrainStatus] = useState<ShelectorBrainStatus | null>(null);
+
+  useEffect(() => {
+    getShelectorBrainStatus().then(setBrainStatus);
+  }, []);
+
+  const startNewGame = async () => {
+    const status = await getShelectorBrainStatus();
+    setBrainStatus(status);
+    router.push(shouldPromptForShelectorBrain(status) ? '/brain-download' : '/game');
+  };
+
+  const brainStatusLabel = brainStatus?.phase === 'ready'
+    ? 'Shelector brain ready on device'
+    : brainStatus?.phase === 'downloading'
+      ? 'Shelector brain downloading'
+      : brainStatus?.phase === 'deferred'
+        ? 'Using fallback Shelector'
+        : 'Offline brain not downloaded';
 
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.content}>
         <Text style={styles.title}>Commander</Text>
         <Text style={styles.subtitle}>Game Engine</Text>
+        <Pressable
+          style={styles.brainPill}
+          onPress={() => router.push('/brain-download')}
+        >
+          <Text style={styles.brainPillText}>{brainStatusLabel}</Text>
+        </Pressable>
 
         <View style={styles.buttonContainer}>
           <Pressable
             style={styles.primaryButton}
-            onPress={() => router.push('/setup')}
+            onPress={startNewGame}
           >
             <Text style={styles.primaryButtonText}>New Game</Text>
           </Pressable>
 
           <Pressable
             style={styles.secondaryButton}
-            onPress={() => {
-              // TODO: Navigate to saved games
-            }}
+            onPress={() => router.push('/setup')}
           >
-            <Text style={styles.secondaryButtonText}>Continue Game</Text>
+            <Text style={styles.secondaryButtonText}>Game Setup</Text>
           </Pressable>
         </View>
       </View>
@@ -55,7 +84,21 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: 18,
     color: '#a1a1aa',
-    marginBottom: 64,
+    marginBottom: 18,
+  },
+  brainPill: {
+    borderWidth: 1,
+    borderColor: '#4c1d95',
+    backgroundColor: '#27272a',
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    marginBottom: 42,
+  },
+  brainPillText: {
+    color: '#c4b5fd',
+    fontSize: 13,
+    fontWeight: '700',
   },
   buttonContainer: {
     width: '100%',

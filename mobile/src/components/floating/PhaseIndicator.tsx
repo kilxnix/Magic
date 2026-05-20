@@ -6,6 +6,7 @@
 
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { Phase, Step } from '@/types';
 
 interface PhaseIndicatorProps {
@@ -45,11 +46,15 @@ export function PhaseIndicator({
   activePlayerName,
   isYourTurn,
 }: PhaseIndicatorProps) {
+  const insets = useSafeAreaInsets();
+
   return (
-    <View style={[styles.container, isYourTurn && styles.containerYourTurn]}>
-      <Text style={styles.turn}>Turn {turnNumber}</Text>
-      <Text style={styles.phase}>{PHASE_LABELS[phase]}</Text>
-      <Text style={styles.step}>{STEP_LABELS[step]}</Text>
+    <View style={[styles.container, { top: insets.top + 8 }, isYourTurn && styles.containerYourTurn]}>
+      <Text style={styles.turn}>T{turnNumber}</Text>
+      <View style={styles.phaseGroup}>
+        <Text style={styles.phase}>{PHASE_LABELS[phase]}</Text>
+        <Text style={styles.step}>{STEP_LABELS[step]}</Text>
+      </View>
       <Text style={styles.player} numberOfLines={1}>
         {isYourTurn ? 'Your turn' : activePlayerName}
       </Text>
@@ -60,37 +65,41 @@ export function PhaseIndicator({
 const styles = StyleSheet.create({
   container: {
     position: 'absolute',
-    top: 60,
-    left: 12,
+    left: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: '#27272a',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: '#3f3f46',
-    gap: 2,
+    gap: 8,
   },
   containerYourTurn: {
     borderColor: '#7c3aed',
   },
   turn: {
     color: '#71717a',
-    fontSize: 11,
-    fontWeight: '600',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  phaseGroup: {
+    gap: 1,
   },
   phase: {
     color: '#ffffff',
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '700',
   },
   step: {
     color: '#a1a1aa',
-    fontSize: 12,
+    fontSize: 10,
   },
   player: {
     color: '#7c3aed',
-    fontSize: 11,
-    fontWeight: '500',
-    maxWidth: 80,
+    fontSize: 10,
+    fontWeight: '600',
+    maxWidth: 64,
   },
 });

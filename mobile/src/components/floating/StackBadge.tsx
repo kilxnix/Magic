@@ -6,6 +6,7 @@
 
 import React from 'react';
 import { Text, StyleSheet, Pressable } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface StackBadgeProps {
   itemCount: number;
@@ -13,8 +14,10 @@ interface StackBadgeProps {
 }
 
 export function StackBadge({ itemCount, onPress }: StackBadgeProps) {
+  const insets = useSafeAreaInsets();
+
   return (
-    <Pressable style={styles.container} onPress={onPress}>
+    <Pressable style={[styles.container, { top: insets.top + 48 }]} onPress={onPress}>
       <Text style={styles.icon}>📚</Text>
       <Text style={styles.count}>{itemCount}</Text>
     </Pressable>
@@ -24,22 +27,21 @@ export function StackBadge({ itemCount, onPress }: StackBadgeProps) {
 const styles = StyleSheet.create({
   container: {
     position: 'absolute',
-    top: 60,
-    right: 12,
+    right: 10,
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#7c3aed',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 18,
     gap: 6,
   },
   icon: {
-    fontSize: 16,
+    fontSize: 14,
   },
   count: {
     color: '#ffffff',
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '700',
   },
 });

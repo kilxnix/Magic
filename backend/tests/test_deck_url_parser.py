@@ -59,3 +59,12 @@ class TestParseDecklistText:
         text = "1 Sol Ring (C21) 267"
         result = parse_decklist_text(text)
         assert "Sol Ring" in result["cards"]
+
+    def test_flat_single_line_mtggoldfish_style(self):
+        # MTGGoldfish exports are often a single line like:
+        # "1 Sol Ring 1 Arcane Signet 10 Forest ..."
+        text = "1 Sol Ring 1 Command Tower 2 Forest"
+        result = parse_decklist_text(text)
+        assert "Sol Ring" in result["cards"]
+        assert "Command Tower" in result["cards"]
+        assert result["cards"].count("Forest") == 2
