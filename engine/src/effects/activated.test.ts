@@ -377,6 +377,135 @@ describe('executeSearchLibrary', () => {
     // Nothing changed
     expect(result.cards.get('inst_1')!.zone).toBe('library');
   });
+
+  it('rejects an explicit illegal selected card instead of falling back to another candidate', () => {
+    const sisay = createTestDef({
+      id: 'sisay',
+      name: 'Sisay, Weatherlight Captain',
+      type_line: 'Legendary Creature â€” Human Soldier',
+      card_types: ['creature'],
+      cmc: 3,
+      power: 3,
+      toughness: 3,
+    });
+    const arcaneSignet = createTestDef({
+      id: 'arcane_signet',
+      name: 'Arcane Signet',
+      type_line: 'Artifact',
+      card_types: ['artifact'],
+      cmc: 2,
+    });
+    const moxAmber = createTestDef({
+      id: 'mox_amber',
+      name: 'Mox Amber',
+      type_line: 'Legendary Artifact',
+      card_types: ['artifact'],
+      cmc: 0,
+    });
+
+    const state = createTestState([
+      { def: sisay, zone: 'battlefield', ownerId: 'p1' },
+      { def: arcaneSignet, zone: 'library', ownerId: 'p1' },
+      { def: moxAmber, zone: 'library', ownerId: 'p1' },
+    ]);
+
+    const result = executeSearchLibrary(
+      state,
+      'p1',
+      { supertypes: ['Legendary'], permanent: true, manaValueLessThanSourcePower: true },
+      'battlefield',
+      false,
+      false,
+      { selectedCardInstanceId: 'inst_2', sourceInstanceId: 'inst_1' },
+    );
+
+    expect(result.cards.get('inst_2')!.zone).toBe('library');
+    expect(result.cards.get('inst_3')!.zone).toBe('library');
+  });
+
+  it('enforces Sisay-style legendary permanent and source-power filters', () => {
+    const sisay = createTestDef({
+      id: 'sisay',
+      name: 'Sisay, Weatherlight Captain',
+      type_line: 'Legendary Creature â€” Human Soldier',
+      card_types: ['creature'],
+      cmc: 3,
+      power: 3,
+      toughness: 3,
+    });
+    const legendarySorcery = createTestDef({
+      id: 'legendary_sorcery',
+      name: "Karn's Temporal Sundering",
+      type_line: 'Legendary Sorcery',
+      card_types: ['sorcery'],
+      cmc: 6,
+    });
+    const highLegend = createTestDef({
+      id: 'high_legend',
+      name: 'High-Cost Legend',
+      type_line: 'Legendary Creature â€” Avatar',
+      card_types: ['creature'],
+      cmc: 5,
+    });
+    const moxAmber = createTestDef({
+      id: 'mox_amber',
+      name: 'Mox Amber',
+      type_line: 'Legendary Artifact',
+      card_types: ['artifact'],
+      cmc: 0,
+    });
+
+    const state = createTestState([
+      { def: sisay, zone: 'battlefield', ownerId: 'p1' },
+      { def: legendarySorcery, zone: 'library', ownerId: 'p1' },
+      { def: highLegend, zone: 'library', ownerId: 'p1' },
+      { def: moxAmber, zone: 'library', ownerId: 'p1' },
+    ]);
+
+    const filter = { supertypes: ['Legendary'], permanent: true, manaValueLessThanSourcePower: true };
+
+    expect(matchesCardFilter(legendarySorcery, filter, { state, sourceInstanceId: 'inst_1' })).toBe(false);
+    expect(matchesCardFilter(highLegend, filter, { state, sourceInstanceId: 'inst_1' })).toBe(false);
+    expect(matchesCardFilter(moxAmber, filter, { state, sourceInstanceId: 'inst_1' })).toBe(true);
+
+    const result = executeSearchLibrary(
+      state,
+      'p1',
+      filter,
+      'battlefield',
+      false,
+      false,
+      { selectedCardInstanceId: 'inst_4', sourceInstanceId: 'inst_1' },
+    );
+
+    expect(result.cards.get('inst_4')!.zone).toBe('battlefield');
+  });
+
+  it('matches Farseek by land subtype, not by every land card', () => {
+    const forest = createTestDef({
+      id: 'forest',
+      name: 'Forest',
+      type_line: 'Basic Land â€” Forest',
+      card_types: ['land'],
+    });
+    const stompingGround = createTestDef({
+      id: 'stomping_ground',
+      name: 'Stomping Ground',
+      type_line: 'Land â€” Mountain Forest',
+      card_types: ['land'],
+    });
+    const hallowedFountain = createTestDef({
+      id: 'hallowed_fountain',
+      name: 'Hallowed Fountain',
+      type_line: 'Land â€” Plains Island',
+      card_types: ['land'],
+    });
+    const filter = { types: ['Land'], subtypes: ['Plains', 'Island', 'Swamp', 'Mountain'] };
+
+    expect(matchesCardFilter(forest, filter)).toBe(false);
+    expect(matchesCardFilter(stompingGround, filter)).toBe(true);
+    expect(matchesCardFilter(hallowedFountain, filter)).toBe(true);
+  });
 });
 
 describe('executeShuffleLibrary', () => {

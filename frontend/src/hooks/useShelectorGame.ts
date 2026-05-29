@@ -57,6 +57,7 @@ import {
   tryAdjustCounters,
   getCostReduction,
   getOverride,
+  getEffectivePower,
   resetLoopDetector,
   type Effect,
   type StackItem,
@@ -551,6 +552,9 @@ type SearchFilterSpec = {
   supertypes?: string[];
   colors?: string[];
   cmc?: { op: 'eq' | 'lte' | 'gte'; value: number };
+  permanent?: boolean;
+  manaValueLessThanSourcePower?: boolean;
+  sourcePowerLimit?: number;
 };
 
 export type TutorCardOption = {
@@ -606,6 +610,12 @@ function isMoxDiamondLikeDefinition(def: CardDefinition): boolean {
 
 function isLandDefinition(def: CardDefinition | undefined): boolean {
   return def?.card_types.includes('land') === true;
+}
+
+function isPermanentTypeLine(typeLine: string): boolean {
+  const normalized = typeLine.toLowerCase();
+  return ['artifact', 'battle', 'creature', 'enchantment', 'land', 'planeswalker']
+    .some(type => normalized.includes(type));
 }
 
 function isCreatureTypeChoiceLand(def: CardDefinition): boolean {
@@ -708,6 +718,14 @@ function humanizeSearchFilter(filter?: SearchFilterSpec, fallback?: string): str
   if (subtypes.length > 0) parts.push(subtypes.join(' or '));
   if (filter.colors?.length) parts.push(filter.colors.join(' or '));
   if (filter.cmc) parts.push(`mana value ${filter.cmc.op} ${filter.cmc.value}`);
+  if (filter.permanent && !types.some(type => ['artifact', 'battle', 'creature', 'enchantment', 'land', 'planeswalker'].includes(type))) {
+    parts.push('permanent');
+  }
+  if (filter.manaValueLessThanSourcePower) {
+    parts.push(typeof filter.sourcePowerLimit === 'number'
+      ? `mana value less than ${filter.sourcePowerLimit}`
+      : 'mana value less than source power');
+  }
 
   return parts.length > 0 ? parts.join(' ') : undefined;
 }
@@ -742,6 +760,11 @@ function cardMatchesSearch(
       if (filterSpec.cmc.op === 'lte' && card.cmc > filterSpec.cmc.value) return false;
       if (filterSpec.cmc.op === 'gte' && card.cmc < filterSpec.cmc.value) return false;
     }
+    if (filterSpec.permanent && !isPermanentTypeLine(card.typeLine)) return false;
+    if (filterSpec.manaValueLessThanSourcePower) {
+      if (typeof filterSpec.sourcePowerLimit !== 'number' || typeof card.cmc !== 'number') return false;
+      if (card.cmc >= filterSpec.sourcePowerLimit) return false;
+    }
     return true;
   }
 
@@ -771,7 +794,11 @@ function searchPickerMetadata(search: StackSearchInfo): Pick<TutorCardOption, 'l
   };
 }
 
-function searchInfoFromEffects(effects: unknown[] | undefined): StackSearchInfo | undefined {
+function searchInfoFromEffects(
+  effects: unknown[] | undefined,
+  state?: GameState,
+  sourceInstanceId?: string,
+): StackSearchInfo | undefined {
   if (!Array.isArray(effects)) return undefined;
   const searchEffect = effects.find((effect): effect is {
     kind: 'SearchLibrary';
@@ -788,9 +815,16 @@ function searchInfoFromEffects(effects: unknown[] | undefined): StackSearchInfo 
     typeof effect === 'object' && effect !== null && (effect as { kind?: string }).kind === 'ShuffleLibrary'
   );
 
+  const filterSpec = searchEffect.filter
+    ? { ...searchEffect.filter }
+    : undefined;
+  if (filterSpec?.manaValueLessThanSourcePower && state && sourceInstanceId) {
+    filterSpec.sourcePowerLimit = getEffectivePower(state, sourceInstanceId);
+  }
+
   return {
-    filter: humanizeSearchFilter(searchEffect.filter),
-    filterSpec: searchEffect.filter,
+    filter: humanizeSearchFilter(filterSpec),
+    filterSpec,
     destination: searchEffect.destination || 'hand',
     tapped: searchEffect.tapped,
     shuffle: searchEffect.shuffle ?? hasShuffleEffect,
@@ -2351,7 +2385,7 @@ export function useShelectorGame() {
           const tc = state.cards.get(top.cardInstanceId);
           const td = tc ? state.cardDefinitions.get(tc.definitionId) : undefined;
           sourceName = td?.name || sourceName;
-          const effectSearch = searchInfoFromEffects(spellEffectsForChoicePrompt(state, top));
+          const effectSearch = searchInfoFromEffects(spellEffectsForChoicePrompt(state, top), state, top.cardInstanceId);
           if (effectSearch) {
             searchInfo = effectSearch;
           } else if (td?.searchAbility) {
@@ -2374,7 +2408,7 @@ export function useShelectorGame() {
           // coarse card-level hint and can lose subtype filters such as
           // "Mountain or Plains" on typed fetch lands.
           if (top.ability) {
-            const effectSearch = searchInfoFromEffects(top.ability.effects);
+            const effectSearch = searchInfoFromEffects(top.ability.effects, state, top.sourceInstanceId);
             if (effectSearch) {
               searchInfo = effectSearch;
             }
@@ -3653,6 +3687,23 @@ export function useShelectorGame() {
 
     // Determine destination from the tutor's oracle text
     const dest = tutorDestinationRef.current;
+    const filterSpec = tutorFilterSpecRef.current;
+    const filter = tutorFilterRef.current;
+    const option = toTutorCardOption(engine, card);
+    const isLegalLibraryChoice = Boolean(
+      option
+      && card.ownerId === humanIdRef.current
+      && card.zone === 'library'
+      && cardMatchesSearch(option, filterSpec, filter)
+      && (dest !== 'battlefield' || isPermanentTypeLine(option.typeLine))
+    );
+    if (!isLegalLibraryChoice) {
+      const sourceName = tutorSourceNameRef.current || 'this search';
+      addMessage('system', `${cardName} is not a legal choice for ${sourceName}. Choose a legal card.`);
+      syncState();
+      return;
+    }
+
     const newCards = new Map(engine.cards);
 
     if (dest === 'top') {

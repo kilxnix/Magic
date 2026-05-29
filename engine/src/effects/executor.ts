@@ -863,10 +863,24 @@ function executeSurveil(
   );
 }
 
+type CardFilterContext = {
+  state?: GameState;
+  sourceInstanceId?: string;
+};
+
+function isPermanentDefinition(def: CardDefinition): boolean {
+  return ['artifact', 'battle', 'creature', 'enchantment', 'land', 'planeswalker']
+    .some(type => def.card_types.includes(type as any) || def.type_line.toLowerCase().includes(type));
+}
+
 /**
  * Check if a card definition matches a CardFilter.
  */
-export function matchesCardFilter(def: CardDefinition, filter: CardFilter): boolean {
+export function matchesCardFilter(def: CardDefinition, filter: CardFilter, context: CardFilterContext = {}): boolean {
+  if (filter.permanent && !isPermanentDefinition(def)) {
+    return false;
+  }
+
   // Check card types
   if (filter.types) {
     const hasMatchingType = filter.types.some(t =>
@@ -908,6 +922,11 @@ export function matchesCardFilter(def: CardDefinition, filter: CardFilter): bool
       case 'lte': if (def.cmc > filter.cmc.value) return false; break;
       case 'gte': if (def.cmc < filter.cmc.value) return false; break;
     }
+  }
+
+  if (filter.manaValueLessThanSourcePower) {
+    if (!context.state || !context.sourceInstanceId) return false;
+    if (def.cmc >= getEffectivePower(context.state, context.sourceInstanceId)) return false;
   }
 
   // Check printed power when no card instance is available.
@@ -975,7 +994,7 @@ export function executeSearchLibrary(
   destination: 'battlefield' | 'hand' | 'top' | 'graveyard',
   tapped?: boolean,
   shuffleRest: boolean = false,
-  choices: { namedCard?: string; selectedCardInstanceId?: string } = {},
+  choices: { namedCard?: string; selectedCardInstanceId?: string; sourceInstanceId?: string } = {},
 ): GameState {
   const candidates: CardInstance[] = [];
 
@@ -983,7 +1002,7 @@ export function executeSearchLibrary(
     if (card.ownerId !== playerId || card.zone !== 'library') continue;
     const def = state.cardDefinitions.get(card.definitionId);
     if (!def) continue;
-    if (matchesCardFilter(def, filter)) {
+    if (matchesCardFilter(def, filter, { state, sourceInstanceId: choices.sourceInstanceId })) {
       candidates.push(card);
     }
   }
@@ -991,6 +1010,7 @@ export function executeSearchLibrary(
   let matchedCard: CardInstance | null = null;
   if (choices.selectedCardInstanceId) {
     matchedCard = candidates.find(card => card.instanceId === choices.selectedCardInstanceId) ?? null;
+    if (!matchedCard) return state;
   }
   if (!matchedCard && choices.namedCard) {
     const wanted = choices.namedCard.trim().toLowerCase();
@@ -998,6 +1018,7 @@ export function executeSearchLibrary(
       const def = state.cardDefinitions.get(card.definitionId);
       return def?.name.toLowerCase() === wanted;
     }) ?? null;
+    if (!matchedCard) return state;
   }
   if (!matchedCard) {
     matchedCard = candidates[0] ?? null;
@@ -1981,6 +2002,7 @@ function executeEffect(
         selectedCardInstanceId: namedCardChoices.get(selectedCardChoiceId)
           || namedCardChoices.get('tutorCardId')
           || namedCardChoices.get('selectedCardId'),
+        sourceInstanceId,
       });
     }
     case 'ShuffleLibrary': {

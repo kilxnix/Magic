@@ -358,6 +358,8 @@ export interface CardFilter {
   supertypes?: string[];
   colors?: Array<'W' | 'U' | 'B' | 'R' | 'G'>;
   cmc?: { op: 'eq' | 'lte' | 'gte'; value: number };
+  permanent?: boolean;
+  manaValueLessThanSourcePower?: boolean;
   power?: { op: 'eq' | 'lte' | 'gte'; value: number };
 }
 

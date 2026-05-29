@@ -810,7 +810,7 @@ registerOverrideByName('Farseek', {
     {
       kind: 'SearchLibrary',
       player: { kind: 'Controller' },
-      filter: { types: ['Land'] },
+      filter: { types: ['Land'], subtypes: ['Plains', 'Island', 'Swamp', 'Mountain'] },
       destination: 'battlefield',
       tapped: true,
       shuffle: false,
@@ -823,7 +823,37 @@ registerOverrideByName('Farseek', {
   targets: [],
 });
 
-// Sakura-Tribe Elder — Activated ability (sacrifice): SearchLibrary basic land to battlefield tapped + Shuffle
+// Sisay, Weatherlight Captain - {W}{U}{B}{R}{G}, {T}: Search for a
+// legendary permanent card with mana value less than Sisay's power.
+registerOverrideByName('Sisay, Weatherlight Captain', {
+  kind: 'Activated',
+  ability: {
+    kind: 'ActivatedAbility',
+    cost: { tap: true, mana: '{W}{U}{B}{R}{G}' },
+    effects: [
+      {
+        kind: 'SearchLibrary',
+        player: { kind: 'Controller' },
+        filter: {
+          supertypes: ['Legendary'],
+          permanent: true,
+          manaValueLessThanSourcePower: true,
+        },
+        destination: 'battlefield',
+        tapped: false,
+        shuffle: false,
+      },
+      {
+        kind: 'ShuffleLibrary',
+        player: { kind: 'Controller' },
+      },
+    ],
+    isManaAbility: false,
+    targets: [],
+  },
+});
+
+// Sakura-Tribe Elder - Activated ability (sacrifice): SearchLibrary basic land to battlefield tapped + Shuffle
 registerOverrideByName('Sakura-Tribe Elder', {
   kind: 'Activated',
   ability: {

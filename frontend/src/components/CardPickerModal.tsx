@@ -32,18 +32,22 @@ export function CardPickerModal({ title, cards, filter, onPick, onCancel, cancel
     if (filter && !card.typeLine.toLowerCase().includes(filter.toLowerCase())) return false;
     return true;
   }), [cards, filter, search]);
-  const selected = filtered.find(card => card.instanceId === selectedId) || filtered[0];
+  const selected = filtered.find(card => card.instanceId === selectedId)
+    || filtered.find(card => card.legal !== false)
+    || filtered[0];
 
   useEffect(() => {
     if (selectedId && filtered.some(card => card.instanceId === selectedId)) return;
-    setSelectedId(filtered[0]?.instanceId ?? null);
+    setSelectedId((filtered.find(card => card.legal !== false) || filtered[0])?.instanceId ?? null);
   }, [filtered, selectedId]);
 
   function moveSelection(delta: number): void {
     if (filtered.length === 0) return;
-    const currentIndex = Math.max(0, filtered.findIndex(card => card.instanceId === selected?.instanceId));
-    const nextIndex = (currentIndex + delta + filtered.length) % filtered.length;
-    setSelectedId(filtered[nextIndex].instanceId);
+    const selectable = filtered.filter(card => card.legal !== false);
+    const candidates = selectable.length > 0 ? selectable : filtered;
+    const currentIndex = Math.max(0, candidates.findIndex(card => card.instanceId === selected?.instanceId));
+    const nextIndex = (currentIndex + delta + candidates.length) % candidates.length;
+    setSelectedId(candidates[nextIndex].instanceId);
   }
 
   function destinationLabel(card: CardPickerCard): string | undefined {
@@ -71,7 +75,7 @@ export function CardPickerModal({ title, cards, filter, onPick, onCancel, cancel
           value={search}
           onChange={event => setSearch(event.target.value)}
           onKeyDown={event => {
-            if (event.key === 'Enter' && selected) {
+            if (event.key === 'Enter' && selected && selected.legal !== false) {
               event.preventDefault();
               onPick(selected.instanceId);
             }
@@ -91,19 +95,27 @@ export function CardPickerModal({ title, cards, filter, onPick, onCancel, cancel
           {filtered.map(card => (
             <button
               key={card.instanceId}
-              onClick={() => onPick(card.instanceId)}
+              type="button"
+              disabled={card.legal === false}
+              onClick={() => card.legal !== false && onPick(card.instanceId)}
               onMouseEnter={() => setSelectedId(card.instanceId)}
               onFocus={() => setSelectedId(card.instanceId)}
               className={`w-full rounded px-3 py-2 text-left transition-colors ${
                 selected?.instanceId === card.instanceId
                   ? 'bg-amber-900/50 ring-1 ring-amber-500/40'
-                  : 'bg-stone-700 hover:bg-stone-600'
+                  : card.legal === false
+                    ? 'bg-stone-800/70 opacity-60'
+                    : 'bg-stone-700 hover:bg-stone-600'
               }`}
             >
               <div className="text-sm font-medium text-stone-200">{card.name}</div>
               <div className="text-xs text-stone-400">{card.typeLine} - {card.manaCost || 'no cost'}</div>
               <div className="mt-1 flex flex-wrap gap-1.5">
-                <span className="rounded bg-emerald-400/15 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-emerald-100">
+                <span className={`rounded px-2 py-0.5 text-[10px] font-black uppercase tracking-wide ${
+                  card.legal === false
+                    ? 'bg-red-400/15 text-red-100'
+                    : 'bg-emerald-400/15 text-emerald-100'
+                }`}>
                   {card.legal === false ? 'Illegal' : 'Legal'}
                 </span>
                 {destinationLabel(card) && (
@@ -141,8 +153,8 @@ export function CardPickerModal({ title, cards, filter, onPick, onCancel, cancel
         <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <button
             type="button"
-            disabled={!selected}
-            onClick={() => selected && onPick(selected.instanceId)}
+            disabled={!selected || selected.legal === false}
+            onClick={() => selected && selected.legal !== false && onPick(selected.instanceId)}
             className="min-h-10 rounded bg-amber-500 px-4 py-2 text-sm font-black text-neutral-950 transition-colors hover:bg-amber-400 disabled:cursor-not-allowed disabled:opacity-45"
           >
             Pick selected
