@@ -39,6 +39,17 @@ const STEP_DISPLAY: Record<string, string> = {
   cleanup: 'Cleanup / Discard',
 };
 
+function displayStepForPhase(phase: string | undefined, step: string | undefined): string {
+  if (phase === 'precombat_main' && (!step || step === 'main' || step === 'begin_combat')) {
+    return 'Main Phase 1';
+  }
+  if (phase === 'postcombat_main' && (!step || step === 'main' || step === 'end_of_combat')) {
+    return 'Main Phase 2';
+  }
+  if (step) return STEP_DISPLAY[step] || PHASE_DISPLAY[phase || ''] || step;
+  return PHASE_DISPLAY[phase || ''] || phase || 'Phase';
+}
+
 const MANA_COLORS: { key: string; label: string; color: string }[] = [
   { key: 'W', label: 'W', color: 'text-amber-100' },
   { key: 'U', label: 'U', color: 'text-blue-400' },
@@ -187,7 +198,7 @@ function describeVisibleDiff(diff: EngineStateUpdate['visibleDiffs'][number], na
     case 'CommanderCastCountChanged':
       return `${nameForPlayer(diff.playerId)} commander casts ${diff.from} -> ${diff.to}`;
     case 'PhaseChanged':
-      return `T${diff.to.turnNumber} ${diff.to.phase}`;
+      return `T${diff.to.turnNumber} ${displayStepForPhase(diff.to.phase, diff.to.step)}`;
     case 'PriorityChanged':
       return `priority ${nameForPlayer(diff.from)} -> ${nameForPlayer(diff.to)}`;
     case 'StackChanged':
@@ -1755,7 +1766,7 @@ export function GameBoard({
                     {stateUpdateActor(update, gameState)}
                   </span>
                   <span className="shrink-0 text-[9px] text-stone-500">
-                    T{update.turnNumber} {STEP_DISPLAY[update.step] || update.step}
+                    T{update.turnNumber} {displayStepForPhase(update.phase, update.step)}
                   </span>
                 </div>
                 <div className="truncate text-[10px] text-stone-400">

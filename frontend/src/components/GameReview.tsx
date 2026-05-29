@@ -30,6 +30,18 @@ const RATING_DISPLAY: Record<MoveRating, { symbol: string; color: string; bgColo
   blunder:   { symbol: '\u2717\u2717', color: 'text-red-500', bgColor: 'bg-red-900/40 border-red-600/50', label: 'Blunder' },
 };
 
+const REVIEW_PHASE_DISPLAY: Record<string, string> = {
+  beginning: 'Beginning',
+  precombat_main: 'Main Phase 1',
+  combat: 'Combat',
+  postcombat_main: 'Main Phase 2',
+  ending: 'Ending',
+};
+
+function reviewPhaseLabel(phase: string): string {
+  return REVIEW_PHASE_DISPLAY[phase] || phase;
+}
+
 // ========== Rating Heuristics ==========
 
 function rateMove(entry: GameLogEntry, allEntries: GameLogEntry[], index: number): { rating: MoveRating; reasoning: string } {
@@ -600,7 +612,7 @@ export function GameReview({ gameLog, finalState, winner, onClose, embedded = fa
                   </div>
                   <h3 className="text-lg font-semibold text-stone-100">{selectedEntry.action}</h3>
                   <p className="text-xs text-stone-500 mt-1">
-                    Turn {selectedEntry.turnNumber} | {selectedEntry.phase} | {selectedEntry.player === 'human' ? 'Your move' : 'AI move'}
+                    Turn {selectedEntry.turnNumber} | {reviewPhaseLabel(selectedEntry.phase)} | {selectedEntry.player === 'human' ? 'Your move' : 'AI move'}
                   </p>
                 </div>
 
