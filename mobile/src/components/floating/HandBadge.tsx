@@ -5,7 +5,8 @@
  */
 
 import React from 'react';
-import { Text, StyleSheet, Pressable } from 'react-native';
+import { Text, StyleSheet, Pressable, useWindowDimensions } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface HandBadgeProps {
   cardCount: number;
@@ -13,11 +14,15 @@ interface HandBadgeProps {
 }
 
 export function HandBadge({ cardCount, onPress }: HandBadgeProps) {
+  const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
+  const showHint = width >= 390;
+
   return (
-    <Pressable style={styles.container} onPress={onPress}>
-      <Text style={styles.icon}>🃏</Text>
+    <Pressable style={[styles.container, { bottom: insets.bottom + 8 }]} onPress={onPress}>
+      <Text style={styles.label}>Hand</Text>
       <Text style={styles.count}>{cardCount}</Text>
-      <Text style={styles.hint}>Tap to view</Text>
+      {showHint && <Text style={styles.hint}>Tap</Text>}
     </Pressable>
   );
 }
@@ -25,29 +30,30 @@ export function HandBadge({ cardCount, onPress }: HandBadgeProps) {
 const styles = StyleSheet.create({
   container: {
     position: 'absolute',
-    bottom: 20,
     alignSelf: 'center',
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#27272a',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 24,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: 22,
     borderWidth: 1,
     borderColor: '#3f3f46',
     gap: 8,
   },
-  icon: {
-    fontSize: 18,
+  label: {
+    color: '#a1a1aa',
+    fontSize: 12,
+    fontWeight: '700',
+    textTransform: 'uppercase',
   },
   count: {
     color: '#ffffff',
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '700',
   },
   hint: {
     color: '#71717a',
     fontSize: 12,
-    marginLeft: 4,
   },
 });

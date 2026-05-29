@@ -1,113 +1,140 @@
-import { useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
-import { StatusBar } from 'expo-status-bar';
-import { WebView } from 'react-native-webview';
+import { useEffect, useState } from 'react';
+import { View, Text, Pressable, StyleSheet } from 'react-native';
+import { useRouter } from 'expo-router';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import {
+  getShelectorBrainStatus,
+  ShelectorBrainStatus,
+  shouldPromptForShelectorBrain,
+} from '@/shelector/brainDownload';
 
-const PLAY_URL = process.env.EXPO_PUBLIC_PLAY_URL || 'http://127.0.0.1:5173/play';
+export default function HomeScreen() {
+  const router = useRouter();
+  const [brainStatus, setBrainStatus] = useState<ShelectorBrainStatus | null>(null);
 
-export default function PlayWebViewScreen() {
-  const webViewRef = useRef<WebView>(null);
-  const [loadFailed, setLoadFailed] = useState(false);
+  useEffect(() => {
+    getShelectorBrainStatus().then(setBrainStatus);
+  }, []);
+
+  const startNewGame = async () => {
+    const status = await getShelectorBrainStatus();
+    setBrainStatus(status);
+    router.push(shouldPromptForShelectorBrain(status) ? '/brain-download' : '/game');
+  };
+
+  const brainStatusLabel = brainStatus?.phase === 'ready'
+    ? 'Shelector brain ready on device'
+    : brainStatus?.phase === 'downloading'
+      ? 'Shelector brain downloading'
+      : brainStatus?.phase === 'deferred'
+        ? 'Using fallback Shelector'
+        : 'Offline brain not downloaded';
 
   return (
-    <View style={styles.container}>
-      <StatusBar hidden />
-      <WebView
-        ref={webViewRef}
-        source={{ uri: PLAY_URL }}
-        style={styles.webview}
-        originWhitelist={['http://*', 'https://*']}
-        javaScriptEnabled
-        domStorageEnabled
-        allowsBackForwardNavigationGestures
-        setSupportMultipleWindows={false}
-        mixedContentMode="always"
-        onError={() => setLoadFailed(true)}
-        onHttpError={() => setLoadFailed(true)}
-        onLoadStart={() => setLoadFailed(false)}
-        startInLoadingState
-        renderLoading={() => (
-          <View style={styles.loading}>
-            <ActivityIndicator color="#f59e0b" />
-          </View>
-        )}
-      />
+    <SafeAreaView style={styles.container}>
+      <View style={styles.content}>
+        <Text style={styles.title}>Commander</Text>
+        <Text style={styles.subtitle}>Game Engine</Text>
+        <Pressable
+          style={styles.brainPill}
+          onPress={() => router.push('/brain-download')}
+        >
+          <Text style={styles.brainPillText}>{brainStatusLabel}</Text>
+        </Pressable>
 
-      {loadFailed && (
-        <View style={styles.errorPanel}>
-          <Text style={styles.errorTitle}>Play UI is not reachable</Text>
-          <Text style={styles.errorText}>
-            Start the web app, then keep USB debugging connected for adb reverse.
-          </Text>
-          <Text style={styles.urlText}>{PLAY_URL}</Text>
+        <View style={styles.buttonContainer}>
           <Pressable
-            style={styles.reloadButton}
-            onPress={() => {
-              setLoadFailed(false);
-              webViewRef.current?.reload();
-            }}
+            style={styles.primaryButton}
+            onPress={startNewGame}
           >
-            <Text style={styles.reloadText}>Reload</Text>
+            <Text style={styles.primaryButtonText}>New Game</Text>
+          </Pressable>
+
+          <Pressable
+            style={styles.secondaryButton}
+            onPress={() => router.push('/setup')}
+          >
+            <Text style={styles.secondaryButtonText}>Game Setup</Text>
           </Pressable>
         </View>
-      )}
-    </View>
+      </View>
+
+      <Text style={styles.version}>Phase 9 - Mobile UI</Text>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0c0a09',
+    backgroundColor: '#1a1a1a',
   },
-  webview: {
+  content: {
     flex: 1,
-    backgroundColor: '#0c0a09',
-  },
-  loading: {
-    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
     alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#0c0a09',
+    paddingHorizontal: 24,
   },
-  errorPanel: {
-    position: 'absolute',
-    left: 16,
-    right: 16,
-    bottom: 16,
-    borderRadius: 8,
+  title: {
+    fontSize: 48,
+    fontWeight: '700',
+    color: '#ffffff',
+    marginBottom: 8,
+  },
+  subtitle: {
+    fontSize: 18,
+    color: '#a1a1aa',
+    marginBottom: 18,
+  },
+  brainPill: {
     borderWidth: 1,
-    borderColor: '#92400e',
-    backgroundColor: 'rgba(12, 10, 9, 0.96)',
-    padding: 14,
-  },
-  errorTitle: {
-    color: '#fbbf24',
-    fontSize: 15,
-    fontWeight: '800',
-    marginBottom: 6,
-  },
-  errorText: {
-    color: '#d6d3d1',
-    fontSize: 12,
-    lineHeight: 17,
-  },
-  urlText: {
-    color: '#a8a29e',
-    fontSize: 11,
-    marginTop: 8,
-  },
-  reloadButton: {
-    alignSelf: 'flex-start',
-    minHeight: 40,
-    justifyContent: 'center',
-    borderRadius: 6,
-    backgroundColor: '#d97706',
-    marginTop: 12,
+    borderColor: '#4c1d95',
+    backgroundColor: '#27272a',
+    borderRadius: 999,
     paddingHorizontal: 14,
+    paddingVertical: 8,
+    marginBottom: 42,
   },
-  reloadText: {
-    color: '#fff7ed',
-    fontWeight: '800',
+  brainPillText: {
+    color: '#c4b5fd',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  buttonContainer: {
+    width: '100%',
+    maxWidth: 300,
+    gap: 16,
+  },
+  primaryButton: {
+    backgroundColor: '#7c3aed',
+    paddingVertical: 16,
+    paddingHorizontal: 32,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  primaryButtonText: {
+    color: '#ffffff',
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  secondaryButton: {
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: '#3f3f46',
+    paddingVertical: 16,
+    paddingHorizontal: 32,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  secondaryButtonText: {
+    color: '#a1a1aa',
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  version: {
+    color: '#52525b',
+    fontSize: 12,
+    textAlign: 'center',
+    paddingBottom: 16,
   },
 });

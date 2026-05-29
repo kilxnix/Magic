@@ -6,6 +6,7 @@
 
 import React from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface PriorityIndicatorProps {
   hasYourPriority: boolean;
@@ -17,10 +18,12 @@ export function PriorityIndicator({
   hasYourPriority,
   onPassPress,
 }: PriorityIndicatorProps) {
+  const insets = useSafeAreaInsets();
+
   if (!hasYourPriority) return null;
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { bottom: insets.bottom + 96 }]}>
       <Text style={styles.label}>Your Priority</Text>
       <Pressable style={styles.passButton} onPress={onPassPress}>
         <Text style={styles.passText}>Pass</Text>
@@ -32,25 +35,24 @@ export function PriorityIndicator({
 const styles = StyleSheet.create({
   container: {
     position: 'absolute',
-    bottom: 100,
-    right: 12,
+    right: 10,
     alignItems: 'flex-end',
-    gap: 8,
+    gap: 6,
   },
   label: {
     color: '#7c3aed',
     fontSize: 12,
     fontWeight: '600',
     backgroundColor: '#1e1b4b',
-    paddingHorizontal: 10,
+    paddingHorizontal: 9,
     paddingVertical: 4,
     borderRadius: 12,
   },
   passButton: {
     backgroundColor: '#7c3aed',
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 24,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 22,
   },
   passText: {
     color: '#ffffff',

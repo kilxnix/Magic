@@ -613,8 +613,12 @@ async def import_deck(req: ImportDeckRequest):
     # Step 2: Get card_db from the deck generator
     from backend.deck_generator import get_generator
 
-    gen = get_generator()
-    card_db = gen.card_by_name
+    card_db = {}
+    try:
+        gen = get_generator()
+        card_db = gen.card_by_name
+    except FileNotFoundError as e:
+        logger.warning("Deck generator data missing; import-deck running in minimal validation mode: %s", e)
 
     # Step 3: Validate
     if format_name == "standard":
@@ -624,7 +628,7 @@ async def import_deck(req: ImportDeckRequest):
 
     # Step 4: Fill missing slots if requested
     filled_cards: list[str] = []
-    if format_name == "commander" and req.fill_missing and validation["missing_slots"] > 0 and parsed.get("commander"):
+    if card_db and format_name == "commander" and req.fill_missing and validation["missing_slots"] > 0 and parsed.get("commander"):
         parsed = fill_missing_slots(parsed, card_db, bracket=req.bracket)
         filled_cards = parsed.get("filled_cards", [])
         # Re-validate after filling — remove any cards that violate color identity

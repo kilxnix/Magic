@@ -7,10 +7,12 @@
 import React, { useMemo } from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useGame } from '@/contexts/GameContext';
 import { COLORS } from '@/constants/colors';
 
 export function ActionBar() {
+  const insets = useSafeAreaInsets();
   const {
     hasYourPriority,
     isYourTurn,
@@ -57,7 +59,7 @@ export function ActionBar() {
   let showActions = false;
 
   if (isAIThinking) {
-    statusMessage = 'AI is thinking...';
+    statusMessage = 'Shelector is thinking...';
   } else if (!hasYourPriority) {
     statusMessage = priorityPlayer
       ? `Waiting for ${priorityPlayer.name}...`
@@ -84,13 +86,13 @@ export function ActionBar() {
 
   return (
     <Animated.View
-      style={styles.container}
+      style={[styles.container, { bottom: insets.bottom + 54 }]}
       entering={FadeIn.duration(150)}
       exiting={FadeOut.duration(150)}
     >
       <View style={styles.content}>
         {/* Status message */}
-        <Text style={styles.statusText}>{statusMessage}</Text>
+        <Text style={styles.statusText} numberOfLines={1}>{statusMessage}</Text>
 
         {/* Action badges */}
         {showActions && (
@@ -122,18 +124,17 @@ export function ActionBar() {
 const styles = StyleSheet.create({
   container: {
     position: 'absolute',
-    bottom: 60,
-    left: 12,
-    right: 12,
+    left: 10,
+    right: 10,
     zIndex: 40,
   },
   content: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: COLORS.surface,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
     gap: 8,
     borderWidth: 1,
     borderColor: COLORS.border,
@@ -141,7 +142,7 @@ const styles = StyleSheet.create({
   statusText: {
     flex: 1,
     color: COLORS.textSecondary,
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '500',
   },
   actionBadges: {
@@ -166,7 +167,7 @@ const styles = StyleSheet.create({
   },
   passButton: {
     backgroundColor: COLORS.primary,
-    paddingHorizontal: 16,
+    paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 8,
   },

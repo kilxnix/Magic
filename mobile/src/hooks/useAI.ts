@@ -1,13 +1,13 @@
 /**
  * useAI
  *
- * Runs AI turns when an AI player has priority.
- * Uses a timeout to add visual delay between AI actions.
+ * Runs local Shelector turns when a Shelector-controlled player has priority.
+ * Uses a timeout to add visual delay between Shelector actions.
  */
 
 import { useEffect, useState, useRef, useCallback } from 'react';
 import type { GameState, AIPlayerConfig, AIDecision } from '@/types';
-import { runAITurn, createAIConfig } from '@engine/ai/agent';
+import { createLocalShelectorConfig, runLocalShelectorTurn } from '@/shelector/localShelector';
 
 const AI_DECISION_DELAY_MS = 500;
 
@@ -28,16 +28,16 @@ export function useAI(
   const [aiConfigs, setAIConfigs] = useState<Map<string, AIPlayerConfig>>(new Map());
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Set AI config for a player
+  // Set local Shelector config for a player
   const setAIConfig = useCallback((playerId: string, difficulty: number) => {
     setAIConfigs(prev => {
       const next = new Map(prev);
-      next.set(playerId, createAIConfig(playerId, difficulty as 1 | 2 | 3 | 4 | 5));
+      next.set(playerId, createLocalShelectorConfig(playerId, difficulty as 1 | 2 | 3 | 4 | 5));
       return next;
     });
   }, []);
 
-  // Run AI when it has priority
+  // Run local Shelector when it has priority
   useEffect(() => {
     if (!gameState) return;
 
@@ -56,19 +56,19 @@ export function useAI(
       return;
     }
 
-    // Check if priority player is an AI
+    // Check if priority player is controlled locally by Shelector
     const aiConfig = aiConfigs.get(priorityPlayerId);
     if (!aiConfig) {
-      // Not an AI player, do nothing
+      // Not a Shelector-controlled player, do nothing
       return;
     }
 
-    // Run AI with delay for visual feedback
+    // Run local Shelector with delay for visual feedback
     setIsAIThinking(true);
 
     timeoutRef.current = setTimeout(() => {
       try {
-        const { finalState, decisions } = runAITurn(gameState, aiConfig);
+        const { finalState, decisions } = runLocalShelectorTurn(gameState, aiConfig);
 
         if (decisions.length > 0) {
           setLastAIDecision(decisions[decisions.length - 1]);
@@ -76,7 +76,7 @@ export function useAI(
 
         onStateUpdate(finalState);
       } catch (e) {
-        console.error('AI error:', e);
+        console.error('Shelector error:', e);
       } finally {
         setIsAIThinking(false);
       }

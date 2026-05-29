@@ -6,6 +6,59 @@ from typing import Dict, List, Optional, Set, Tuple
 
 from backend.rules import COMMANDER_BANNED_CARDS
 
+# ---------------------------------------------------------------------------
+# Flat decklist normalization (e.g., MTGGoldfish single-line exports)
+# ---------------------------------------------------------------------------
+
+_FLAT_ENTRY_START_RE = re.compile(r"(?:^|\s)(\d+)\s*[xX]?\s+")
+
+
+def _normalize_flat_decklist(text: str) -> str:
+    """Explode a single-line decklist like '1 Sol Ring 10 Forest ...' into many lines."""
+    non_empty_lines = [ln for ln in text.splitlines() if ln.strip()]
+    if len(non_empty_lines) != 1:
+        return text
+
+    line = non_empty_lines[0].strip()
+    if not line:
+        return text
+
+    # Split out common section markers that MTGGoldfish exports inline.
+    # Example (Arena export): "Commander 1 X Deck 1 A ... Sideboard 1 B ..."
+    # Only treat these as section markers when followed by a quantity.
+    # This avoids splitting card names like "Commander's Sphere".
+    line = re.sub(
+        r"\b(Commander|Deck|Sideboard|Companion|Considering|Maybeboard)\b(?=\s+\d)",
+        r"\n\1\n",
+        line,
+        flags=re.IGNORECASE,
+    )
+
+    out_lines: List[str] = []
+    for segment in (seg.strip() for seg in line.splitlines() if seg.strip()):
+        matches = list(_FLAT_ENTRY_START_RE.finditer(segment))
+        if len(matches) <= 1:
+            out_lines.append(segment)
+            continue
+
+        # Preserve any leading text before the first quantity (rare but can
+        # happen if a marker wasn't split out for some reason).
+        prefix = segment[:matches[0].start(1)].strip()
+        if prefix:
+            out_lines.append(prefix)
+
+        for i, m in enumerate(matches):
+            start = m.start(1)
+            end = matches[i + 1].start(1) if i + 1 < len(matches) else len(segment)
+            chunk = segment[start:end].strip()
+            if chunk:
+                out_lines.append(chunk)
+
+    if len(out_lines) <= 1:
+        return text
+
+    return "\n".join(out_lines) + "\n"
+
 # Basic lands that are allowed as duplicates
 BASIC_LAND_NAMES: Set[str] = {
     "Plains", "Island", "Swamp", "Mountain", "Forest", "Wastes",
@@ -299,6 +352,7 @@ def _parse_decklist_legacy(text: str, singleton: bool = True) -> dict:
 
     Returns a dict with keys: commander, cards, lands, sideboard, total, errors.
     """
+    text = _normalize_flat_decklist(text)
     commander: Optional[str] = None
     commander_names: List[str] = []
     cards: List[str] = []
@@ -448,6 +502,7 @@ def parse_decklist(text: str, singleton: bool = True) -> dict:
 
     This accepts the legacy return shape while covering more real export formats.
     """
+    text = _normalize_flat_decklist(text)
     commander: Optional[str] = None
     commander_names: List[str] = []
     cards: List[str] = []
@@ -791,6 +846,36 @@ def validate_deck(parsed: dict, card_db: dict) -> dict:
     commander = parsed.get("commander")
     cards = parsed.get("cards", [])
     lands = parsed.get("lands", [])
+
+    # If card_db isn't available (e.g., mtg_data/cards_min.jsonl missing),
+    # fall back to structural validation so import workflows can still run.
+    if not card_db:
+        commander_names: List[str] = parsed.get("commanders") or (commander.split(" // ") if commander else [])
+        if not commander_names:
+            errors.append("No commander specified")
+
+        commander_count = len(commander_names) if commander_names else 0
+        total = commander_count + len(cards) + len(lands)
+        parsed["total"] = total
+
+        missing_slots = 0
+        if total < 100:
+            missing_slots = 100 - total
+            warnings.append(f"Deck has only {total} cards ({missing_slots} slots to fill)")
+        elif total > 100:
+            errors.append(f"Deck has {total} cards (maximum is 100)")
+
+        warnings.append(
+            "Card database unavailable; skipping commander legality, card resolution, and color identity checks."
+        )
+
+        return {
+            "valid": len(errors) == 0,
+            "errors": errors,
+            "warnings": warnings,
+            "missing_slots": missing_slots,
+            "color_identity": [],
+        }
 
     # ── Auto-detect commander if not specified ───────────────────────
     # If no commander was marked, check if the first card is legendary

@@ -23,7 +23,7 @@ export default function GameSetupScreen() {
   const [playerCount, setPlayerCount] = useState(2);
   const [players, setPlayers] = useState<PlayerConfig[]>([
     { id: 'player-1', name: 'You', isAI: false, difficulty: 3 },
-    { id: 'player-2', name: 'AI 1', isAI: true, difficulty: 3 },
+    { id: 'player-2', name: 'Shelector', isAI: true, difficulty: 3 },
   ]);
 
   const updatePlayerCount = (count: number) => {
@@ -34,7 +34,7 @@ export default function GameSetupScreen() {
     for (let i = 1; i < count; i++) {
       newPlayers.push({
         id: `player-${i + 1}`,
-        name: `AI ${i}`,
+        name: count === 2 ? 'Shelector' : `Shelector ${i}`,
         isAI: true,
         difficulty: 3,
       });
@@ -86,7 +86,7 @@ export default function GameSetupScreen() {
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>AI Difficulty</Text>
+          <Text style={styles.sectionTitle}>Shelector Difficulty</Text>
           {players.filter(p => p.isAI).map(player => (
             <View key={player.id} style={styles.playerConfig}>
               <Text style={styles.playerName}>{player.name}</Text>

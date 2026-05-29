@@ -16,6 +16,13 @@ type GameConfig = {
   players: PlayerConfig[];
 };
 
+const DEFAULT_GAME_CONFIG: GameConfig = {
+  players: [
+    { id: 'player-1', name: 'You', isAI: false, difficulty: 3 },
+    { id: 'player-2', name: 'Shelector', isAI: true, difficulty: 3 },
+  ],
+};
+
 // API base URL - configure for your environment
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -65,8 +72,8 @@ export default function GameRoute() {
       return;
     }
 
-    // No config or gameId provided
-    setError('No game configuration provided');
+    // Default to a self-contained local game when launched directly.
+    setGameConfig(DEFAULT_GAME_CONFIG);
   }, [config, gameId]);
 
   if (error) {
