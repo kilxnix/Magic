@@ -1,12 +1,26 @@
 // engine/src/actions-public.ts
 import type { GameState, ManaColor, Phase, ManaCost, AttackerDeclaration, BlockerDeclaration } from './types';
-import { playLand, canPlayLand, tapLandForMana, activateAbility, getActivatedAbilities, equipCreature, maxLandsThisTurn } from './actions';
-import { castSpell, canCastSpell } from './stack';
-import { canPayCost, parseManaString } from './mana';
+import {
+  playLand,
+  canPlayLand,
+  tapLandForMana,
+  activateAbility,
+  getActivatedAbilities,
+  equipCreature,
+  maxLandsThisTurn,
+  isBlockedBySummoningSicknessForTap,
+  getAvailableManaColors,
+  type PlayLandOptions,
+} from './actions';
+import { castSpell, canCastSpell, type CastSpellOptions } from './stack';
+import { canPaySpellCost, canPayUnrestrictedCost, parseManaString } from './mana';
 import { getCardDefinition } from './game-state';
 import { passPriority } from './priority';
-import { declareAttackers, declareBlockers } from './combat';
+import { declareAttackers, declareBlockers, hasPlayerDeclaredBlockers } from './combat';
 import { LoopDetector, checkWinConditions } from './win-conditions';
+import { findCastZoneRestriction, getCommanderTaxForCast } from './casting-restrictions';
+import { populateParsedCache } from './cards/card-parser-cache';
+import { getCostReduction } from './effects/continuous';
 
 export type ActionFailure =
   | 'not_your_turn'
@@ -16,6 +30,8 @@ export type ActionFailure =
   | 'already_tapped'
   | 'not_in_zone'
   | 'land_already_played'
+  | 'insufficient_life'
+  | 'cast_restricted'
   | 'card_not_found'
   | 'summoning_sick'
   | 'priority_not_yours'
@@ -36,6 +52,16 @@ export type GameEvent =
   | { kind: 'SpellCast'; playerId: string; cardId: string }
   | { kind: 'AbilityActivated'; playerId: string; cardId: string; abilityIndex: number }
   | { kind: 'ManaTapped'; playerId: string; cardId: string; color: ManaColor }
+  | {
+      kind: 'CountersAdjusted';
+      playerId: string;
+      cardId: string;
+      counterType: string;
+      delta: number;
+      previous: number;
+      next: number;
+      manual: true;
+    }
   | { kind: 'CreatureDied'; cardId: string; ownerId: string }
   | { kind: 'PlayerLost'; playerId: string; reason: WinReason }
   | { kind: 'PossibleLoop'; signature: LoopSignature }
@@ -75,10 +101,21 @@ function runWinCheck(state: GameState): GameEvent[] {
 
 const MAIN_PHASES: Phase[] = ['precombat_main', 'postcombat_main'];
 
+function reduceGenericCost(
+  state: GameState,
+  playerId: string,
+  cost: ManaCost,
+  def: ReturnType<typeof getCardDefinition>,
+): ManaCost {
+  const reduction = Math.min(cost.generic, getCostReduction(state, playerId, def));
+  return reduction > 0 ? { ...cost, generic: cost.generic - reduction } : cost;
+}
+
 export function tryPlayLand(
   state: GameState,
   playerId: string,
   cardInstanceId: string,
+  options: PlayLandOptions = {},
 ): ActionResult {
   const playerIndex = state.players.findIndex(p => p.id === playerId);
   if (playerIndex === -1) return fail('card_not_found', 'Player not found');
@@ -105,9 +142,12 @@ export function tryPlayLand(
   }
 
   try {
-    const next = playLand(state, playerId, cardInstanceId);
+    const next = playLand(state, playerId, cardInstanceId, options);
     return success(next, [{ kind: 'LandPlayed', playerId, cardId: cardInstanceId }, ...runWinCheck(next)]);
   } catch (e) {
+    if ((e as Error).message.includes('Cannot pay life')) {
+      return fail('insufficient_life', (e as Error).message);
+    }
     return fail('internal_error', (e as Error).message);
   }
 }
@@ -121,8 +161,25 @@ export function tryTapLandForMana(
   const card = state.cards.get(cardInstanceId);
   if (!card) return fail('card_not_found', 'Card not found');
   if (card.ownerId !== playerId) return fail('card_not_found', 'Not your card');
-  if (card.zone !== 'battlefield') return fail('not_in_zone', 'Card not on battlefield');
-  if (card.tapped) return fail('already_tapped', 'Already tapped');
+  const rawDef = state.cardDefinitions.get(card.definitionId);
+  if (!rawDef) return fail('card_not_found', 'Card definition missing');
+  const parsedDef = rawDef.manaProduction ? rawDef : populateParsedCache(rawDef);
+  const manaProduction = parsedDef.manaProduction;
+  const handExileAbility = manaProduction?.activationZone === 'hand'
+    && manaProduction.requiresExileFromHand === true;
+  if (handExileAbility) {
+    if (card.zone !== 'hand') return fail('not_in_zone', 'Card not in hand');
+  } else {
+    if (card.zone !== 'battlefield') return fail('not_in_zone', 'Card not on battlefield');
+    if (manaProduction?.isTapAbility && card.tapped) return fail('already_tapped', 'Already tapped');
+    if (manaProduction?.isTapAbility && isBlockedBySummoningSicknessForTap(state, cardInstanceId)) {
+      return fail('summoning_sick', 'Summoning sick');
+    }
+  }
+  if (!manaProduction) return fail('internal_error', 'Card has no mana ability');
+  if (!getAvailableManaColors(state, cardInstanceId).includes(color)) {
+    return fail('illegal_target', `Card cannot produce ${color}`);
+  }
 
   try {
     const next = tapLandForMana(state, playerId, cardInstanceId, color);
@@ -138,6 +195,7 @@ export function tryCastSpell(
   cardInstanceId: string,
   targets: string[],
   manaPayment: ManaCost,
+  options: CastSpellOptions = {},
 ): ActionResult {
   const card = state.cards.get(cardInstanceId);
   if (!card) return fail('card_not_found', 'Card not found');
@@ -150,6 +208,13 @@ export function tryCastSpell(
 
   const def = getCardDefinition(state, card);
   if (!def) return fail('card_not_found', 'Card definition missing');
+  const castRestriction = findCastZoneRestriction(state, playerId, card);
+  if (castRestriction) {
+    return fail(
+      'cast_restricted',
+      `${castRestriction.sourceName} prevents casting spells from outside your hand`,
+    );
+  }
 
   const isSorceryLike =
     def.card_types.includes('sorcery') ||
@@ -170,12 +235,14 @@ export function tryCastSpell(
 
   // Check that the player's mana pool can cover the spell's mana cost
   const spellCost = parseManaString(def.mana_cost);
-  if (!canPayCost(player.manaPool, spellCost)) {
+  const taxAmount = card.zone === 'command' ? getCommanderTaxForCast(state, playerId, cardInstanceId) : 0;
+  const totalCost = reduceGenericCost(state, playerId, { ...spellCost, generic: spellCost.generic + taxAmount }, def);
+  if (!canPaySpellCost(player, totalCost, def, card)) {
     return fail('insufficient_mana', 'Insufficient mana in pool');
   }
 
   try {
-    const next = castSpell(state, playerId, cardInstanceId, targets);
+    const next = castSpell(state, playerId, cardInstanceId, targets, options);
     return success(next, [{ kind: 'SpellCast', playerId, cardId: cardInstanceId }, ...runWinCheck(next)]);
   } catch (e) {
     return fail('internal_error', (e as Error).message);
@@ -200,13 +267,17 @@ export function tryActivateAbility(
   const def = getCardDefinition(state, card);
 
   if (ability.cost.tap && card.tapped) return fail('already_tapped', 'Already tapped');
-  if (ability.cost.tap && card.summoningSick && def.card_types.includes('creature')) {
+  if (ability.cost.tap && isBlockedBySummoningSicknessForTap(state, cardInstanceId)) {
     return fail('summoning_sick', 'Summoning sick');
   }
   if (ability.cost.mana) {
     const cost = parseManaString(ability.cost.mana);
     const player = state.players.find(p => p.id === playerId)!;
-    if (!canPayCost(player.manaPool, cost)) return fail('insufficient_mana', 'Cannot pay mana cost');
+    if (!canPayUnrestrictedCost(player, cost)) return fail('insufficient_mana', 'Cannot pay mana cost');
+  }
+  if (ability.cost.payLife) {
+    const player = state.players.find(p => p.id === playerId)!;
+    if (player.life < ability.cost.payLife) return fail('insufficient_life', 'Cannot pay life cost');
   }
 
   try {
@@ -221,6 +292,9 @@ export function tryPassPriority(state: GameState, playerId: string): ActionResul
   const playerIndex = state.players.findIndex(p => p.id === playerId);
   if (playerIndex === -1) return fail('card_not_found', 'Player not found');
   if (state.priorityPlayerIndex !== playerIndex) return fail('priority_not_yours', 'You do not have priority');
+  if (state.step === 'declare_attackers' && state.activePlayerIndex === playerIndex && !state.combat) {
+    return fail('wrong_phase', 'Declare attackers before passing priority. You may declare no attackers.');
+  }
   try {
     const next = passPriority(state);
     return success(next, runWinCheck(next));
@@ -238,6 +312,7 @@ export function tryDeclareAttackers(
   if (playerIndex === -1) return fail('card_not_found', 'Player not found');
   if (state.activePlayerIndex !== playerIndex) return fail('not_your_turn', 'Only active player declares attackers');
   if (state.step !== 'declare_attackers') return fail('wrong_phase', 'Not declare-attackers step');
+  if (state.combat) return fail('wrong_phase', 'Attackers already declared');
   try {
     const next = declareAttackers(state, playerId, attackers);
     return success(next, runWinCheck(next));
@@ -252,6 +327,7 @@ export function tryDeclareBlockers(
   blockers: BlockerDeclaration[],
 ): ActionResult {
   if (state.step !== 'declare_blockers') return fail('wrong_phase', 'Not declare-blockers step');
+  if (hasPlayerDeclaredBlockers(state, playerId)) return fail('wrong_phase', 'Blockers already declared');
   try {
     const next = declareBlockers(state, playerId, blockers);
     return success(next, runWinCheck(next));
@@ -281,4 +357,57 @@ export function tryEquip(
   } catch (e) {
     return fail('internal_error', (e as Error).message);
   }
+}
+
+export function tryAdjustCounters(
+  state: GameState,
+  playerId: string,
+  cardInstanceId: string,
+  counterType: string,
+  delta: number,
+): ActionResult {
+  if (!state.players.some(p => p.id === playerId)) return fail('card_not_found', 'Player not found');
+
+  const card = state.cards.get(cardInstanceId);
+  if (!card) return fail('card_not_found', 'Card not found');
+  if (card.zone !== 'battlefield') return fail('not_in_zone', 'Counters can only be adjusted on battlefield permanents');
+
+  const normalizedCounter = counterType.trim().replace(/\s+/g, ' ');
+  if (normalizedCounter.length === 0 || normalizedCounter.length > 32) {
+    return fail('illegal_target', 'Counter type must be 1-32 characters');
+  }
+  if (!Number.isInteger(delta) || delta === 0 || Math.abs(delta) > 99) {
+    return fail('illegal_target', 'Counter adjustment must be a non-zero integer from -99 to 99');
+  }
+
+  const previous = Math.max(0, card.counters[normalizedCounter] ?? 0);
+  const nextCount = Math.max(0, previous + delta);
+  if (previous === nextCount) {
+    return fail('illegal_target', `No ${normalizedCounter} counters to remove`);
+  }
+
+  const counters = { ...card.counters };
+  if (nextCount === 0) {
+    delete counters[normalizedCounter];
+  } else {
+    counters[normalizedCounter] = nextCount;
+  }
+
+  const cards = new Map(state.cards);
+  cards.set(cardInstanceId, { ...card, counters });
+  const next = { ...state, cards };
+
+  return success(next, [
+    {
+      kind: 'CountersAdjusted',
+      playerId,
+      cardId: cardInstanceId,
+      counterType: normalizedCounter,
+      delta,
+      previous,
+      next: nextCount,
+      manual: true,
+    },
+    ...runWinCheck(next),
+  ]);
 }

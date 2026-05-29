@@ -1,6 +1,120 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { tryPlayLand, tryTapLandForMana, tryCastSpell, tryActivateAbility, tryPassPriority, tryDeclareAttackers, tryDeclareBlockers, tryEquip, resetLoopDetector } from './actions-public';
+import { tryPlayLand, tryTapLandForMana, tryCastSpell, tryActivateAbility, tryPassPriority, tryDeclareAttackers, tryDeclareBlockers, tryEquip, tryAdjustCounters, resetLoopDetector } from './actions-public';
 import { makeTestState } from './__tests__/test-helpers';
+import { populateParsedCache } from './cards/card-parser-cache';
+import type { CardDefinition, GameState } from './types';
+
+function addBattlefieldManaCreature(
+  state: GameState,
+  options: { instanceId?: string; summoningSick?: boolean; haste?: boolean } = {},
+): string {
+  const instanceId = options.instanceId ?? 'mana_creature_0';
+  const def: CardDefinition = populateParsedCache({
+    id: `def_${instanceId}`,
+    name: options.haste ? 'Hasty Mana Druid' : 'Somberwald Sage',
+    type_line: 'Creature - Human Druid',
+    oracle_text: options.haste
+      ? 'Haste\n{T}: Add {G}.'
+      : '{T}: Add three mana of any one color. Spend this mana only to cast creature spells.',
+    mana_cost: '{2}{G}',
+    cmc: 3,
+    colors: ['G'],
+    color_identity: ['G'],
+    keywords: options.haste ? ['Haste'] : [],
+    card_types: ['creature'],
+    power: 0,
+    toughness: 1,
+  });
+  state.cardDefinitions.set(def.id, def);
+  state.cards.set(instanceId, {
+    instanceId,
+    definitionId: def.id,
+    ownerId: 'human',
+    zone: 'battlefield',
+    tapped: false,
+    summoningSick: options.summoningSick ?? true,
+    counters: {},
+    damage: 0,
+    isCommander: false,
+  });
+  return instanceId;
+}
+
+function addHandSpell(
+  state: GameState,
+  options: {
+    instanceId: string;
+    name: string;
+    typeLine: string;
+    manaCost: string;
+    cardTypes: CardDefinition['card_types'];
+    isCommander?: boolean;
+    zone?: 'hand' | 'command';
+  },
+): string {
+  const def: CardDefinition = {
+    id: `def_${options.instanceId}`,
+    name: options.name,
+    type_line: options.typeLine,
+    oracle_text: '',
+    mana_cost: options.manaCost,
+    cmc: (options.manaCost.match(/\{[^}]+\}/g) || []).length,
+    colors: [],
+    color_identity: [],
+    keywords: [],
+    card_types: options.cardTypes,
+    power: options.cardTypes.includes('creature') ? 2 : undefined,
+    toughness: options.cardTypes.includes('creature') ? 2 : undefined,
+  };
+  state.cardDefinitions.set(def.id, def);
+  state.cards.set(options.instanceId, {
+    instanceId: options.instanceId,
+    definitionId: def.id,
+    ownerId: 'human',
+    zone: options.zone ?? 'hand',
+    tapped: false,
+    summoningSick: false,
+    counters: {},
+    damage: 0,
+    isCommander: options.isCommander ?? false,
+  });
+  if (options.isCommander) {
+    state.players[0] = {
+      ...state.players[0],
+      commanderInstanceId: options.instanceId,
+      commanderInstanceIds: [options.instanceId],
+    };
+  }
+  return options.instanceId;
+}
+
+function addHandCavern(state: GameState, instanceId = 'cavern_0'): string {
+  const def: CardDefinition = populateParsedCache({
+    id: `def_${instanceId}`,
+    name: 'Cavern of Souls',
+    type_line: 'Land',
+    oracle_text: 'As Cavern of Souls enters, choose a creature type.\n{T}: Add {C}.\n{T}: Add one mana of any color. Spend this mana only to cast a creature spell of the chosen type, and that spell can\'t be countered.',
+    mana_cost: '',
+    cmc: 0,
+    colors: [],
+    color_identity: [],
+    keywords: [],
+    card_types: ['land'],
+  });
+  state.cardDefinitions.set(def.id, def);
+  state.cards.set(instanceId, {
+    instanceId,
+    definitionId: def.id,
+    ownerId: 'human',
+    zone: 'hand',
+    tapped: false,
+    summoningSick: false,
+    counters: {},
+    damage: 0,
+    isCommander: false,
+  });
+  return instanceId;
+}
 
 describe('tryPlayLand', () => {
   it('returns ok and LandPlayed event on success', () => {
@@ -45,6 +159,17 @@ describe('tryPlayLand', () => {
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.reason).toBe('card_not_found');
   });
+
+  it('stores a chosen creature type for Cavern-style lands', () => {
+    const state = makeTestState({});
+    const cavernId = addHandCavern(state);
+
+    const result = tryPlayLand(state, 'human', cavernId, { chosenCreatureType: '  Elf   Druid  ' });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.cards.get(cavernId)?.choices?.chosenCreatureType).toBe('Elf Druid');
+  });
 });
 
 describe('tryTapLandForMana', () => {
@@ -73,6 +198,125 @@ describe('tryTapLandForMana', () => {
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.reason).toBe('not_in_zone');
   });
+
+  it('returns summoning_sick for a tap mana creature just summoned', () => {
+    const state = makeTestState({});
+    const creatureId = addBattlefieldManaCreature(state, { summoningSick: true });
+
+    const result = tryTapLandForMana(state, 'human', creatureId, 'G');
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe('summoning_sick');
+  });
+
+  it('allows a summoning-sick tap mana creature with haste', () => {
+    const state = makeTestState({});
+    const creatureId = addBattlefieldManaCreature(state, { summoningSick: true, haste: true });
+
+    const result = tryTapLandForMana(state, 'human', creatureId, 'G');
+
+    expect(result.ok).toBe(true);
+  });
+
+  it('tracks Somberwald-style restricted mana in the pool', () => {
+    const state = makeTestState({});
+    const creatureId = addBattlefieldManaCreature(state, { summoningSick: false });
+
+    const result = tryTapLandForMana(state, 'human', creatureId, 'R');
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.players[0].manaPool.R).toBe(3);
+    expect(result.state.players[0].restrictedMana).toEqual([
+      { color: 'R', amount: 3, restriction: 'creatureSpell', sourceInstanceId: creatureId },
+    ]);
+  });
+
+  it('tracks Cavern chosen-type mana with its chosen creature type', () => {
+    let state = makeTestState({});
+    const cavernId = addHandCavern(state);
+    const playResult = tryPlayLand(state, 'human', cavernId, { chosenCreatureType: 'Elf' });
+    expect(playResult.ok).toBe(true);
+    if (!playResult.ok) return;
+    state = playResult.state;
+
+    const manaResult = tryTapLandForMana(state, 'human', cavernId, 'G');
+
+    expect(manaResult.ok).toBe(true);
+    if (!manaResult.ok) return;
+    expect(manaResult.state.players[0].manaPool.G).toBe(1);
+    expect(manaResult.state.players[0].restrictedMana).toEqual([
+      { color: 'G', amount: 1, restriction: 'creatureTypeSpell', creatureType: 'Elf', sourceInstanceId: cavernId },
+    ]);
+  });
+});
+
+describe('tryAdjustCounters', () => {
+  it('adds a manual counter to a battlefield permanent', () => {
+    const state = makeTestState({ battlefieldCreature: true });
+    const creatureId = 'vanilla_creature_0';
+
+    const result = tryAdjustCounters(state, 'human', creatureId, '+1/+1', 2);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.cards.get(creatureId)?.counters['+1/+1']).toBe(2);
+    expect(result.events).toContainEqual(
+      expect.objectContaining({
+        kind: 'CountersAdjusted',
+        playerId: 'human',
+        cardId: creatureId,
+        counterType: '+1/+1',
+        delta: 2,
+        previous: 0,
+        next: 2,
+        manual: true,
+      }),
+    );
+  });
+
+  it('removes counters without going below zero', () => {
+    const state = makeTestState({ battlefieldCreature: true });
+    const creatureId = 'vanilla_creature_0';
+    state.cards.set(creatureId, {
+      ...state.cards.get(creatureId)!,
+      counters: { '+1/+1': 1 },
+    });
+
+    const result = tryAdjustCounters(state, 'human', creatureId, '+1/+1', -1);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.cards.get(creatureId)?.counters['+1/+1']).toBeUndefined();
+  });
+
+  it('rejects removing a counter that is not present', () => {
+    const state = makeTestState({ battlefieldCreature: true });
+
+    const result = tryAdjustCounters(state, 'human', 'vanilla_creature_0', 'stun', -1);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe('illegal_target');
+  });
+
+  it('rejects non-battlefield cards', () => {
+    const state = makeTestState({ handInstant: '{G}' });
+
+    const result = tryAdjustCounters(state, 'human', 'instant_0', '+1/+1', 1);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe('not_in_zone');
+  });
+
+  it('normalizes counter type whitespace', () => {
+    const state = makeTestState({ battlefieldCreature: true });
+
+    const result = tryAdjustCounters(state, 'human', 'vanilla_creature_0', '  shield   counter  ', 1);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.cards.get('vanilla_creature_0')?.counters['shield counter']).toBe(1);
+  });
 });
 
 describe('tryCastSpell', () => {
@@ -94,12 +338,185 @@ describe('tryCastSpell', () => {
     if (!result.ok) expect(result.reason).toBe('insufficient_mana');
   });
 
+  it('requires one legal color for two-color hybrid mana on commanders', () => {
+    let state = makeTestState({ manaPool: { W: 1, U: 1 } });
+    let commanderId = addHandSpell(state, {
+      instanceId: 'fourteenth_doctor_no_hybrid',
+      name: 'The Fourteenth Doctor',
+      typeLine: 'Legendary Creature - Time Lord Doctor',
+      manaCost: '{R/G}{W}{U}',
+      cardTypes: ['creature'],
+      isCommander: true,
+      zone: 'command',
+    });
+
+    const missingHybrid = tryCastSpell(state, 'human', commanderId, [], { W: 1, U: 1, B: 0, R: 0, G: 0, C: 0, generic: 0 });
+    expect(missingHybrid.ok).toBe(false);
+    if (!missingHybrid.ok) expect(missingHybrid.reason).toBe('insufficient_mana');
+
+    state = makeTestState({ manaPool: { W: 1, U: 1, G: 1 } });
+    commanderId = addHandSpell(state, {
+      instanceId: 'fourteenth_doctor_with_hybrid',
+      name: 'The Fourteenth Doctor',
+      typeLine: 'Legendary Creature - Time Lord Doctor',
+      manaCost: '{R/G}{W}{U}',
+      cardTypes: ['creature'],
+      isCommander: true,
+      zone: 'command',
+    });
+
+    const paidHybrid = tryCastSpell(state, 'human', commanderId, [], {
+      W: 1,
+      U: 1,
+      B: 0,
+      R: 0,
+      G: 1,
+      C: 0,
+      generic: 0,
+      hybrid: [['R', 'G']],
+    });
+    expect(paidHybrid.ok).toBe(true);
+  });
+
   it('returns wrong_phase for sorcery during combat', () => {
     const state = makeTestState({ handSorcery: '{G}', manaPool: { G: 1 }, phase: 'combat' });
     const spellId = [...state.cards.values()].find(c => c.zone === 'hand')!.instanceId;
     const result = tryCastSpell(state, 'human', spellId, [], { G: 1, C: 0, W: 0, U: 0, B: 0, R: 0, generic: 0 });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.reason).toBe('wrong_phase');
+  });
+
+  it('does not let creature-only mana cast noncreature spells', () => {
+    let state = makeTestState({});
+    const sageId = addBattlefieldManaCreature(state, { summoningSick: false });
+    const manaResult = tryTapLandForMana(state, 'human', sageId, 'G');
+    expect(manaResult.ok).toBe(true);
+    if (!manaResult.ok) return;
+    state = manaResult.state;
+
+    const instantId = addHandSpell(state, {
+      instanceId: 'restricted_instant',
+      name: 'Restricted Test Instant',
+      typeLine: 'Instant',
+      manaCost: '{G}',
+      cardTypes: ['instant'],
+    });
+
+    const result = tryCastSpell(state, 'human', instantId, [], { G: 1, W: 0, U: 0, B: 0, R: 0, C: 0, generic: 0 });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe('insufficient_mana');
+  });
+
+  it('allows creature-only mana to cast creature spells and consumes the restriction', () => {
+    let state = makeTestState({});
+    const sageId = addBattlefieldManaCreature(state, { summoningSick: false });
+    const manaResult = tryTapLandForMana(state, 'human', sageId, 'G');
+    expect(manaResult.ok).toBe(true);
+    if (!manaResult.ok) return;
+    state = manaResult.state;
+
+    const creatureId = addHandSpell(state, {
+      instanceId: 'restricted_creature',
+      name: 'Restricted Test Creature',
+      typeLine: 'Creature - Beast',
+      manaCost: '{2}{G}',
+      cardTypes: ['creature'],
+    });
+
+    const result = tryCastSpell(state, 'human', creatureId, [], { G: 1, W: 0, U: 0, B: 0, R: 0, C: 0, generic: 2 });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.players[0].manaPool.G).toBe(0);
+    expect(result.state.players[0].restrictedMana).toEqual([]);
+  });
+
+  it('limits commander-only mana to commander casts', () => {
+    let state = makeTestState({ manaPool: { G: 3 } });
+    state.players[0] = {
+      ...state.players[0],
+      restrictedMana: [{ color: 'G', amount: 3, restriction: 'commanderSpell' }],
+    };
+
+    const normalCreatureId = addHandSpell(state, {
+      instanceId: 'normal_creature',
+      name: 'Normal Creature',
+      typeLine: 'Creature - Beast',
+      manaCost: '{2}{G}',
+      cardTypes: ['creature'],
+    });
+    const normalResult = tryCastSpell(state, 'human', normalCreatureId, [], { G: 1, W: 0, U: 0, B: 0, R: 0, C: 0, generic: 2 });
+    expect(normalResult.ok).toBe(false);
+
+    const commanderId = addHandSpell(state, {
+      instanceId: 'commander_spell',
+      name: 'Commander Creature',
+      typeLine: 'Legendary Creature - God',
+      manaCost: '{2}{G}',
+      cardTypes: ['creature', 'enchantment'],
+      isCommander: true,
+      zone: 'command',
+    });
+    const commanderResult = tryCastSpell(state, 'human', commanderId, [], { G: 1, W: 0, U: 0, B: 0, R: 0, C: 0, generic: 2 });
+
+    expect(commanderResult.ok).toBe(true);
+  });
+
+  it('allows Cavern chosen-type mana to cast a matching creature subtype', () => {
+    let state = makeTestState({});
+    const cavernId = addHandCavern(state);
+    const playResult = tryPlayLand(state, 'human', cavernId, { chosenCreatureType: 'Elf' });
+    expect(playResult.ok).toBe(true);
+    if (!playResult.ok) return;
+    state = playResult.state;
+
+    const manaResult = tryTapLandForMana(state, 'human', cavernId, 'G');
+    expect(manaResult.ok).toBe(true);
+    if (!manaResult.ok) return;
+    state = manaResult.state;
+
+    const elfId = addHandSpell(state, {
+      instanceId: 'cavern_elf',
+      name: 'Cavern Test Elf',
+      typeLine: 'Creature - Elf Druid',
+      manaCost: '{G}',
+      cardTypes: ['creature'],
+    });
+
+    const result = tryCastSpell(state, 'human', elfId, [], { G: 1, W: 0, U: 0, B: 0, R: 0, C: 0, generic: 0 });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.players[0].manaPool.G).toBe(0);
+    expect(result.state.players[0].restrictedMana).toEqual([]);
+  });
+
+  it('does not let Cavern chosen-type mana cast another creature subtype', () => {
+    let state = makeTestState({});
+    const cavernId = addHandCavern(state);
+    const playResult = tryPlayLand(state, 'human', cavernId, { chosenCreatureType: 'Elf' });
+    expect(playResult.ok).toBe(true);
+    if (!playResult.ok) return;
+    state = playResult.state;
+
+    const manaResult = tryTapLandForMana(state, 'human', cavernId, 'G');
+    expect(manaResult.ok).toBe(true);
+    if (!manaResult.ok) return;
+    state = manaResult.state;
+
+    const dragonId = addHandSpell(state, {
+      instanceId: 'cavern_dragon',
+      name: 'Cavern Test Dragon',
+      typeLine: 'Creature - Dragon',
+      manaCost: '{G}',
+      cardTypes: ['creature'],
+    });
+
+    const result = tryCastSpell(state, 'human', dragonId, [], { G: 1, W: 0, U: 0, B: 0, R: 0, C: 0, generic: 0 });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe('insufficient_mana');
   });
 });
 
@@ -140,6 +557,13 @@ describe('tryPassPriority', () => {
     const result = tryPassPriority(state, 'human');
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.reason).toBe('priority_not_yours');
+  });
+
+  it('requires the active player to declare attackers before passing priority', () => {
+    const state = makeTestState({ step: 'declare_attackers', phase: 'combat' });
+    const result = tryPassPriority(state, 'human');
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe('wrong_phase');
   });
 });
 

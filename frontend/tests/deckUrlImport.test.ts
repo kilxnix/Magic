@@ -25,4 +25,12 @@ describe('importDeckUrlLocally', () => {
     expect(result?.format).toBe('standard');
     expect(result?.deckText).toContain('13 Forest');
   });
+
+  it('accepts scheme-less MTGGoldfish URLs but ignores lookalikes in query strings', () => {
+    const result = importDeckUrlLocally('mtggoldfish.com/deck/7752458?view=paper');
+    const lookalike = importDeckUrlLocally('https://example.com/?next=https://mtggoldfish.com/deck/7752458');
+
+    expect(result?.format).toBe('standard');
+    expect(lookalike).toBeNull();
+  });
 });

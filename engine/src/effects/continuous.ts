@@ -119,7 +119,7 @@ function isAffectedBy(
   }
 
   // Check card filter
-  if (ability.filter.types || ability.filter.subtypes || ability.filter.colors || ability.filter.cmc) {
+  if (ability.filter.types || ability.filter.subtypes || ability.filter.colors || ability.filter.cmc || ability.filter.power) {
     return matchesCardFilter(def, ability.filter);
   }
 
@@ -280,7 +280,13 @@ export function getCostReduction(
     if (!source || source.zone !== 'battlefield') continue;
 
     // If there's a filter, check against the spell being cast
-    if (spellDef && (effect.ability.filter.types || effect.ability.filter.subtypes)) {
+    if (spellDef && (
+      effect.ability.filter.types
+      || effect.ability.filter.subtypes
+      || effect.ability.filter.colors
+      || effect.ability.filter.cmc
+      || effect.ability.filter.power
+    )) {
       if (!matchesCardFilter(spellDef, effect.ability.filter)) continue;
     }
 

@@ -1,17 +1,585 @@
-import { GameState, Phase, StackItem, SpellStackItem, TriggeredAbilityStackItem, isSpellStackItem, isTriggeredAbilityStackItem, isActivatedAbilityStackItem, TriggeredAbilityRef } from './types';
+import { GameState, Phase, StackItem, SpellStackItem, TriggeredAbilityStackItem, isSpellStackItem, isTriggeredAbilityStackItem, isActivatedAbilityStackItem, TriggeredAbilityRef, CardInstance, CardDefinition } from './types';
 import { getCardDefinition } from './game-state';
-import { parseManaString, canPayCost, payManaCost } from './mana';
+import { parseManaString, canPaySpellCost, paySpellCost, getSpellPaymentRestrictedMana, getSpellPaymentConditionalMana } from './mana';
 import { getOverride } from './effects/overrides';
 import { parseOracleText } from './effects/parser';
 import { executeEffectsWithSBA } from './effects/executor';
 import { validateTargetChoices, TargetSpec, TargetType } from './effects/targets';
 import { checkStateBasedActions } from './state-based';
-import type { Effect } from './effects/ast';
+import type { Effect, StaticAbilityEffect } from './effects/ast';
+import { findCastZoneRestriction, getCommanderTaxForCast } from './casting-restrictions';
+import { getCostReduction, registerContinuousEffect } from './effects/continuous';
+import { getCommanderDestinationZone } from './commander';
 
 const MAIN_PHASES: Phase[] = ['precombat_main', 'postcombat_main'];
 const PERMANENT_TYPES = ['creature', 'artifact', 'enchantment', 'planeswalker', 'battle'];
 
 let stackCounter = 0;
+
+export interface CastSpellOptions {
+  chosenModes?: number[];
+  namedCardChoices?: Record<string, string>;
+  cardChoices?: CardInstance['choices'];
+}
+
+function normalizeCastOptions(options?: number[] | CastSpellOptions): CastSpellOptions {
+  if (Array.isArray(options)) {
+    return { chosenModes: options };
+  }
+  return options || {};
+}
+
+function copyCardChoices(choices?: CardInstance['choices']): CardInstance['choices'] {
+  return choices ? {
+    chosenCreatureType: choices.chosenCreatureType,
+    imprintedCardIds: choices.imprintedCardIds ? [...choices.imprintedCardIds] : undefined,
+    discardedCardIds: choices.discardedCardIds ? [...choices.discardedCardIds] : undefined,
+  } : undefined;
+}
+
+function hasCastSacrificeToCounterChoice(oracleText: string): boolean {
+  return /\bwhen you cast this spell,\s*any player may sacrifice a creature\b/i.test(oracleText)
+    && /\bif a player does,\s*counter\b/i.test(oracleText);
+}
+
+function applyCastSacrificeToCounterChoice(
+  state: GameState,
+  spellStackItem: SpellStackItem,
+  sacrificeCardId: string | undefined,
+): GameState {
+  if (!sacrificeCardId) return state;
+  const sacrificed = state.cards.get(sacrificeCardId);
+  if (!sacrificed || sacrificed.zone !== 'battlefield') return state;
+  const sacrificedDef = state.cardDefinitions.get(sacrificed.definitionId);
+  if (!sacrificedDef?.card_types.includes('creature')) return state;
+
+  const spellCard = state.cards.get(spellStackItem.cardInstanceId);
+  if (!spellCard) return state;
+
+  const newCards = new Map(state.cards);
+  newCards.set(sacrificeCardId, {
+    ...sacrificed,
+    zone: getCommanderDestinationZone(state, sacrificeCardId, 'graveyard'),
+    tapped: false,
+    damage: 0,
+    counters: {},
+  });
+  newCards.set(spellStackItem.cardInstanceId, {
+    ...spellCard,
+    zone: getCommanderDestinationZone(state, spellStackItem.cardInstanceId, 'graveyard'),
+  });
+
+  return {
+    ...state,
+    cards: newCards,
+    stack: state.stack.filter(item => item !== spellStackItem),
+  };
+}
+
+function mergeCardChoices(
+  base?: CardInstance['choices'],
+  override?: CardInstance['choices'],
+): CardInstance['choices'] {
+  const merged: NonNullable<CardInstance['choices']> = {};
+  const source = { ...(base || {}) };
+  if (source.chosenCreatureType) merged.chosenCreatureType = source.chosenCreatureType;
+  if (source.imprintedCardIds && source.imprintedCardIds.length > 0) {
+    merged.imprintedCardIds = [...source.imprintedCardIds];
+  }
+  if (source.discardedCardIds && source.discardedCardIds.length > 0) {
+    merged.discardedCardIds = [...source.discardedCardIds];
+  }
+  if (override?.chosenCreatureType) merged.chosenCreatureType = override.chosenCreatureType;
+  if (override?.imprintedCardIds && override.imprintedCardIds.length > 0) {
+    merged.imprintedCardIds = [...override.imprintedCardIds];
+  }
+  if (override?.discardedCardIds && override.discardedCardIds.length > 0) {
+    merged.discardedCardIds = [...override.discardedCardIds];
+  }
+  return Object.keys(merged).length > 0 ? merged : undefined;
+}
+
+function isChromeMoxLike(def: CardDefinition): boolean {
+  return /chrome mox/i.test(def.name)
+    || /add one mana of any of the exiled card'?s colors/i.test(def.oracle_text);
+}
+
+function isMoxDiamondLike(def: CardDefinition): boolean {
+  return /mox diamond/i.test(def.name)
+    || /if .* would enter .* discard a land card/i.test(def.oracle_text);
+}
+
+function getAuraTargetSpecs(def: CardDefinition): TargetSpec[] {
+  if (!def.card_types.includes('enchantment') || !/\baura\b/i.test(def.type_line)) return [];
+  if (/\benchant\s+creature\b/i.test(def.oracle_text)) {
+    return [{ id: 'aura_target', type: 'Creature', count: 1 }];
+  }
+  return [];
+}
+
+function getCastTargetSpecs(def: CardDefinition, castOptions: CastSpellOptions): TargetSpec[] | null {
+  const auraTargetSpecs = getAuraTargetSpecs(def);
+  if (auraTargetSpecs.length > 0) return auraTargetSpecs;
+  if (def.card_types.some(t => PERMANENT_TYPES.includes(t))) return [];
+
+  const override = getOverride(def.id, def.name);
+  if (override && override.kind === 'Spell') return override.targets;
+
+  const parsed = parseOracleText(normalizeOracleText(def.oracle_text, def.name), def.mana_cost);
+  if (parsed.kind === 'Spell') return parsed.targets;
+
+  if (parsed.kind === 'Modal') {
+    if (!castOptions.chosenModes) return null;
+    const modes = castOptions.chosenModes;
+    if (modes.length !== parsed.modal.chooseCount) {
+      throw new Error(`Modal spell requires ${parsed.modal.chooseCount} mode(s), got ${modes.length}`);
+    }
+    const specs: TargetSpec[] = [];
+    for (const modeIndex of modes) {
+      const choice = parsed.modal.choices[modeIndex];
+      if (!choice) {
+        throw new Error(`Invalid modal choice ${modeIndex}`);
+      }
+      for (const target of choice.targets) {
+        specs.push({ id: target.id, type: target.type as TargetType, count: 1 });
+      }
+    }
+    return specs;
+  }
+
+  return null;
+}
+
+function targetsRemainLegalAtResolution(
+  state: GameState,
+  casterId: string,
+  specs: TargetSpec[],
+  targets: string[],
+): boolean {
+  try {
+    validateTargetChoices(state, casterId, specs, targets);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function normalizeStackTargetSpecs(specs: unknown[] | undefined): TargetSpec[] {
+  return (specs || []).map((spec) => {
+    const item = spec as Partial<TargetSpec>;
+    return {
+      id: String(item.id),
+      type: item.type as TargetType,
+      count: item.count ?? 1,
+      ...(item.constraints ? { constraints: item.constraints } : {}),
+    };
+  });
+}
+
+function reduceGenericCost(
+  state: GameState,
+  playerId: string,
+  cost: ReturnType<typeof parseManaString>,
+  def: CardDefinition,
+): ReturnType<typeof parseManaString> {
+  const reduction = Math.min(cost.generic, getCostReduction(state, playerId, def));
+  return reduction > 0 ? { ...cost, generic: cost.generic - reduction } : cost;
+}
+
+function hasCantBeCounteredText(text: string): boolean {
+  return /\b(?:can'?t|cannot)\s+be\s+countered\b/i.test(text);
+}
+
+function paymentMakesSpellUncounterable(
+  state: GameState,
+  usedRestrictedMana: ReturnType<typeof getSpellPaymentRestrictedMana>,
+): boolean {
+  return usedRestrictedMana.some(mana => {
+    if (!mana.sourceInstanceId) return false;
+    const source = state.cards.get(mana.sourceInstanceId);
+    if (!source) return false;
+    const sourceDef = state.cardDefinitions.get(source.definitionId);
+    return sourceDef ? hasCantBeCounteredText(sourceDef.oracle_text) : false;
+  });
+}
+
+function isInstantOrSorcery(def: CardDefinition): boolean {
+  return def.card_types.includes('instant') || def.card_types.includes('sorcery');
+}
+
+function isRedInstantOrSorcery(def: CardDefinition): boolean {
+  return isInstantOrSorcery(def) && def.colors.includes('R');
+}
+
+function hasStorm(def: CardDefinition): boolean {
+  return /\bstorm\b/i.test(def.oracle_text);
+}
+
+function hasPrintedCascade(def: CardDefinition): boolean {
+  return /(^|\n)\s*cascade\b/i.test(def.oracle_text);
+}
+
+function permanentGrantsCascadeFromHand(state: GameState, playerId: string, def: CardDefinition, stackItem: SpellStackItem): boolean {
+  if (stackItem.castFromZone !== 'hand') return false;
+  if (!isInstantOrSorcery(def)) return false;
+
+  for (const card of state.cards.values()) {
+    if (card.zone !== 'battlefield' || card.ownerId !== playerId) continue;
+    const permanentDef = state.cardDefinitions.get(card.definitionId);
+    if (!permanentDef) continue;
+    if (/instant and sorcery spells you cast from your hand have cascade/i.test(permanentDef.oracle_text)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function cascadeInstanceCount(state: GameState, playerId: string, def: CardDefinition, stackItem: SpellStackItem): number {
+  let count = 0;
+  if (hasPrintedCascade(def)) count++;
+  if (permanentGrantsCascadeFromHand(state, playerId, def, stackItem)) count++;
+  return count;
+}
+
+function moveCardsToLibraryBottom(state: GameState, playerId: string, cardIds: string[]): GameState {
+  if (cardIds.length === 0) return state;
+  const moving = cardIds
+    .map(id => state.cards.get(id))
+    .filter((card): card is CardInstance => !!card);
+  if (moving.length === 0) return state;
+
+  const newCards = new Map<string, CardInstance>();
+  for (const [id, card] of state.cards) {
+    if (!cardIds.includes(id)) {
+      newCards.set(id, card);
+    }
+  }
+  for (const card of moving) {
+    newCards.set(card.instanceId, {
+      ...card,
+      ownerId: playerId,
+      zone: 'library',
+      tapped: false,
+      damage: 0,
+      summoningSick: false,
+    });
+  }
+  return { ...state, cards: newCards };
+}
+
+function castCascadeHitWithoutPaying(
+  state: GameState,
+  playerId: string,
+  sourceManaValue: number,
+): GameState {
+  const libraryCards = [...state.cards.values()].filter(card => card.ownerId === playerId && card.zone === 'library');
+  const revealedIds: string[] = [];
+  let hit: CardInstance | undefined;
+  let hitDef: CardDefinition | undefined;
+
+  for (const card of libraryCards) {
+    revealedIds.push(card.instanceId);
+    const def = state.cardDefinitions.get(card.definitionId);
+    if (!def) continue;
+    if (!def.card_types.includes('land') && def.cmc < sourceManaValue) {
+      hit = card;
+      hitDef = def;
+      break;
+    }
+  }
+
+  if (!hit || !hitDef) {
+    const exiledAll = new Map(state.cards);
+    for (const id of revealedIds) {
+      const card = exiledAll.get(id);
+      if (card) exiledAll.set(id, { ...card, zone: 'exile' });
+    }
+    return moveCardsToLibraryBottom({ ...state, cards: exiledAll }, playerId, revealedIds);
+  }
+
+  const newCards = new Map(state.cards);
+  for (const id of revealedIds) {
+    const card = newCards.get(id);
+    if (card) newCards.set(id, { ...card, zone: 'exile' });
+  }
+  newCards.set(hit.instanceId, { ...hit, zone: 'stack' });
+
+  const stackItem: SpellStackItem = {
+    kind: 'Spell',
+    id: `stack_${++stackCounter}`,
+    cardInstanceId: hit.instanceId,
+    casterId: playerId,
+    targets: [],
+    castFromZone: 'exile',
+    ...(hasCantBeCounteredText(hitDef.oracle_text) ? { cantBeCountered: true } : {}),
+  };
+
+  let resultState: GameState = {
+    ...state,
+    cards: newCards,
+    stack: [...state.stack, stackItem],
+    spellsCastThisTurn: (state.spellsCastThisTurn ?? 0) + 1,
+    hasPriorityPassed: new Array(state.players.length).fill(false),
+    priorityPlayerIndex: state.activePlayerIndex,
+  };
+
+  resultState = moveCardsToLibraryBottom(
+    resultState,
+    playerId,
+    revealedIds.filter(id => id !== hit!.instanceId),
+  );
+
+  resultState = checkTriggersForEvent(resultState, {
+    kind: 'SpellCast',
+    casterId: playerId,
+    cardInstanceId: hit.instanceId,
+  });
+
+  const nestedCascadeCount = cascadeInstanceCount(resultState, playerId, hitDef, stackItem);
+  for (let i = 0; i < nestedCascadeCount; i++) {
+    resultState = castCascadeHitWithoutPaying(resultState, playerId, hitDef.cmc);
+  }
+
+  return resultState;
+}
+
+function applyCascadeForSpell(state: GameState, playerId: string, def: CardDefinition, stackItem: SpellStackItem): GameState {
+  let resultState = state;
+  const count = cascadeInstanceCount(resultState, playerId, def, stackItem);
+  for (let i = 0; i < count; i++) {
+    resultState = castCascadeHitWithoutPaying(resultState, playerId, def.cmc);
+  }
+  return resultState;
+}
+
+function findSpellStackItem(state: GameState, id: string): SpellStackItem | undefined {
+  return state.stack.find(item =>
+    isSpellStackItem(item) && (item.id === id || item.cardInstanceId === id)
+  ) as SpellStackItem | undefined;
+}
+
+function createSpellCopyOnStack(
+  state: GameState,
+  sourceItem: SpellStackItem,
+  controllerId: string,
+  targets: string[] = sourceItem.targets,
+): GameState {
+  const copyItem: SpellStackItem = {
+    ...sourceItem,
+    id: `stack_${++stackCounter}`,
+    casterId: controllerId,
+    targets: [...targets],
+    isCopy: true,
+    copyOfCardInstanceId: sourceItem.copyOfCardInstanceId || sourceItem.cardInstanceId,
+  };
+
+  let resultState: GameState = {
+    ...state,
+    stack: [...state.stack, copyItem],
+    hasPriorityPassed: new Array(state.players.length).fill(false),
+    priorityPlayerIndex: state.activePlayerIndex,
+  };
+
+  resultState = checkTriggersForEvent(resultState, {
+    kind: 'SpellCopied',
+    controllerId,
+    cardInstanceId: sourceItem.cardInstanceId,
+  });
+
+  return resultState;
+}
+
+function resolveCopySpellTargetId(
+  effect: Extract<Effect, { kind: 'CopySpell' }>,
+  targets: string[],
+  targetSpecs: TargetSpec[],
+  eventContext?: { casterId?: string; cardInstanceId?: string },
+): string | null {
+  const targetRef = effect.target;
+  if (targetRef.kind === 'EventSpell') return eventContext?.cardInstanceId || null;
+  if (targetRef.kind !== 'Chosen') return null;
+  const targetIndex = targetSpecs.findIndex(spec => spec.id === targetRef.targetId);
+  if (targetIndex < 0) return null;
+  return targets[targetIndex] || null;
+}
+
+function applyCopySpellEffects(
+  state: GameState,
+  effects: Effect[],
+  casterId: string,
+  targets: string[],
+  targetSpecs: TargetSpec[],
+  eventContext?: { casterId?: string; cardInstanceId?: string },
+): GameState {
+  let resultState = state;
+  for (const effect of effects) {
+    if (effect.kind !== 'CopySpell') continue;
+
+    const targetId = resolveCopySpellTargetId(effect, targets, targetSpecs, eventContext);
+    if (!targetId) continue;
+
+    const targetItem = findSpellStackItem(resultState, targetId);
+    if (!targetItem) continue;
+    const targetCard = resultState.cards.get(targetItem.cardInstanceId);
+    const targetDef = targetCard ? resultState.cardDefinitions.get(targetCard.definitionId) : undefined;
+    if (!targetDef) continue;
+    if (effect.maxManaValue !== undefined && targetDef.cmc > effect.maxManaValue) continue;
+
+    resultState = createSpellCopyOnStack(resultState, targetItem, casterId, targetItem.targets);
+  }
+  return resultState;
+}
+
+function executeSpellEffectsWithCopySupport(
+  state: GameState,
+  effects: Effect[],
+  casterId: string,
+  targets: string[],
+  targetSpecs: TargetSpec[],
+  sourceInstanceId: string,
+  namedCardChoices?: Record<string, string>,
+  eventContext?: { casterId?: string; cardInstanceId?: string },
+): GameState {
+  const executableEffects = effects.filter(effect => effect.kind !== 'CopySpell');
+  let resultState = state;
+
+  if (executableEffects.length > 0) {
+    resultState = executeEffectsWithSBA(
+      resultState,
+      executableEffects,
+      casterId,
+      targets,
+      targetSpecs,
+      0,
+      { namedCardChoices, sourceInstanceId, eventContext },
+    );
+  }
+
+  resultState = applyCopySpellEffects(resultState, effects, casterId, targets, targetSpecs, eventContext);
+  return executableEffects.length > 0 ? resultState : checkStateBasedActions(resultState);
+}
+
+function isLegalChromeMoxImprint(
+  state: GameState,
+  controllerId: string,
+  sourceInstanceId: string,
+  chosenCardId: string | undefined,
+): chosenCardId is string {
+  if (!chosenCardId || chosenCardId === sourceInstanceId) return false;
+  const chosenCard = state.cards.get(chosenCardId);
+  if (!chosenCard || chosenCard.ownerId !== controllerId || chosenCard.zone !== 'hand') return false;
+  const chosenDef = state.cardDefinitions.get(chosenCard.definitionId);
+  if (!chosenDef) return false;
+  return !chosenDef.card_types.includes('artifact') && !chosenDef.card_types.includes('land');
+}
+
+function isLegalMoxDiamondDiscard(
+  state: GameState,
+  controllerId: string,
+  sourceInstanceId: string,
+  chosenCardId: string | undefined,
+): chosenCardId is string {
+  if (!chosenCardId || chosenCardId === sourceInstanceId) return false;
+  const chosenCard = state.cards.get(chosenCardId);
+  if (!chosenCard || chosenCard.ownerId !== controllerId || chosenCard.zone !== 'hand') return false;
+  const chosenDef = state.cardDefinitions.get(chosenCard.definitionId);
+  return chosenDef?.card_types.includes('land') === true;
+}
+
+function applyPermanentEntryChoices(
+  state: GameState,
+  card: CardInstance,
+  def: CardDefinition,
+  spellItem: SpellStackItem,
+  entersTapped: boolean,
+  summoningSick: boolean,
+): { cards: Map<string, CardInstance>; entered: boolean } {
+  const cards = new Map(state.cards);
+  const mergedChoices = mergeCardChoices(card.choices, spellItem.cardChoices);
+  const auraTargetSpecs = getAuraTargetSpecs(def);
+
+  if (auraTargetSpecs.length > 0) {
+    try {
+      validateTargetChoices(state, spellItem.casterId, auraTargetSpecs, spellItem.targets);
+    } catch {
+      cards.set(card.instanceId, {
+        ...card,
+        zone: 'graveyard',
+        tapped: false,
+        damage: 0,
+        summoningSick: true,
+        choices: mergedChoices,
+      });
+      return { cards, entered: false };
+    }
+  }
+
+  let enteringCard: CardInstance = {
+    ...card,
+    zone: 'battlefield',
+    tapped: entersTapped,
+    summoningSick,
+    choices: mergedChoices,
+    ...(auraTargetSpecs.length > 0 ? { attachedTo: spellItem.targets[0] } : {}),
+  };
+
+  if (isChromeMoxLike(def)) {
+    const imprintId = mergedChoices?.imprintedCardIds?.[0];
+    if (isLegalChromeMoxImprint(state, spellItem.casterId, card.instanceId, imprintId)) {
+      const imprinted = state.cards.get(imprintId)!;
+      cards.set(imprintId, {
+        ...imprinted,
+        zone: 'exile',
+        tapped: false,
+        damage: 0,
+        summoningSick: true,
+      });
+      enteringCard = {
+        ...enteringCard,
+        choices: mergeCardChoices(enteringCard.choices, { imprintedCardIds: [imprintId] }),
+      };
+    } else {
+      enteringCard = {
+        ...enteringCard,
+        choices: mergeCardChoices({
+          chosenCreatureType: enteringCard.choices?.chosenCreatureType,
+          discardedCardIds: enteringCard.choices?.discardedCardIds,
+        }),
+      };
+    }
+  }
+
+  if (isMoxDiamondLike(def)) {
+    const discardId = mergedChoices?.discardedCardIds?.[0];
+    if (!isLegalMoxDiamondDiscard(state, spellItem.casterId, card.instanceId, discardId)) {
+      cards.set(card.instanceId, {
+        ...card,
+        zone: 'graveyard',
+        tapped: false,
+        damage: 0,
+        summoningSick: true,
+        choices: undefined,
+      });
+      return { cards, entered: false };
+    }
+
+    const discarded = state.cards.get(discardId)!;
+    cards.set(discardId, {
+      ...discarded,
+      zone: 'graveyard',
+      tapped: false,
+      damage: 0,
+      summoningSick: true,
+    });
+    enteringCard = {
+      ...enteringCard,
+      choices: mergeCardChoices(enteringCard.choices, { discardedCardIds: [discardId] }),
+    };
+  }
+
+  cards.set(card.instanceId, enteringCard);
+  return { cards, entered: true };
+}
 
 /**
  * Strip keyword-ability name prefixes that decorate triggered abilities.
@@ -40,17 +608,68 @@ function normalizeOracleText(oracleText: string, cardName: string): string {
   if (cardName) {
     const escaped = cardName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     text = text.replace(new RegExp(escaped, 'gi'), '~');
+    const shortName = cardName.split(',')[0]?.trim();
+    if (shortName && shortName.length >= 3 && shortName !== cardName) {
+      const escapedShort = shortName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      text = text.replace(new RegExp(`\\b${escapedShort}\\b`, 'gi'), '~');
+    }
   }
   return text;
 }
 
-/**
- * Calculate commander tax for a player.
- */
-function getCommanderTax(state: GameState, playerId: string): number {
-  const player = state.players.find(p => p.id === playerId);
-  if (!player) return 0;
-  return player.commanderCastCount * 2; // {2} per previous cast
+function additionalStaticKeywordFromLine(line: string): string | null {
+  const match = line.match(/\band\s+(?:have|has)\s+([^,.]+)/i);
+  if (!match) return null;
+  const clause = match[1].toLowerCase();
+  const keywords = [
+    'double strike',
+    'first strike',
+    'deathtouch',
+    'indestructible',
+    'lifelink',
+    'vigilance',
+    'trample',
+    'flying',
+    'haste',
+    'menace',
+    'reach',
+    'hexproof',
+    'shroud',
+    'ward',
+  ];
+  return keywords.find(keyword => new RegExp(`\\b${keyword}\\b`, 'i').test(clause)) ?? null;
+}
+
+function registerContinuousAbilitiesForPermanent(state: GameState, instanceId: string): GameState {
+  const card = state.cards.get(instanceId);
+  if (!card) return state;
+  const def = state.cardDefinitions.get(card.definitionId);
+  if (!def) return state;
+
+  let resultState = state;
+  for (const line of def.oracle_text.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+
+    const normalizedLine = normalizeOracleText(trimmed, def.name);
+    const parsed = parseOracleText(normalizedLine);
+    if (parsed.kind !== 'StaticAbility') continue;
+
+    resultState = registerContinuousEffect(resultState, instanceId, card.ownerId, parsed.ability);
+
+    if (parsed.ability.modifier.kind === 'ModifyPT') {
+      const keyword = additionalStaticKeywordFromLine(normalizedLine);
+      if (keyword) {
+        const extraAbility: StaticAbilityEffect = {
+          ...parsed.ability,
+          modifier: { kind: 'GrantKeyword', keyword },
+        };
+        resultState = registerContinuousEffect(resultState, instanceId, card.ownerId, extraAbility);
+      }
+    }
+  }
+
+  return resultState;
 }
 
 export function canCastSpell(state: GameState, playerId: string, cardInstanceId: string): boolean {
@@ -60,9 +679,10 @@ export function canCastSpell(state: GameState, playerId: string, cardInstanceId:
 
   // Can cast from hand OR command zone (if it's the player's commander)
   const player = state.players.find(p => p.id === playerId);
-  const isCommander = player?.commanderInstanceId === cardInstanceId;
+  const isCommander = card.isCommander === true || player?.commanderInstanceIds?.includes(cardInstanceId) || player?.commanderInstanceId === cardInstanceId;
   const validZone = card.zone === 'hand' || (card.zone === 'command' && isCommander);
   if (!validZone) return false;
+  if (findCastZoneRestriction(state, playerId, card)) return false;
 
   const def = getCardDefinition(state, card);
 
@@ -82,35 +702,64 @@ export function canCastSpell(state: GameState, playerId: string, cardInstanceId:
 
   // Check mana (including commander tax for command zone casts)
   const baseCost = parseManaString(def.mana_cost);
-  const taxAmount = card.zone === 'command' ? getCommanderTax(state, playerId) : 0;
-  const totalCost = { ...baseCost, generic: baseCost.generic + taxAmount };
+  const taxAmount = card.zone === 'command' ? getCommanderTaxForCast(state, playerId, cardInstanceId) : 0;
+  const totalCost = reduceGenericCost(state, playerId, { ...baseCost, generic: baseCost.generic + taxAmount }, def);
 
-  if (!canPayCost(player!.manaPool, totalCost)) return false;
+  if (!canPaySpellCost(player!, totalCost, def, card)) return false;
 
   return true;
 }
 
-export function castSpell(state: GameState, playerId: string, cardInstanceId: string, targets: string[] = [], chosenModes?: number[]): GameState {
+export function castSpell(
+  state: GameState,
+  playerId: string,
+  cardInstanceId: string,
+  targets: string[] = [],
+  options?: number[] | CastSpellOptions,
+): GameState {
   if (!canCastSpell(state, playerId, cardInstanceId)) {
     throw new Error('Cannot cast spell');
   }
 
+  const castOptions = normalizeCastOptions(options);
   const card = state.cards.get(cardInstanceId)!;
   const def = getCardDefinition(state, card);
+  const castFromZone = card.zone;
+  const castTargetSpecs = getCastTargetSpecs(def, castOptions);
+  if (castTargetSpecs) {
+    validateTargetChoices(state, playerId, castTargetSpecs, targets);
+  }
   const cost = parseManaString(def.mana_cost);
 
   // Pay mana (including commander tax if from command zone)
   const playerIndex = state.players.findIndex(p => p.id === playerId);
   const player = state.players[playerIndex];
   const isFromCommandZone = card.zone === 'command';
-  const taxAmount = isFromCommandZone ? getCommanderTax(state, playerId) : 0;
-  const totalCost = { ...cost, generic: cost.generic + taxAmount };
-  const newManaPool = payManaCost(player.manaPool, totalCost);
+  const taxAmount = isFromCommandZone ? getCommanderTaxForCast(state, playerId, cardInstanceId) : 0;
+  const totalCost = reduceGenericCost(state, playerId, { ...cost, generic: cost.generic + taxAmount }, def);
+  const usedRestrictedMana = getSpellPaymentRestrictedMana(player, totalCost, def, card);
+  const usedConditionalMana = getSpellPaymentConditionalMana(player, totalCost, def, card);
+  const paidPlayer = paySpellCost(player, totalCost, def, card);
+  const previousSpellCount = state.spellsCastThisTurn ?? 0;
 
   // Increment commander cast count if casting from command zone
   const newPlayers = state.players.map((p, i) =>
     i === playerIndex
-      ? { ...p, manaPool: newManaPool, commanderCastCount: isFromCommandZone ? p.commanderCastCount + 1 : p.commanderCastCount }
+      ? {
+          ...p,
+          manaPool: paidPlayer.manaPool,
+          restrictedMana: paidPlayer.restrictedMana,
+          conditionalMana: paidPlayer.conditionalMana,
+          commanderCastCount: isFromCommandZone && p.commanderInstanceId === cardInstanceId
+            ? p.commanderCastCount + 1
+            : p.commanderCastCount,
+          commanderCastCounts: isFromCommandZone
+            ? {
+                ...(p.commanderCastCounts || {}),
+                [cardInstanceId]: ((p.commanderCastCounts || {})[cardInstanceId] ?? 0) + 1,
+              }
+            : p.commanderCastCounts,
+        }
       : p
   );
 
@@ -125,7 +774,13 @@ export function castSpell(state: GameState, playerId: string, cardInstanceId: st
     cardInstanceId,
     casterId: playerId,
     targets,
-    ...(chosenModes ? { chosenModes } : {}),
+    castFromZone,
+    ...(castOptions.chosenModes ? { chosenModes: castOptions.chosenModes } : {}),
+    ...(castOptions.namedCardChoices ? { namedCardChoices: castOptions.namedCardChoices } : {}),
+    ...(castOptions.cardChoices ? { cardChoices: copyCardChoices(castOptions.cardChoices) } : {}),
+    ...(paymentMakesSpellUncounterable(state, usedRestrictedMana) || hasCantBeCounteredText(def.oracle_text)
+      ? { cantBeCountered: true }
+      : {}),
   };
 
   let resultState: GameState = {
@@ -133,6 +788,7 @@ export function castSpell(state: GameState, playerId: string, cardInstanceId: st
     cards: newCards,
     players: newPlayers,
     stack: [...state.stack, stackItem],
+    spellsCastThisTurn: previousSpellCount + 1,
     hasPriorityPassed: new Array(state.players.length).fill(false),
     priorityPlayerIndex: state.activePlayerIndex,
   };
@@ -143,6 +799,30 @@ export function castSpell(state: GameState, playerId: string, cardInstanceId: st
     casterId: playerId,
     cardInstanceId,
   });
+
+  if (hasCastSacrificeToCounterChoice(def.oracle_text)) {
+    resultState = applyCastSacrificeToCounterChoice(
+      resultState,
+      stackItem,
+      castOptions.namedCardChoices?.sacrificeCardId,
+    );
+  }
+
+  if (isRedInstantOrSorcery(def)) {
+    for (const mana of usedConditionalMana) {
+      if (mana.effect === 'copyRedInstantOrSorcery') {
+        resultState = createSpellCopyOnStack(resultState, stackItem, playerId);
+      }
+    }
+  }
+
+  if (hasStorm(def) && previousSpellCount > 0) {
+    for (let i = 0; i < previousSpellCount; i++) {
+      resultState = createSpellCopyOnStack(resultState, stackItem, playerId);
+    }
+  }
+
+  resultState = applyCascadeForSpell(resultState, playerId, def, stackItem);
 
   return resultState;
 }
@@ -188,12 +868,19 @@ export function registerBattlefieldAbilities(state: GameState, instanceId: strin
     const trimmed = line.trim();
     if (!trimmed) continue;
 
-    const parsed = parseOracleText(normalizeOracleText(trimmed, def.name));
+    const normalizedLine = normalizeOracleText(trimmed, def.name);
+    const parsed = parseOracleText(normalizedLine);
 
     if (parsed.kind === 'ETB') {
       // Only add if we didn't already get an override for ETB
       if (!override || override.kind !== 'ETB') {
         abilitiesToAdd.push(parsed.ability as TriggeredAbilityRef);
+      }
+      if (/^whenever\s+~\s+enters\s+or\s+attacks\b/i.test(normalizedLine)) {
+        abilitiesToAdd.push({
+          ...(parsed.ability as TriggeredAbilityRef),
+          trigger: { kind: 'Attacks', who: 'self' },
+        });
       }
     } else if (parsed.kind === 'Dies') {
       abilitiesToAdd.push(parsed.ability as TriggeredAbilityRef);
@@ -238,9 +925,12 @@ function createETBTriggers(state: GameState, instanceId: string): GameState {
   if (override && override.kind === 'ETB') {
     targetSpecs = override.targets;
   } else {
-    const parsed = parseOracleText(normalizeOracleText(def.oracle_text, def.name));
-    if (parsed.kind === 'ETB') {
-      targetSpecs = parsed.targets;
+    for (const line of def.oracle_text.split('\n')) {
+      const parsed = parseOracleText(normalizeOracleText(line.trim(), def.name));
+      if (parsed.kind === 'ETB') {
+        targetSpecs = parsed.targets;
+        break;
+      }
     }
   }
 
@@ -280,14 +970,22 @@ export function resolveTopOfStack(state: GameState): GameState {
 
     // Execute the triggered ability's effects
     const effects = topItem.ability.effects as Effect[];
-    const targetSpecs = [] as TargetSpec[]; // TODO: Get from ability
+    const targetSpecs = normalizeStackTargetSpecs(topItem.targetSpecs);
 
-    resultState = executeEffectsWithSBA(
+    if (targetSpecs.length > 0
+      && !targetsRemainLegalAtResolution(resultState, topItem.controllerId, targetSpecs, topItem.targets)) {
+      return checkStateBasedActions(resultState);
+    }
+
+    resultState = executeSpellEffectsWithCopySupport(
       resultState,
       effects,
       topItem.controllerId,
       topItem.targets,
       targetSpecs,
+      topItem.sourceInstanceId,
+      topItem.namedCardChoices,
+      topItem.eventContext,
     );
 
     return resultState;
@@ -303,7 +1001,12 @@ export function resolveTopOfStack(state: GameState): GameState {
     };
 
     const effects = topItem.ability.effects as Effect[];
-    const targetSpecs = topItem.ability.targets as TargetSpec[];
+    const targetSpecs = normalizeStackTargetSpecs(topItem.ability.targets);
+
+    if (targetSpecs.length > 0
+      && !targetsRemainLegalAtResolution(resultState, topItem.controllerId, targetSpecs, topItem.targets)) {
+      return checkStateBasedActions(resultState);
+    }
 
     resultState = executeEffectsWithSBA(
       resultState,
@@ -311,6 +1014,8 @@ export function resolveTopOfStack(state: GameState): GameState {
       topItem.controllerId,
       topItem.targets,
       targetSpecs,
+      0,
+      { namedCardChoices: topItem.namedCardChoices, sourceInstanceId: topItem.sourceInstanceId },
     );
 
     return resultState;
@@ -331,12 +1036,8 @@ export function resolveTopOfStack(state: GameState): GameState {
     const isCreature = def.card_types.includes('creature');
     const entersTapped = def.oracle_text.toLowerCase().includes('enters the battlefield tapped')
       || def.oracle_text.toLowerCase().includes('enters tapped');
-    newCards.set(card.instanceId, {
-      ...card,
-      zone: 'battlefield',
-      tapped: entersTapped,
-      summoningSick: isCreature,
-    });
+    const entry = applyPermanentEntryChoices(state, card, def, spellItem, entersTapped, isCreature);
+    newCards = entry.cards;
 
     resultState = {
       ...state,
@@ -346,8 +1047,13 @@ export function resolveTopOfStack(state: GameState): GameState {
       priorityPlayerIndex: state.activePlayerIndex,
     };
 
+    if (!entry.entered) {
+      return checkStateBasedActions(resultState);
+    }
+
     // Register all triggered abilities for this permanent (ETB, dies, attacks, etc.)
     resultState = registerBattlefieldAbilities(resultState, card.instanceId);
+    resultState = registerContinuousAbilitiesForPermanent(resultState, card.instanceId);
     // Create ETB triggers for this specific permanent (self-ETB)
     resultState = createETBTriggers(resultState, card.instanceId);
 
@@ -360,10 +1066,11 @@ export function resolveTopOfStack(state: GameState): GameState {
       });
     }
   } else {
-    // Instants and sorceries: execute effects, then go to graveyard
-
-    // Move spell to graveyard first (standard behavior)
-    newCards.set(card.instanceId, { ...card, zone: 'graveyard' });
+    // Instants and sorceries: execute effects, then originals go to graveyard.
+    // Spell copies are stack objects only; the physical card stays where it is.
+    if (!spellItem.isCopy) {
+      newCards.set(card.instanceId, { ...card, zone: 'graveyard' });
+    }
 
     let intermediateState: GameState = {
       ...state,
@@ -376,30 +1083,36 @@ export function resolveTopOfStack(state: GameState): GameState {
     // Try to find effect definition: override first, then parse
     const override = getOverride(def.id, def.name);
     if (override && override.kind === 'Spell') {
-      // Validate targets
-      validateTargetChoices(intermediateState, spellItem.casterId, override.targets, spellItem.targets);
-      // Execute effects with SBA check
-      resultState = executeEffectsWithSBA(
-        intermediateState,
-        override.effects,
-        spellItem.casterId,
-        spellItem.targets,
-        override.targets,
-      );
+      if (!targetsRemainLegalAtResolution(intermediateState, spellItem.casterId, override.targets, spellItem.targets)) {
+        resultState = checkStateBasedActions(intermediateState);
+      } else {
+        resultState = executeSpellEffectsWithCopySupport(
+          intermediateState,
+          override.effects,
+          spellItem.casterId,
+          spellItem.targets,
+          override.targets,
+          spellItem.cardInstanceId,
+          spellItem.namedCardChoices,
+        );
+      }
     } else {
       // Try to parse oracle text
       const parsed = parseOracleText(normalizeOracleText(def.oracle_text, def.name));
       if (parsed.kind === 'Spell') {
-        // Validate targets
-        validateTargetChoices(intermediateState, spellItem.casterId, parsed.targets, spellItem.targets);
-        // Execute effects with SBA check
-        resultState = executeEffectsWithSBA(
-          intermediateState,
-          parsed.effects,
-          spellItem.casterId,
-          spellItem.targets,
-          parsed.targets,
-        );
+        if (!targetsRemainLegalAtResolution(intermediateState, spellItem.casterId, parsed.targets, spellItem.targets)) {
+          resultState = checkStateBasedActions(intermediateState);
+        } else {
+          resultState = executeSpellEffectsWithCopySupport(
+            intermediateState,
+            parsed.effects,
+            spellItem.casterId,
+            spellItem.targets,
+            parsed.targets,
+            spellItem.cardInstanceId,
+            spellItem.namedCardChoices,
+          );
+        }
       } else if (parsed.kind === 'Modal' && spellItem.chosenModes && spellItem.chosenModes.length > 0) {
         // Modal spell: collect effects and targets from chosen modes
         const modal = parsed.modal;
@@ -422,19 +1135,20 @@ export function resolveTopOfStack(state: GameState): GameState {
           }
         }
 
-        // Validate targets if any
-        if (allTargetSpecs.length > 0) {
-          validateTargetChoices(intermediateState, spellItem.casterId, allTargetSpecs, spellItem.targets);
+        if (allTargetSpecs.length > 0
+          && !targetsRemainLegalAtResolution(intermediateState, spellItem.casterId, allTargetSpecs, spellItem.targets)) {
+          resultState = checkStateBasedActions(intermediateState);
+        } else {
+          resultState = executeSpellEffectsWithCopySupport(
+            intermediateState,
+            allEffects,
+            spellItem.casterId,
+            spellItem.targets,
+            allTargetSpecs,
+            spellItem.cardInstanceId,
+            spellItem.namedCardChoices,
+          );
         }
-
-        // Execute effects with SBA check
-        resultState = executeEffectsWithSBA(
-          intermediateState,
-          allEffects,
-          spellItem.casterId,
-          spellItem.targets,
-          allTargetSpecs,
-        );
       } else {
         // Unparsed spell (or modal with no chosenModes): just resolve without effects (card still goes to graveyard)
         // Run SBAs anyway
@@ -450,7 +1164,7 @@ export function resolveTopOfStack(state: GameState): GameState {
  * Move pending triggers to the stack.
  * In APNAP order (active player first, then clockwise).
  */
-export function putTriggersOnStack(state: GameState): GameState {
+export function putTriggersOnStack(state: GameState, triggerTargets: Record<string, string[]> = {}): GameState {
   if (state.pendingTriggers.length === 0) return state;
 
   // Sort triggers by APNAP order
@@ -473,7 +1187,8 @@ export function putTriggersOnStack(state: GameState): GameState {
     sourceInstanceId: trigger.sourceInstanceId,
     controllerId: trigger.controllerId,
     ability: trigger.ability,
-    targets: [], // TODO: Handle target selection for triggered abilities
+    targets: triggerTargets[trigger.id] || [],
+    targetSpecs: trigger.requiredTargets,
     eventContext: trigger.eventContext,
   }));
 
@@ -493,11 +1208,73 @@ export function putTriggersOnStack(state: GameState): GameState {
  */
 export type GameEvent =
   | { kind: 'SpellCast'; casterId: string; cardInstanceId: string }
+  | { kind: 'SpellCopied'; controllerId: string; cardInstanceId: string }
   | { kind: 'CreatureETB'; instanceId: string; controllerId: string }
   | { kind: 'Attacks'; attackerInstanceId: string; controllerId: string }
+  | { kind: 'CombatDamageToPlayer'; sourceInstanceId: string; controllerId: string; damagedPlayerId: string; damage: number }
   | { kind: 'LandETB'; instanceId: string; controllerId: string }
   | { kind: 'UpkeepStart'; activePlayerId: string }
+  | { kind: 'BeginningCombatStart'; activePlayerId: string }
   | { kind: 'EndStepStart'; activePlayerId: string };
+
+function getSpellEventController(event: GameEvent): string | null {
+  if (event.kind === 'SpellCast') return event.casterId;
+  if (event.kind === 'SpellCopied') return event.controllerId;
+  return null;
+}
+
+function spellEventIsInstantOrSorcery(state: GameState, event: GameEvent): boolean {
+  if (event.kind !== 'SpellCast' && event.kind !== 'SpellCopied') return false;
+  const spellCard = state.cards.get(event.cardInstanceId);
+  const spellDef = spellCard ? state.cardDefinitions.get(spellCard.definitionId) : undefined;
+  return !!spellDef && isInstantOrSorcery(spellDef);
+}
+
+function additionalTriggerMultiplierCount(state: GameState, controllerId: string, event: GameEvent): number {
+  if (!spellEventIsInstantOrSorcery(state, event)) return 0;
+
+  let count = 0;
+  for (const card of state.cards.values()) {
+    if (card.zone !== 'battlefield' || card.ownerId !== controllerId) continue;
+    const def = state.cardDefinitions.get(card.definitionId);
+    if (!def) continue;
+    if (/triggered ability of a permanent you control[^.]*triggers an additional time/i.test(def.oracle_text)) {
+      count++;
+    }
+  }
+  return count;
+}
+
+function copyAdditionalSpellTriggers(
+  state: GameState,
+  triggers: GameState['pendingTriggers'],
+  firstNewTriggerIndex: number,
+  event: GameEvent,
+): GameState['pendingTriggers'] {
+  const controllerId = getSpellEventController(event);
+  if (!controllerId) return triggers;
+
+  const multiplierCount = additionalTriggerMultiplierCount(state, controllerId, event);
+  if (multiplierCount <= 0) return triggers;
+
+  const createdByEvent = triggers.slice(firstNewTriggerIndex).filter(trigger => {
+    const source = state.cards.get(trigger.sourceInstanceId);
+    return source?.zone === 'battlefield' && source.ownerId === controllerId;
+  });
+  if (createdByEvent.length === 0) return triggers;
+
+  const copied = [...triggers];
+  for (let copyRound = 0; copyRound < multiplierCount; copyRound++) {
+    for (const trigger of createdByEvent) {
+      copied.push({
+        ...trigger,
+        id: `trigger_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+        requiredTargets: [...trigger.requiredTargets],
+      });
+    }
+  }
+  return copied;
+}
 
 /**
  * Check all battlefield permanents for triggers matching a game event.
@@ -507,9 +1284,41 @@ export type GameEvent =
  * It must be called whenever a relevant game event occurs.
  */
 export function checkTriggersForEvent(state: GameState, event: GameEvent): GameState {
-  if (!state.battlefieldAbilities || state.battlefieldAbilities.size === 0) return state;
+  let newPendingTriggers = [...(state.pendingTriggers || [])];
+  const firstEventTriggerIndex = newPendingTriggers.length;
+  let delayedTriggers = [...(state.delayedTriggers || [])];
 
-  const newPendingTriggers = [...(state.pendingTriggers || [])];
+  if (event.kind === 'EndStepStart' && delayedTriggers.length > 0) {
+    const remainingDelayed = [];
+    for (const delayed of delayedTriggers) {
+      const shouldFire = delayed.trigger.kind === 'EndStep'
+        && delayed.trigger.whose === 'yours'
+        && event.activePlayerId === delayed.controllerId;
+
+      if (shouldFire) {
+        newPendingTriggers.push({
+          id: `trigger_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+          sourceInstanceId: delayed.sourceInstanceId || delayed.id,
+          controllerId: delayed.controllerId,
+          ability: {
+            kind: 'TriggeredAbility',
+            trigger: delayed.trigger,
+            effects: delayed.effects,
+          },
+          requiredTargets: [],
+        });
+      }
+
+      if (!shouldFire || !delayed.oneShot) {
+        remainingDelayed.push(delayed);
+      }
+    }
+    delayedTriggers = remainingDelayed;
+  }
+
+  if (!state.battlefieldAbilities || state.battlefieldAbilities.size === 0) {
+    return { ...state, pendingTriggers: newPendingTriggers, delayedTriggers };
+  }
 
   for (const [instanceId, abilities] of state.battlefieldAbilities) {
     // Verify the permanent is still on the battlefield
@@ -532,6 +1341,16 @@ export function checkTriggersForEvent(state: GameState, event: GameEvent): GameS
           if (trigger.kind === 'YouCastSpell' && event.casterId === controllerId) {
             shouldFire = true;
           }
+          // "Whenever you cast a noncreature spell"
+          if (trigger.kind === 'CastNoncreatureSpell' && event.casterId === controllerId) {
+            const spellCard = state.cards.get(event.cardInstanceId);
+            if (spellCard) {
+              const spellDef = state.cardDefinitions.get(spellCard.definitionId);
+              if (spellDef && !spellDef.card_types.includes('creature')) {
+                shouldFire = true;
+              }
+            }
+          }
           // "Whenever you cast an instant or sorcery spell"
           if (trigger.kind === 'CastInstantOrSorcery' && event.casterId === controllerId) {
             const spellCard = state.cards.get(event.cardInstanceId);
@@ -542,20 +1361,54 @@ export function checkTriggersForEvent(state: GameState, event: GameEvent): GameS
               }
             }
           }
+          // "Whenever you cast or copy an instant or sorcery spell"
+          if (trigger.kind === 'CastOrCopyInstantOrSorcery' && event.casterId === controllerId) {
+            const spellCard = state.cards.get(event.cardInstanceId);
+            if (spellCard) {
+              const spellDef = state.cardDefinitions.get(spellCard.definitionId);
+              if (spellDef && isInstantOrSorcery(spellDef)) {
+                shouldFire = true;
+              }
+            }
+          }
+          break;
+        }
+
+        case 'SpellCopied': {
+          if (trigger.kind === 'CastOrCopyInstantOrSorcery' && event.controllerId === controllerId) {
+            const spellCard = state.cards.get(event.cardInstanceId);
+            if (spellCard) {
+              const spellDef = state.cardDefinitions.get(spellCard.definitionId);
+              if (spellDef && isInstantOrSorcery(spellDef)) {
+                shouldFire = true;
+              }
+            }
+          }
           break;
         }
 
         case 'CreatureETB': {
+          const enteringCard = state.cards.get(event.instanceId);
+          const enteringIsToken = enteringCard?.isToken === true;
           // "Whenever another creature enters the battlefield under your control"
           if (trigger.kind === 'AnotherCreatureETB'
             && (trigger as { kind: 'AnotherCreatureETB'; controller: string }).controller === 'yours'
             && event.controllerId === controllerId
             && event.instanceId !== instanceId) {
-            shouldFire = true;
+            const etbTrigger = trigger as { kind: 'AnotherCreatureETB'; controller: string; nontoken?: boolean; tokenOnly?: boolean };
+            shouldFire = (!etbTrigger.nontoken || !enteringIsToken)
+              && (!etbTrigger.tokenOnly || enteringIsToken);
           }
-          // "Whenever a creature enters the battlefield"
+          // "Whenever a creature enters the battlefield" and the
+          // controller-restricted "under your control" variant.
           if (trigger.kind === 'AnyCreatureETB' && event.instanceId !== instanceId) {
-            shouldFire = true;
+            const etbTrigger = trigger as { kind: 'AnyCreatureETB'; controller?: string; nontoken?: boolean; tokenOnly?: boolean };
+            const controllerRestriction = etbTrigger.controller ?? 'any';
+            const tokenRestrictionOk = (!etbTrigger.nontoken || !enteringIsToken)
+              && (!etbTrigger.tokenOnly || enteringIsToken);
+            if (tokenRestrictionOk && (controllerRestriction === 'any' || event.controllerId === controllerId)) {
+              shouldFire = true;
+            }
           }
           break;
         }
@@ -565,6 +1418,23 @@ export function checkTriggersForEvent(state: GameState, event: GameEvent): GameS
           if (trigger.kind === 'Attacks' && (trigger as { kind: 'Attacks'; who: string }).who === 'self'
             && event.attackerInstanceId === instanceId) {
             shouldFire = true;
+          }
+          // "Whenever a creature you control attacks"
+          if (trigger.kind === 'CreatureYouControlAttacks' && event.controllerId === controllerId) {
+            shouldFire = true;
+          }
+          break;
+        }
+
+        case 'CombatDamageToPlayer': {
+          if (trigger.kind === 'CombatDamageToPlayer') {
+            const damageTrigger = trigger as { kind: 'CombatDamageToPlayer'; who: string };
+            if (damageTrigger.who === 'self' && event.sourceInstanceId === instanceId) {
+              shouldFire = true;
+            }
+            if (damageTrigger.who === 'creatureYouControl' && event.controllerId === controllerId) {
+              shouldFire = true;
+            }
           }
           break;
         }
@@ -591,12 +1461,29 @@ export function checkTriggersForEvent(state: GameState, event: GameEvent): GameS
           break;
         }
 
+        case 'BeginningCombatStart': {
+          if (trigger.kind === 'BeginningCombat') {
+            const combatTrigger = trigger as { kind: 'BeginningCombat'; whose: string };
+            if (combatTrigger.whose === 'yours' && event.activePlayerId === controllerId) {
+              shouldFire = true;
+            }
+            if (combatTrigger.whose === 'each') {
+              shouldFire = true;
+            }
+          }
+          break;
+        }
+
         case 'EndStepStart': {
           // "At the beginning of your end step"
-          if (trigger.kind === 'EndStep'
-            && (trigger as { kind: 'EndStep'; whose: string }).whose === 'yours'
-            && event.activePlayerId === controllerId) {
-            shouldFire = true;
+          if (trigger.kind === 'EndStep') {
+            const endStepTrigger = trigger as { kind: 'EndStep'; whose: string };
+            if (endStepTrigger.whose === 'yours' && event.activePlayerId === controllerId) {
+              shouldFire = true;
+            }
+            if (endStepTrigger.whose === 'opponents' && event.activePlayerId !== controllerId) {
+              shouldFire = true;
+            }
           }
           break;
         }
@@ -619,19 +1506,29 @@ export function checkTriggersForEvent(state: GameState, event: GameEvent): GameS
           }
         }
 
+        const eventContext = event.kind === 'SpellCast'
+          ? { casterId: event.casterId, cardInstanceId: event.cardInstanceId }
+          : event.kind === 'SpellCopied'
+            ? { casterId: event.controllerId, cardInstanceId: event.cardInstanceId }
+          : event.kind === 'Attacks'
+            ? { cardInstanceId: event.attackerInstanceId }
+            : event.kind === 'CombatDamageToPlayer'
+              ? { cardInstanceId: event.sourceInstanceId }
+              : undefined;
+
         newPendingTriggers.push({
           id: `trigger_${Date.now()}_${Math.random().toString(36).slice(2)}`,
           sourceInstanceId: instanceId,
           controllerId,
           ability,
           requiredTargets: targetSpecs,
-          eventContext: event.kind === 'SpellCast'
-            ? { casterId: event.casterId, cardInstanceId: event.cardInstanceId }
-            : undefined,
+          eventContext,
         });
       }
     }
   }
 
-  return { ...state, pendingTriggers: newPendingTriggers };
+  newPendingTriggers = copyAdditionalSpellTriggers(state, newPendingTriggers, firstEventTriggerIndex, event);
+
+  return { ...state, pendingTriggers: newPendingTriggers, delayedTriggers };
 }

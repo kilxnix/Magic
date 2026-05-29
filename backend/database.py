@@ -1,15 +1,19 @@
 """SQLite database for storing generated decks and card images."""
 
 import json
+import os
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-DATABASE_PATH = Path(__file__).parent.parent / "data" / "decks.db"
-IMAGES_DATABASE_PATH = Path(__file__).parent.parent / "data" / "card_images.db"
-PRICE_HISTORY_PATH = Path(__file__).parent.parent / "data" / "price_history.db"
+PROJECT_DATA_DIR = Path(__file__).parent.parent / "data"
+DATABASE_DIR = Path(os.getenv("MAGIC_DB_DIR", PROJECT_DATA_DIR))
+
+DATABASE_PATH = DATABASE_DIR / "decks.db"
+IMAGES_DATABASE_PATH = DATABASE_DIR / "card_images.db"
+PRICE_HISTORY_PATH = DATABASE_DIR / "price_history.db"
 
 
 def init_db():

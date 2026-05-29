@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, KeyboardEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { Send, Trash2, ArrowLeft, Loader2 } from 'lucide-react';
+import { shelectorApiUrl } from '../lib/api';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -49,7 +50,7 @@ export function ShelectorPage() {
     setLoading(true);
 
     try {
-      const res = await fetch('http://localhost:8100/chat', {
+      const res = await fetch(shelectorApiUrl('/chat'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -83,7 +84,7 @@ export function ShelectorPage() {
   const handleClear = async () => {
     const sid = getSessionId();
     try {
-      await fetch(`http://localhost:8100/session/${sid}/clear`, { method: 'POST' });
+      await fetch(shelectorApiUrl(`/session/${sid}/clear`), { method: 'POST' });
     } catch { /* ignore */ }
     setMessages([]);
     clearSession();

@@ -283,7 +283,7 @@ describe('Replacement Effects Framework', () => {
   });
 
   describe('createExileInsteadOfDieEffect', () => {
-    it('changes death event type', () => {
+    it('changes death destination to exile', () => {
       const state = createTestState();
       const effect = createExileInsteadOfDieEffect('source-1', 'player-1');
       registerReplacement(effect);
@@ -295,8 +295,8 @@ describe('Replacement Effects Framework', () => {
 
       const result = applyReplacements(state, event);
 
-      // The effect changes the event type (placeholder behavior)
-      expect(result.event?.type).toBe('EntersBattlefield');
+      expect(result.event?.type).toBe('CreatureDies');
+      expect(result.event?.destinationZone).toBe('exile');
       expect(result.appliedReplacements).toHaveLength(1);
     });
 
@@ -781,6 +781,30 @@ describe('Replacement Effects Integration (through executor)', () => {
         }
       }
       expect(tokenCount).toBe(6); // Doubled from 3
+    });
+  });
+
+  describe('Dies replacement through executor', () => {
+    it('exiles destroyed creatures when a dies replacement is active', () => {
+      const state = createIntegrationState();
+      registerReplacement(createExileInsteadOfDieEffect('leyline-void', 'player-2'));
+
+      const effects: Effect[] = [
+        {
+          kind: 'Destroy',
+          target: { kind: 'Chosen', targetId: 'target_1' },
+        },
+      ];
+
+      const newState = executeEffects(
+        state,
+        effects,
+        'player-2',
+        ['creature-1'],
+        [{ id: 'target_1' }],
+      );
+
+      expect(newState.cards.get('creature-1')?.zone).toBe('exile');
     });
   });
 });

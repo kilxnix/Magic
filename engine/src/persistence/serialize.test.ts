@@ -8,7 +8,7 @@ import {
   saveGameFromJson,
 } from './serialize';
 import { SAVE_VERSION } from './schema';
-import { GameState, createPlayer, Phase, Step, CardDefinition } from '../types';
+import { GameState, createPlayer, Phase, Step, CardDefinition, CardInstance } from '../types';
 import { initGrudgeTracking, recordDamage } from '../ai/grudges';
 
 // Helper to create minimal game state
@@ -42,7 +42,7 @@ function addCard(
   ownerId: string,
   zone: 'hand' | 'battlefield' | 'library' | 'graveyard' | 'command' | 'stack',
   def: Partial<CardDefinition>,
-  options: { tapped?: boolean; isCommander?: boolean; damage?: number } = {},
+  options: { tapped?: boolean; isCommander?: boolean; damage?: number; choices?: CardInstance['choices'] } = {},
 ): void {
   const fullDef: CardDefinition = {
     id: def.id ?? instanceId,
@@ -70,6 +70,7 @@ function addCard(
     counters: {},
     damage: options.damage ?? 0,
     isCommander: options.isCommander ?? false,
+    choices: options.choices,
   });
 }
 
@@ -228,7 +229,9 @@ describe('serializeGameState / deserializeGameState', () => {
     }, { isCommander: true });
 
     state.players[0].commanderInstanceId = 'commander1';
+    state.players[0].commanderInstanceIds = ['commander1', 'commander2'];
     state.players[0].commanderCastCount = 2;
+    state.players[0].commanderCastCounts = { commander1: 2, commander2: 1 };
     state.players[0].commanderTax = 4;
     state.players[1].commanderDamage = { commander1: 15 };
 
@@ -236,13 +239,50 @@ describe('serializeGameState / deserializeGameState', () => {
     const deserialized = deserializeGameState(serialized);
 
     expect(deserialized.players[0].commanderInstanceId).toBe('commander1');
+    expect(deserialized.players[0].commanderInstanceIds).toEqual(['commander1', 'commander2']);
     expect(deserialized.players[0].commanderCastCount).toBe(2);
+    expect(deserialized.players[0].commanderCastCounts).toEqual({ commander1: 2, commander2: 1 });
     expect(deserialized.players[0].commanderTax).toBe(4);
     expect(deserialized.players[1].commanderDamage['commander1']).toBe(15);
 
     const cmd = deserialized.cards.get('commander1');
     expect(cmd!.isCommander).toBe(true);
     expect(cmd!.zone).toBe('command');
+  });
+
+  it('round-trips permanent choices and restricted mana metadata', () => {
+    const state = createTestState();
+    state.players[0].manaPool = { W: 0, U: 0, B: 0, R: 0, G: 1, C: 0 };
+    state.players[0].restrictedMana = [
+      {
+        color: 'G',
+        amount: 1,
+        restriction: 'creatureTypeSpell',
+        creatureType: 'Elf',
+        sourceInstanceId: 'cavern1',
+      },
+    ];
+
+    addCard(state, 'cavern1', 'p1', 'battlefield', {
+      name: 'Cavern of Souls',
+      type_line: 'Land',
+      card_types: ['land'],
+      oracle_text: 'As Cavern of Souls enters, choose a creature type.',
+    }, { choices: { chosenCreatureType: 'Elf' } });
+
+    const serialized = serializeGameState(state);
+    const deserialized = deserializeGameState(serialized);
+
+    expect(deserialized.cards.get('cavern1')?.choices).toEqual({ chosenCreatureType: 'Elf' });
+    expect(deserialized.players[0].restrictedMana).toEqual([
+      {
+        color: 'G',
+        amount: 1,
+        restriction: 'creatureTypeSpell',
+        creatureType: 'Elf',
+        sourceInstanceId: 'cavern1',
+      },
+    ]);
   });
 });
 

@@ -1,4 +1,4 @@
-import { GameState, CardInstance, CardDefinition, Player, Zone, createPlayer } from './types';
+import { GameState, CardInstance, CardDefinition, Player, Zone, createPlayer, TriggeredAbilityRef } from './types';
 
 export interface DeckInput {
   playerId: string;
@@ -66,6 +66,8 @@ export function initGameState(decks: DeckInput[]): GameState {
   const updatedPlayers = players.map(p => ({
     ...p,
     commanderInstanceId: commanderByPlayer.get(p.id) ?? null,
+    commanderInstanceIds: commanderByPlayer.get(p.id) ? [commanderByPlayer.get(p.id)!] : [],
+    commanderCastCounts: commanderByPlayer.get(p.id) ? { [commanderByPlayer.get(p.id)!]: 0 } : {},
   }));
 
   return {
@@ -78,11 +80,13 @@ export function initGameState(decks: DeckInput[]): GameState {
     phase: 'beginning',
     step: 'untap',
     turnNumber: 1,
+    spellsCastThisTurn: 0,
     hasPriorityPassed: new Array(decks.length).fill(false),
     stack: [],
     combat: null,
     battlefieldAbilities: new Map(),
     pendingTriggers: [],
+    delayedTriggers: [],
   };
 }
 
@@ -190,4 +194,25 @@ export function getCardDefinition(state: GameState, card: CardInstance): CardDef
   const def = state.cardDefinitions.get(card.definitionId);
   if (!def) throw new Error(`Card definition not found: ${card.definitionId}`);
   return def;
+}
+
+export function pruneDetachedEffects(state: GameState): GameState {
+  const battlefieldAbilities = new Map<string, TriggeredAbilityRef[]>();
+  for (const [instanceId, abilities] of state.battlefieldAbilities || new Map()) {
+    const source = state.cards.get(instanceId);
+    if (source?.zone === 'battlefield') {
+      battlefieldAbilities.set(instanceId, abilities);
+    }
+  }
+
+  const continuousEffects = (state.continuousEffects || []).filter(effect => {
+    const source = state.cards.get(effect.sourceInstanceId);
+    return source?.zone === 'battlefield';
+  });
+
+  return {
+    ...state,
+    battlefieldAbilities,
+    continuousEffects,
+  };
 }

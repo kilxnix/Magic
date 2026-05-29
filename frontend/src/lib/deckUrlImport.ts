@@ -48,9 +48,31 @@ const MTGGOLDFISH_DECKS: Record<string, LocalDeckUrlImportResult> = {
   },
 };
 
+function parseDeckUrl(url: string): URL | null {
+  const trimmed = url.trim();
+  if (!trimmed) return null;
+
+  try {
+    const candidate = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+    return new URL(candidate);
+  } catch {
+    return null;
+  }
+}
+
 function mtggoldfishIdFromUrl(url: string): string | null {
-  const match = url.match(/mtggoldfish\.com\/(?:archetype|deck)\/([^/?#]+)/i);
-  return match?.[1] ?? null;
+  const parsed = parseDeckUrl(url);
+  if (!parsed) return null;
+
+  const host = parsed.hostname.toLowerCase().replace(/^www\./, '');
+  if (host !== 'mtggoldfish.com') return null;
+
+  const [kind, deckId] = parsed.pathname.split('/').filter(Boolean);
+  if ((kind === 'archetype' || kind === 'deck') && deckId) {
+    return decodeURIComponent(deckId);
+  }
+
+  return null;
 }
 
 export function importDeckUrlLocally(url: string): LocalDeckUrlImportResult | null {

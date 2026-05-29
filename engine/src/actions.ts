@@ -1,14 +1,122 @@
 import { GameState, ManaColor, Phase, ActivatedAbilityStackItem } from './types';
 import { getCardDefinition, getCardsInZone } from './game-state';
-import { addMana, parseManaString, canPayCost, payManaCost } from './mana';
+import {
+  addConditionalMana,
+  addMana,
+  addRestrictedMana,
+  canPayUnrestrictedCost,
+  parseManaString,
+  payUnrestrictedManaCost,
+} from './mana';
 import { getOverride } from './effects/overrides';
 import { parseActivatedAbilities } from './effects/parser';
-import { executeSacrificeSpecific, executeSearchLibrary, executeShuffleLibrary, executeEffectsWithSBA } from './effects/executor';
+import { executeSacrificeSpecific, executeSearchLibrary, executeShuffleLibrary, executeEffectsWithSBA, matchesCardFilter } from './effects/executor';
 import { checkTriggersForEvent, registerBattlefieldAbilities } from './stack';
+import { instanceHasKeyword } from './keywords';
+import { populateParsedCache } from './cards/card-parser-cache';
+import { isEffectiveCreature } from './effective-types';
+import { getCommanderDestinationZone } from './commander';
 import type { ActivatedAbility, Effect } from './effects/ast';
 import type { TargetSpec } from './effects/targets';
 
 const MAIN_PHASES: Phase[] = ['precombat_main', 'postcombat_main'];
+
+export interface PlayLandOptions {
+  payLifeToEnterUntapped?: boolean;
+  chosenCreatureType?: string;
+}
+
+export function getAvailableManaColors(state: GameState, cardInstanceId: string): ManaColor[] {
+  const card = state.cards.get(cardInstanceId);
+  if (!card) return [];
+  let def = getCardDefinition(state, card);
+  if (!def.manaProduction) {
+    def = populateParsedCache(def);
+  }
+  if (!def.manaProduction) return [];
+  if (!manaActivationConditionMet(state, card.ownerId, cardInstanceId, def.oracle_text)) return [];
+
+  if (/add one mana of any of the exiled card'?s colors/i.test(def.oracle_text)) {
+    const allowed = new Set<ManaColor>();
+    for (const imprintedId of card.choices?.imprintedCardIds || []) {
+      const imprinted = state.cards.get(imprintedId);
+      if (!imprinted || imprinted.zone !== 'exile') continue;
+      const imprintedDef = state.cardDefinitions.get(imprinted.definitionId);
+      for (const color of imprintedDef?.colors || []) {
+        allowed.add(color);
+      }
+    }
+    return def.manaProduction.colors.filter(color => allowed.has(color));
+  }
+
+  return def.manaProduction.colors;
+}
+
+function wordOrNumberToInt(value: string): number | undefined {
+  const textNumbers: Record<string, number> = {
+    one: 1,
+    two: 2,
+    three: 3,
+    four: 4,
+    five: 5,
+    six: 6,
+    seven: 7,
+    eight: 8,
+    nine: 9,
+    ten: 10,
+  };
+  return /^\d+$/.test(value) ? parseInt(value, 10) : textNumbers[value.toLowerCase()];
+}
+
+function countControlledLands(state: GameState, playerId: string): number {
+  let count = 0;
+  for (const card of state.cards.values()) {
+    if (card.ownerId !== playerId || card.zone !== 'battlefield') continue;
+    const def = state.cardDefinitions.get(card.definitionId);
+    if (def?.card_types.includes('land')) count++;
+  }
+  return count;
+}
+
+function manaActivationConditionMet(
+  state: GameState,
+  playerId: string,
+  _cardInstanceId: string,
+  oracleText: string,
+): boolean {
+  const landThreshold = oracleText.match(/\bactivate only if you control (one|two|three|four|five|six|seven|eight|nine|ten|\d+) or more lands\b/i);
+  if (landThreshold) {
+    const required = wordOrNumberToInt(landThreshold[1]);
+    if (required !== undefined && countControlledLands(state, playerId) < required) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function manaHasSpellCopyRider(oracleText: string): boolean {
+  return /\bwhen that mana is spent to cast a red instant or sorcery spell,\s*copy that spell\b/i.test(oracleText);
+}
+
+function manaProductionMultiplier(state: GameState, playerId: string, sourceInstanceId: string): number {
+  const source = state.cards.get(sourceInstanceId);
+  if (!source || source.ownerId !== playerId || source.zone !== 'battlefield') return 1;
+
+  let multiplier = 1;
+  for (const permanent of state.cards.values()) {
+    if (permanent.ownerId !== playerId || permanent.zone !== 'battlefield') continue;
+    const def = state.cardDefinitions.get(permanent.definitionId);
+    if (!def) continue;
+    const text = def.oracle_text;
+    if (/\bif you tap a permanent(?: you control)? for mana,\s*it produces three times as much/i.test(text)) {
+      multiplier *= 3;
+    } else if (/\bif you tap a permanent(?: you control)? for mana,\s*it produces twice as much/i.test(text)) {
+      multiplier *= 2;
+    }
+  }
+  return multiplier;
+}
 
 /**
  * Number of lands the player may play this turn.
@@ -62,7 +170,12 @@ export function canPlayLand(state: GameState, playerId: string, cardInstanceId: 
   return true;
 }
 
-export function playLand(state: GameState, playerId: string, cardInstanceId: string): GameState {
+export function playLand(
+  state: GameState,
+  playerId: string,
+  cardInstanceId: string,
+  options: PlayLandOptions = {},
+): GameState {
   if (!canPlayLand(state, playerId, cardInstanceId)) {
     throw new Error('Cannot play land');
   }
@@ -70,13 +183,33 @@ export function playLand(state: GameState, playerId: string, cardInstanceId: str
   const newCards = new Map(state.cards);
   const card = newCards.get(cardInstanceId)!;
   const def = getCardDefinition(state, card);
-  const entersTapped = entersTheBattlefieldTapped(def.oracle_text);
-  newCards.set(cardInstanceId, { ...card, zone: 'battlefield', tapped: entersTapped, summoningSick: false });
+  const optionalLifeCost = getOptionalUntappedLifeCost(def.oracle_text);
+  let entersTapped = entersTheBattlefieldTapped(def.oracle_text);
+  let paidLife = 0;
+  if (optionalLifeCost !== undefined && options.payLifeToEnterUntapped) {
+    const player = state.players.find(p => p.id === playerId);
+    if (!player || player.life < optionalLifeCost) {
+      throw new Error('Cannot pay life for land entry');
+    }
+    entersTapped = false;
+    paidLife = optionalLifeCost;
+  }
+  const entryChoices = {
+    ...(card.choices || {}),
+    ...(options.chosenCreatureType ? { chosenCreatureType: normalizeChoice(options.chosenCreatureType) } : {}),
+  };
+  newCards.set(cardInstanceId, {
+    ...card,
+    zone: 'battlefield',
+    tapped: entersTapped,
+    summoningSick: false,
+    choices: Object.keys(entryChoices).length > 0 ? entryChoices : card.choices,
+  });
 
   const playerIndex = state.players.findIndex(p => p.id === playerId);
   const newPlayers = state.players.map((p, i) =>
     i === playerIndex
-      ? { ...p, hasPlayedLand: true, landsPlayedThisTurn: (p.landsPlayedThisTurn ?? 0) + 1 }
+      ? { ...p, life: p.life - paidLife, hasPlayedLand: true, landsPlayedThisTurn: (p.landsPlayedThisTurn ?? 0) + 1 }
       : p,
   );
 
@@ -99,6 +232,22 @@ export function entersTheBattlefieldTappedForTest(oracleText: string): boolean {
   return entersTheBattlefieldTapped(oracleText);
 }
 
+export function getOptionalUntappedLifeCostForTest(oracleText: string): number | undefined {
+  return getOptionalUntappedLifeCost(oracleText);
+}
+
+/** Parses "you may pay N life. If you don't, it enters tapped" land entry choices. */
+function getOptionalUntappedLifeCost(oracleText: string): number | undefined {
+  if (!oracleText) return undefined;
+  const lower = oracleText.toLowerCase();
+  const match = lower.match(/\byou may pay\s+(\d+)\s+life\b[^.]*\.\s*if\s+you\s+don'?t\b[^.]*enters?\s+tapped/);
+  return match ? parseInt(match[1], 10) : undefined;
+}
+
+function normalizeChoice(choice: string): string {
+  return choice.trim().replace(/\s+/g, ' ');
+}
+
 /** Check if a permanent's oracle text indicates it enters the battlefield tapped. */
 function entersTheBattlefieldTapped(oracleText: string): boolean {
   if (!oracleText) return false;
@@ -106,8 +255,8 @@ function entersTheBattlefieldTapped(oracleText: string): boolean {
   // If any clause says "doesn't enter" or "does not enter" tapped, treat as not-always-tapped.
   if (/\bdo(?:es)?n'?t\s+enter\s+(?:the\s+battlefield\s+)?tapped\b/.test(lower)) return false;
   if (/\bdoes\s+not\s+enter\s+(?:the\s+battlefield\s+)?tapped\b/.test(lower)) return false;
-  // "If you don't, it enters tapped" is conditional — default to not-always-tapped.
-  if (/\bif\s+you\s+don'?t\b[^.]*enters?\s+tapped/.test(lower)) return false;
+  // Until the UI can prompt for optional life payments, default shock lands to tapped.
+  if (/\bif\s+you\s+don'?t\b[^.]*enters?\s+tapped/.test(lower)) return true;
   // Otherwise, look for affirmative "enters tapped" / "enters the battlefield tapped".
   return /\benters?(?:\s+the\s+battlefield)?\s+tapped\b/.test(lower);
 }
@@ -116,27 +265,105 @@ export function tapLandForMana(state: GameState, playerId: string, cardInstanceI
   const card = state.cards.get(cardInstanceId);
   if (!card) throw new Error('Card not found');
   if (card.ownerId !== playerId) throw new Error('Not your card');
-  if (card.zone !== 'battlefield') throw new Error('Card not on battlefield');
-  if (card.tapped) throw new Error('Card already tapped');
 
-  const def = getCardDefinition(state, card);
-  const amount = def.manaProduction?.amounts[color] ?? 1;
+  let def = getCardDefinition(state, card);
+  if (!def.manaProduction) {
+    const parsedDef = populateParsedCache(def);
+    if (parsedDef.manaProduction) {
+      const hydratedDefinitions = new Map(state.cardDefinitions);
+      hydratedDefinitions.set(parsedDef.id, parsedDef);
+      state = { ...state, cardDefinitions: hydratedDefinitions };
+      def = parsedDef;
+    }
+  }
+  if (!def.manaProduction) throw new Error('Card has no mana ability');
+  if (!getAvailableManaColors(state, cardInstanceId).includes(color)) throw new Error('Cannot produce chosen color');
 
-  // Sacrifice-cost mana abilities (Lotus Petal, Tinder Wall, Lotus Bloom, etc.):
-  // tap, then move the card from the battlefield to its owner's graveyard.
+  const handExileAbility = def.manaProduction?.activationZone === 'hand'
+    && def.manaProduction?.requiresExileFromHand === true;
+  if (handExileAbility) {
+    if (card.zone !== 'hand') throw new Error('Card not in hand');
+  } else {
+    if (card.zone !== 'battlefield') throw new Error('Card not on battlefield');
+    if (def.manaProduction?.isTapAbility && card.tapped) throw new Error('Card already tapped');
+    if (def.manaProduction?.isTapAbility && isBlockedBySummoningSicknessForTap(state, cardInstanceId)) {
+      throw new Error('Summoning sick');
+    }
+  }
+
+  let amount = def.manaProduction?.amounts[color] ?? 1;
+  if (def.manaProduction?.amountScale === 'creaturesYouControl') {
+    amount *= [...state.cards.values()].filter(instance => {
+      if (instance.ownerId !== playerId || instance.zone !== 'battlefield') return false;
+      const cardDef = state.cardDefinitions.get(instance.definitionId);
+      return cardDef?.card_types.includes('creature');
+    }).length;
+  }
+  amount *= manaProductionMultiplier(state, playerId, cardInstanceId);
+
+  // Sacrifice-cost mana abilities (Lotus Petal, Tinder Wall, Lotus Bloom, etc.)
+  // move the paid permanent away as part of activation. A few silver-bordered
+  // old-text cards say to remove the pieces from the game, which we model as
+  // exile rather than graveyard.
   const requiresSacrifice = def.manaProduction?.requiresSacrifice === true;
+  const sacrificeDestination = def.manaProduction?.exileAfterUse ? 'exile' : 'graveyard';
 
   const newCards = new Map(state.cards);
-  newCards.set(cardInstanceId, {
-    ...card,
-    tapped: true,
-    zone: requiresSacrifice ? 'graveyard' : card.zone,
-  });
+  const sacrificeFilter = def.manaProduction?.sacrificeFilter;
+  if (sacrificeFilter) {
+    const candidates = [...newCards.values()]
+      .filter(candidate => {
+        if (candidate.instanceId === cardInstanceId) return false;
+        if (candidate.ownerId !== playerId || candidate.zone !== 'battlefield') return false;
+        const candidateDef = state.cardDefinitions.get(candidate.definitionId);
+        return !!candidateDef && matchesCardFilter(candidateDef, sacrificeFilter);
+      });
+    const sacrificed = candidates[0];
+    if (!sacrificed) throw new Error('No sacrifice candidate');
+    const destination = getCommanderDestinationZone(state, sacrificed.instanceId, 'graveyard');
+    newCards.set(sacrificed.instanceId, {
+      ...sacrificed,
+      zone: destination,
+      tapped: false,
+      damage: 0,
+      counters: {},
+    });
+  }
+
+  const sourceAfterCosts = newCards.get(cardInstanceId);
+  if (sourceAfterCosts && sourceAfterCosts.zone === 'battlefield') {
+    newCards.set(cardInstanceId, {
+      ...sourceAfterCosts,
+      tapped: handExileAbility ? false : def.manaProduction?.isTapAbility ? true : sourceAfterCosts.tapped,
+      zone: handExileAbility
+        ? getCommanderDestinationZone(state, cardInstanceId, 'exile')
+        : requiresSacrifice
+          ? getCommanderDestinationZone(state, cardInstanceId, sacrificeDestination)
+          : sourceAfterCosts.zone,
+    });
+  } else if (handExileAbility || requiresSacrifice) {
+    newCards.set(cardInstanceId, {
+      ...card,
+      tapped: false,
+      zone: getCommanderDestinationZone(state, cardInstanceId, handExileAbility ? 'exile' : sacrificeDestination),
+    });
+  }
 
   const playerIndex = state.players.findIndex(p => p.id === playerId);
-  const newPlayers = state.players.map((p, i) =>
-    i === playerIndex ? { ...p, manaPool: addMana(p.manaPool, color, amount) } : p
-  );
+  const newPlayers = state.players.map((p, i) => {
+    if (i !== playerIndex) return p;
+    const withMana = { ...p, manaPool: addMana(p.manaPool, color, amount) };
+    const withRestriction = addRestrictedMana(withMana, color, amount, def.manaProduction?.restriction, {
+      sourceInstanceId: cardInstanceId,
+      creatureType: card.choices?.chosenCreatureType,
+    });
+    if (manaHasSpellCopyRider(def.oracle_text)) {
+      return addConditionalMana(withRestriction, color, amount, 'copyRedInstantOrSorcery', {
+        sourceInstanceId: cardInstanceId,
+      });
+    }
+    return withRestriction;
+  });
 
   return { ...state, cards: newCards, players: newPlayers };
 }
@@ -159,6 +386,19 @@ export function drawCards(state: GameState, playerId: string, count: number): Ga
 // ============================================================================
 
 let activatedStackCounter = 0;
+
+export function isBlockedBySummoningSicknessForTap(
+  state: GameState,
+  cardInstanceId: string,
+): boolean {
+  const card = state.cards.get(cardInstanceId);
+  if (!card || card.zone !== 'battlefield' || !card.summoningSick) return false;
+
+  const def = state.cardDefinitions.get(card.definitionId);
+  if (!def?.card_types.includes('creature')) return false;
+
+  return !instanceHasKeyword(state, cardInstanceId, 'Haste');
+}
 
 /**
  * Get activated abilities for a card.
@@ -204,14 +444,19 @@ export function canActivateAbility(
   if (ability.cost.tap && card.tapped) return false;
 
   // Check summoning sickness for creatures with tap cost
-  if (ability.cost.tap && card.summoningSick && def.card_types.includes('creature')) return false;
+  if (ability.cost.tap && isBlockedBySummoningSicknessForTap(state, cardInstanceId)) return false;
 
   // Check mana cost
   if (ability.cost.mana) {
     const player = state.players.find(p => p.id === playerId);
     if (!player) return false;
     const manaCost = parseManaString(ability.cost.mana);
-    if (!canPayCost(player.manaPool, manaCost)) return false;
+    if (!canPayUnrestrictedCost(player, manaCost)) return false;
+  }
+
+  if (ability.cost.payLife) {
+    const player = state.players.find(p => p.id === playerId);
+    if (!player || player.life < ability.cost.payLife) return false;
   }
 
   return true;
@@ -257,9 +502,18 @@ export function activateAbility(
     const manaCost = parseManaString(ability.cost.mana);
     const playerIndex = newState.players.findIndex(p => p.id === playerId);
     const player = newState.players[playerIndex];
-    const newManaPool = payManaCost(player.manaPool, manaCost);
+    const paidPlayer = payUnrestrictedManaCost(player, manaCost);
     const newPlayers = newState.players.map((p, i) =>
-      i === playerIndex ? { ...p, manaPool: newManaPool } : p
+      i === playerIndex ? paidPlayer : p
+    );
+    newState = { ...newState, players: newPlayers };
+  }
+
+  // Pay life cost
+  if (ability.cost.payLife) {
+    const playerIndex = newState.players.findIndex(p => p.id === playerId);
+    const newPlayers = newState.players.map((p, i) =>
+      i === playerIndex ? { ...p, life: p.life - ability.cost.payLife! } : p
     );
     newState = { ...newState, players: newPlayers };
   }
@@ -322,20 +576,19 @@ export function equipCreature(
   const player = state.players[playerIndex];
 
   // Pay equip cost
-  const newManaPool = payManaCost(player.manaPool, costAsMana);
+  const paidPlayer = payUnrestrictedManaCost(player, costAsMana);
 
   const target = state.cards.get(targetCreatureId);
   if (!target || target.zone !== 'battlefield') throw new Error('Target not on battlefield');
   if (target.ownerId !== playerId) throw new Error('Can only equip your own creatures');
 
-  const targetDef = getCardDefinition(state, target);
-  if (!targetDef.card_types.includes('creature')) throw new Error('Target is not a creature');
+  if (!isEffectiveCreature(state, targetCreatureId)) throw new Error('Target is not a creature');
 
   const newCards = new Map(state.cards);
   newCards.set(equipmentInstanceId, { ...equipment, attachedTo: targetCreatureId });
 
   const newPlayers = state.players.map((p, i) =>
-    i === playerIndex ? { ...p, manaPool: newManaPool } : p
+    i === playerIndex ? paidPlayer : p
   );
 
   return { ...state, cards: newCards, players: newPlayers };

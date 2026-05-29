@@ -1,0 +1,77 @@
+x-app-build: &app-build
+  context: .
+  args:
+    VITE_ENABLE_ADS: ${VITE_ENABLE_ADS:-false}
+    VITE_REQUIRE_AD_CONSENT: ${VITE_REQUIRE_AD_CONSENT:-true}
+    VITE_SHOW_AD_PLACEHOLDERS: ${VITE_SHOW_AD_PLACEHOLDERS:-false}
+    VITE_ADSENSE_CLIENT_ID: ${VITE_ADSENSE_CLIENT_ID:-}
+    VITE_ADSENSE_SLOT_LEADERBOARD: ${VITE_ADSENSE_SLOT_LEADERBOARD:-}
+    VITE_ADSENSE_SLOT_MOBILE_BANNER: ${VITE_ADSENSE_SLOT_MOBILE_BANNER:-}
+    VITE_ADSENSE_SLOT_SIDEBAR: ${VITE_ADSENSE_SLOT_SIDEBAR:-}
+    VITE_ADSENSE_TEST: ${VITE_ADSENSE_TEST:-false}
+    VITE_SHELECTOR_API_BASE: ${VITE_SHELECTOR_API_BASE:-/shelector-api}
+    VITE_SUPPORT_EMAIL: ${VITE_SUPPORT_EMAIL:-support@deckreps.app}
+    VITE_DONATION_URL: ${VITE_DONATION_URL:-}
+    ADS_TXT_PUBLISHER_ID: ${ADS_TXT_PUBLISHER_ID:-}
+
+services:
+  web:
+    build: *app-build
+    image: magic-brains:latest
+    ports:
+      - "${WEB_PORT:-8000}:8000"
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+      PORT: 8000
+      MAGIC_DB_DIR: /app/runtime
+      HF_HOME: /app/runtime/hf-cache
+      SENTENCE_TRANSFORMERS_HOME: /app/runtime/sentence-transformers
+      SHELECTOR_API_URL: http://shelector:8100
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:8000}
+      ALLOWED_ORIGIN_REGEX: ${ALLOWED_ORIGIN_REGEX:-}
+      ADMIN_TOKEN: ${ADMIN_TOKEN:-}
+      TRUST_PROXY_HEADERS: ${TRUST_PROXY_HEADERS:-true}
+      MAX_REQUEST_BODY_BYTES: ${MAX_REQUEST_BODY_BYTES:-2097152}
+      RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-true}
+      RATE_LIMIT_QA_BYPASS_ENABLED: ${RATE_LIMIT_QA_BYPASS_ENABLED:-true}
+      RATE_LIMIT_DEFAULT_PER_MINUTE: ${RATE_LIMIT_DEFAULT_PER_MINUTE:-240}
+      RATE_LIMIT_DECK_GENERATION_PER_MINUTE: ${RATE_LIMIT_DECK_GENERATION_PER_MINUTE:-6}
+      RATE_LIMIT_DECK_REGEN_PER_MINUTE: ${RATE_LIMIT_DECK_REGEN_PER_MINUTE:-10}
+      RATE_LIMIT_DECK_IMPORT_PER_MINUTE: ${RATE_LIMIT_DECK_IMPORT_PER_MINUTE:-20}
+      RATE_LIMIT_AI_DECK_PER_MINUTE: ${RATE_LIMIT_AI_DECK_PER_MINUTE:-10}
+      RATE_LIMIT_SPAWN_PER_MINUTE: ${RATE_LIMIT_SPAWN_PER_MINUTE:-30}
+      RATE_LIMIT_DECIDE_PER_MINUTE: ${RATE_LIMIT_DECIDE_PER_MINUTE:-120}
+      RATE_LIMIT_MULTIPLAYER_PER_MINUTE: ${RATE_LIMIT_MULTIPLAYER_PER_MINUTE:-1200}
+      RATE_LIMIT_CHAT_PER_MINUTE: ${RATE_LIMIT_CHAT_PER_MINUTE:-60}
+      RATE_LIMIT_FEEDBACK_PER_MINUTE: ${RATE_LIMIT_FEEDBACK_PER_MINUTE:-10}
+    volumes:
+      - magic-brains-runtime:/app/runtime
+    depends_on:
+      shelector:
+        condition: service_healthy
+    restart: unless-stopped
+
+  shelector:
+    build: *app-build
+    image: magic-brains:latest
+    command: uvicorn backend.agent.server:app --host 0.0.0.0 --port 8100 --no-access-log
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+      MAGIC_DB_DIR: /app/runtime
+      HF_HOME: /app/runtime/hf-cache
+      SENTENCE_TRANSFORMERS_HOME: /app/runtime/sentence-transformers
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:8000}
+    volumes:
+      - magic-brains-runtime:/app/runtime
+    expose:
+      - "8100"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8100/health', timeout=5)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+
+volumes:
+  magic-brains-runtime:

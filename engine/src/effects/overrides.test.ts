@@ -126,6 +126,24 @@ describe('overrides registry', () => {
         expect(result.effects[0].kind).toBe('Destroy');
       }
     });
+
+    it('has Wheel of Fortune registered as discard hands then draw seven', () => {
+      const result = getOverride('any', 'Wheel of Fortune');
+      expect(result).not.toBeNull();
+      if (result?.kind === 'Spell') {
+        expect(result.effects).toHaveLength(2);
+        expect(result.effects[0]).toMatchObject({
+          kind: 'Discard',
+          player: { kind: 'EachPlayer' },
+          count: 99,
+        });
+        expect(result.effects[1]).toMatchObject({
+          kind: 'Draw',
+          player: { kind: 'EachPlayer' },
+          count: 7,
+        });
+      }
+    });
   });
 
   describe('getOverrideCounts', () => {

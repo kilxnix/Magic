@@ -3,8 +3,47 @@
 @tailwind utilities;
 
 @layer base {
+  html,
+  body,
+  #root {
+    min-height: 100%;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
   body {
-    @apply antialiased;
+    @apply antialiased bg-[#f7f3ea] text-stone-900;
+    text-rendering: optimizeLegibility;
+  }
+
+  ::selection {
+    @apply bg-amber-300 text-stone-950;
+  }
+
+  :focus-visible {
+    outline: 3px solid #facc15;
+    outline-offset: 3px;
+  }
+
+  button,
+  a,
+  input,
+  select,
+  textarea {
+    -webkit-tap-highlight-color: rgba(250, 204, 21, 0.28);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
   }
 }
 

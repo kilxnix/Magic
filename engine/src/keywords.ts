@@ -2,6 +2,7 @@
 // Query and manage keywords on cards
 
 import type { GameState, CardDefinition, CardInstance } from './types';
+import { isEffectiveCreature } from './effective-types';
 
 export type Keyword =
   | 'Flying'
@@ -133,6 +134,14 @@ export function getKeywordsForInstance(state: GameState, instanceId: string): Se
   // Base keywords from definition
   const keywords = getKeywordsFromDefinition(def);
 
+  // One-shot keyword grants such as "target creature gains trample until end of turn".
+  for (const granted of card.grantedKeywords || []) {
+    const canonical = KEYWORD_MAP[normalizeKeyword(granted)];
+    if (canonical) {
+      keywords.add(canonical);
+    }
+  }
+
   // Phase 15: Add keywords granted by continuous effects
   if (state.continuousEffects) {
     for (const ce of state.continuousEffects) {
@@ -154,7 +163,7 @@ export function getKeywordsForInstance(state: GameState, instanceId: string): Se
 
       // Check card filter
       const filter = ce.ability.filter;
-      if (filter.types || filter.subtypes || filter.colors || filter.cmc) {
+      if (filter.types || filter.subtypes || filter.colors || filter.cmc || filter.power) {
         // Simple filter matching inline (avoid circular import)
         let matches = true;
         if (filter.types) {
@@ -167,6 +176,21 @@ export function getKeywordsForInstance(state: GameState, instanceId: string): Se
           const typeLine = def.type_line.toLowerCase();
           const hasSub = filter.subtypes.some((st: string) => typeLine.includes(st.toLowerCase()));
           if (!hasSub) matches = false;
+        }
+        if (matches && filter.excludeSubtypes) {
+          const typeLine = def.type_line.toLowerCase();
+          const hasExcludedSub = filter.excludeSubtypes.some((st: string) => typeLine.includes(st.toLowerCase()));
+          if (hasExcludedSub) matches = false;
+        }
+        if (matches && filter.power) {
+          const effectivePower = (def.power ?? 0)
+            + (card.counters['+1/+1'] || 0)
+            - (card.counters['-1/-1'] || 0)
+            + (card.counters['_powerMod'] || 0);
+          const { op, value } = filter.power;
+          if (op === 'eq' && effectivePower !== value) matches = false;
+          if (op === 'lte' && effectivePower > value) matches = false;
+          if (op === 'gte' && effectivePower < value) matches = false;
         }
         if (!matches) continue;
       }
@@ -214,9 +238,7 @@ export function canAttackThisTurn(state: GameState, instanceId: string): boolean
   if (!card) return false;
   if (card.zone !== 'battlefield') return false;
 
-  const def = state.cardDefinitions.get(card.definitionId);
-  if (!def) return false;
-  if (!def.card_types.includes('creature')) return false;
+  if (!isEffectiveCreature(state, instanceId)) return false;
 
   // Check defender
   if (instanceHasKeyword(state, instanceId, 'Defender')) {
@@ -287,7 +309,7 @@ export function isLethalDamage(
 
   const def = state.cardDefinitions.get(target.definitionId);
   if (!def) return false;
-  if (!def.card_types.includes('creature')) return false;
+  if (!isEffectiveCreature(state, targetId)) return false;
 
   const toughness = def.toughness ?? 0;
   const currentDamage = target.damage;

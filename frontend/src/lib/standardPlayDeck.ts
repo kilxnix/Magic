@@ -6,6 +6,11 @@ const BASIC_LAND_DATA: Record<string, CardDataFromAPI> = {
   Swamp: card('Swamp', 'Basic Land - Swamp', '', 0, [], ['B'], null, null, '({T}: Add {B}.)'),
   Mountain: card('Mountain', 'Basic Land - Mountain', '', 0, [], ['R'], null, null, '({T}: Add {R}.)'),
   Forest: card('Forest', 'Basic Land - Forest', '', 0, [], ['G'], null, null, '({T}: Add {G}.)'),
+  'Snow-Covered Plains': card('Snow-Covered Plains', 'Basic Snow Land - Plains', '', 0, [], ['W'], null, null, '({T}: Add {W}.)'),
+  'Snow-Covered Island': card('Snow-Covered Island', 'Basic Snow Land - Island', '', 0, [], ['U'], null, null, '({T}: Add {U}.)'),
+  'Snow-Covered Swamp': card('Snow-Covered Swamp', 'Basic Snow Land - Swamp', '', 0, [], ['B'], null, null, '({T}: Add {B}.)'),
+  'Snow-Covered Mountain': card('Snow-Covered Mountain', 'Basic Snow Land - Mountain', '', 0, [], ['R'], null, null, '({T}: Add {R}.)'),
+  'Snow-Covered Forest': card('Snow-Covered Forest', 'Basic Snow Land - Forest', '', 0, [], ['G'], null, null, '({T}: Add {G}.)'),
 };
 
 const STANDARD_CARD_DATA: Record<string, CardDataFromAPI> = {

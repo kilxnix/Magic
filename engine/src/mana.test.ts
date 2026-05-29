@@ -33,6 +33,20 @@ describe('Mana System', () => {
       const cost = parseManaString('{2}{C}');
       expect(cost).toEqual({ W: 0, U: 0, B: 0, R: 0, G: 0, C: 1, generic: 2 });
     });
+
+    it('parses two-color hybrid mana symbols', () => {
+      const cost = parseManaString('{R/G}{W}{U}');
+      expect(cost).toEqual({
+        W: 1,
+        U: 1,
+        B: 0,
+        R: 0,
+        G: 0,
+        C: 0,
+        generic: 0,
+        hybrid: [['R', 'G']],
+      });
+    });
   });
 
   describe('addMana', () => {
@@ -86,6 +100,14 @@ describe('Mana System', () => {
       const cost: ManaCost = { W: 0, U: 0, B: 0, R: 0, G: 0, C: 1, generic: 0 };
       expect(canPayCost(pool, cost)).toBe(false);
     });
+
+    it('requires a legal color for a hybrid symbol', () => {
+      const cost = parseManaString('{R/G}{W}{U}');
+
+      expect(canPayCost({ W: 1, U: 1, B: 0, R: 1, G: 0, C: 0 }, cost)).toBe(true);
+      expect(canPayCost({ W: 1, U: 1, B: 0, R: 0, G: 1, C: 0 }, cost)).toBe(true);
+      expect(canPayCost({ W: 1, U: 1, B: 1, R: 0, G: 0, C: 1 }, cost)).toBe(false);
+    });
   });
 
   describe('payManaCost', () => {
@@ -101,6 +123,12 @@ describe('Mana System', () => {
       const pool: ManaPool = { W: 0, U: 0, B: 0, R: 0, G: 1, C: 0 };
       const cost: ManaCost = { W: 0, U: 0, B: 0, R: 0, G: 2, C: 0, generic: 0 };
       expect(() => payManaCost(pool, cost)).toThrow();
+    });
+
+    it('spends one legal color for a hybrid symbol', () => {
+      const cost = parseManaString('{R/G}{W}{U}');
+      const result = payManaCost({ W: 1, U: 1, B: 0, R: 0, G: 1, C: 0 }, cost);
+      expect(result).toEqual({ W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 });
     });
   });
 

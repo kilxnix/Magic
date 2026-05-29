@@ -16,6 +16,9 @@ import {
 import { executeEffects } from './executor';
 import { getKeywordsForInstance } from '../keywords';
 import { emptyManaPool } from '../types';
+import { canDeclareAttacker } from '../combat';
+import { canCastSpell } from '../stack';
+import { countDevotionToColors, getEffectiveCardTypes, isEffectiveCreature } from '../effective-types';
 
 // ============================================================================
 // Test helpers
@@ -79,6 +82,74 @@ function makeState(overrides: Partial<GameState> = {}): GameState {
 // TASK 1: Static/Continuous Ability Tests
 // ============================================================================
 
+describe('Devotion type-changing effects', () => {
+  function makeDevotionState(): GameState {
+    const defs = new Map<string, CardDefinition>();
+    defs.set('xenagos_def', makeDef('xenagos_def', {
+      name: 'Xenagos, God of Revels',
+      type_line: 'Legendary Enchantment Creature - God',
+      oracle_text: 'Indestructible\nAs long as your devotion to red and green is less than seven, Xenagos isn\'t a creature.',
+      mana_cost: '{3}{R}{G}',
+      colors: ['R', 'G'],
+      color_identity: ['R', 'G'],
+      keywords: ['Indestructible'],
+      card_types: ['enchantment', 'creature'],
+      power: 6,
+      toughness: 5,
+    }));
+    defs.set('dragon_def', makeDef('dragon_def', {
+      name: 'Balefire Dragon',
+      type_line: 'Creature - Dragon',
+      mana_cost: '{5}{R}{R}',
+      colors: ['R'],
+      color_identity: ['R'],
+      card_types: ['creature'],
+      power: 6,
+      toughness: 6,
+    }));
+    defs.set('green_def', makeDef('green_def', {
+      name: 'Devotion Helper',
+      type_line: 'Creature - Elemental',
+      mana_cost: '{G}{G}{G}',
+      colors: ['G'],
+      color_identity: ['G'],
+      card_types: ['creature'],
+      power: 1,
+      toughness: 1,
+    }));
+
+    const cards = new Map<string, CardInstance>();
+    cards.set('xenagos', makeCard('xenagos', 'xenagos_def', 'p1'));
+    cards.set('dragon', makeCard('dragon', 'dragon_def', 'p1'));
+
+    return makeState({
+      cards,
+      cardDefinitions: defs,
+      phase: 'combat',
+      step: 'declare_attackers',
+    });
+  }
+
+  it('removes creature type from Xenagos while devotion is below seven', () => {
+    const state = makeDevotionState();
+
+    expect(countDevotionToColors(state, 'p1', ['R', 'G'])).toBe(4);
+    expect(getEffectiveCardTypes(state, 'xenagos')).toEqual(['enchantment']);
+    expect(isEffectiveCreature(state, 'xenagos')).toBe(false);
+    expect(canDeclareAttacker(state, 'p1', 'xenagos')).toBe(false);
+  });
+
+  it('restores Xenagos as a creature when devotion reaches seven', () => {
+    const state = makeDevotionState();
+    state.cards.set('green-helper', makeCard('green-helper', 'green_def', 'p1'));
+
+    expect(countDevotionToColors(state, 'p1', ['R', 'G'])).toBe(7);
+    expect(getEffectiveCardTypes(state, 'xenagos')).toEqual(['enchantment', 'creature']);
+    expect(isEffectiveCreature(state, 'xenagos')).toBe(true);
+    expect(canDeclareAttacker(state, 'p1', 'xenagos')).toBe(true);
+  });
+});
+
 describe('Static Ability Parsing', () => {
   it('parses "Creatures you control get +1/+1"', () => {
     const result = parseOracleText('Creatures you control get +1/+1');
@@ -141,6 +212,33 @@ describe('Static Ability Parsing', () => {
     if (result.kind !== 'StaticAbility') return;
 
     expect(result.ability.modifier).toEqual({ kind: 'ReduceCost', amount: 1 });
+  });
+
+  it('parses instant and sorcery spell cost reducers', () => {
+    const result = parseOracleText('Instant and sorcery spells you cast cost {1} less to cast.');
+    expect(result.kind).toBe('StaticAbility');
+    if (result.kind !== 'StaticAbility') return;
+
+    expect(result.ability.modifier).toEqual({ kind: 'ReduceCost', amount: 1 });
+    expect(result.ability.filter).toEqual({ types: ['instant', 'sorcery'] });
+  });
+
+  it('parses color-specific spell cost reducers', () => {
+    const result = parseOracleText('Red spells you cast cost {1} less to cast.');
+    expect(result.kind).toBe('StaticAbility');
+    if (result.kind !== 'StaticAbility') return;
+
+    expect(result.ability.modifier).toEqual({ kind: 'ReduceCost', amount: 1 });
+    expect(result.ability.filter).toEqual({ colors: ['R'] });
+  });
+
+  it('parses color plus type spell cost reducers', () => {
+    const result = parseOracleText('Red instant and sorcery spells you cast cost {1} less to cast.');
+    expect(result.kind).toBe('StaticAbility');
+    if (result.kind !== 'StaticAbility') return;
+
+    expect(result.ability.modifier).toEqual({ kind: 'ReduceCost', amount: 1 });
+    expect(result.ability.filter).toEqual({ types: ['instant', 'sorcery'], colors: ['R'] });
   });
 
   it('parses "Zombies you control get +1/+1"', () => {
@@ -457,6 +555,53 @@ describe('Cost Reduction', () => {
 
     expect(getCostReduction(state, 'p1')).toBe(1);
     expect(getCostReduction(state, 'p2')).toBe(0); // only for controller
+  });
+
+  it('makes an otherwise uncastable instant castable through parsed cost reduction', () => {
+    const reducerText = 'Instant and sorcery spells you cast cost {1} less to cast.';
+    const parsed = parseOracleText(reducerText);
+    expect(parsed.kind).toBe('StaticAbility');
+    if (parsed.kind !== 'StaticAbility') return;
+
+    const cards = new Map<string, CardInstance>();
+    cards.set('mentor_1', makeCard('mentor_1', 'mentor_def', 'p1', 'battlefield'));
+    cards.set('bolt_1', makeCard('bolt_1', 'bolt_def', 'p1', 'hand'));
+
+    const defs = new Map<string, CardDefinition>();
+    defs.set('mentor_def', makeDef('mentor_def', {
+      name: 'Stormcatch Mentor',
+      type_line: 'Creature - Otter Wizard',
+      oracle_text: reducerText,
+      card_types: ['creature'],
+      colors: ['R'],
+    }));
+    defs.set('bolt_def', makeDef('bolt_def', {
+      name: 'Expensive Bolt',
+      type_line: 'Instant',
+      oracle_text: 'Expensive Bolt deals 3 damage to any target.',
+      mana_cost: '{1}{R}',
+      cmc: 2,
+      card_types: ['instant'],
+      colors: ['R'],
+    }));
+
+    const players = [makePlayer('p1'), makePlayer('p2')];
+    players[0] = {
+      ...players[0],
+      manaPool: { ...emptyManaPool(), R: 1 },
+    };
+
+    let state = makeState({
+      players,
+      cards,
+      cardDefinitions: defs,
+      phase: 'precombat_main',
+      step: 'main',
+    });
+
+    expect(canCastSpell(state, 'p1', 'bolt_1')).toBe(false);
+    state = registerContinuousEffect(state, 'mentor_1', 'p1', parsed.ability);
+    expect(canCastSpell(state, 'p1', 'bolt_1')).toBe(true);
   });
 });
 

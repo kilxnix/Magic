@@ -1,4 +1,5 @@
 import { GameState, Phase, Step } from './types';
+import { checkTriggersForEvent } from './stack';
 
 export const STEP_ORDER: Step[] = [
   'untap', 'upkeep', 'draw',
@@ -44,9 +45,11 @@ export function advanceStep(state: GameState): GameState {
   const updatedPlayers = state.players.map(p => ({
     ...p,
     manaPool: { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 },
+    restrictedMana: [],
+    conditionalMana: [],
   }));
 
-  return {
+  let nextState: GameState = {
     ...state,
     step: nextStep,
     phase: nextPhase,
@@ -55,6 +58,17 @@ export function advanceStep(state: GameState): GameState {
     priorityPlayerIndex: state.activePlayerIndex,
     combat: state.step === 'end_of_combat' ? null : state.combat,
   };
+
+  const activePlayerId = nextState.players[nextState.activePlayerIndex].id;
+  if (nextStep === 'upkeep') {
+    nextState = checkTriggersForEvent(nextState, { kind: 'UpkeepStart', activePlayerId });
+  } else if (state.step === 'begin_combat' && nextStep === 'declare_attackers') {
+    nextState = checkTriggersForEvent(nextState, { kind: 'BeginningCombatStart', activePlayerId });
+  } else if (nextStep === 'end') {
+    nextState = checkTriggersForEvent(nextState, { kind: 'EndStepStart', activePlayerId });
+  }
+
+  return nextState;
 }
 
 export function advanceToNextTurn(state: GameState): GameState {
@@ -69,9 +83,9 @@ export function advanceToNextTurn(state: GameState): GameState {
 
   const updatedPlayers = state.players.map((p, i) => {
     if (i === nextIndex) {
-      return { ...p, hasPlayedLand: false, landsPlayedThisTurn: 0, manaPool: { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 } };
+      return { ...p, hasPlayedLand: false, landsPlayedThisTurn: 0, manaPool: { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 }, restrictedMana: [], conditionalMana: [] };
     }
-    return { ...p, manaPool: { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 } };
+    return { ...p, manaPool: { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 }, restrictedMana: [], conditionalMana: [] };
   });
 
   return {
@@ -82,6 +96,7 @@ export function advanceToNextTurn(state: GameState): GameState {
     phase: 'beginning',
     step: 'untap',
     turnNumber: state.turnNumber + 1,
+    spellsCastThisTurn: 0,
     hasPriorityPassed: new Array(playerCount).fill(false),
     combat: null,
   };

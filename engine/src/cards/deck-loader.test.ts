@@ -23,6 +23,34 @@ const sampleCommander: ScryfallCard = {
   toughness: '4',
 };
 
+const samplePartnerA: ScryfallCard = {
+  id: 'partner-ravos',
+  name: 'Ravos, Soultender',
+  type_line: 'Legendary Creature - Human Cleric',
+  oracle_text: 'Partner\nOther creatures you control get +1/+1.',
+  mana_cost: '{3}{W}{B}',
+  cmc: 5,
+  colors: ['W', 'B'],
+  color_identity: ['W', 'B'],
+  keywords: ['Partner'],
+  power: '2',
+  toughness: '2',
+};
+
+const samplePartnerB: ScryfallCard = {
+  id: 'partner-tana',
+  name: 'Tana, the Bloodsower',
+  type_line: 'Legendary Creature - Elf Druid',
+  oracle_text: 'Partner\nTrample',
+  mana_cost: '{2}{R}{G}',
+  cmc: 4,
+  colors: ['R', 'G'],
+  color_identity: ['R', 'G'],
+  keywords: ['Partner', 'Trample'],
+  power: '2',
+  toughness: '2',
+};
+
 const sampleCreature: ScryfallCard = {
   id: 'creature-001',
   name: 'Grizzly Bears',
@@ -125,6 +153,26 @@ describe('convertCard', () => {
     expect(def.color_identity).toEqual([]);
   });
 
+  it('keeps enchantment creature Gods as creatures', () => {
+    const def = convertCard({
+      id: 'xenagos-001',
+      name: 'Xenagos, God of Revels',
+      type_line: 'Legendary Enchantment Creature — God',
+      oracle_text: 'Indestructible\nAs long as your devotion to red and green is less than seven, Xenagos isn\'t a creature.',
+      mana_cost: '{3}{R}{G}',
+      cmc: 5,
+      colors: ['R', 'G'],
+      color_identity: ['R', 'G'],
+      keywords: ['Indestructible'],
+      power: '6',
+      toughness: '5',
+    });
+
+    expect(def.card_types).toEqual(['creature', 'enchantment']);
+    expect(def.power).toBe(6);
+    expect(def.toughness).toBe(5);
+  });
+
   it('handles string cmc', () => {
     const def = convertCard({ ...sampleInstant, cmc: '3.5' });
     expect(def.cmc).toBe(3); // Floored
@@ -167,8 +215,140 @@ describe('createCardLookup', () => {
     expect(lookup('FOREST')).toBe(sampleLand);
   });
 
+  it('finds cards with accent-insensitive names', () => {
+    const seanceBoard: ScryfallCard = {
+      id: 'seance-board',
+      name: 'Séance Board',
+      type_line: 'Artifact',
+      oracle_text: '{T}: Add mana.',
+      mana_cost: '{2}',
+      cmc: 2,
+      colors: [],
+      color_identity: [],
+      keywords: [],
+    };
+
+    const seanceLookup = createCardLookup([seanceBoard]);
+
+    expect(seanceLookup('Seance Board')?.name).toBe('Séance Board');
+  });
+
   it('returns undefined for missing cards', () => {
     expect(lookup('Nonexistent Card')).toBeUndefined();
+  });
+
+  it('finds individual MDFC faces by face name', () => {
+    const disciple: ScryfallCard = {
+      id: 'disciple-mdfc',
+      name: 'Disciple of Freyalise // Garden of Freyalise',
+      type_line: 'Creature — Elf Druid // Land',
+      oracle_text: null,
+      mana_cost: null,
+      cmc: 6,
+      colors: ['G'],
+      color_identity: ['G'],
+      keywords: [],
+      card_faces: [
+        {
+          name: 'Disciple of Freyalise',
+          type_line: 'Creature — Elf Druid',
+          oracle_text: 'When Disciple of Freyalise enters the battlefield, sacrifice another creature. You gain X life and draw X cards.',
+          mana_cost: '{3}{G}{G}{G}',
+          colors: ['G'],
+          power: '3',
+          toughness: '3',
+        },
+        {
+          name: 'Garden of Freyalise',
+          type_line: 'Land',
+          oracle_text: 'As Garden of Freyalise enters the battlefield, you may pay 3 life. If you don\'t, it enters tapped.\n{T}: Add {G}.',
+          mana_cost: '',
+          colors: [],
+        },
+      ],
+    };
+
+    const faceLookup = createCardLookup([disciple]);
+    const creatureFace = faceLookup('Disciple of Freyalise');
+    const landFace = faceLookup('Garden of Freyalise');
+
+    expect(creatureFace?.name).toBe('Disciple of Freyalise');
+    expect(landFace?.name).toBe('Garden of Freyalise');
+
+    const def = convertCard(creatureFace!);
+    expect(def.card_types).toEqual(['creature']);
+    expect(def.mana_cost).toBe('{3}{G}{G}{G}');
+    expect(def.power).toBe(3);
+    expect(def.toughness).toBe(3);
+  });
+
+  it('finds slash-collapsed split card names', () => {
+    const springMind: ScryfallCard = {
+      id: 'spring-mind',
+      name: 'Spring // Mind',
+      type_line: 'Sorcery // Instant',
+      oracle_text: null,
+      mana_cost: null,
+      cmc: 3,
+      colors: ['G', 'U'],
+      color_identity: ['G', 'U'],
+      keywords: [],
+      card_faces: [
+        {
+          name: 'Spring',
+          type_line: 'Sorcery',
+          oracle_text: 'Search your library for a basic land card.',
+          mana_cost: '{2}{G}',
+          colors: ['G'],
+        },
+        {
+          name: 'Mind',
+          type_line: 'Instant',
+          oracle_text: 'Draw two cards.',
+          mana_cost: '{4}{U}{U}',
+          colors: ['U'],
+        },
+      ],
+    };
+
+    const splitLookup = createCardLookup([springMind]);
+
+    expect(splitLookup('Spring/Mind')?.name).toBe('Spring // Mind');
+  });
+
+  it('prefers playable cards over art-series faces with the same name', () => {
+    const artSeriesMountain: ScryfallCard = {
+      id: 'art-mountain',
+      name: 'Mountain // Mountain',
+      layout: 'art_series',
+      type_line: 'Card // Card',
+      oracle_text: null,
+      mana_cost: null,
+      cmc: 0,
+      colors: null,
+      color_identity: [],
+      keywords: [],
+      legalities: { commander: 'not_legal' },
+      card_faces: [
+        { name: 'Mountain', type_line: 'Card', oracle_text: '', mana_cost: '', colors: [] },
+      ],
+    };
+    const realMountain: ScryfallCard = {
+      id: 'real-mountain',
+      name: 'Mountain',
+      type_line: 'Basic Land — Mountain',
+      oracle_text: '({T}: Add {R}.)',
+      mana_cost: '',
+      cmc: 0,
+      colors: [],
+      color_identity: ['R'],
+      keywords: [],
+      legalities: { commander: 'legal' },
+    };
+
+    const mountainLookup = createCardLookup([artSeriesMountain, realMountain]);
+
+    expect(mountainLookup('Mountain')?.id).toBe('real-mountain');
   });
 });
 
@@ -210,7 +390,7 @@ describe('convertGeneratedDeck', () => {
 
     const result = convertGeneratedDeck(deck, lookup);
 
-    expect(result.commander.name).toBe('Atraxa, Praetors\' Voice');
+    expect(result.commander?.name).toBe('Atraxa, Praetors\' Voice');
     expect(result.library.length).toBe(99);
   });
 
@@ -281,8 +461,65 @@ describe('convertGeneratedDeck', () => {
 
     const result = convertGeneratedDeck(deck, lookup);
 
-    expect(result.commander.name).toBe('Aclazotz, Deepest Betrayal // Temple of the Dead');
+    expect(result.commander?.name).toBe('Aclazotz, Deepest Betrayal // Temple of the Dead');
     expect(result.library.length).toBe(99);
+  });
+
+  it('uses the front face when a modal commander full name is split but only the front card is available', () => {
+    const testCards = create99Cards();
+    const tergrid: ScryfallCard = {
+      id: 'tergrid-front',
+      name: 'Tergrid, God of Fright',
+      type_line: 'Legendary Creature - God',
+      oracle_text: 'Menace',
+      mana_cost: '{3}{B}{B}',
+      cmc: 5,
+      colors: ['B'],
+      color_identity: ['B'],
+      keywords: ['Menace'],
+      power: '4',
+      toughness: '5',
+    };
+    const lookup = createCardLookup([tergrid, ...testCards]);
+
+    const deck: GeneratedDeck = {
+      id: 'deck-tergrid-front-only',
+      commander: "Tergrid, God of Fright // Tergrid's Lantern",
+      list: testCards.map(c => c.name),
+      colors: ['B'],
+      bracket: 3,
+      theme: 'Discard',
+    };
+
+    const result = convertGeneratedDeck(deck, lookup);
+
+    expect(result.commander?.name).toBe('Tergrid, God of Fright');
+    expect(result.commanders?.map(card => card.name)).toEqual(['Tergrid, God of Fright']);
+    expect(result.library).toHaveLength(99);
+  });
+
+  it('keeps partner commanders together and leaves the library at 98 cards', () => {
+    const testCards = create99Cards();
+    const lookup = createCardLookup([samplePartnerA, samplePartnerB, ...testCards]);
+
+    const deck: GeneratedDeck = {
+      id: 'deck-partners',
+      commander: 'Ravos, Soultender // Tana, the Bloodsower',
+      list: testCards.map(c => c.name),
+      colors: ['W', 'B', 'R', 'G'],
+      bracket: 3,
+      theme: 'Partners',
+    };
+
+    const result = convertGeneratedDeck(deck, lookup);
+
+    expect(result.commander?.name).toBe('Ravos, Soultender');
+    expect(result.commanders?.map(card => card.name)).toEqual([
+      'Ravos, Soultender',
+      'Tana, the Bloodsower',
+    ]);
+    expect(result.library).toHaveLength(98);
+    expect(result.library.some(card => card.name === 'Tana, the Bloodsower')).toBe(false);
   });
 
   it('throws for missing commander', () => {

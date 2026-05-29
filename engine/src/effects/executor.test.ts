@@ -401,6 +401,35 @@ describe('Phase 10 effects', () => {
 
       expect(newState.cards.get('creature-1')?.counters).toEqual({});
     });
+
+    it('returns commanders to the command zone by default when bounced', () => {
+      const state = createTestState();
+      const cards = new Map(state.cards);
+      const commander = cards.get('creature-1')!;
+      cards.set('creature-1', { ...commander, isCommander: true });
+      const modifiedState = {
+        ...state,
+        cards,
+        players: state.players.map(player =>
+          player.id === 'player-1'
+            ? { ...player, commanderInstanceId: 'creature-1' }
+            : player,
+        ),
+      };
+      const effects: Effect[] = [
+        { kind: 'ReturnToHand', target: { kind: 'Chosen', targetId: 'target_1' } },
+      ];
+
+      const newState = executeEffects(
+        modifiedState,
+        effects,
+        'player-1',
+        ['creature-1'],
+        [{ id: 'target_1' }],
+      );
+
+      expect(newState.cards.get('creature-1')?.zone).toBe('command');
+    });
   });
 
   describe('Mill effect', () => {
@@ -697,6 +726,85 @@ describe('Phase 10 effects', () => {
     });
   });
 
+  describe('RollD20 effect', () => {
+    it('uses the matching outcome and attaches the source to the created token', () => {
+      const state = createTestState();
+      const cards = new Map(state.cards);
+      const cardDefinitions = new Map(state.cardDefinitions);
+
+      cards.set('morningstar-1', {
+        instanceId: 'morningstar-1',
+        definitionId: 'def-morningstar',
+        ownerId: 'player-1',
+        zone: 'battlefield',
+        tapped: false,
+        summoningSick: false,
+        counters: {},
+        damage: 0,
+        isCommander: false,
+      });
+      cardDefinitions.set('def-morningstar', {
+        id: 'def-morningstar',
+        name: 'Goblin Morningstar',
+        type_line: 'Artifact â€” Equipment',
+        oracle_text: '',
+        mana_cost: '{1}{R}',
+        cmc: 2,
+        colors: [],
+        color_identity: ['R'],
+        keywords: [],
+        card_types: ['artifact'],
+        isEquipment: true,
+        equipCost: { generic: 2, W: 0, U: 0, B: 0, R: 1, G: 0, C: 0 },
+        equipmentBonus: { power: 1, toughness: 0, keywords: ['Trample'] },
+      });
+
+      const modifiedState = { ...state, cards, cardDefinitions };
+      const effects: Effect[] = [
+        {
+          kind: 'RollD20',
+          rollOverride: 20,
+          outcomes: [
+            {
+              min: 1,
+              max: 9,
+              effects: [
+                {
+                  kind: 'CreateToken',
+                  controller: { kind: 'Controller' },
+                  token: { name: 'Goblin', colors: ['R'], types: ['creature'], subtypes: ['goblin'], power: 1, toughness: 1 },
+                  count: 1,
+                },
+              ],
+            },
+            {
+              min: 10,
+              max: 20,
+              effects: [
+                {
+                  kind: 'CreateToken',
+                  controller: { kind: 'Controller' },
+                  token: { name: 'Goblin', colors: ['R'], types: ['creature'], subtypes: ['goblin'], power: 1, toughness: 1 },
+                  count: 1,
+                  attachSourceToCreated: true,
+                },
+              ],
+            },
+          ],
+        },
+      ];
+
+      const newState = executeEffects(modifiedState, effects, 'player-1', [], [], 0, {
+        sourceInstanceId: 'morningstar-1',
+      });
+      const token = [...newState.cards.values()].find(card => card.isToken && card.zone === 'battlefield');
+      const morningstar = newState.cards.get('morningstar-1');
+
+      expect(token).toBeDefined();
+      expect(morningstar?.attachedTo).toBe(token?.instanceId);
+    });
+  });
+
   describe('X cost support', () => {
     it('resolves X amount for damage', () => {
       const state = createTestState();
@@ -990,6 +1098,41 @@ describe('EachOpponent and AllCreatures effects', () => {
 
       // Artifact should remain on battlefield
       expect(newState.cards.get('artifact-p1')?.zone).toBe('battlefield');
+    });
+  });
+
+  describe('CounterSpell effect', () => {
+    it('removes the countered spell from the stack and puts it into graveyard', () => {
+      const state = createTestState();
+      state.cards.set('spell-1', {
+        instanceId: 'spell-1',
+        definitionId: 'def-generic',
+        ownerId: 'player-2',
+        zone: 'stack',
+        tapped: false,
+        summoningSick: false,
+        counters: {},
+        damage: 0,
+        isCommander: false,
+      });
+      state.stack = [{
+        kind: 'Spell',
+        id: 'stack_1',
+        cardInstanceId: 'spell-1',
+        casterId: 'player-2',
+        targets: [],
+      }];
+
+      const newState = executeEffects(
+        state,
+        [{ kind: 'CounterSpell', target: { kind: 'Chosen', targetId: 'target_1' } }],
+        'player-1',
+        ['spell-1'],
+        [{ id: 'target_1', type: 'Spell', count: 1 }],
+      );
+
+      expect(newState.stack).toHaveLength(0);
+      expect(newState.cards.get('spell-1')?.zone).toBe('graveyard');
     });
   });
 
@@ -1294,6 +1437,54 @@ describe('EachOpponent and AllCreatures effects', () => {
       for (const [id] of state.cards) {
         expect(newState.cards.has(id)).toBe(true);
       }
+    });
+
+    it('uses explicit player choices for top and bottom order', () => {
+      const state = createTestState();
+      const effects: Effect[] = [
+        { kind: 'Scry', player: { kind: 'Controller' }, count: 3 },
+      ];
+
+      const newState = executeEffects(state, effects, 'player-1', [], [], 0, {
+        namedCardChoices: {
+          scryTopIds: 'lib-card-3,lib-card-1',
+          scryBottomIds: 'lib-card-2',
+        },
+      });
+
+      const libraryOrder = [...newState.cards.values()]
+        .filter(card => card.ownerId === 'player-1' && card.zone === 'library')
+        .map(card => card.instanceId);
+
+      expect(libraryOrder.slice(0, 5)).toEqual([
+        'lib-card-3',
+        'lib-card-1',
+        'lib-card-4',
+        'lib-card-5',
+        'lib-card-2',
+      ]);
+    });
+
+    it('uses explicit player choices for surveil top and graveyard', () => {
+      const state = createTestState();
+      const effects: Effect[] = [
+        { kind: 'Surveil', player: { kind: 'Controller' }, count: 3 },
+      ];
+
+      const newState = executeEffects(state, effects, 'player-1', [], [], 0, {
+        namedCardChoices: {
+          surveilTopIds: 'lib-card-2',
+          surveilGraveyardIds: 'lib-card-1,lib-card-3',
+        },
+      });
+
+      const libraryOrder = [...newState.cards.values()]
+        .filter(card => card.ownerId === 'player-1' && card.zone === 'library')
+        .map(card => card.instanceId);
+
+      expect(libraryOrder.slice(0, 3)).toEqual(['lib-card-2', 'lib-card-4', 'lib-card-5']);
+      expect(newState.cards.get('lib-card-1')?.zone).toBe('graveyard');
+      expect(newState.cards.get('lib-card-3')?.zone).toBe('graveyard');
     });
   });
 

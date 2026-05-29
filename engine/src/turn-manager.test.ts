@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { advanceStep, advanceToNextTurn, performUntapStep, STEP_ORDER } from './turn-manager';
 import { initGameState, getCardsInZone } from './game-state';
-import { CardDefinition } from './types';
+import { CardDefinition, TriggeredAbilityRef } from './types';
 
 function makeEmptyDecks(count: number) {
   return Array.from({ length: count }, (_, i) => ({
@@ -72,6 +72,46 @@ describe('Turn Manager', () => {
       state.hasPriorityPassed[1] = true;
       const next = advanceStep(state);
       expect(next.hasPriorityPassed.every(p => p === false)).toBe(true);
+    });
+
+    it('queues beginning-of-combat triggers when moving into declare attackers', () => {
+      const enchantment: CardDefinition = {
+        id: 'combat-trigger',
+        name: 'Combat Trigger',
+        type_line: 'Enchantment',
+        oracle_text: '',
+        mana_cost: '{2}{G}',
+        cmc: 3,
+        colors: ['G'],
+        color_identity: ['G'],
+        keywords: [],
+        card_types: ['enchantment'],
+      };
+      const decks = [{
+        playerId: 'p1', name: 'Alice', cards: [enchantment], commanderId: 'cmd1',
+      }, {
+        playerId: 'p2', name: 'Bob', cards: [], commanderId: 'cmd2',
+      }];
+      let state = initGameState(decks);
+      const card = getCardsInZone(state, 'p1', 'library')[0];
+      state.cards.set(card.instanceId, { ...card, zone: 'battlefield' });
+      const ability: TriggeredAbilityRef = {
+        kind: 'TriggeredAbility',
+        trigger: { kind: 'BeginningCombat', whose: 'yours' },
+        effects: [{ kind: 'Draw', player: { kind: 'Controller' }, count: 1 }],
+      };
+      state = {
+        ...state,
+        phase: 'precombat_main',
+        step: 'begin_combat',
+        battlefieldAbilities: new Map([[card.instanceId, [ability]]]),
+      };
+
+      const next = advanceStep(state);
+
+      expect(next.step).toBe('declare_attackers');
+      expect(next.pendingTriggers).toHaveLength(1);
+      expect(next.pendingTriggers[0].ability.trigger.kind).toBe('BeginningCombat');
     });
   });
 
@@ -170,10 +210,12 @@ describe('Turn Manager', () => {
     it('empties mana pools when advancing steps', () => {
       let state = initGameState(makeEmptyDecks(2));
       state.players[0].manaPool = { W: 0, U: 0, B: 0, R: 0, G: 3, C: 0 };
+      state.players[0].restrictedMana = [{ color: 'G', amount: 3, restriction: 'creatureSpell' }];
       state = { ...state, phase: 'precombat_main', step: 'begin_combat' };
 
       const next = advanceStep(state);
       expect(next.players[0].manaPool.G).toBe(0);
+      expect(next.players[0].restrictedMana).toEqual([]);
     });
   });
 });

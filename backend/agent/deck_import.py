@@ -9,6 +9,57 @@ from backend.rules import COMMANDER_BANNED_CARDS
 # Basic lands that are allowed as duplicates
 BASIC_LAND_NAMES: Set[str] = {
     "Plains", "Island", "Swamp", "Mountain", "Forest", "Wastes",
+    "Snow-Covered Plains", "Snow-Covered Island", "Snow-Covered Swamp",
+    "Snow-Covered Mountain", "Snow-Covered Forest",
+}
+
+MAX_CARD_LINE_QUANTITY = 250
+MAX_IMPORTED_CARD_ENTRIES = 300
+COMMANDER_COLOR_ORDER = ["W", "U", "B", "R", "G"]
+
+_COMMANDER_SECTION_HEADERS = {
+    "commander",
+    "commanders",
+    "command zone",
+}
+
+_MAIN_SECTION_HEADERS = {
+    "deck",
+    "main",
+    "main deck",
+    "mainboard",
+}
+
+_SIDEBOARD_SECTION_HEADERS = {
+    "sideboard",
+    "side board",
+}
+
+_SKIP_SECTION_HEADERS = {
+    "companion",
+    "companions",
+    "considering",
+    "maybeboard",
+    "maybe board",
+    "tokens",
+    "token",
+    "attractions",
+    "stickers",
+    "planes",
+    "schemes",
+}
+
+_CATEGORY_SECTION_HEADERS = {
+    "artifacts",
+    "battles",
+    "creatures",
+    "enchantments",
+    "instants",
+    "lands",
+    "nonlands",
+    "planeswalkers",
+    "sorceries",
+    "spells",
 }
 
 # Common character substitutions for card name resolution
@@ -138,6 +189,28 @@ def _normalize_commander_names(
     return normalized
 
 
+def _effective_commander_color_identity(data: dict) -> List[str]:
+    """Return color identity for a card when it is used as a commander.
+
+    Some commander-legal cards choose a color before the game begins. In deck
+    validation that choice can be any color, so the commander pair must be
+    allowed to cover all five colors rather than whichever color a local card
+    cache happened to store.
+    """
+    colors: List[str] = []
+    for color in data.get("color_identity") or []:
+        if color not in colors:
+            colors.append(color)
+
+    oracle_text = data.get("oracle_text") or ""
+    if re.search(r"\bchoose a color before the game begins\b", oracle_text, re.IGNORECASE):
+        for color in COMMANDER_COLOR_ORDER:
+            if color not in colors:
+                colors.append(color)
+
+    return colors
+
+
 def _resolve_card_name(name: str, card_db: dict) -> Tuple[Optional[str], Optional[str]]:
     """Try to find a card in the database, with fuzzy matching.
 
@@ -165,7 +238,51 @@ def _resolve_card_name(name: str, card_db: dict) -> Tuple[Optional[str], Optiona
     return None, f"Card '{name}' not found in card database"
 
 
-def parse_decklist(text: str, singleton: bool = True) -> dict:
+def _strip_inline_comment(line: str) -> str:
+    """Remove common end-of-line deck export notes."""
+    return re.sub(r"\s+#.*$", "", line).strip()
+
+
+def _normalize_section_header(line: str) -> str:
+    """Return a normalized section header candidate."""
+    header = _strip_inline_comment(line).strip().strip(":").strip()
+    header = re.sub(r"\s*\([^)]*\)\s*$", "", header).strip()
+    header = re.sub(r"\s+\d+\s*(?:cards?)?\s*$", "", header, flags=re.IGNORECASE).strip()
+    header = re.sub(r"\s+", " ", header).lower()
+    return header
+
+
+def _is_metadata_line(line: str) -> bool:
+    """Skip export chrome that is not a card line."""
+    header = _normalize_section_header(line)
+    if not header:
+        return True
+    if header in {"about", "card", "cards", "decklist", "export", "overview"}:
+        return True
+    if re.match(r"^(?:name|format|author|owner|created|updated|last modified)\s*[:：]", line, re.IGNORECASE):
+        return True
+    if re.match(r"^name\s+\S+", line, re.IGNORECASE):
+        return True
+    if re.match(
+        r"^\d+\s+(?:cards?|commander|commanders|mainboard|sideboard|maybeboard)\b",
+        header,
+        re.IGNORECASE,
+    ):
+        return True
+    return False
+
+
+def _all_section_headers() -> Set[str]:
+    return (
+        _COMMANDER_SECTION_HEADERS
+        | _MAIN_SECTION_HEADERS
+        | _SIDEBOARD_SECTION_HEADERS
+        | _SKIP_SECTION_HEADERS
+        | _CATEGORY_SECTION_HEADERS
+    )
+
+
+def _parse_decklist_legacy(text: str, singleton: bool = True) -> dict:
     """Parse a pasted decklist text into structured data.
 
     Supported formats:
@@ -326,6 +443,187 @@ def parse_decklist(text: str, singleton: bool = True) -> dict:
     }
 
 
+def parse_decklist(text: str, singleton: bool = True) -> dict:
+    """Parse a pasted decklist text into structured data.
+
+    This accepts the legacy return shape while covering more real export formats.
+    """
+    commander: Optional[str] = None
+    commander_names: List[str] = []
+    cards: List[str] = []
+    lands: List[str] = []
+    sideboard: List[str] = []
+    errors: List[str] = []
+    seen_names: Dict[str, int] = {}
+
+    in_sideboard = False
+    in_skip_section = False
+    in_commander_section = False
+    consecutive_blanks = 0
+    truncated_entries = False
+
+    def entry_count() -> int:
+        return len(commander_names) + len(cards) + len(lands) + len(sideboard)
+
+    def append_entries(target: List[str], qty: int, name: str) -> None:
+        nonlocal truncated_entries
+        if qty <= 0:
+            return
+        if qty > MAX_CARD_LINE_QUANTITY:
+            errors.append(
+                f"Quantity for '{name}' is {qty}; capped at {MAX_CARD_LINE_QUANTITY}"
+            )
+            qty = MAX_CARD_LINE_QUANTITY
+
+        remaining = MAX_IMPORTED_CARD_ENTRIES - entry_count()
+        if remaining <= 0:
+            if not truncated_entries:
+                errors.append(
+                    f"Decklist has more than {MAX_IMPORTED_CARD_ENTRIES} card entries; extra lines were ignored"
+                )
+                truncated_entries = True
+            return
+
+        if qty > remaining:
+            if not truncated_entries:
+                errors.append(
+                    f"Decklist has more than {MAX_IMPORTED_CARD_ENTRIES} card entries; extra lines were ignored"
+                )
+                truncated_entries = True
+            qty = remaining
+
+        target.extend([name] * qty)
+
+    for raw_line in text.splitlines():
+        line = raw_line.strip().lstrip("\ufeff")
+
+        if not line:
+            consecutive_blanks += 1
+            if consecutive_blanks >= 2:
+                in_sideboard = True
+                in_skip_section = False
+                in_commander_section = False
+            continue
+        consecutive_blanks = 0
+
+        if line.startswith("//") or line.startswith("#"):
+            continue
+
+        line = _strip_inline_comment(line)
+        if not line:
+            continue
+
+        header = _normalize_section_header(line)
+
+        if header in _SIDEBOARD_SECTION_HEADERS:
+            in_sideboard = True
+            in_skip_section = False
+            in_commander_section = False
+            continue
+
+        if header in _SKIP_SECTION_HEADERS:
+            in_skip_section = True
+            in_commander_section = False
+            continue
+
+        if header in _MAIN_SECTION_HEADERS:
+            in_skip_section = False
+            in_sideboard = False
+            in_commander_section = False
+            continue
+
+        if header in _CATEGORY_SECTION_HEADERS:
+            in_commander_section = False
+            continue
+
+        if header in _COMMANDER_SECTION_HEADERS:
+            in_commander_section = True
+            in_sideboard = False
+            in_skip_section = False
+            continue
+
+        if _is_metadata_line(line):
+            in_commander_section = False
+            continue
+
+        if in_skip_section:
+            continue
+
+        sb_line = False
+        if re.match(r"^(?:SB|Sideboard)\s*:?\s+", line, re.IGNORECASE):
+            sb_line = True
+            line = re.sub(r"^(?:SB|Sideboard)\s*:?\s+", "", line, flags=re.IGNORECASE).strip()
+
+        if in_sideboard or sb_line:
+            qty, name = _parse_line(line)
+            if name:
+                append_entries(sideboard, qty, name)
+            continue
+
+        is_commander = False
+        if re.search(r"\*(?:CMDR|COMMANDER)\*", line, re.IGNORECASE):
+            is_commander = True
+            line = re.sub(r"\*(?:CMDR|COMMANDER)\*", "", line, flags=re.IGNORECASE).strip()
+        elif re.match(r"^(?:Commander|Commanders|Command Zone)\s*:\s*", line, re.IGNORECASE):
+            is_commander = True
+            line = re.sub(r"^(?:Commander|Commanders|Command Zone)\s*:\s*", "", line, flags=re.IGNORECASE).strip()
+        elif in_commander_section:
+            is_commander = True
+
+        qty, name = _parse_line(line)
+        if not name:
+            continue
+
+        if name.lower() in _all_section_headers():
+            in_commander_section = False
+            continue
+
+        if is_commander:
+            if entry_count() >= MAX_IMPORTED_CARD_ENTRIES:
+                if not truncated_entries:
+                    errors.append(
+                        f"Decklist has more than {MAX_IMPORTED_CARD_ENTRIES} card entries; extra lines were ignored"
+                    )
+                    truncated_entries = True
+                continue
+            commander_names.append(name)
+            continue
+
+        is_basic = name in BASIC_LAND_NAMES
+
+        if singleton and not is_basic:
+            if qty > 1:
+                errors.append(
+                    f"Non-basic card '{name}' has quantity {qty} (only 1 allowed)"
+                )
+                qty = 1
+            prev = seen_names.get(name, 0)
+            if prev > 0:
+                errors.append(f"Duplicate non-basic card: '{name}'")
+                continue
+            seen_names[name] = 1
+
+        if is_basic:
+            append_entries(lands, qty, name)
+        else:
+            append_entries(cards, qty, name)
+
+    if commander_names:
+        commander = " // ".join(commander_names)
+    commander_count = len(commander_names) if commander_names else (1 if commander else 0)
+    total = commander_count + len(cards) + len(lands)
+
+    return {
+        "commander": commander,
+        "commanders": commander_names if commander_names else ([commander] if commander else []),
+        "cards": cards,
+        "lands": lands,
+        "sideboard": sideboard,
+        "total": total,
+        "errors": errors,
+    }
+
+
 def validate_constructed_deck(parsed: dict, card_db: dict, format_name: str = "standard") -> dict:
     """Validate a parsed deck against basic Constructed rules for a format.
 
@@ -429,8 +727,22 @@ def _strip_set_code(name: str) -> str:
         'Nicol Bolas, Dragon-God (RVR) 205' -> 'Nicol Bolas, Dragon-God'
         'Sol Ring'                -> 'Sol Ring'
     """
-    # Strip ANY trailing parenthesized set code + anything after it
-    # Handles all formats: (EOC) 57, (PLST) TMP-294, (PECL) 267p, (SNC) 264,
+    name = _strip_inline_comment(name)
+    name = re.sub(r"^[*\-]\s*", "", name).strip()
+    name = re.sub(r"^\[[^\]]+\]\s*", "", name).strip()
+
+    # Strip Moxfield-style trailing markers such as *F* or *CMDR*.
+    while True:
+        cleaned = re.sub(r"\s+\*[^*]+\*\s*$", "", name).strip()
+        if cleaned == name:
+            break
+        name = cleaned
+
+    # Strip trailing bracketed set info such as [C21] 267.
+    name = re.sub(r"\s+\[[A-Za-z0-9_.:-]+\](?:\s+\S+)?$", "", name).strip()
+
+    # Strip ANY trailing parenthesized set code + anything after it.
+    # Handles formats: (EOC) 57, (PLST) TMP-294, (PECL) 267p, (SNC) 264,
     # (30A) 553, (H1R) 40, (2XM) 235, (PLST) E02-3, etc.
     return re.sub(r"\s*\([^)]+\)\s*.*$", "", name).strip()
 
@@ -444,8 +756,11 @@ def _parse_line(line: str) -> tuple:
     - ``1x Sol Ring (EOC) 57``
     - ``Sol Ring``
     """
-    # Try "N Card Name" or "Nx Card Name"
-    m = re.match(r"^(\d+)\s*[xX]?\s+(.+)$", line)
+    line = _strip_inline_comment(line).strip()
+    line = re.sub(r"^[*\-]\s*", "", line).strip()
+
+    # Try "N Card Name", "Nx Card Name", or MTGO "N [SET:CN] Card Name".
+    m = re.match(r"^(\d+)\s*[xX]?\s*(?:\[[^\]]+\]\s*)?(.+)$", line)
     if m:
         return int(m.group(1)), _strip_set_code(m.group(2).strip())
 
@@ -524,7 +839,7 @@ def validate_deck(parsed: dict, card_db: dict) -> dict:
                         "(and does not have 'can be your commander')"
                     )
                 # Union color identities from all commanders (partners)
-                for c in (cmd_data.get("color_identity") or []):
+                for c in _effective_commander_color_identity(cmd_data):
                     if c not in color_identity:
                         color_identity.append(c)
             else:
@@ -672,7 +987,7 @@ def fill_missing_slots(parsed: dict, card_db: dict, bracket: int = 3) -> dict:
         cmd_data = card_db.get(cmd_name)
         if cmd_data:
             found_any = True
-            commander_colors.update(cmd_data.get("color_identity") or [])
+            commander_colors.update(_effective_commander_color_identity(cmd_data))
             oracle_parts.append(cmd_data.get("oracle_text") or cmd_data.get("name", ""))
 
     if not found_any:

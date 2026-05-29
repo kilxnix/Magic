@@ -25,6 +25,10 @@ build/
 *.db
 *.db-shm
 *.db-wal
+artifacts/
+playtest-artifacts/
+engine/coverage/
+tmp-*.png
 data/price_cache.json
 data/scryfall_price_cache.json
 data/card_images.db

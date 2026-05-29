@@ -1,7 +1,8 @@
-import type { GameState } from '../types';
+import { isSpellStackItem, type GameState } from '../types';
 import { canBeTargetedByOpponent, canBeTargetedByController } from '../keywords';
+import { isEffectiveCreature } from '../effective-types';
 
-export type TargetType = 'Creature' | 'Player' | 'Any' | 'Permanent' | 'Artifact' | 'Enchantment' | 'ArtifactOrEnchantment' | 'NonlandPermanent' | 'Spell' | 'NoncreatureSpell' | 'CreatureCardInGraveyard';
+export type TargetType = 'Creature' | 'Player' | 'Any' | 'Permanent' | 'Artifact' | 'Enchantment' | 'ArtifactOrEnchantment' | 'ArtifactEnchantmentOrLand' | 'NonlandPermanent' | 'Spell' | 'NoncreatureSpell' | 'CreatureSpell' | 'InstantOrSorcerySpell' | 'CreatureCardInGraveyard';
 
 export interface TargetSpec {
   /** Stable id for mapping spec -> StackItem.targets position */
@@ -22,14 +23,37 @@ function isCreatureOnBattlefield(state: GameState, cardInstanceId: string): bool
   const card = state.cards.get(cardInstanceId);
   if (!card) return false;
   if (card.zone !== 'battlefield') return false;
-  const def = state.cardDefinitions.get(card.definitionId);
-  if (!def) return false;
-  return def.card_types.includes('creature');
+  return isEffectiveCreature(state, cardInstanceId);
 }
 
 function isAnyTarget(state: GameState, id: string): boolean {
   if (isPlayerId(state, id)) return true;
   return isCreatureOnBattlefield(state, id);
+}
+
+function isSpellTargetOnStack(
+  state: GameState,
+  id: string,
+  targetType: Extract<TargetType, 'Spell' | 'NoncreatureSpell' | 'CreatureSpell' | 'InstantOrSorcerySpell'>,
+): boolean {
+  for (const item of state.stack) {
+    if (!isSpellStackItem(item)) continue;
+    if (item.id !== id && item.cardInstanceId !== id) continue;
+
+    if (targetType === 'Spell') return true;
+
+    const card = state.cards.get(item.cardInstanceId);
+    const def = card ? state.cardDefinitions.get(card.definitionId) : undefined;
+    if (!def) return false;
+
+    const isCreatureSpell = def.card_types.includes('creature');
+    if (targetType === 'CreatureSpell') return isCreatureSpell;
+    if (targetType === 'InstantOrSorcerySpell') {
+      return def.card_types.includes('instant') || def.card_types.includes('sorcery');
+    }
+    return !isCreatureSpell;
+  }
+  return false;
 }
 
 /**
@@ -106,7 +130,19 @@ export function validateTargetChoices(
         if (!def || (!def.card_types.includes('artifact') && !def.card_types.includes('enchantment'))) {
           throw new Error(`Invalid target for ${spec.id}: expected artifact or enchantment, got ${chosenId}`);
         }
-      } else if (spec.type === 'Spell' || spec.type === 'NoncreatureSpell') {
+      } else if (spec.type === 'ArtifactEnchantmentOrLand') {
+        const card = state.cards.get(chosenId);
+        if (!card || card.zone !== 'battlefield') {
+          throw new Error(`Invalid target for ${spec.id}: expected artifact, enchantment, or land on battlefield, got ${chosenId}`);
+        }
+        const def = state.cardDefinitions.get(card.definitionId);
+        if (!def || (!def.card_types.includes('artifact') && !def.card_types.includes('enchantment') && !def.card_types.includes('land'))) {
+          throw new Error(`Invalid target for ${spec.id}: expected artifact, enchantment, or land, got ${chosenId}`);
+        }
+      } else if (spec.type === 'Spell' || spec.type === 'NoncreatureSpell' || spec.type === 'CreatureSpell' || spec.type === 'InstantOrSorcerySpell') {
+        if (!isSpellTargetOnStack(state, chosenId, spec.type)) {
+          throw new Error(`Invalid target for ${spec.id}: expected ${spec.type} on the stack, got ${chosenId}`);
+        }
         // Spells are on the stack — validated at cast time, not here
         // Just ensure an id was provided
       } else if (spec.type === 'CreatureCardInGraveyard') {

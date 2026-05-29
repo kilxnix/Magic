@@ -1,0 +1,218 @@
+import {
+  evaluateActions,
+  getCardDefinition,
+  type AIAction,
+  type GameState,
+} from 'commander-engine';
+
+export type DecisionConfidence = 'high' | 'medium' | 'low';
+
+export interface DecisionAlternative {
+  actionType: string;
+  label: string;
+  score: number;
+  reasoning?: string;
+}
+
+export interface DecisionReview {
+  schemaVersion: 1;
+  evaluator: 'engine-heuristic-v1';
+  decisionId: string;
+  phase: string;
+  step: string;
+  legalActionCount: number;
+  selected: DecisionAlternative;
+  best?: DecisionAlternative;
+  alternatives: DecisionAlternative[];
+  scoreDelta: number;
+  confidence: DecisionConfidence;
+  confidenceReasons: string[];
+  elapsedMs: number;
+}
+
+export interface ReviewableLegalAction {
+  kind: string;
+  label: string;
+  cardName?: string;
+  _engineAction: AIAction;
+}
+
+export type ReviewRating = 'excellent' | 'good' | 'okay' | 'bad' | 'blunder';
+
+export function actionIdentity(action: AIAction): string {
+  switch (action.kind) {
+    case 'CastSpell':
+      return `${action.kind}:${action.cardInstanceId}:${action.targets.join(',')}:${action.chosenModes?.join(',') || ''}`;
+    case 'PlayLand':
+    case 'ActivateManaAbility':
+      return `${action.kind}:${action.cardInstanceId}`;
+    case 'ActivateAbility':
+      return `${action.kind}:${action.cardInstanceId}:${action.abilityIndex}:${action.targets.join(',')}`;
+    case 'DeclareAttackers':
+      return `${action.kind}:${action.attacks.map(a => `${a.cardInstanceId}>${a.defendingPlayerId}`).join(',')}`;
+    case 'DeclareBlockers':
+      return `${action.kind}:${action.blocks.map(b => `${b.cardInstanceId}>${b.blockingAttackerId}`).join(',')}`;
+    case 'Equip':
+      return `${action.kind}:${action.equipmentInstanceId}>${action.targetCreatureId}`;
+    case 'PassPriority':
+      return action.kind;
+    default:
+      return 'Unknown';
+  }
+}
+
+export function describeReviewAction(state: GameState, action: AIAction): string {
+  switch (action.kind) {
+    case 'CastSpell': {
+      const inst = state.cards.get(action.cardInstanceId);
+      const def = inst ? getCardDefinition(state, inst) : undefined;
+      return `Cast ${def?.name || 'a spell'}`;
+    }
+    case 'PlayLand': {
+      const inst = state.cards.get(action.cardInstanceId);
+      const def = inst ? getCardDefinition(state, inst) : undefined;
+      return `Play ${def?.name || 'a land'}`;
+    }
+    case 'ActivateManaAbility': {
+      const inst = state.cards.get(action.cardInstanceId);
+      const def = inst ? getCardDefinition(state, inst) : undefined;
+      return `Tap ${def?.name || 'a permanent'} for ${action.color}`;
+    }
+    case 'ActivateAbility': {
+      const inst = state.cards.get(action.cardInstanceId);
+      const def = inst ? getCardDefinition(state, inst) : undefined;
+      return `Activate ${def?.name || 'an ability'}`;
+    }
+    case 'DeclareAttackers':
+      return action.attacks.length > 0
+        ? `Attack with ${action.attacks.length} creature${action.attacks.length === 1 ? '' : 's'}`
+        : 'Do not attack';
+    case 'DeclareBlockers':
+      return action.blocks.length > 0
+        ? `Block with ${action.blocks.length} creature${action.blocks.length === 1 ? '' : 's'}`
+        : 'Do not block';
+    case 'Equip': {
+      const equipment = state.cards.get(action.equipmentInstanceId);
+      const target = state.cards.get(action.targetCreatureId);
+      const equipmentDef = equipment ? getCardDefinition(state, equipment) : undefined;
+      const targetDef = target ? getCardDefinition(state, target) : undefined;
+      return `Equip ${equipmentDef?.name || 'equipment'} to ${targetDef?.name || 'creature'}`;
+    }
+    case 'PassPriority':
+      return 'Pass priority';
+    default:
+      return 'Take action';
+  }
+}
+
+export function ratingFromDecisionDelta(delta: number, selectedIsBest: boolean): ReviewRating {
+  if (selectedIsBest || delta <= 0.5) return 'excellent';
+  if (delta <= 1.5) return 'good';
+  if (delta <= 4) return 'okay';
+  if (delta <= 8) return 'bad';
+  return 'blunder';
+}
+
+export function buildDecisionReview(
+  state: GameState,
+  playerId: string,
+  selectedAction: ReviewableLegalAction,
+  legalActions: ReviewableLegalAction[],
+): DecisionReview | undefined {
+  const started = Date.now();
+  const reviewableActions = legalActions
+    .filter(action => action._engineAction && action.kind !== 'ActivateManaAbility')
+    .slice(0, 50);
+
+  if (reviewableActions.length === 0) return undefined;
+
+  const selectedIdentity = actionIdentity(selectedAction._engineAction);
+  const ranked = evaluateActions(state, playerId, reviewableActions.map(action => action._engineAction));
+  const selectedEval = ranked.find(evaluation => actionIdentity(evaluation.action) === selectedIdentity);
+  const selectedScore = selectedEval?.score ?? 0;
+
+  const alternatives = ranked.slice(0, 8).map(evaluation => {
+    const matchingAction = reviewableActions.find(action => (
+      actionIdentity(action._engineAction) === actionIdentity(evaluation.action)
+    ));
+    return {
+      actionType: evaluation.action.kind,
+      label: matchingAction?.label || describeReviewAction(state, evaluation.action),
+      score: Number(evaluation.score.toFixed(1)),
+      reasoning: evaluation.reasoning,
+    };
+  });
+
+  const selected: DecisionAlternative = {
+    actionType: selectedAction._engineAction.kind,
+    label: selectedAction.label || selectedAction.cardName || describeReviewAction(state, selectedAction._engineAction),
+    score: Number(selectedScore.toFixed(1)),
+    reasoning: selectedEval?.reasoning,
+  };
+  const best = alternatives[0];
+  const scoreDelta = Number(Math.max(0, (best?.score ?? selected.score) - selected.score).toFixed(1));
+  const confidenceReasons: string[] = [];
+
+  if (!selectedEval) {
+    confidenceReasons.push('Selected action was not found in the engine-ranked action list.');
+  }
+  if (reviewableActions.length > 25) {
+    confidenceReasons.push('Large decision tree was capped for speed.');
+  }
+  if (
+    selectedAction._engineAction.kind === 'CastSpell' &&
+    selectedAction._engineAction.targets.length === 0
+  ) {
+    confidenceReasons.push('Target or mode quality was not deeply evaluated.');
+  }
+  if (!best || reviewableActions.length <= 1) {
+    confidenceReasons.push('Only one meaningful available action was visible to the current engine.');
+  }
+
+  const confidence: DecisionConfidence = !selectedEval || confidenceReasons.length >= 2
+    ? 'low'
+    : confidenceReasons.length === 1
+    ? 'medium'
+    : 'high';
+
+  return {
+    schemaVersion: 1,
+    evaluator: 'engine-heuristic-v1',
+    decisionId: `${state.turnNumber}:${state.phase}:${state.step}:${started}`,
+    phase: state.phase,
+    step: state.step,
+    legalActionCount: reviewableActions.length,
+    selected,
+    best,
+    alternatives,
+    scoreDelta,
+    confidence,
+    confidenceReasons,
+    elapsedMs: Date.now() - started,
+  };
+}
+
+export function coachMessageFromDecision(review: DecisionReview): string | null {
+  if (review.legalActionCount <= 1 || !review.best) return null;
+  const selectedIsBest = review.best.label === review.selected.label && review.scoreDelta <= 0.5;
+  if (selectedIsBest) return 'Strong practice action.';
+  if (review.scoreDelta < 1) return 'Good practice action (close to the current engine preference).';
+  return `Consider: ${review.best.label} (score ${review.best.score.toFixed(1)} vs your ${review.selected.score.toFixed(1)}). ${review.best.reasoning || ''}`.trim();
+}
+
+export function playByPlayFromDecision(action: string, review?: DecisionReview): string {
+  if (!review || !review.best || review.legalActionCount <= 1) {
+    return `${action}.`;
+  }
+
+  const selectedIsBest = review.best.label === review.selected.label && review.scoreDelta <= 0.5;
+  if (selectedIsBest) {
+    return `${action}. The engine review agreed this was a strong available line.`;
+  }
+
+  if (review.scoreDelta <= 1.5) {
+    return `${action}. This was close to another available line, with ${review.best.label} rated slightly higher.`;
+  }
+
+  return `${action}. The review preferred ${review.best.label} by ${review.scoreDelta.toFixed(1)} points.`;
+}

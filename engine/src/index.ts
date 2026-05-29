@@ -7,6 +7,7 @@ export * from './actions';
 export * from './stack';
 export * from './combat';
 export * from './state-based';
+export * from './effective-types';
 
 // Keywords (Phase 5)
 export * from './keywords';
@@ -32,6 +33,8 @@ export * from './cards';
 
 // Game initialization (Phase 13)
 export * from './game-init';
+export * from './room-game';
+export * from './authority';
 
 // Public try* action wrappers (Task 7 — game-reliability-refactor)
 // Note: actions-public also exports GameEvent, which conflicts with stack.ts's GameEvent.
@@ -54,5 +57,6 @@ export {
   tryDeclareAttackers,
   tryDeclareBlockers,
   tryEquip,
+  tryAdjustCounters,
   resetLoopDetector,
 } from './actions-public';

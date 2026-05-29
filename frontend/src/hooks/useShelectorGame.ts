@@ -13,6 +13,8 @@ import {
   getCardDefinition,
   getPlayer,
   getLegalActions,
+  getSpellTargetSpecs,
+  getLegalTargets,
   applyAction,
   makeDecision,
   createAIConfig,
@@ -21,12 +23,15 @@ import {
   drawCards,
   passPriority,
   resolveTopOfStack,
+  registerBattlefieldAbilities,
   resolveCombatDamage,
   checkStateBasedActions,
   putTriggersOnStack,
   checkTriggersForEvent,
+  parseOracleText,
   parseManaString,
   canPayCost,
+  isEffectiveCreature,
   type GameState,
   type GameStateWithAI,
   type CardInstance,
@@ -49,9 +54,32 @@ import {
   tryDeclareAttackers,
   tryDeclareBlockers,
   tryEquip,
+  tryAdjustCounters,
+  getCostReduction,
+  getOverride,
   resetLoopDetector,
+  type Effect,
+  type StackItem,
   type ActionGameEvent,
+  createClientActionRequest,
+  actionKey,
+  buildActionPrompt,
+  buildStateUpdate,
+  type ActionPromptChoice,
+  type EnginePrompt,
+  type EngineStateUpdate,
+  summarizeActionPromptChoices,
+  serializeGameState,
+  deserializeGameState,
+  type SerializedGameStateV1,
 } from 'commander-engine';
+import {
+  buildDecisionReview,
+  coachMessageFromDecision,
+  playByPlayFromDecision,
+  type DecisionReview,
+} from '../lib/turnReview';
+import { shelectorApiUrl } from '../lib/api';
 
 // ========== End-Game Modal State (Task 27 — game-reliability-refactor) ==========
 
@@ -73,7 +101,7 @@ export interface SimpleCard {
   power?: number;
   toughness?: number;
   tapped: boolean;
-  zone: 'hand' | 'battlefield' | 'graveyard' | 'library' | 'command' | 'exile';
+  zone: 'hand' | 'battlefield' | 'graveyard' | 'library' | 'command' | 'exile' | 'stack';
   ownerId: string;
   cardTypes: string[];
   isCommander: boolean;
@@ -103,7 +131,7 @@ export interface SimpleGameState {
   humanBattlefield: SimpleCard[];
   humanGraveyard: SimpleCard[];
   humanCommandZone: SimpleCard[];
-  stack: { id: string; name: string; casterId: string }[];
+  stack: { id: string; kind: StackItem['kind']; name: string; casterId: string; card?: SimpleCard; targetNames: string[] }[];
   gameOver: boolean;
   winnerId: string | null;
   manaPool: { W: number; U: number; B: number; R: number; G: number; C: number };
@@ -130,8 +158,54 @@ export interface SimpleLegalAction {
   cardInstanceId?: string;
   cardName?: string;
   label: string;
+  paymentPreview?: string;
   /** The raw engine action stored for applying back to the engine */
   _engineAction: AIAction;
+}
+
+function displayNameForTarget(engineState: GameState, targetId: string): string {
+  const card = engineState.cards.get(targetId);
+  if (card) {
+    return engineState.cardDefinitions.get(card.definitionId)?.name || targetId;
+  }
+  return engineState.players.find(player => player.id === targetId)?.name || targetId;
+}
+
+function targetLabelSuffix(engineState: GameState, targets?: string[]): string {
+  if (!targets?.length) return '';
+  return ` targeting ${targets.map(targetId => displayNameForTarget(engineState, targetId)).join(', ')}`;
+}
+
+function simpleChoiceId(action: SimpleLegalAction, index: number): string {
+  const cardPart = action.cardInstanceId || action.cardName || 'table';
+  return `${action.kind}:${cardPart}:${actionKey(action._engineAction)}:${index}`;
+}
+
+function promptChoicesFromSimpleActions(actions: SimpleLegalAction[]): ActionPromptChoice[] {
+  return actions.map((action, index) => ({
+    id: simpleChoiceId(action, index),
+    kind: action._engineAction.kind,
+    label: action.label,
+    action: action._engineAction,
+  }));
+}
+
+function buildVisibleActionPrompt(
+  engineState: GameState,
+  playerId: string,
+  actions: SimpleLegalAction[],
+): EnginePrompt | null {
+  const basePrompt = buildActionPrompt(engineState, playerId);
+  if (!basePrompt) return null;
+  const legalChoices = promptChoicesFromSimpleActions(actions);
+  const defaultChoice = legalChoices.find(choice => choice.action.kind === 'PassPriority');
+  return {
+    ...basePrompt,
+    legalChoices,
+    legalChoiceSummary: summarizeActionPromptChoices(legalChoices),
+    defaultActionId: defaultChoice?.id,
+    canSubmit: legalChoices.length > 0,
+  };
 }
 
 export interface LastPlayedCard {
@@ -140,6 +214,27 @@ export interface LastPlayedCard {
   playerName: string;
   action: 'Played' | 'Cast' | 'Activated';
   turnNumber: number;
+}
+
+function isMeaningfulAutoSkipAction(action: AIAction): boolean {
+  switch (action.kind) {
+    case 'PassPriority':
+    case 'ActivateManaAbility':
+      return false;
+    case 'DeclareAttackers':
+      return action.attacks.length > 0;
+    case 'DeclareBlockers':
+      return action.blocks.length > 0;
+    default:
+      return true;
+  }
+}
+
+function isEmptyWindowSkippable(actions: SimpleLegalAction[]): boolean {
+  if (actions.length === 0) return false;
+  return !actions.some(action =>
+    action.kind !== 'SkipEmptyPhases' && isMeaningfulAutoSkipAction(action._engineAction),
+  );
 }
 
 export interface GameLogEntry {
@@ -154,6 +249,8 @@ export interface GameLogEntry {
   lifeTotals: { human: number; ai: number };
   cardsInHand: { human: number; ai: number };
   timestamp: number;
+  playByPlay?: string;
+  decision?: DecisionReview;
 }
 
 export interface ChatMessage {
@@ -208,7 +305,96 @@ export interface StartGameOptions {
   aiDifficulty?: number;
 }
 
+export interface ShelectorGameSaveSnapshot {
+  version: 1;
+  savedAt: number;
+  engine: SerializedGameStateV1;
+  humanDeck: GeneratedDeck | null;
+  aiDecks: GeneratedDeck[];
+  humanCommander: string;
+  aiCommanderNames: Record<string, string>;
+  humanId: string;
+  aiIds: string[];
+  opponentInfo: OpponentInfo | null;
+  chatMessages: ChatMessage[];
+  gameLog: GameLogEntry[];
+  authorityUpdates: EngineStateUpdate[];
+  lastStateUpdate: EngineStateUpdate | null;
+  currentPrompt: EnginePrompt | null;
+  lastPlayedCard: LastPlayedCard | null;
+  mulliganPhase: boolean;
+  mulliganCount: number;
+  selectedMulliganBottomIds?: string[];
+  discardPhase: boolean;
+  discardCount: number;
+  tutorPhase: boolean;
+  tutorCards: TutorCardOption[];
+  tutorTitle: string;
+  libraryChoice?: LibraryManipulationChoice | null;
+  undosRemaining: number;
+  coachMode: boolean;
+  newPlayerMode: boolean;
+  holdPriority: boolean;
+  actionError: { reason: string; message: string } | null;
+  lastEvents: ActionGameEvent[];
+  endGame: EndGameState;
+}
+
 // ========== Helpers ==========
+
+function normalizeLookupName(name: string | undefined | null): string {
+  return (name || '')
+    .trim()
+    .replace(/[‘’]/g, "'")
+    .replace(/\s+/g, ' ')
+    .toLowerCase();
+}
+
+function lookupNameAliases(name: string | undefined | null): string[] {
+  const trimmed = (name || '').trim();
+  if (!trimmed) return [];
+
+  const aliases = new Set<string>([trimmed]);
+  if (trimmed.includes(' // ')) {
+    for (const faceName of trimmed.split(' // ')) {
+      const face = faceName.trim();
+      if (face) aliases.add(face);
+    }
+  }
+  return [...aliases];
+}
+
+function cardDataHasName(cardData: Record<string, CardDataFromAPI> | undefined, name: string): boolean {
+  const wanted = normalizeLookupName(name);
+  if (!wanted || !cardData) return false;
+
+  for (const [key, data] of Object.entries(cardData)) {
+    if (lookupNameAliases(key).some(alias => normalizeLookupName(alias) === wanted)) return true;
+    if (lookupNameAliases(data.name).some(alias => normalizeLookupName(alias) === wanted)) return true;
+  }
+  return false;
+}
+
+function findCardDataByName(cardData: Record<string, CardDataFromAPI> | undefined, name: string): CardDataFromAPI | undefined {
+  const wanted = normalizeLookupName(name);
+  if (!wanted || !cardData) return undefined;
+
+  for (const [key, data] of Object.entries(cardData)) {
+    if (lookupNameAliases(key).some(alias => normalizeLookupName(alias) === wanted)) return data;
+    if (lookupNameAliases(data.name).some(alias => normalizeLookupName(alias) === wanted)) return data;
+  }
+  return undefined;
+}
+
+function isCommanderEligibleData(data: CardDataFromAPI | undefined): boolean {
+  if (!data) return false;
+  const typeLine = (data.type_line || '').toLowerCase();
+  const oracleText = (data.oracle_text || '').toLowerCase();
+  return (
+    typeLine.includes('legendary')
+    && (typeLine.includes('creature') || typeLine.includes('planeswalker'))
+  ) || oracleText.includes('can be your commander');
+}
 
 const BASIC_LANDS: Record<string, ScryfallCard> = {
   Plains: {
@@ -233,6 +419,31 @@ const BASIC_LANDS: Record<string, ScryfallCard> = {
   },
   Forest: {
     id: 'basic-forest', name: 'Forest', type_line: 'Basic Land \u2014 Forest',
+    oracle_text: '({T}: Add {G}.)', mana_cost: '', cmc: 0,
+    colors: [], color_identity: ['G'], keywords: [],
+  },
+  'Snow-Covered Plains': {
+    id: 'basic-snow-covered-plains', name: 'Snow-Covered Plains', type_line: 'Basic Snow Land \u2014 Plains',
+    oracle_text: '({T}: Add {W}.)', mana_cost: '', cmc: 0,
+    colors: [], color_identity: ['W'], keywords: [],
+  },
+  'Snow-Covered Island': {
+    id: 'basic-snow-covered-island', name: 'Snow-Covered Island', type_line: 'Basic Snow Land \u2014 Island',
+    oracle_text: '({T}: Add {U}.)', mana_cost: '', cmc: 0,
+    colors: [], color_identity: ['U'], keywords: [],
+  },
+  'Snow-Covered Swamp': {
+    id: 'basic-snow-covered-swamp', name: 'Snow-Covered Swamp', type_line: 'Basic Snow Land \u2014 Swamp',
+    oracle_text: '({T}: Add {B}.)', mana_cost: '', cmc: 0,
+    colors: [], color_identity: ['B'], keywords: [],
+  },
+  'Snow-Covered Mountain': {
+    id: 'basic-snow-covered-mountain', name: 'Snow-Covered Mountain', type_line: 'Basic Snow Land \u2014 Mountain',
+    oracle_text: '({T}: Add {R}.)', mana_cost: '', cmc: 0,
+    colors: [], color_identity: ['R'], keywords: [],
+  },
+  'Snow-Covered Forest': {
+    id: 'basic-snow-covered-forest', name: 'Snow-Covered Forest', type_line: 'Basic Snow Land \u2014 Forest',
     oracle_text: '({T}: Add {G}.)', mana_cost: '', cmc: 0,
     colors: [], color_identity: ['G'], keywords: [],
   },
@@ -276,16 +487,378 @@ function toSimpleCard(inst: CardInstance, def: CardDefinition): SimpleCard {
   };
 }
 
-/** Pad a card list to exactly 99 with basic lands, or truncate if over */
-function padDeckTo99(list: string[], colors: string[]): string[] {
-  if (list.length > 99) return list.slice(0, 99);
+function resolveCommanderNamesForImport(commanderName: string, cardData?: Record<string, CardDataFromAPI>): string[] {
+  if (!commanderName.trim()) return [];
+  if (cardDataHasName(cardData, commanderName)) return [commanderName];
+  if (!commanderName.includes(' // ')) return [commanderName];
+
+  const parts = commanderName.split(' // ').map(name => name.trim()).filter(Boolean);
+  if (parts.length <= 1) return parts.length === 1 ? parts : [commanderName];
+
+  const front = findCardDataByName(cardData, parts[0]);
+  const otherFaces = parts.slice(1).map(name => findCardDataByName(cardData, name));
+  if (front && otherFaces.some(face => !face)) return [parts[0]];
+
+  const commanderEligibleFaces = parts.filter(name => isCommanderEligibleData(findCardDataByName(cardData, name)));
+  if (commanderEligibleFaces.length === 1 && normalizeLookupName(commanderEligibleFaces[0]) === normalizeLookupName(parts[0])) {
+    return [parts[0]];
+  }
+
+  return parts;
+}
+
+function resolveCommanderNamesForLookup(
+  commanderName: string,
+  lookup: (name: string) => ScryfallCard | undefined,
+): string[] {
+  if (!commanderName.trim()) return [];
+  if (lookup(commanderName)) return [commanderName];
+  if (!commanderName.includes(' // ')) return [commanderName];
+
+  const parts = commanderName.split(' // ').map(name => name.trim()).filter(Boolean);
+  if (parts.length <= 1) return parts.length === 1 ? parts : [commanderName];
+
+  const front = lookup(parts[0]);
+  const otherFaces = parts.slice(1).map(name => lookup(name));
+  if (front && otherFaces.some(face => !face)) return [parts[0]];
+
+  const commanderEligibleFaces = parts.filter(name => {
+    const card = lookup(name);
+    if (!card) return false;
+    const typeLine = card.type_line.toLowerCase();
+    const oracleText = (card.oracle_text || '').toLowerCase();
+    return (
+      typeLine.includes('legendary')
+      && (typeLine.includes('creature') || typeLine.includes('planeswalker'))
+    ) || oracleText.includes('can be your commander');
+  });
+  if (commanderEligibleFaces.length === 1 && normalizeLookupName(commanderEligibleFaces[0]) === normalizeLookupName(parts[0])) {
+    return [parts[0]];
+  }
+
+  return parts;
+}
+
+function getCommanderCastCount(player: { commanderCastCount: number; commanderCastCounts?: Record<string, number>; commanderInstanceId?: string | null }, cardInstanceId: string): number {
+  return player.commanderCastCounts?.[cardInstanceId]
+    ?? (player.commanderInstanceId === cardInstanceId ? player.commanderCastCount : 0);
+}
+
+type SearchFilterSpec = {
+  types?: string[];
+  subtypes?: string[];
+  supertypes?: string[];
+  colors?: string[];
+  cmc?: { op: 'eq' | 'lte' | 'gte'; value: number };
+};
+
+export type TutorCardOption = {
+  instanceId: string;
+  name: string;
+  typeLine: string;
+  manaCost: string;
+  oracleText?: string;
+  colors?: string[];
+  cmc?: number;
+  legal?: boolean;
+  reason?: string;
+  destination?: 'hand' | 'battlefield' | 'graveyard' | 'top' | 'bottom' | 'exile' | 'command' | 'choice';
+  entersTapped?: boolean;
+  mustReveal?: boolean;
+};
+
+type TutorDestination = NonNullable<TutorCardOption['destination']>;
+type SearchDestination = Extract<TutorDestination, 'hand' | 'battlefield' | 'graveyard' | 'top'>;
+
+export interface LibraryManipulationChoice {
+  id: string;
+  mode: 'scry' | 'surveil';
+  title: string;
+  cards: TutorCardOption[];
+}
+
+type PendingPlayLandChoice = {
+  kind: 'creatureType' | 'payLife';
+  action: SimpleLegalAction;
+};
+
+type PendingCastChoiceMode = 'discardLand' | 'sacrificeCreature';
+
+function toTutorCardOption(state: GameState, card: CardInstance): TutorCardOption | null {
+  const def = state.cardDefinitions.get(card.definitionId);
+  if (!def) return null;
+  return {
+    instanceId: card.instanceId,
+    name: def.name,
+    typeLine: def.type_line,
+    manaCost: def.mana_cost,
+    oracleText: def.oracle_text,
+    colors: def.colors,
+    cmc: def.cmc,
+  };
+}
+
+function isMoxDiamondLikeDefinition(def: CardDefinition): boolean {
+  return /mox diamond/i.test(def.name)
+    || /if .* would enter .* discard a land card/i.test(def.oracle_text);
+}
+
+function isLandDefinition(def: CardDefinition | undefined): boolean {
+  return def?.card_types.includes('land') === true;
+}
+
+function isCreatureTypeChoiceLand(def: CardDefinition): boolean {
+  return /cavern of souls/i.test(def.name)
+    || /as .* enters.*choose a creature type/i.test(def.oracle_text);
+}
+
+function getOptionalUntappedLifeCostFromText(text: string): number | undefined {
+  const match = text.match(/\bpay\s+(\d+)\s+life\b/i);
+  if (!match || !/enters? (?:the battlefield )?tapped/i.test(text)) return undefined;
+  return Number(match[1]);
+}
+
+function needsMoxDiamondDiscardChoice(
+  action: AIAction,
+  state: GameState,
+): action is Extract<AIAction, { kind: 'CastSpell' }> {
+  if (action.kind !== 'CastSpell') return false;
+  if (action.cardChoices?.discardedCardIds?.length) return false;
+
+  const card = state.cards.get(action.cardInstanceId);
+  const def = card ? state.cardDefinitions.get(card.definitionId) : undefined;
+  return !!def && isMoxDiamondLikeDefinition(def);
+}
+
+function needsCastSacrificeCreatureChoice(
+  action: AIAction,
+  state: GameState,
+): action is Extract<AIAction, { kind: 'CastSpell' }> {
+  if (action.kind !== 'CastSpell') return false;
+  if (action.namedCardChoices?.sacrificeCardId) return false;
+
+  const card = state.cards.get(action.cardInstanceId);
+  const def = card ? state.cardDefinitions.get(card.definitionId) : undefined;
+  if (!def) return false;
+  return /\bwhen you cast this spell,\s*any player may sacrifice a creature\b/i.test(def.oracle_text)
+    && /\bif a player does,\s*counter\b/i.test(def.oracle_text);
+}
+
+function getCreatureTypeChoices(state: GameState, playerId: string): string[] {
+  const counts = new Map<string, number>();
+  const ignored = new Set([
+    'artifact',
+    'battle',
+    'basic',
+    'creature',
+    'enchantment',
+    'instant',
+    'kindred',
+    'land',
+    'legendary',
+    'planeswalker',
+    'snow',
+    'sorcery',
+    'token',
+  ]);
+
+  for (const card of state.cards.values()) {
+    if (card.ownerId !== playerId) continue;
+    const def = state.cardDefinitions.get(card.definitionId);
+    if (!def || !def.card_types.includes('creature')) continue;
+    const subtypeText = def.type_line.split(/[—-]/).slice(1).join(' ');
+    for (const rawType of subtypeText.split(/\s+/)) {
+      const clean = rawType.replace(/[^A-Za-z]/g, '');
+      if (!clean || ignored.has(clean.toLowerCase())) continue;
+      counts.set(clean, (counts.get(clean) || 0) + 1);
+    }
+  }
+
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([type]) => type)
+    .slice(0, 18);
+}
+
+type StackSearchInfo = {
+  filter?: string;
+  filterSpec?: SearchFilterSpec;
+  destination: SearchDestination;
+  tapped?: boolean;
+  shuffle: boolean;
+  count?: number;
+};
+
+function humanizeSearchFilter(filter?: SearchFilterSpec, fallback?: string): string | undefined {
+  if (fallback) return fallback;
+  if (!filter) return undefined;
+
+  const parts: string[] = [];
+  const supertypes = filter.supertypes?.map(s => s.toLowerCase()) || [];
+  const types = filter.types?.map(t => t.toLowerCase()) || [];
+  const subtypes = filter.subtypes || [];
+
+  if (supertypes.includes('basic') && types.includes('land')) {
+    parts.push('basic land');
+  } else {
+    if (supertypes.length > 0) parts.push(supertypes.join(' or '));
+    if (types.length > 0) parts.push(types.join(' or '));
+  }
+  if (subtypes.length > 0) parts.push(subtypes.join(' or '));
+  if (filter.colors?.length) parts.push(filter.colors.join(' or '));
+  if (filter.cmc) parts.push(`mana value ${filter.cmc.op} ${filter.cmc.value}`);
+
+  return parts.length > 0 ? parts.join(' ') : undefined;
+}
+
+function cardMatchesSearch(
+  card: TutorCardOption,
+  filterSpec?: SearchFilterSpec,
+  fallbackFilter?: string,
+): boolean {
+  const typeLine = card.typeLine.toLowerCase();
+
+  if (filterSpec) {
+    if (filterSpec.types?.length) {
+      const matchesType = filterSpec.types.some(type => typeLine.includes(type.toLowerCase()));
+      if (!matchesType) return false;
+    }
+    if (filterSpec.subtypes?.length) {
+      const matchesSubtype = filterSpec.subtypes.some(subtype => typeLine.includes(subtype.toLowerCase()));
+      if (!matchesSubtype) return false;
+    }
+    if (filterSpec.supertypes?.length) {
+      const matchesSupertype = filterSpec.supertypes.some(supertype => typeLine.includes(supertype.toLowerCase()));
+      if (!matchesSupertype) return false;
+    }
+    if (filterSpec.colors?.length) {
+      const colors = card.colors || [];
+      const matchesColor = filterSpec.colors.some(color => colors.includes(color));
+      if (!matchesColor) return false;
+    }
+    if (filterSpec.cmc && typeof card.cmc === 'number') {
+      if (filterSpec.cmc.op === 'eq' && card.cmc !== filterSpec.cmc.value) return false;
+      if (filterSpec.cmc.op === 'lte' && card.cmc > filterSpec.cmc.value) return false;
+      if (filterSpec.cmc.op === 'gte' && card.cmc < filterSpec.cmc.value) return false;
+    }
+    return true;
+  }
+
+  if (!fallbackFilter) return true;
+  const needle = fallbackFilter.toLowerCase();
+  const haystack = [
+    card.name,
+    card.typeLine,
+    card.manaCost,
+    card.oracleText || '',
+  ].join(' ').toLowerCase();
+  return haystack.includes(needle);
+}
+
+function searchPickerMetadata(search: StackSearchInfo): Pick<TutorCardOption, 'legal' | 'reason' | 'destination' | 'entersTapped' | 'mustReveal'> {
+  const reason = search.filter
+    ? `Matches ${search.filter}`
+    : 'Legal library choice';
+  return {
+    legal: true,
+    reason,
+    destination: search.destination,
+    entersTapped: search.destination === 'battlefield' ? Boolean(search.tapped) : undefined,
+    // Type-restricted library searches normally reveal the chosen card. Broad
+    // "any card" tutors should not expose the pick in live play.
+    mustReveal: Boolean(search.filter || search.filterSpec),
+  };
+}
+
+function searchInfoFromEffects(effects: unknown[] | undefined): StackSearchInfo | undefined {
+  if (!Array.isArray(effects)) return undefined;
+  const searchEffect = effects.find((effect): effect is {
+    kind: 'SearchLibrary';
+    filter?: SearchFilterSpec;
+    destination?: SearchDestination;
+    tapped?: boolean;
+    shuffle?: boolean;
+    count?: number;
+  } => typeof effect === 'object' && effect !== null && (effect as { kind?: string }).kind === 'SearchLibrary');
+
+  if (!searchEffect) return undefined;
+
+  const hasShuffleEffect = effects.some(effect =>
+    typeof effect === 'object' && effect !== null && (effect as { kind?: string }).kind === 'ShuffleLibrary'
+  );
+
+  return {
+    filter: humanizeSearchFilter(searchEffect.filter),
+    filterSpec: searchEffect.filter,
+    destination: searchEffect.destination || 'hand',
+    tapped: searchEffect.tapped,
+    shuffle: searchEffect.shuffle ?? hasShuffleEffect,
+    count: searchEffect.count,
+  };
+}
+
+function amountRefToChoiceCount(count: unknown): number {
+  return typeof count === 'number' && Number.isFinite(count)
+    ? Math.max(0, Math.floor(count))
+    : 1;
+}
+
+function libraryChoiceInfoFromEffects(effects: unknown[] | undefined): { mode: 'scry' | 'surveil'; count: number } | undefined {
+  if (!Array.isArray(effects)) return undefined;
+  const effect = effects.find((candidate): candidate is { kind: 'Scry' | 'Surveil'; count?: unknown } =>
+    typeof candidate === 'object'
+    && candidate !== null
+    && (((candidate as { kind?: string }).kind === 'Scry') || ((candidate as { kind?: string }).kind === 'Surveil')),
+  );
+  if (!effect) return undefined;
+  return {
+    mode: effect.kind === 'Scry' ? 'scry' : 'surveil',
+    count: amountRefToChoiceCount(effect.count),
+  };
+}
+
+function controllerIdForStackItem(item: StackItem | undefined): string | undefined {
+  if (!item) return undefined;
+  return item.kind === 'Spell' ? item.casterId : item.controllerId;
+}
+
+function normalizeOracleForFrontendParser(oracleText: string, cardName: string): string {
+  if (!cardName) return oracleText;
+  const escaped = cardName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return oracleText.replace(new RegExp(escaped, 'gi'), '~');
+}
+
+function spellEffectsForChoicePrompt(state: GameState, item: Extract<StackItem, { kind: 'Spell' }>): Effect[] {
+  const card = state.cards.get(item.cardInstanceId);
+  const def = card ? state.cardDefinitions.get(card.definitionId) : undefined;
+  if (!def) return [];
+
+  const override = getOverride(def.id, def.name);
+  if (override?.kind === 'Spell') return override.effects as Effect[];
+
+  const parsed = parseOracleText(normalizeOracleForFrontendParser(def.oracle_text, def.name));
+  if (parsed.kind === 'Spell') return parsed.effects as Effect[];
+  if (parsed.kind === 'Modal' && item.chosenModes?.length) {
+    const effects: Effect[] = [];
+    for (const modeIndex of item.chosenModes) {
+      const choice = parsed.modal.choices[modeIndex];
+      if (choice) effects.push(...(choice.effects as Effect[]));
+    }
+    return effects;
+  }
+  return [];
+}
+
+/** Pad a card list to the non-commander library size, or truncate if over. */
+function padDeckToSize(list: string[], colors: string[], targetSize: number): string[] {
+  if (list.length > targetSize) return list.slice(0, targetSize);
   const padded = [...list];
   const landOptions = colors
     .map(c => ({ W: 'Plains', U: 'Island', B: 'Swamp', R: 'Mountain', G: 'Forest' }[c]))
     .filter(Boolean) as string[];
   if (landOptions.length === 0) landOptions.push('Forest');
   let i = 0;
-  while (padded.length < 99) {
+  while (padded.length < targetSize) {
     padded.push(landOptions[i % landOptions.length]);
     i++;
   }
@@ -334,6 +907,90 @@ function couldCastWithLands(state: GameState, playerId: string, manaCost: ManaCo
   return findLandsToTap(state, playerId, manaCost, manaActions) !== null;
 }
 
+function shuffleCardEntries(entries: [string, CardInstance][]): [string, CardInstance][] {
+  const shuffled = [...entries];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  return shuffled;
+}
+
+function enumerateVirtualCastTargets(state: GameState, playerId: string, card: CardInstance): string[][] {
+  const specs = getSpellTargetSpecs(state, card);
+  if (specs.length === 0) return [[]];
+  if (specs.length === 1 && specs[0].count === 1) {
+    return getLegalTargets(state, playerId, specs[0]).map(target => [target]);
+  }
+  return [];
+}
+
+function getManaActionAmount(state: GameState, playerId: string, action: AIAction): number {
+  if (action.kind !== 'ActivateManaAbility') return 1;
+  const card = state.cards.get(action.cardInstanceId);
+  const def = card ? state.cardDefinitions.get(card.definitionId) : undefined;
+  const info = def?.manaProduction;
+  if (!info) return 1;
+
+  let amount = info.amounts[action.color] ?? 1;
+  if (info.amountScale === 'creaturesYouControl') {
+    const creatureCount = [...state.cards.values()].filter(instance => {
+      if (instance.ownerId !== playerId || instance.zone !== 'battlefield') return false;
+      const cardDef = state.cardDefinitions.get(instance.definitionId);
+      return cardDef?.card_types.includes('creature');
+    }).length;
+    amount *= creatureCount;
+  }
+  return Math.max(0, amount);
+}
+
+function manaSourceAutoTapRank(state: GameState, cardInstanceId: string): number {
+  const card = state.cards.get(cardInstanceId);
+  const def = card ? state.cardDefinitions.get(card.definitionId) : undefined;
+  if (!def) return 4;
+  if (def.card_types.includes('land')) return 0;
+  if (def.manaProduction?.requiresSacrifice || def.manaProduction?.sacrificeFilter || def.manaProduction?.activationZone === 'hand') return 4;
+  if (def.card_types.includes('artifact')) return 1;
+  if (def.card_types.includes('creature')) return 3;
+  return 2;
+}
+
+function manaCostValue(cost: ManaCost): number {
+  return cost.W + cost.U + cost.B + cost.R + cost.G + cost.C + cost.generic + (cost.hybrid?.length || 0);
+}
+
+function describeManaPaymentPlan(state: GameState, playerId: string, actions: AIAction[] | null): string | undefined {
+  if (!actions || actions.length === 0) return undefined;
+  const parts = actions
+    .filter((action): action is Extract<AIAction, { kind: 'ActivateManaAbility' }> =>
+      action.kind === 'ActivateManaAbility',
+    )
+    .map(action => {
+      const card = state.cards.get(action.cardInstanceId);
+      const def = card ? state.cardDefinitions.get(card.definitionId) : undefined;
+      const amount = getManaActionAmount(state, playerId, action);
+      const mana = amount > 1 ? `${amount}${action.color}` : action.color;
+      return `${def?.name || 'source'} -> ${mana}`;
+    });
+  if (parts.length === 0) return undefined;
+  const shown = parts.slice(0, 3).join(', ');
+  const extra = parts.length > 3 ? `, +${parts.length - 3} more` : '';
+  return `Auto-pay: ${shown}${extra}`;
+}
+
+function reducedSpellCost(state: GameState, playerId: string, def: CardDefinition, extraGeneric = 0): ManaCost {
+  const baseCost = parseManaString(def.mana_cost);
+  const totalCost: ManaCost = {
+    ...baseCost,
+    generic: baseCost.generic + extraGeneric,
+    hybrid: baseCost.hybrid?.map(options => [...options]),
+  };
+  const reduction = Math.min(totalCost.generic, getCostReduction(state, playerId, def));
+  return reduction > 0
+    ? { ...totalCost, generic: totalCost.generic - reduction }
+    : totalCost;
+}
+
 /**
  * Find ActivateManaAbility actions to tap lands to pay for a spell's mana cost.
  * Uses a greedy algorithm: pay colored costs first, then generic.
@@ -349,7 +1006,10 @@ function findLandsToTap(
   if (!player) return null;
 
   // Calculate what we still need after existing mana pool
-  const needed: ManaCost = { ...manaCost };
+  const needed: ManaCost = {
+    ...manaCost,
+    hybrid: manaCost.hybrid?.map(options => [...options]),
+  };
   const pool: ManaPool = { ...player.manaPool };
   const colorSymbols: ManaColor[] = ['W', 'U', 'B', 'R', 'G', 'C'];
 
@@ -359,6 +1019,19 @@ function findLandsToTap(
     needed[color] -= pay;
     pool[color] -= pay;
   }
+
+  const hybridNeeded: ManaColor[][] = [];
+  for (const options of needed.hybrid || []) {
+    const poolColor = [...options].sort((a, b) => pool[b] - pool[a])
+      .find(color => pool[color] > 0);
+    if (poolColor) {
+      pool[poolColor] -= 1;
+    } else {
+      hybridNeeded.push(options);
+    }
+  }
+  needed.hybrid = hybridNeeded;
+
   // Use remaining pool for generic
   let genericNeeded = needed.generic;
   for (const color of colorSymbols) {
@@ -369,7 +1042,7 @@ function findLandsToTap(
   needed.generic = genericNeeded;
 
   // Check if we still need any mana
-  const totalNeeded = needed.W + needed.U + needed.B + needed.R + needed.G + needed.C + needed.generic;
+  const totalNeeded = needed.W + needed.U + needed.B + needed.R + needed.G + needed.C + needed.generic + (needed.hybrid?.length || 0);
   if (totalNeeded === 0) return []; // Already have enough in pool
 
   // Group mana actions by card instance (a dual land might produce multiple colors)
@@ -392,7 +1065,10 @@ function findLandsToTap(
       const candidates = [...actionsByCard.entries()]
         .filter(([id]) => !usedCards.has(id))
         .filter(([, actions]) => actions.some(a => a.kind === 'ActivateManaAbility' && a.color === color))
-        .sort((a, b) => a[1].length - b[1].length);
+        .sort((a, b) =>
+          manaSourceAutoTapRank(state, a[0]) - manaSourceAutoTapRank(state, b[0])
+          || a[1].length - b[1].length
+        );
 
       if (candidates.length === 0) return null; // Can't pay colored cost
 
@@ -402,24 +1078,46 @@ function findLandsToTap(
       )!;
       result.push(matchingAction);
       usedCards.add(cardId);
-      needed[color]--;
+      needed[color] = Math.max(0, needed[color] - getManaActionAmount(state, playerId, matchingAction));
     }
+  }
+
+  for (const options of needed.hybrid || []) {
+    const candidates = [...actionsByCard.entries()]
+      .filter(([id]) => !usedCards.has(id))
+      .filter(([, actions]) =>
+        actions.some(a => a.kind === 'ActivateManaAbility' && options.includes(a.color)),
+      )
+      .sort((a, b) =>
+        manaSourceAutoTapRank(state, a[0]) - manaSourceAutoTapRank(state, b[0])
+        || a[1].length - b[1].length
+      );
+
+    if (candidates.length === 0) return null;
+
+    const [cardId, actions] = candidates[0];
+    const matchingAction = actions.find(
+      a => a.kind === 'ActivateManaAbility' && options.includes(a.color),
+    )!;
+    result.push(matchingAction);
+    usedCards.add(cardId);
   }
 
   // Second pass: tap lands for generic mana (prefer lands that only produce colorless)
   while (needed.generic > 0) {
     let found = false;
     // Prefer colorless-only lands first, then any available land
-    const cardEntries = [...actionsByCard.entries()].sort((a, b) => {
-      // Prefer cards with fewer color options (colorless-only first)
-      return a[1].length - b[1].length;
-    });
+    const cardEntries = [...actionsByCard.entries()].sort((a, b) =>
+      manaSourceAutoTapRank(state, a[0]) - manaSourceAutoTapRank(state, b[0])
+      || a[1].length - b[1].length
+    );
     for (const [cardId, actions] of cardEntries) {
       if (usedCards.has(cardId)) continue;
       if (actions.length > 0) {
-        result.push(actions[0]); // Tap for any color
+        const action = actions[0];
+        result.push(action); // Tap for any color
         usedCards.add(cardId);
-        needed.generic--;
+        needed.generic = Math.max(0, needed.generic - Math.max(1, getManaActionAmount(state, playerId, action)));
         found = true;
         break;
       }
@@ -428,6 +1126,206 @@ function findLandsToTap(
   }
 
   return result;
+}
+
+function hasAutoTapCastOption(state: GameState, playerId: string, engineActions: AIAction[]): boolean {
+  const existingCastIds = new Set(
+    engineActions
+      .filter(a => a.kind === 'CastSpell')
+      .map(a => a.cardInstanceId),
+  );
+
+  const player = state.players.find(p => p.id === playerId);
+  const playerIndex = state.players.findIndex(p => p.id === playerId);
+  if (!player || playerIndex < 0) return false;
+
+  const isMainPhase = state.phase === 'precombat_main' || state.phase === 'postcombat_main';
+  const canCastWithAutoTap = (card: CardInstance): boolean => {
+    if (existingCastIds.has(card.instanceId)) return false;
+    const def = getCardDefinition(state, card);
+    if (def.card_types.includes('land')) return false;
+
+    const isInstant = def.card_types.includes('instant');
+    const hasFlash = def.keywords.includes('Flash');
+    if (!isInstant && !hasFlash) {
+      if (state.activePlayerIndex !== playerIndex) return false;
+      if (!isMainPhase) return false;
+      if (state.stack.length > 0) return false;
+    }
+
+    const taxAmount = card.zone === 'command'
+      ? getCommanderCastCount(player, card.instanceId) * 2
+      : 0;
+    const totalCost = reducedSpellCost(state, playerId, def, taxAmount);
+    if (!couldCastWithLands(state, playerId, totalCost)) return false;
+
+    return enumerateVirtualCastTargets(state, playerId, card).length > 0;
+  };
+
+  const hand = getCardsInZone(state, playerId, 'hand');
+  if (hand.some(canCastWithAutoTap)) return true;
+
+  const commandZone = getCardsInZone(state, playerId, 'command');
+  return commandZone.some(card => {
+    const isCommander = card.isCommander
+      || player.commanderInstanceIds?.includes(card.instanceId)
+      || player.commanderInstanceId === card.instanceId;
+    return isCommander && canCastWithAutoTap(card);
+  });
+}
+
+function hasAutoTapEquipOption(state: GameState, playerId: string, engineActions: AIAction[]): boolean {
+  const existingEquipKeys = new Set(
+    engineActions
+      .filter(a => a.kind === 'Equip')
+      .map(a => `${a.equipmentInstanceId}>${a.targetCreatureId}`),
+  );
+
+  const playerIndex = state.players.findIndex(p => p.id === playerId);
+  if (playerIndex < 0) return false;
+  if (state.activePlayerIndex !== playerIndex) return false;
+  if (state.phase !== 'precombat_main' && state.phase !== 'postcombat_main') return false;
+  if (state.stack.length > 0) return false;
+
+  const battlefield = getCardsInZone(state, playerId, 'battlefield');
+  const creatures = battlefield.filter(card => isEffectiveCreature(state, card.instanceId));
+  if (creatures.length === 0) return false;
+
+  for (const equipment of battlefield) {
+    const def = getCardDefinition(state, equipment);
+    if (!def.isEquipment || !def.equipCost) continue;
+    const cost: ManaCost = { ...def.equipCost };
+    if (!couldCastWithLands(state, playerId, cost)) continue;
+    if (creatures.some(creature =>
+      equipment.attachedTo !== creature.instanceId
+      && !existingEquipKeys.has(`${equipment.instanceId}>${creature.instanceId}`)
+    )) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function hasMeaningfulHumanActionForAutoSkip(state: GameState, playerId: string): boolean {
+  const actions = getLegalActions(state, playerId);
+  if (actions.some(isMeaningfulAutoSkipAction)) return true;
+  return hasAutoTapCastOption(state, playerId, actions) || hasAutoTapEquipOption(state, playerId, actions);
+}
+
+function getOpeningHandStats(state: GameState, playerId: string) {
+  const hand = getCardsInZone(state, playerId, 'hand');
+  let lands = 0;
+  let cheapPlays = 0;
+  let rampSources = 0;
+
+  for (const card of hand) {
+    const def = getCardDefinition(state, card);
+    const isLand = def.card_types.includes('land');
+    if (isLand) lands += 1;
+    if (!isLand && def.cmc <= 3) cheapPlays += 1;
+    if (def.manaProduction || /add\s+\{?[wubrgc]/i.test(def.oracle_text)) rampSources += 1;
+  }
+
+  return { hand, lands, nonlands: hand.length - lands, cheapPlays, rampSources };
+}
+
+function shouldAIMulliganOpeningHand(state: GameState, playerId: string, mulligansTaken: number): boolean {
+  const stats = getOpeningHandStats(state, playerId);
+  if (stats.hand.length < 7 || mulligansTaken >= 2) return false;
+
+  if (stats.lands <= 1) return true;
+  if (stats.lands >= 6) return true;
+  if (stats.lands === 2 && stats.cheapPlays === 0 && stats.rampSources === 0) return true;
+  if (stats.lands === 5 && stats.cheapPlays === 0) return true;
+
+  return false;
+}
+
+function redrawOpeningHand(state: GameState, playerId: string, handSize = 7): GameState {
+  const pool: [string, CardInstance][] = [];
+  const otherEntries: [string, CardInstance][] = [];
+
+  for (const [id, card] of state.cards) {
+    if (card.ownerId === playerId && (card.zone === 'hand' || card.zone === 'library')) {
+      pool.push([id, { ...card, zone: 'library' as Zone }]);
+    } else {
+      otherEntries.push([id, card]);
+    }
+  }
+
+  const shuffled = shuffleCardEntries(pool).map(([id, card], index) => [
+    id,
+    { ...card, zone: index < handSize ? 'hand' as Zone : 'library' as Zone },
+  ] as [string, CardInstance]);
+
+  return { ...state, cards: new Map([...otherEntries, ...shuffled]) };
+}
+
+function bottomOpeningHandCards(state: GameState, playerId: string, count: number): GameState {
+  if (count <= 0) return state;
+
+  const hand = getCardsInZone(state, playerId, 'hand');
+  if (hand.length === 0) return state;
+
+  const stats = getOpeningHandStats(state, playerId);
+  const scored = hand.map(card => {
+    const def = getCardDefinition(state, card);
+    const isLand = def.card_types.includes('land');
+    let score = def.cmc;
+    if (isLand && stats.lands > 3) score += 10;
+    if (isLand && stats.lands <= 2) score -= 10;
+    if (!isLand && stats.lands <= 2 && def.cmc >= 5) score += 6;
+    if (!isLand && def.cmc <= 2) score -= 2;
+    return { card, score };
+  });
+
+  const toBottom = new Set(
+    scored
+      .sort((a, b) => b.score - a.score)
+      .slice(0, Math.min(count, hand.length))
+      .map(item => item.card.instanceId),
+  );
+
+  const keptEntries: [string, CardInstance][] = [];
+  const bottomEntries: [string, CardInstance][] = [];
+  for (const [id, card] of state.cards) {
+    if (toBottom.has(id)) {
+      bottomEntries.push([id, { ...card, zone: 'library' as Zone }]);
+    } else {
+      keptEntries.push([id, card]);
+    }
+  }
+
+  return { ...state, cards: new Map([...keptEntries, ...bottomEntries]) };
+}
+
+function runAIMulligans(
+  state: GameStateWithAI,
+  aiIds: string[],
+  aiCommanderNames: Record<string, string>,
+): { state: GameStateWithAI; messages: string[] } {
+  let current: GameState = state;
+  const messages: string[] = [];
+
+  for (const aiId of aiIds) {
+    let mulligansTaken = 0;
+    while (shouldAIMulliganOpeningHand(current, aiId, mulligansTaken)) {
+      current = redrawOpeningHand(current, aiId);
+      mulligansTaken += 1;
+      messages.push(`${aiCommanderNames[aiId] || aiId} mulligans to ${7 - mulligansTaken}.`);
+    }
+
+    current = bottomOpeningHandCards(current, aiId, mulligansTaken);
+    if (mulligansTaken === 0) {
+      messages.push(`${aiCommanderNames[aiId] || aiId} keeps their hand.`);
+    } else {
+      const stats = getOpeningHandStats(current, aiId);
+      messages.push(`${aiCommanderNames[aiId] || aiId} keeps ${stats.hand.length} cards.`);
+    }
+  }
+
+  return { state: current as GameStateWithAI, messages };
 }
 
 /** Format a mana pool as a readable string like "2R 3C" or "empty" */
@@ -483,11 +1381,13 @@ function deriveSimpleState(
   const stackDisplay = engine.stack.map(item => {
     let name = '(spell/ability)';
     let casterId = '';
+    let card: SimpleCard | undefined;
     if (item.kind === 'Spell') {
       const inst = engine.cards.get(item.cardInstanceId);
       if (inst) {
         const def = engine.cardDefinitions.get(inst.definitionId);
         name = def?.name || '(unknown spell)';
+        if (def) card = toSimpleCard(inst, def);
       }
       casterId = item.casterId;
     } else if (item.kind === 'TriggeredAbility') {
@@ -495,6 +1395,7 @@ function deriveSimpleState(
       if (inst) {
         const def = engine.cardDefinitions.get(inst.definitionId);
         name = `${def?.name || '?'} trigger`;
+        if (def) card = toSimpleCard(inst, def);
       }
       casterId = item.controllerId;
     } else if (item.kind === 'ActivatedAbility') {
@@ -502,10 +1403,18 @@ function deriveSimpleState(
       if (inst) {
         const def = engine.cardDefinitions.get(inst.definitionId);
         name = `${def?.name || '?'} ability`;
+        if (def) card = toSimpleCard(inst, def);
       }
       casterId = item.controllerId;
     }
-    return { id: item.id, name, casterId };
+    return {
+      id: item.id,
+      kind: item.kind,
+      name,
+      casterId,
+      card,
+      targetNames: item.targets.map(targetId => displayNameForTarget(engine, targetId)),
+    };
   });
 
   // Determine game-over: human lost or ALL AIs lost
@@ -584,6 +1493,7 @@ function captureLogEntry(
   action: string,
   manaSpent: number,
   specificPlayerId?: string,
+  decision?: DecisionReview,
 ): GameLogEntry {
   const humanPlayer = engine.players.find(p => p.id === humanId);
 
@@ -633,6 +1543,8 @@ function captureLogEntry(
       ai: aiTotalHand,
     },
     timestamp: Date.now(),
+    playByPlay: player === 'human' ? playByPlayFromDecision(action, decision) : `${action}.`,
+    decision,
   };
 }
 
@@ -657,18 +1569,21 @@ function toSimpleLegalAction(action: AIAction, engineState: GameState): SimpleLe
         kind: 'CastSpell',
         cardInstanceId: action.cardInstanceId,
         cardName: def?.name,
-        label: `Cast ${def?.name || 'spell'}`,
+        label: `Cast ${def?.name || 'spell'}${targetLabelSuffix(engineState, action.targets)}`,
         _engineAction: action,
       };
     }
     case 'ActivateManaAbility': {
       const inst = engineState.cards.get(action.cardInstanceId);
       const def = inst ? engineState.cardDefinitions.get(inst.definitionId) : undefined;
+      const verb = def?.manaProduction?.activationZone === 'hand'
+        ? 'Exile'
+        : 'Tap';
       return {
         kind: 'ActivateManaAbility',
         cardInstanceId: action.cardInstanceId,
         cardName: def?.name,
-        label: `Tap ${def?.name || 'permanent'} for ${action.color}`,
+        label: `${verb} ${def?.name || 'permanent'} for ${action.color}`,
         _engineAction: action,
       };
     }
@@ -679,11 +1594,17 @@ function toSimpleLegalAction(action: AIAction, engineState: GameState): SimpleLe
         kind: 'ActivateAbility',
         cardInstanceId: action.cardInstanceId,
         cardName: def?.name,
-        label: `Activate ${def?.name || 'ability'}`,
+        label: `Activate ${def?.name || 'ability'}${targetLabelSuffix(engineState, action.targets)}`,
         _engineAction: action,
       };
     }
     case 'DeclareAttackers': {
+      const attackerInst = action.attacks.length === 1
+        ? engineState.cards.get(action.attacks[0].cardInstanceId)
+        : undefined;
+      const attackerDef = attackerInst
+        ? engineState.cardDefinitions.get(attackerInst.definitionId)
+        : undefined;
       const names = action.attacks.map(a => {
         const inst = engineState.cards.get(a.cardInstanceId);
         const def = inst ? engineState.cardDefinitions.get(inst.definitionId) : undefined;
@@ -697,6 +1618,8 @@ function toSimpleLegalAction(action: AIAction, engineState: GameState): SimpleLe
       ];
       return {
         kind: 'DeclareAttackers',
+        cardInstanceId: attackerInst?.instanceId,
+        cardName: attackerDef?.name,
         label: action.attacks.length > 0
           ? `Attack ${defenderNames.join(', ')} with ${names.join(', ')}`
           : 'Skip attacks',
@@ -704,8 +1627,16 @@ function toSimpleLegalAction(action: AIAction, engineState: GameState): SimpleLe
       };
     }
     case 'DeclareBlockers': {
+      const blockerInst = action.blocks.length === 1
+        ? engineState.cards.get(action.blocks[0].cardInstanceId)
+        : undefined;
+      const blockerDef = blockerInst
+        ? engineState.cardDefinitions.get(blockerInst.definitionId)
+        : undefined;
       return {
         kind: 'DeclareBlockers',
+        cardInstanceId: blockerInst?.instanceId,
+        cardName: blockerDef?.name,
         label: action.blocks.length > 0
           ? `Block with ${action.blocks.length} creature(s)`
           : 'No blocks',
@@ -718,7 +1649,7 @@ function toSimpleLegalAction(action: AIAction, engineState: GameState): SimpleLe
       const targetInst = engineState.cards.get(action.targetCreatureId);
       const targetDef = targetInst ? engineState.cardDefinitions.get(targetInst.definitionId) : undefined;
       return {
-        kind: 'ActivateAbility',
+        kind: 'Equip',
         cardInstanceId: action.equipmentInstanceId,
         cardName: equipDef?.name,
         label: `Equip ${equipDef?.name || 'equipment'} to ${targetDef?.name || 'creature'}`,
@@ -755,19 +1686,32 @@ export function useShelectorGame() {
   const [error, setError] = useState<string | null>(null);
   const [mulliganPhase, setMulliganPhase] = useState(false);
   const [mulliganCount, setMulliganCount] = useState(0);
+  const [selectedMulliganBottomIds, setSelectedMulliganBottomIds] = useState<string[]>([]);
   const [gameLog, setGameLog] = useState<GameLogEntry[]>([]);
+  const [authorityUpdates, setAuthorityUpdates] = useState<EngineStateUpdate[]>([]);
+  const [lastStateUpdate, setLastStateUpdate] = useState<EngineStateUpdate | null>(null);
+  const [currentPrompt, setCurrentPrompt] = useState<EnginePrompt | null>(null);
   const [lastPlayedCard, setLastPlayedCard] = useState<LastPlayedCard | null>(null);
   const [discardPhase, setDiscardPhase] = useState(false);
   const [discardCount, setDiscardCount] = useState(0);
   const [tutorPhase, setTutorPhase] = useState(false);
-  const [tutorCards, setTutorCards] = useState<{ instanceId: string; name: string; typeLine: string; manaCost: string }[]>([]);
+  const [tutorCards, setTutorCards] = useState<TutorCardOption[]>([]);
   const [tutorTitle, setTutorTitle] = useState('');
-  const tutorDestinationRef = useRef<string>('hand');
+  const [libraryChoice, setLibraryChoice] = useState<LibraryManipulationChoice | null>(null);
+  const tutorDestinationRef = useRef<SearchDestination>('hand');
+  const tutorFilterSpecRef = useRef<SearchFilterSpec | undefined>(undefined);
+  const tutorTappedRef = useRef(false);
+  const tutorShuffleRef = useRef(true);
   // Number of additional cards the active tutor can still find (for "up to N" searches).
   // 0 means the current pick is the last one; > 0 means the picker re-opens after each pick.
   const tutorRemainingRef = useRef<number>(0);
   const tutorFilterRef = useRef<string | undefined>(undefined);
   const tutorSourceNameRef = useRef<string>('Search');
+  const pendingCastChoiceActionRef = useRef<SimpleLegalAction | null>(null);
+  const pendingCastChoiceModeRef = useRef<PendingCastChoiceMode | null>(null);
+  const pendingPlayLandChoiceRef = useRef<PendingPlayLandChoice | null>(null);
+  const pendingLibraryChoiceRef = useRef<{ stackItemId: string; mode: 'scry' | 'surveil' } | null>(null);
+  const submitActionRef = useRef<((action: SimpleLegalAction) => void) | null>(null);
   const [undosRemaining, setUndosRemaining] = useState(10);
 
   // Undo history — snapshots of engine state + chat messages before each human action
@@ -789,7 +1733,30 @@ export function useShelectorGame() {
   const humanIdRef = useRef('human');
   const aiIdsRef = useRef<string[]>(['ai1']);
   const discardCountRef = useRef(0);
+  const [newPlayerMode, setNewPlayerModeState] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return window.localStorage.getItem('deckreps_new_player_mode') === '1';
+  });
+
+  const setNewPlayerMode = useCallback((on: boolean) => {
+    setNewPlayerModeState(on);
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem('deckreps_new_player_mode', on ? '1' : '0');
+    }
+  }, []);
   const [coachMode, setCoachMode] = useState(true); // On by default — this is a learning tool
+  const [holdPriority, setHoldPriorityState] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return window.localStorage.getItem('deckreps_hold_priority') === '1';
+  });
+  const holdPriorityRef = useRef(holdPriority);
+  const setHoldPriority = useCallback((on: boolean) => {
+    holdPriorityRef.current = on;
+    setHoldPriorityState(on);
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem('deckreps_hold_priority', on ? '1' : '0');
+    }
+  }, []);
 
   // try* action error state (Task 7 — game-reliability-refactor)
   const [actionError, setActionError] = useState<{ reason: string; message: string } | null>(null);
@@ -800,7 +1767,8 @@ export function useShelectorGame() {
 
   // Track which mana sources were tapped but mana not yet spent on a spell
   // These can be untapped. Once a spell is cast, the taps become "committed" and can't be reversed.
-  const uncommittedTapsRef = useRef<Set<string>>(new Set());
+  const uncommittedTapsRef = useRef<Map<string, { color: ManaColor; amount: number }>>(new Map());
+  const stepEffectsDoneRef = useRef<Set<string>>(new Set());
 
   const addMessage = useCallback((role: ChatMessage['role'], text: string) => {
     setChatMessages(prev => [...prev, { role, text, timestamp: Date.now() }]);
@@ -808,6 +1776,33 @@ export function useShelectorGame() {
 
   const appendLog = useCallback((entry: GameLogEntry) => {
     setGameLog(prev => [...prev, entry]);
+  }, []);
+
+  const recordStateUpdate = useCallback((
+    before: GameState,
+    after: GameState,
+    action: SimpleLegalAction,
+    events: ActionGameEvent[],
+    options: { playerId?: string; source?: 'ui' | 'ai' | 'system' } = {},
+  ) => {
+    const playerId = options.playerId || humanIdRef.current;
+    const request = createClientActionRequest(before, playerId, action._engineAction, {
+      source: options.source || 'ui',
+      label: action.label,
+    });
+    const update = buildStateUpdate(
+      before,
+      after,
+      {
+        requestId: request.id,
+        playerId,
+        actionKind: request.action.kind,
+        label: request.label,
+      },
+      events,
+    );
+    setLastStateUpdate(update);
+    setAuthorityUpdates(prev => [...prev.slice(-199), update]);
   }, []);
 
   const rememberLastPlayedCard = useCallback((
@@ -896,14 +1891,17 @@ export function useShelectorGame() {
           .filter(a => a.kind === 'CastSpell')
           .map(a => a.cardInstanceId),
       );
-      const manaActions = engineActions.filter(a => a.kind === 'ActivateManaAbility');
 
       const humanId = humanIdRef.current;
       const player = engine.players.find(p => p.id === humanId);
       const playerIndex = engine.players.findIndex(p => p.id === humanId);
       const isMainPhase = engine.phase === 'precombat_main' || engine.phase === 'postcombat_main';
+      const availableManaActions = engineActions.filter(
+        (a): a is Extract<AIAction, { kind: 'ActivateManaAbility' }> =>
+          a.kind === 'ActivateManaAbility',
+      );
 
-      if (player && manaActions.length > 0) {
+      if (player) {
         // Check cards in hand
         const hand = getCardsInZone(engine, humanId, 'hand');
         for (const card of hand) {
@@ -921,22 +1919,27 @@ export function useShelectorGame() {
             if (engine.stack.length > 0) continue;
           }
 
-          // Check if player could pay the cost with available lands
-          const baseCost = parseManaString(def.mana_cost);
-          if (couldCastWithLands(engine, humanId, baseCost)) {
-            // Create a synthetic CastSpell action (no targets for now — simple spells)
-            const castAction: AIAction = {
-              kind: 'CastSpell',
-              cardInstanceId: card.instanceId,
-              targets: [],
-            };
-            simpleActions.push({
-              kind: 'CastSpell',
-              cardInstanceId: card.instanceId,
-              cardName: def.name,
-              label: `Cast ${def.name}`,
-              _engineAction: castAction,
-            });
+          // Check if player could pay the reduced cost with available lands.
+          const totalCost = reducedSpellCost(engine, humanId, def);
+          const paymentPlan = findLandsToTap(engine, humanId, totalCost, availableManaActions);
+          if (paymentPlan) {
+            // Create synthetic cast actions with required targets, including stack targets.
+            const targetSets = enumerateVirtualCastTargets(engine, humanId, card);
+            for (const targets of targetSets) {
+              const castAction: AIAction = {
+                kind: 'CastSpell',
+                cardInstanceId: card.instanceId,
+                targets,
+              };
+              simpleActions.push({
+                kind: 'CastSpell',
+                cardInstanceId: card.instanceId,
+                cardName: def.name,
+                label: `Cast ${def.name}${targetLabelSuffix(engine, targets)}`,
+                paymentPreview: describeManaPaymentPlan(engine, humanId, paymentPlan),
+                _engineAction: castAction,
+              });
+            }
           }
         }
 
@@ -944,7 +1947,7 @@ export function useShelectorGame() {
         const commandZone = getCardsInZone(engine, humanId, 'command');
         for (const card of commandZone) {
           if (existingCastIds.has(card.instanceId)) continue;
-          const isCommander = player.commanderInstanceId === card.instanceId;
+          const isCommander = card.isCommander || player.commanderInstanceIds?.includes(card.instanceId) || player.commanderInstanceId === card.instanceId;
           if (!isCommander) continue;
           const def = getCardDefinition(engine, card);
           if (def.card_types.includes('land')) continue;
@@ -957,29 +1960,95 @@ export function useShelectorGame() {
             if (engine.stack.length > 0) continue;
           }
 
-          const baseCost = parseManaString(def.mana_cost);
-          const taxAmount = player.commanderCastCount * 2;
-          const totalCost: ManaCost = { ...baseCost, generic: baseCost.generic + taxAmount };
-          if (couldCastWithLands(engine, humanId, totalCost)) {
-            const castAction: AIAction = {
-              kind: 'CastSpell',
-              cardInstanceId: card.instanceId,
-              targets: [],
-            };
-            simpleActions.push({
-              kind: 'CastSpell',
-              cardInstanceId: card.instanceId,
-              cardName: def.name,
-              label: `Cast ${def.name}`,
-              _engineAction: castAction,
-            });
+          const taxAmount = getCommanderCastCount(player, card.instanceId) * 2;
+          const totalCost = reducedSpellCost(engine, humanId, def, taxAmount);
+          const paymentPlan = findLandsToTap(engine, humanId, totalCost, availableManaActions);
+          if (paymentPlan) {
+            const targetSets = enumerateVirtualCastTargets(engine, humanId, card);
+            for (const targets of targetSets) {
+              const castAction: AIAction = {
+                kind: 'CastSpell',
+                cardInstanceId: card.instanceId,
+                targets,
+              };
+              simpleActions.push({
+                kind: 'CastSpell',
+                cardInstanceId: card.instanceId,
+                cardName: def.name,
+                label: `Cast ${def.name}${targetLabelSuffix(engine, targets)}`,
+                paymentPreview: describeManaPaymentPlan(engine, humanId, paymentPlan),
+                _engineAction: castAction,
+              });
+            }
+          }
+        }
+
+        // Add virtual Equip actions for equipment that can be paid for by auto-tapping.
+        // The engine only returns Equip once the mana is already floating.
+        if (engine.activePlayerIndex === playerIndex && isMainPhase && engine.stack.length === 0) {
+          const existingEquipKeys = new Set(
+            engineActions
+              .filter(a => a.kind === 'Equip')
+              .map(a => `${a.equipmentInstanceId}>${a.targetCreatureId}`),
+          );
+          const battlefield = getCardsInZone(engine, humanId, 'battlefield');
+          const creatures = battlefield.filter(card => isEffectiveCreature(engine, card.instanceId));
+          const equipment = battlefield.filter(card => {
+            const def = getCardDefinition(engine, card);
+            return Boolean(def.isEquipment && def.equipCost);
+          });
+
+          for (const equipCard of equipment) {
+            const equipDef = getCardDefinition(engine, equipCard);
+            if (!equipDef.equipCost) continue;
+            const equipCost: ManaCost = { ...equipDef.equipCost };
+            const paymentPlan = findLandsToTap(engine, humanId, equipCost, availableManaActions);
+            if (!paymentPlan) continue;
+
+            for (const creature of creatures) {
+              if (equipCard.attachedTo === creature.instanceId) continue;
+              const key = `${equipCard.instanceId}>${creature.instanceId}`;
+              if (existingEquipKeys.has(key)) continue;
+
+              const targetDef = getCardDefinition(engine, creature);
+              const equipAction: AIAction = {
+                kind: 'Equip',
+                equipmentInstanceId: equipCard.instanceId,
+                targetCreatureId: creature.instanceId,
+              };
+              simpleActions.push({
+                kind: 'Equip',
+                cardInstanceId: equipCard.instanceId,
+                cardName: equipDef.name,
+                label: `Equip ${equipDef.name} to ${targetDef.name}`,
+                paymentPreview: describeManaPaymentPlan(engine, humanId, paymentPlan),
+                _engineAction: equipAction,
+              });
+            }
           }
         }
       }
 
+      const canSkipRestOfTurn = engine.stack.length === 0;
+      if (canSkipRestOfTurn) {
+        simpleActions.unshift({
+          kind: 'SkipRestOfTurn',
+          label: 'Skip Rest of Turn',
+          _engineAction: { kind: 'PassPriority' },
+        });
+      } else if (isEmptyWindowSkippable(simpleActions)) {
+        simpleActions.unshift({
+          kind: 'SkipEmptyPhases',
+          label: engine.stack.length > 0 ? 'Pass Empty Responses' : 'Skip Empty Phases',
+          _engineAction: { kind: 'PassPriority' },
+        });
+      }
+
       setLegalActions(simpleActions);
+      setCurrentPrompt(buildVisibleActionPrompt(engine, humanIdRef.current, simpleActions));
     } else {
       setLegalActions([]);
+      setCurrentPrompt(buildActionPrompt(engine, simple.priorityPlayerId) || null);
     }
   }, []);
 
@@ -1016,7 +2085,7 @@ export function useShelectorGame() {
           const costStr = def?.mana_cost || '?';
           if (def) {
             const cost = parseManaString(def.mana_cost);
-            manaSpent = cost.W + cost.U + cost.B + cost.R + cost.G + cost.C + cost.generic;
+            manaSpent = manaCostValue(cost);
           }
           messages.push({ role: 'shelector', text: `${actionText} (cost: ${costStr}). Floating: ${aiPoolStr}` });
           rememberLastPlayedCard(state, a.cardInstanceId, inst?.ownerId || aiIdsRef.current[0], 'Cast');
@@ -1195,16 +2264,6 @@ export function useShelectorGame() {
     [],
   );
 
-  /** Pass priority for all players in the game (multiplayer-safe). */
-  const passAllPriority = useCallback((s: GameState): GameState => {
-    let current = s;
-    const count = current.players.length;
-    for (let i = 0; i < count; i++) {
-      current = passPriority(current);
-    }
-    return current;
-  }, []);
-
   /**
    * Core game loop: follows the proven pattern from the integration test.
    *
@@ -1240,46 +2299,56 @@ export function useShelectorGame() {
         // Determine if this is a human-controlled search effect
         let controllerId: string | undefined;
         let sourceName = 'Search';
-        let searchInfo: typeof Object.prototype | undefined;
+        let searchInfo: StackSearchInfo | undefined;
 
         if (top.kind === 'Spell' && top.casterId === humanIdRef.current) {
           // Spell with search (Demonic Tutor, etc.)
           controllerId = top.casterId;
           const tc = state.cards.get(top.cardInstanceId);
           const td = tc ? state.cardDefinitions.get(tc.definitionId) : undefined;
-          if (td?.searchAbility) {
-            searchInfo = td.searchAbility;
-            sourceName = td.name;
+          sourceName = td?.name || sourceName;
+          const effectSearch = searchInfoFromEffects(spellEffectsForChoicePrompt(state, top));
+          if (effectSearch) {
+            searchInfo = effectSearch;
+          } else if (td?.searchAbility) {
+            const ability = td.searchAbility as {
+              filter?: string;
+              destination: SearchDestination;
+              tapped?: boolean;
+              shuffle: boolean;
+              count?: number;
+            };
+            searchInfo = ability;
           }
         } else if (top.kind === 'ActivatedAbility' && top.controllerId === humanIdRef.current) {
           // Activated ability with search (fetch lands, Sakura-Tribe Elder, etc.)
           controllerId = top.controllerId;
           const sourceCard = state.cards.get(top.sourceInstanceId);
           const sourceDef = sourceCard ? state.cardDefinitions.get(sourceCard.definitionId) : undefined;
-          if (sourceDef?.searchAbility) {
-            searchInfo = sourceDef.searchAbility;
-            sourceName = sourceDef.name;
-          }
-          // Also check the ability's effects for SearchLibrary
-          if (!searchInfo && top.ability) {
-            const effects = top.ability.effects as { kind: string }[];
-            const hasSearch = effects?.some(e => e.kind === 'SearchLibrary');
-            if (hasSearch && sourceDef) {
-              // Parse search info from oracle text
-              const oracle = sourceDef.oracle_text.toLowerCase();
-              let filter: string | undefined;
-              if (oracle.includes('basic land')) filter = 'basic land';
-              else if (oracle.includes('land')) filter = 'land';
-              const destination = oracle.includes('onto the battlefield') ? 'battlefield' as const : 'hand' as const;
-              const tapped = oracle.includes('tapped');
-              searchInfo = { filter, destination, tapped, shuffle: oracle.includes('shuffle') };
-              sourceName = sourceDef.name;
+          sourceName = sourceDef?.name || sourceName;
+          // Prefer the actual stack ability effects. Cached searchAbility is a
+          // coarse card-level hint and can lose subtype filters such as
+          // "Mountain or Plains" on typed fetch lands.
+          if (top.ability) {
+            const effectSearch = searchInfoFromEffects(top.ability.effects);
+            if (effectSearch) {
+              searchInfo = effectSearch;
             }
+          }
+          if (!searchInfo && sourceDef?.searchAbility) {
+            const ability = sourceDef.searchAbility as {
+              filter?: string;
+              destination: SearchDestination;
+              tapped?: boolean;
+              shuffle: boolean;
+              count?: number;
+            };
+            searchInfo = ability;
           }
         }
 
         if (!controllerId || !searchInfo) return false;
-        const search = searchInfo as { filter?: string; destination: string; tapped?: boolean; shuffle: boolean; count?: number };
+        const search = searchInfo;
 
         // Remove the item from stack
         const newStack = state.stack.slice(0, -1);
@@ -1291,20 +2360,38 @@ export function useShelectorGame() {
           if (tc) newCards.set(tc.instanceId, { ...tc, zone: 'graveyard' as Zone });
         }
 
-        state = { ...state, stack: newStack, cards: newCards };
+        state = {
+          ...state,
+          stack: newStack,
+          cards: newCards,
+          priorityPlayerIndex: state.activePlayerIndex,
+          hasPriorityPassed: state.players.map(() => false),
+        };
         engineRef.current = state as GameStateWithAI;
 
         // Build filtered library card list
         const libraryCards = getCardsInZone(state, humanIdRef.current, 'library');
+        const pickerMetadata = searchPickerMetadata(search);
         const pickerCards = libraryCards.map(c => {
           const d = getCardDefinition(state, c);
-          return { instanceId: c.instanceId, name: d.name, typeLine: d.type_line, manaCost: d.mana_cost };
+          return {
+            instanceId: c.instanceId,
+            name: d.name,
+            typeLine: d.type_line,
+            manaCost: d.mana_cost,
+            oracleText: d.oracle_text,
+            colors: d.colors,
+            cmc: d.cmc,
+            ...pickerMetadata,
+          };
         }).filter(c => {
-          if (!search.filter) return true;
-          return c.typeLine.toLowerCase().includes(search.filter);
+          return cardMatchesSearch(c, search.filterSpec, search.filter);
         }).sort((a, b) => a.name.localeCompare(b.name));
 
-        tutorDestinationRef.current = search.destination as 'hand' | 'battlefield' | 'top' | 'graveyard';
+        tutorDestinationRef.current = search.destination;
+        tutorFilterSpecRef.current = search.filterSpec;
+        tutorTappedRef.current = !!search.tapped;
+        tutorShuffleRef.current = search.shuffle;
         // For "up to N" searches: track how many additional picks remain after this one.
         const totalCount = Math.max(1, search.count ?? 1);
         tutorRemainingRef.current = totalCount - 1;
@@ -1318,6 +2405,100 @@ export function useShelectorGame() {
         messages.push({ role: 'system', text: `${sourceName} — search your library${filterDesc}${countSuffix}.` });
         return true;
       };
+
+      const tryPauseForLibraryChoice = (): boolean => {
+        if (state.stack.length === 0) return false;
+        const top = state.stack[state.stack.length - 1] as StackItem & { namedCardChoices?: Record<string, string> };
+        if (!top) return false;
+
+        let controllerId: string | undefined;
+        let sourceName = 'Library choice';
+        let effects: unknown[] | undefined;
+
+        if (top.kind === 'Spell') {
+          controllerId = top.casterId;
+          const spellCard = state.cards.get(top.cardInstanceId);
+          const spellDef = spellCard ? state.cardDefinitions.get(spellCard.definitionId) : undefined;
+          sourceName = spellDef?.name || sourceName;
+          effects = spellEffectsForChoicePrompt(state, top);
+        } else if (top.kind === 'ActivatedAbility') {
+          controllerId = top.controllerId;
+          const sourceCard = state.cards.get(top.sourceInstanceId);
+          const sourceDef = sourceCard ? state.cardDefinitions.get(sourceCard.definitionId) : undefined;
+          sourceName = sourceDef?.name || sourceName;
+          effects = top.ability.effects;
+        } else if (top.kind === 'TriggeredAbility') {
+          controllerId = top.controllerId;
+          const sourceCard = state.cards.get(top.sourceInstanceId);
+          const sourceDef = sourceCard ? state.cardDefinitions.get(sourceCard.definitionId) : undefined;
+          sourceName = sourceDef?.name || sourceName;
+          effects = top.ability.effects;
+        }
+
+        if (controllerId !== humanIdRef.current) return false;
+        const info = libraryChoiceInfoFromEffects(effects);
+        if (!info || info.count <= 0) return false;
+        if (top.namedCardChoices?.[`${info.mode}TopIds`]) return false;
+
+        const libraryCards = getCardsInZone(state, humanIdRef.current, 'library').slice(0, info.count);
+        if (libraryCards.length === 0) return false;
+        const cards = libraryCards
+          .map(card => toTutorCardOption(state, card))
+          .filter((option): option is TutorCardOption => !!option);
+        if (cards.length === 0) return false;
+
+        engineRef.current = state as GameStateWithAI;
+        pendingLibraryChoiceRef.current = { stackItemId: top.id, mode: info.mode };
+        setLibraryChoice({
+          id: `${top.id}:${info.mode}:${cards.map(card => card.instanceId).join('|')}`,
+          mode: info.mode,
+          title: `${sourceName}: ${info.mode === 'scry' ? 'Scry' : 'Surveil'} ${cards.length}`,
+          cards,
+        });
+        messages.push({ role: 'system', text: `${sourceName} - choose cards for ${info.mode}.` });
+        return true;
+      };
+
+      const allPlayersHavePassed = (s: GameState): boolean =>
+        s.hasPriorityPassed.every((passed, index) => passed || s.players[index].hasLost);
+
+      const humanHasPriority = (s: GameState): boolean => {
+        const humanIndex = s.players.findIndex(p => p.id === humanIdRef.current);
+        return humanIndex >= 0
+          && s.priorityPlayerIndex === humanIndex
+          && !s.hasPriorityPassed[humanIndex];
+      };
+
+      const shouldPauseForHumanPriority = (s: GameState): boolean => {
+        if (s.stack.length === 0) return false;
+        if (holdPriorityRef.current && controllerIdForStackItem(s.stack[s.stack.length - 1]) === humanIdRef.current) {
+          return true;
+        }
+        // Main phases and attack/block choices are handled by their own
+        // branches. Generic priority windows should only pause when the human
+        // has an actual decision; empty upkeep/draw/opponent-turn windows can
+        // safely pass without forcing extra clicks.
+        return hasMeaningfulHumanActionForAutoSkip(s, humanIdRef.current);
+      };
+
+      const passUntilHumanOrAllPassed = (s: GameState): { state: GameState; pause: boolean } => {
+        let next = s;
+        let guard = next.players.length + 1;
+        while (!allPlayersHavePassed(next) && guard-- > 0) {
+          if (humanHasPriority(next)) {
+            if (shouldPauseForHumanPriority(next)) {
+              return { state: next, pause: true };
+            }
+            next = passPriority(next);
+            continue;
+          }
+          next = passPriority(next);
+        }
+        return { state: next, pause: false };
+      };
+
+      const stepKey = (s: GameState, suffix: string): string =>
+        `${s.turnNumber}:${s.activePlayerIndex}:${s.step}:${suffix}`;
 
       state = runSBAAndTriggers(state);
       if (checkGameOver(state)) return state;
@@ -1338,26 +2519,25 @@ export function useShelectorGame() {
           const priorityPlayer = state.players[state.priorityPlayerIndex];
 
           if (priorityPlayer && priorityPlayer.id === humanIdRef.current) {
-            // Human has priority with items on the stack — check if they have INSTANTS
-            const humanActions = getLegalActions(state, humanIdRef.current);
-            const humanHasInstant = humanActions.some(a =>
-              a.kind === 'CastSpell' || a.kind === 'ActivateAbility'
-            );
-            if (humanHasInstant) {
-              console.log(`  -> stack has ${state.stack.length} items, human has instant-speed responses — waiting`);
-              break; // Give human priority to respond with counterspells/instants
-            }
-            // Human has no instants/counterspells — auto-pass their priority
-            state = passPriority(state);
-            // Check if all players have now passed (stack resolves)
+            // Surface stack priority only when the human has a real response.
+            // Empty response windows on AI turns are auto-passed so the player
+            // does not have to click through every opponent phase.
             if (state.hasPriorityPassed.every((p, i) => p || state.players[i].hasLost)) {
               console.log(`  -> all passed, resolving stack (${state.stack.length} items)`);
+              if (tryPauseForLibraryChoice()) break;
               if (tryResolveTutor()) break;
               { const taxResult = resolveTaxTrigger(state, messages); if (taxResult.handled) { state = taxResult.state; } else { state = resolveTopOfStack(state); } }
               state = runSBAAndTriggers(state);
               if (checkGameOver(state)) break;
+              continue;
             }
-            continue;
+            if (!shouldPauseForHumanPriority(state)) {
+              state = passPriority(state);
+              continue;
+            }
+            // Wait for an explicit Pass action instead of auto-resolving past real possible responses.
+            console.log(`  -> stack has ${state.stack.length} items, human has priority - waiting`);
+            break;
           }
 
           if (priorityPlayer && aiIdsRef.current.includes(priorityPlayer.id)) {
@@ -1368,10 +2548,23 @@ export function useShelectorGame() {
 
               if (!decision || decision.action.kind === 'PassPriority') {
                 // AI passes priority on the stack
+                const beforePass = state;
                 state = passPriority(state);
+                recordStateUpdate(
+                  beforePass,
+                  state,
+                  {
+                    kind: 'PassPriority',
+                    label: `${priorityPlayer.name.replace(/\s+\(AI\)$/, '')} passed priority`,
+                    _engineAction: { kind: 'PassPriority' },
+                  },
+                  [],
+                  { playerId: priorityPlayer.id, source: 'ai' },
+                );
                 // Check if all players have now passed (stack resolves)
                 if (state.hasPriorityPassed.every((p, i) => p || state.players[i].hasLost)) {
                   console.log(`  -> all passed, resolving stack (${state.stack.length} items)`);
+                  if (tryPauseForLibraryChoice()) break;
                   if (tryResolveTutor()) break;
                   { const taxResult = resolveTaxTrigger(state, messages); if (taxResult.handled) { state = taxResult.state; } else { state = resolveTopOfStack(state); } }
                   state = runSBAAndTriggers(state);
@@ -1381,7 +2574,15 @@ export function useShelectorGame() {
               }
 
               // AI cast something in response — apply it
+              const beforeDecision = state;
               state = decision.newState;
+              recordStateUpdate(
+                beforeDecision,
+                state,
+                toSimpleLegalAction(decision.action, beforeDecision),
+                [],
+                { playerId: priorityPlayer.id, source: 'ai' },
+              );
               narrateDecisions([decision], state, messages, logEntries);
               state = runSBAAndTriggers(state);
               if (checkGameOver(state)) break;
@@ -1397,6 +2598,7 @@ export function useShelectorGame() {
 
           // Fallback: no valid priority player — just resolve
           console.log(`  -> resolving stack (${state.stack.length} items)`);
+          if (tryPauseForLibraryChoice()) break;
           if (tryResolveTutor()) break;
           state = resolveTopOfStack(state);
           state = runSBAAndTriggers(state);
@@ -1418,12 +2620,20 @@ export function useShelectorGame() {
         }
 
         if (state.step === 'draw') {
-          state = drawCards(state, activeId, 1);
-          state = runSBAAndTriggers(state);
-          if (checkGameOver(state)) break;
-          // All players pass through draw
-          state = passAllPriority(state);
+          const drawKey = stepKey(state, 'draw');
+          if (!stepEffectsDoneRef.current.has(drawKey)) {
+            state = drawCards(state, activeId, 1);
+            stepEffectsDoneRef.current.add(drawKey);
+            state = runSBAAndTriggers(state);
+            if (checkGameOver(state)) break;
+          }
+
+          const priority = passUntilHumanOrAllPassed(state);
+          state = priority.state;
+          if (priority.pause) break;
+
           state = advanceStep(state);
+          stepEffectsDoneRef.current.delete(drawKey);
           state = runSBAAndTriggers(state);
           if (checkGameOver(state)) break;
           continue;
@@ -1459,7 +2669,9 @@ export function useShelectorGame() {
 
               if (!decision) {
                 console.log(`  -> AI (${currentAiId}) main phase: no decision (null)`);
-                state = passAllPriority(state);
+                const priority = passUntilHumanOrAllPassed(state);
+                state = priority.state;
+                if (priority.pause) break;
                 state = advanceStep(state);
                 state = runSBAAndTriggers(state);
                 if (checkGameOver(state)) break;
@@ -1471,7 +2683,15 @@ export function useShelectorGame() {
               const actionDef = actionInst ? state.cardDefinitions.get(actionInst.definitionId) : undefined;
               console.log(`  -> AI main phase: ${action.kind}${actionDef ? ' — ' + actionDef.name : ''}`);
 
+              const beforeDecision = state;
               state = decision.newState;
+              recordStateUpdate(
+                beforeDecision,
+                state,
+                toSimpleLegalAction(decision.action, beforeDecision),
+                [],
+                { playerId: currentAiId, source: 'ai' },
+              );
 
               // Narrate this single decision
               narrateDecisions([decision], state, messages, logEntries);
@@ -1482,9 +2702,9 @@ export function useShelectorGame() {
 
               if (action.kind === 'PassPriority') {
                 // AI passed — pass remaining players and advance
-                for (let pi = 0; pi < state.players.length - 1; pi++) {
-                  state = passPriority(state);
-                }
+                const priority = passUntilHumanOrAllPassed(state);
+                state = priority.state;
+                if (priority.pause) break;
                 state = advanceStep(state);
                 state = runSBAAndTriggers(state);
                 if (checkGameOver(state)) break;
@@ -1493,53 +2713,24 @@ export function useShelectorGame() {
 
               if (action.kind === 'CastSpell' || action.kind === 'ActivateAbility') {
                 if (state.stack.length > 0) {
-                  // Check if human has instant-speed cards in hand + available mana
-                  // (can't rely on getLegalActions since mana pool may be empty before tapping)
                   const humanIdx = state.players.findIndex(p => p.id === humanIdRef.current);
-                  const tempState: GameState = {
-                    ...state,
-                    priorityPlayerIndex: humanIdx,
-                    hasPriorityPassed: state.players.map(() => false),
-                  };
-
-                  // Check for instants/flash cards in hand
-                  const handCards = getCardsInZone(tempState, humanIdRef.current, 'hand');
-                  const hasInstantInHand = handCards.some(card => {
-                    const def = getCardDefinition(tempState, card);
-                    return def.card_types.includes('instant') || def.keywords.includes('Flash');
-                  });
-
-                  // Check for untapped mana sources on battlefield
-                  const battlefield = getCardsInZone(tempState, humanIdRef.current, 'battlefield');
-                  const hasUntappedMana = battlefield.some(card => {
-                    if (card.tapped) return false;
-                    const def = getCardDefinition(tempState, card);
-                    const oracle = def.oracle_text.toLowerCase();
-                    return oracle.includes('{t}:') && oracle.includes('add');
-                  });
-
-                  // Also check getLegalActions for abilities that are already castable
-                  const humanActions = getLegalActions(tempState, humanIdRef.current);
-                  const hasDirectResponse = humanActions.some(a =>
-                    a.kind === 'CastSpell' || a.kind === 'ActivateAbility'
-                  );
-
-                  const hasInstantResponse = hasDirectResponse || (hasInstantInHand && hasUntappedMana);
-
-                  if (hasInstantResponse) {
-                    // Human has counterspells/instants — STOP and let them respond
-                    console.log(`  -> AI cast spell, human has instant-speed response — waiting`);
+                  if (humanIdx >= 0) {
                     const spellInst = 'cardInstanceId' in action ? state.cards.get(action.cardInstanceId) : undefined;
                     const spellDef = spellInst ? state.cardDefinitions.get(spellInst.definitionId) : undefined;
-                    messages.push({ role: 'system', text: `⚡ You can respond to ${spellDef?.name || 'the spell'}!` });
-                    state = tempState;
-                    break;
-                  } else {
-                    // Human has no instants — auto-pass, don't interrupt
-                    console.log(`  -> AI cast spell, human has no responses — auto-resolving`);
-                    const spellInst = 'cardInstanceId' in action ? state.cards.get(action.cardInstanceId) : undefined;
-                    const spellDef = spellInst ? state.cardDefinitions.get(spellInst.definitionId) : undefined;
-                    messages.push({ role: 'system', text: `${spellDef?.name || 'Spell'} — didn't counter (no responses in hand)` });
+                    messages.push({
+                      role: 'system',
+                      text: `${spellDef?.name || 'A spell or ability'} is on the stack. Inspect it, respond, or pass priority.`,
+                    });
+                    state = {
+                      ...state,
+                      priorityPlayerIndex: humanIdx,
+                      hasPriorityPassed: state.players.map(() => false),
+                    };
+                    if (shouldPauseForHumanPriority(state)) {
+                      break;
+                    }
+                    state = passPriority(state);
+                    continue;
                   }
                 }
               }
@@ -1554,7 +2745,9 @@ export function useShelectorGame() {
                 text: `AI error: ${aiErr instanceof Error ? aiErr.message : 'unknown'}`,
               });
               // On error, pass through to advance
-              state = passAllPriority(state);
+              const priority = passUntilHumanOrAllPassed(state);
+              state = priority.state;
+              if (priority.pause) break;
               state = advanceStep(state);
               state = runSBAAndTriggers(state);
               if (checkGameOver(state)) break;
@@ -1565,12 +2758,23 @@ export function useShelectorGame() {
 
         // Combat steps
         if (
+          state.step === 'begin_combat' ||
           state.step === 'declare_attackers' ||
           state.step === 'declare_blockers' ||
           state.step === 'first_strike_damage' ||
           state.step === 'combat_damage' ||
           state.step === 'end_of_combat'
         ) {
+          if (state.step === 'begin_combat') {
+            const priority = passUntilHumanOrAllPassed(state);
+            state = priority.state;
+            if (priority.pause) break;
+            state = advanceStep(state);
+            state = runSBAAndTriggers(state);
+            if (checkGameOver(state)) break;
+            continue;
+          }
+
           // declare_attackers: let human choose or auto-skip
           if (state.step === 'declare_attackers') {
             // If combat is already populated (human just declared attackers via submitAction),
@@ -1595,7 +2799,15 @@ export function useShelectorGame() {
                 const config = createAIConfig(activeId, 3);
                 const decision = makeDecision(state, config);
                 if (decision && decision.action.kind === 'DeclareAttackers' && decision.action.attacks.length > 0) {
+                  const beforeDecision = state;
                   state = decision.newState;
+                  recordStateUpdate(
+                    beforeDecision,
+                    state,
+                    toSimpleLegalAction(decision.action, beforeDecision),
+                    [],
+                    { playerId: activeId, source: 'ai' },
+                  );
                   narrateDecisions([decision], state, messages, logEntries);
                   state = runSBAAndTriggers(state);
                   if (checkGameOver(state)) break;
@@ -1604,16 +2816,18 @@ export function useShelectorGame() {
                 console.error('AI attack declaration error:', aiErr);
               }
             }
-            // After attackers declared (or AI handled it), pass priority through
-            state = passAllPriority(state);
+            const priority = passUntilHumanOrAllPassed(state);
+            state = priority.state;
+            if (priority.pause) break;
             state = advanceStep(state);
             state = runSBAAndTriggers(state);
             if (checkGameOver(state)) break;
             continue;
           }
 
-          // declare_blockers: auto-handle (AI blocks via runAITurn if it has priority)
+          // declare_blockers: let the human block when they are a defender; AI defaults to no blocks.
           if (state.step === 'declare_blockers') {
+            let pauseForHumanBlockers = false;
             if (state.combat && state.combat.attackers.length > 0) {
               // There are attackers — each non-active player needs to declare blockers
               // In multiplayer, each defender gets a chance
@@ -1623,13 +2837,25 @@ export function useShelectorGame() {
                 .map(p => p.id);
               for (const defenderId of defenders) {
                 const blockActions = getLegalActions(state, defenderId);
+                if (defenderId === humanIdRef.current) {
+                  const hasBlocks = blockActions.some(
+                    a => a.kind === 'DeclareBlockers' && a.blocks.length > 0,
+                  );
+                  if (hasBlocks) {
+                    pauseForHumanBlockers = true;
+                    break;
+                  }
+                }
                 const noBlock = blockActions.find(a => a.kind === 'DeclareBlockers' && a.blocks.length === 0);
                 if (noBlock) {
                   state = applyAction(state, defenderId, noBlock);
                 }
               }
             }
-            state = passAllPriority(state);
+            if (pauseForHumanBlockers) break;
+            const priority = passUntilHumanOrAllPassed(state);
+            state = priority.state;
+            if (priority.pause) break;
             state = advanceStep(state);
             state = runSBAAndTriggers(state);
             if (checkGameOver(state)) break;
@@ -1657,15 +2883,18 @@ export function useShelectorGame() {
                 console.error('Combat damage error:', e);
               }
             }
-            state = passAllPriority(state);
+            const priority = passUntilHumanOrAllPassed(state);
+            state = priority.state;
+            if (priority.pause) break;
             state = advanceStep(state);
             state = runSBAAndTriggers(state);
             if (checkGameOver(state)) break;
             continue;
           }
 
-          // first_strike_damage, end_of_combat: just pass through
-          state = passAllPriority(state);
+          const priority = passUntilHumanOrAllPassed(state);
+          state = priority.state;
+          if (priority.pause) break;
           state = advanceStep(state);
           state = runSBAAndTriggers(state);
           if (checkGameOver(state)) break;
@@ -1717,6 +2946,7 @@ export function useShelectorGame() {
             if (checkGameOver(state)) break;
             if (state.turnNumber !== oldTurn) {
               uncommittedTapsRef.current.clear(); // New turn — reset tap tracking
+              stepEffectsDoneRef.current.clear();
               const newActive = state.players[state.activePlayerIndex];
               const isNewActiveHuman = newActive.id === humanIdRef.current;
               const activeName = isNewActiveHuman
@@ -1729,29 +2959,19 @@ export function useShelectorGame() {
             }
             continue;
           }
-          // Fire upkeep/end-step triggers before passing priority
-          if (state.step === 'upkeep') {
-            state = checkTriggersForEvent(state, {
-              kind: 'UpkeepStart',
-              activePlayerId: state.players[state.activePlayerIndex].id,
-            });
-          }
-          if (state.step === 'end') {
-            state = checkTriggersForEvent(state, {
-              kind: 'EndStepStart',
-              activePlayerId: state.players[state.activePlayerIndex].id,
-            });
-          }
-          state = passAllPriority(state);
+          const priority = passUntilHumanOrAllPassed(state);
+          state = priority.state;
+          if (priority.pause) break;
           state = advanceStep(state);
-          // Upkeep/end-step triggers fire here
           state = runSBAAndTriggers(state);
           if (checkGameOver(state)) break;
           continue;
         }
 
         // Fallback — pass through
-        state = passAllPriority(state);
+        const priority = passUntilHumanOrAllPassed(state);
+        state = priority.state;
+        if (priority.pause) break;
         state = advanceStep(state);
         state = runSBAAndTriggers(state);
         if (checkGameOver(state)) break;
@@ -1760,8 +2980,58 @@ export function useShelectorGame() {
 
       return state;
     },
-    [narrateDecisions, runSBAAndTriggers, passAllPriority],
+    [narrateDecisions, recordStateUpdate, resolveTaxTrigger, runSBAAndTriggers],
   );
+
+  const resolveLibraryChoice = useCallback((topIds: string[], movedIds: string[]) => {
+    const engine = engineRef.current;
+    const pending = pendingLibraryChoiceRef.current;
+    if (!engine || !pending || engine.stack.length === 0) {
+      setLibraryChoice(null);
+      pendingLibraryChoiceRef.current = null;
+      syncState();
+      return;
+    }
+
+    const top = engine.stack[engine.stack.length - 1] as StackItem & { namedCardChoices?: Record<string, string> };
+    if (!top || top.id !== pending.stackItemId) {
+      setLibraryChoice(null);
+      pendingLibraryChoiceRef.current = null;
+      syncState();
+      return;
+    }
+
+    const namedCardChoices: Record<string, string> = { ...(top.namedCardChoices || {}) };
+    if (pending.mode === 'scry') {
+      namedCardChoices.scryTopIds = topIds.join(',');
+      namedCardChoices.scryBottomIds = movedIds.join(',');
+    } else {
+      namedCardChoices.surveilTopIds = topIds.join(',');
+      namedCardChoices.surveilGraveyardIds = movedIds.join(',');
+    }
+
+    const stack = [
+      ...engine.stack.slice(0, -1),
+      { ...top, namedCardChoices } as StackItem,
+    ];
+    let state: GameState = { ...engine, stack };
+
+    setLibraryChoice(null);
+    pendingLibraryChoiceRef.current = null;
+
+    state = resolveTopOfStack(state);
+    state = runSBAAndTriggers(state);
+
+    const loopMessages: { role: ChatMessage['role']; text: string }[] = [];
+    const loopLogEntries: GameLogEntry[] = [];
+    state = advanceGameLoop(state, loopMessages, loopLogEntries);
+
+    engineRef.current = state as GameStateWithAI;
+    addMessage('player', `Resolved ${pending.mode} choice.`);
+    for (const msg of loopMessages) addMessage(msg.role, msg.text);
+    if (loopLogEntries.length > 0) setGameLog(prev => [...prev, ...loopLogEntries]);
+    syncState();
+  }, [addMessage, advanceGameLoop, runSBAAndTriggers, syncState]);
 
   // Spawn opponent via the Shelector API
   const spawnOpponent = useCallback(async (options?: SpawnOptions) => {
@@ -1775,7 +3045,7 @@ export function useShelectorGame() {
         human_commander: options?.human_commander ?? null,
         human_colors: options?.human_colors ?? null,
       };
-      const res = await fetch('http://localhost:8100/spawn-opponent', {
+      const res = await fetch(shelectorApiUrl('/spawn-opponent'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -1802,24 +3072,26 @@ export function useShelectorGame() {
   const buildCardLookup = useCallback(
     (cardDataMaps: Record<string, CardDataFromAPI>[]): ((name: string) => ScryfallCard | undefined) => {
       const byName = new Map<string, ScryfallCard>();
+      const addLookup = (name: string | undefined | null, card: ScryfallCard) => {
+        for (const alias of lookupNameAliases(name)) {
+          const normalized = normalizeLookupName(alias);
+          if (normalized) byName.set(normalized, card);
+        }
+      };
       // Add basic lands
       for (const [name, card] of Object.entries(BASIC_LANDS)) {
-        byName.set(name, card);
-        byName.set(name.toLowerCase(), card);
+        addLookup(name, card);
+        addLookup(card.name, card);
       }
       // Add API cards
       for (const dataMap of cardDataMaps) {
         for (const [name, data] of Object.entries(dataMap)) {
           const scryfallCard = apiCardToScryfall(name, data);
-          byName.set(name, scryfallCard);
-          byName.set(name.toLowerCase(), scryfallCard);
-          if (data.name && data.name !== name) {
-            byName.set(data.name, scryfallCard);
-            byName.set(data.name.toLowerCase(), scryfallCard);
-          }
+          addLookup(name, scryfallCard);
+          addLookup(data.name, scryfallCard);
         }
       }
-      return (name: string) => byName.get(name) || byName.get(name.toLowerCase());
+      return (name: string) => byName.get(normalizeLookupName(name));
     },
     [],
   );
@@ -1848,11 +3120,25 @@ export function useShelectorGame() {
 
   // Initialize a new game with real decks for all players
   const startGame = useCallback(
-    (importedCards?: ImportedCards, aiDeckDataArray?: ImportedCards | ImportedCards[], options?: StartGameOptions) => {
+    (importedCards?: ImportedCards, aiDeckDataArray?: ImportedCards | ImportedCards[], options?: StartGameOptions): boolean => {
       setError(null);
       setChatMessages([]);
       setGameLog([]);
+      setAuthorityUpdates([]);
+      setLastStateUpdate(null);
+      setCurrentPrompt(null);
       setLastPlayedCard(null);
+      setSelectedMulliganBottomIds([]);
+      uncommittedTapsRef.current.clear();
+      stepEffectsDoneRef.current.clear();
+      pendingCastChoiceActionRef.current = null;
+      pendingCastChoiceModeRef.current = null;
+      pendingPlayLandChoiceRef.current = null;
+      setTutorPhase(false);
+      setTutorCards([]);
+      setTutorTitle('');
+      setLibraryChoice(null);
+      pendingLibraryChoiceRef.current = null;
       const format = options?.format ?? 'commander';
 
       // Normalize aiDeckDataArray to always be an array
@@ -1903,15 +3189,14 @@ export function useShelectorGame() {
 
         if (aiData?.cardData) dataMaps.push(aiData.cardData);
 
-        // For partner commanders, filter out both individual partner names
-        const aiCmdrNames = aiCommanderName.includes(' // ')
-          ? aiCommanderName.split(' // ').map((s: string) => s.trim().toLowerCase())
-          : [aiCommanderName.toLowerCase()];
+        const aiCmdrNames = resolveCommanderNamesForImport(aiCommanderName, aiData?.cardData)
+          .map((s: string) => s.toLowerCase());
         const aiList = format === 'limited'
           ? aiCards
-          : padDeckTo99(
+          : padDeckToSize(
               aiCards.filter(n => !aiCmdrNames.includes(n.toLowerCase())),
               aiColors,
+              100 - Math.max(1, aiCmdrNames.length),
             );
 
         aiDecks.push({
@@ -1927,16 +3212,14 @@ export function useShelectorGame() {
 
       const lookup = buildCardLookup(dataMaps);
 
-      // Pad human deck to exactly 99 cards (excluding commander)
-      // For partner commanders ("A // B"), filter out both individual partner names
-      const humanCmdrNames = humanCommanderName.includes(' // ')
-        ? humanCommanderName.split(' // ').map(n => n.trim().toLowerCase())
-        : [humanCommanderName.toLowerCase()];
+      const humanCmdrNames = resolveCommanderNamesForImport(humanCommanderName, importedCards?.cardData)
+        .map(n => n.toLowerCase());
       const humanList = format === 'limited'
         ? humanCards
-        : padDeckTo99(
+        : padDeckToSize(
             humanCards.filter(n => !humanCmdrNames.includes(n.toLowerCase())),
             humanColors,
+            100 - Math.max(1, humanCmdrNames.length),
           );
 
       const humanDeck: GeneratedDeck = {
@@ -1959,7 +3242,21 @@ export function useShelectorGame() {
       aiIdsRef.current = aiIds;
 
       try {
-        const engine = initEngine(humanDeck, aiDecks, lookup, options);
+        if (format !== 'limited') {
+          const missingCommanders = [humanDeck, ...aiDecks].flatMap(deck => {
+            const commanderNames = resolveCommanderNamesForLookup(deck.commander, lookup);
+            return commanderNames.filter(name => !lookup(name));
+          });
+          if (missingCommanders.length > 0) {
+            throw new Error(
+              `Commander not found: ${[...new Set(missingCommanders)].join(', ')}. Re-import the deck so commander card data is included.`,
+            );
+          }
+        }
+
+        let engine = initEngine(humanDeck, aiDecks, lookup, options);
+        const aiMulligans = runAIMulligans(engine, aiIds, aiCmdNames);
+        engine = aiMulligans.state;
         engineRef.current = engine;
 
         setMulliganPhase(true);
@@ -1971,16 +3268,19 @@ export function useShelectorGame() {
           humanCommanderName, aiCmdNames,
         );
         setGameState(simple);
+        setCurrentPrompt(buildActionPrompt(engine, simple.priorityPlayerId) || null);
         setLegalActions([]);
 
         addMessage('system', 'Opening hands drawn. Mulligan phase.');
-        for (const aiId of aiIds) {
-          addMessage('shelector', `${aiCmdNames[aiId]} keeps their hand.`);
+        for (const text of aiMulligans.messages) {
+          addMessage('shelector', text);
         }
+        return true;
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : 'Failed to initialize game';
         setError(msg);
         console.error('Engine init error:', err);
+        return false;
       }
     },
     [opponentInfo, addMessage, buildCardLookup, initEngine],
@@ -2007,13 +3307,25 @@ export function useShelectorGame() {
   const keepHand = useCallback(() => {
     const engine = engineRef.current;
     if (!engine) return;
-    setMulliganPhase(false);
 
     if (mulliganCount > 0) {
       const handCards = getCardsInZone(engine, humanIdRef.current, 'hand');
       const cardsToBottom = Math.min(mulliganCount, handCards.length);
-      for (let i = 0; i < cardsToBottom; i++) {
-        const card = handCards[handCards.length - 1 - i];
+      const selectedIds = selectedMulliganBottomIds.filter(id =>
+        handCards.some(card => card.instanceId === id),
+      );
+
+      if (selectedIds.length !== cardsToBottom) {
+        addMessage(
+          'system',
+          `Choose ${cardsToBottom} card${cardsToBottom === 1 ? '' : 's'} from your hand to put on the bottom before keeping.`,
+        );
+        syncState();
+        return;
+      }
+
+      for (const cardId of selectedIds) {
+        const card = engine.cards.get(cardId);
         if (card) card.zone = 'library';
       }
       addMessage(
@@ -2024,6 +3336,8 @@ export function useShelectorGame() {
       addMessage('player', 'Keeping opening hand.');
     }
 
+    setSelectedMulliganBottomIds([]);
+    setMulliganPhase(false);
     addMessage('system', 'Game started! You are on the play.');
     addMessage('system', `Turn 1 \u2014 Your precombat main phase.`);
 
@@ -2032,7 +3346,7 @@ export function useShelectorGame() {
     engineRef.current = advanced as GameStateWithAI;
 
     syncState();
-  }, [mulliganCount, addMessage, syncState, advanceToPrecombatMain]);
+  }, [mulliganCount, selectedMulliganBottomIds, addMessage, syncState, advanceToPrecombatMain]);
 
   // Mulligan -- re-init the engine with fresh shuffled decks
   const mulligan = useCallback(() => {
@@ -2043,9 +3357,13 @@ export function useShelectorGame() {
 
     const newMulliganCount = mulliganCount + 1;
     setMulliganCount(newMulliganCount);
+    setSelectedMulliganBottomIds([]);
 
     try {
-      const newEngine = initEngine(humanDeck, aiDecks, lookup);
+      let newEngine = initEngine(humanDeck, aiDecks, lookup);
+      const aiMulligans = runAIMulligans(newEngine, aiIdsRef.current, aiCommanderNamesRef.current);
+      newEngine = aiMulligans.state;
+      stepEffectsDoneRef.current.clear();
       engineRef.current = newEngine;
 
       // Auto-keep after 3 mulligans
@@ -2058,12 +3376,16 @@ export function useShelectorGame() {
         }
 
         setMulliganPhase(false);
+        setSelectedMulliganBottomIds([]);
 
         const advanced = advanceToPrecombatMain(newEngine);
         engineRef.current = advanced as GameStateWithAI;
 
         syncState();
 
+        for (const text of aiMulligans.messages) {
+          addMessage('shelector', text);
+        }
         addMessage(
           'player',
           `Mulliganed to ${handCards.length - cardsToBottom} (auto-kept after 3 mulligans).`,
@@ -2079,11 +3401,15 @@ export function useShelectorGame() {
         humanCommanderRef.current, aiCommanderNamesRef.current,
       );
       setGameState(simple);
+      setCurrentPrompt(buildActionPrompt(newEngine, simple.priorityPlayerId) || null);
 
       addMessage(
         'player',
         `Mulligan #${newMulliganCount}. Drawing a new hand of 7 (will put ${newMulliganCount} on bottom).`,
       );
+      for (const text of aiMulligans.messages) {
+        addMessage('shelector', text);
+      }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Mulligan failed';
       setError(msg);
@@ -2091,11 +3417,25 @@ export function useShelectorGame() {
     }
   }, [mulliganCount, addMessage, initEngine, syncState, advanceToPrecombatMain]);
 
-  // Discard a card from hand (during cleanup discard-to-hand-size)
+  const toggleMulliganBottomCard = useCallback((cardInstanceId: string) => {
+    setSelectedMulliganBottomIds(prev => {
+      const required = Math.max(0, mulliganCount);
+      if (prev.includes(cardInstanceId)) {
+        return prev.filter(id => id !== cardInstanceId);
+      }
+      if (required > 0 && prev.length >= required) {
+        return [...prev.slice(1), cardInstanceId];
+      }
+      return [...prev, cardInstanceId];
+    });
+  }, [mulliganCount]);
+
+  // Discard a card from hand. Cleanup uses this for hand-size discards; the
+  // trainer also exposes it as a manual sandbox action.
   const discardCard = useCallback(
     (cardInstanceId: string) => {
       const engine = engineRef.current;
-      if (!engine || !discardPhase) return;
+      if (!engine) return;
 
       const card = engine.cards.get(cardInstanceId);
       if (!card || card.zone !== 'hand' || card.ownerId !== humanIdRef.current) return;
@@ -2107,6 +3447,11 @@ export function useShelectorGame() {
       engineRef.current = newEngine;
 
       addMessage('player', `Discarded ${def.name}.`);
+
+      if (!discardPhase) {
+        syncState();
+        return;
+      }
 
       discardCountRef.current -= 1;
       setDiscardCount(discardCountRef.current);
@@ -2151,6 +3496,67 @@ export function useShelectorGame() {
   );
 
   const resolveTutor = useCallback((cardInstanceId: string) => {
+    const pendingCastChoice = pendingCastChoiceActionRef.current;
+    if (pendingCastChoice) {
+      pendingCastChoiceActionRef.current = null;
+      const choiceMode = pendingCastChoiceModeRef.current;
+      pendingCastChoiceModeRef.current = null;
+      setTutorPhase(false);
+      setTutorCards([]);
+      setTutorTitle('');
+
+      const pendingEngineAction = pendingCastChoice._engineAction;
+      if (pendingEngineAction.kind === 'CastSpell') {
+        if (choiceMode === 'sacrificeCreature') {
+          submitActionRef.current?.({
+            ...pendingCastChoice,
+            _engineAction: {
+              ...pendingEngineAction,
+              namedCardChoices: {
+                ...(pendingEngineAction.namedCardChoices || {}),
+                sacrificeCardId: cardInstanceId,
+              },
+            },
+          });
+          return;
+        }
+
+        submitActionRef.current?.({
+          ...pendingCastChoice,
+          _engineAction: {
+            ...pendingEngineAction,
+            cardChoices: {
+              ...(pendingEngineAction.cardChoices || {}),
+              discardedCardIds: [cardInstanceId],
+            },
+          },
+        });
+      }
+      return;
+    }
+
+    const pendingLandChoice = pendingPlayLandChoiceRef.current;
+    if (pendingLandChoice) {
+      pendingPlayLandChoiceRef.current = null;
+      setTutorPhase(false);
+      setTutorCards([]);
+      setTutorTitle('');
+
+      const pendingEngineAction = pendingLandChoice.action._engineAction;
+      if (pendingEngineAction.kind === 'PlayLand') {
+        submitActionRef.current?.({
+          ...pendingLandChoice.action,
+          _engineAction: {
+            ...pendingEngineAction,
+            ...(pendingLandChoice.kind === 'creatureType'
+              ? { chosenCreatureType: cardInstanceId }
+              : { payLifeToEnterUntapped: cardInstanceId === 'pay-life' }),
+          },
+        });
+      }
+      return;
+    }
+
     const engine = engineRef.current;
     if (!engine) return;
 
@@ -2187,7 +3593,8 @@ export function useShelectorGame() {
       addMessage('player', `Found ${cardName} and put it on top of library. Library shuffled.`);
     } else if (dest === 'battlefield') {
       // Put onto battlefield
-      newCards.set(cardInstanceId, { ...card, zone: 'battlefield' as Zone, tapped: false, summoningSick: true });
+      const entersTapped = tutorTappedRef.current;
+      newCards.set(cardInstanceId, { ...card, zone: 'battlefield' as Zone, tapped: entersTapped, summoningSick: true });
       // Shuffle remaining library
       const libEntries: [string, CardInstance][] = [];
       const otherEntries: [string, CardInstance][] = [];
@@ -2203,9 +3610,23 @@ export function useShelectorGame() {
         [libEntries[i], libEntries[j]] = [libEntries[j], libEntries[i]];
       }
       const shuffledCards = new Map([...otherEntries, ...libEntries]);
-      const newEngine = { ...engine, cards: shuffledCards } as GameStateWithAI;
+      let newEngine = { ...engine, cards: shuffledCards } as GameStateWithAI;
+      newEngine = registerBattlefieldAbilities(newEngine, cardInstanceId) as GameStateWithAI;
+      if (def?.card_types.includes('land')) {
+        newEngine = checkTriggersForEvent(newEngine, {
+          kind: 'LandETB',
+          instanceId: cardInstanceId,
+          controllerId: humanIdRef.current,
+        }) as GameStateWithAI;
+      } else if (def?.card_types.includes('creature')) {
+        newEngine = checkTriggersForEvent(newEngine, {
+          kind: 'CreatureETB',
+          instanceId: cardInstanceId,
+          controllerId: humanIdRef.current,
+        }) as GameStateWithAI;
+      }
       engineRef.current = newEngine;
-      addMessage('player', `Found ${cardName} and put it onto the battlefield. Library shuffled.`);
+      addMessage('player', `Found ${cardName} and put it onto the battlefield${entersTapped ? ' tapped' : ''}.${tutorShuffleRef.current ? ' Library shuffled.' : ''}`);
     } else if (dest === 'graveyard') {
       newCards.set(cardInstanceId, { ...card, zone: 'graveyard' as Zone });
       const libEntries: [string, CardInstance][] = [];
@@ -2252,15 +3673,31 @@ export function useShelectorGame() {
       tutorRemainingRef.current -= 1;
       const remaining = tutorRemainingRef.current + 1; // +1 because we're about to pick again
       const filter = tutorFilterRef.current;
+      const filterSpec = tutorFilterSpecRef.current;
       const sourceName = tutorSourceNameRef.current;
       const updatedEngine = engineRef.current!;
       const libraryCards = getCardsInZone(updatedEngine, humanIdRef.current, 'library');
+      const pickerMetadata: Pick<TutorCardOption, 'legal' | 'reason' | 'destination' | 'entersTapped' | 'mustReveal'> = {
+        legal: true,
+        reason: filter ? `Matches ${filter}` : 'Legal library choice',
+        destination: tutorDestinationRef.current,
+        entersTapped: tutorDestinationRef.current === 'battlefield' ? tutorTappedRef.current : undefined,
+        mustReveal: Boolean(filter || filterSpec),
+      };
       const pickerCards = libraryCards.map(c => {
         const d = getCardDefinition(updatedEngine, c);
-        return { instanceId: c.instanceId, name: d.name, typeLine: d.type_line, manaCost: d.mana_cost };
+        return {
+          instanceId: c.instanceId,
+          name: d.name,
+          typeLine: d.type_line,
+          manaCost: d.mana_cost,
+          oracleText: d.oracle_text,
+          colors: d.colors,
+          cmc: d.cmc,
+          ...pickerMetadata,
+        };
       }).filter(c => {
-        if (!filter) return true;
-        return c.typeLine.toLowerCase().includes(filter);
+        return cardMatchesSearch(c, filterSpec, filter);
       }).sort((a, b) => a.name.localeCompare(b.name));
 
       const filterDesc = filter ? ` for ${filter}` : '';
@@ -2274,8 +3711,12 @@ export function useShelectorGame() {
 
     setTutorPhase(false);
     setTutorCards([]);
+    setTutorTitle('');
     tutorRemainingRef.current = 0;
     tutorFilterRef.current = undefined;
+    tutorFilterSpecRef.current = undefined;
+    tutorTappedRef.current = false;
+    tutorShuffleRef.current = true;
 
     // Continue game loop
     const loopMessages: { role: ChatMessage['role']; text: string }[] = [];
@@ -2292,10 +3733,38 @@ export function useShelectorGame() {
    * fewer than N picks, or to skip the search entirely. */
   const cancelTutor = useCallback(() => {
     if (!engineRef.current) return;
+    const pendingCastChoice = pendingCastChoiceActionRef.current;
+    const pendingLandChoice = pendingPlayLandChoiceRef.current;
+    const choiceMode = pendingCastChoiceModeRef.current;
     setTutorPhase(false);
     setTutorCards([]);
+    setTutorTitle('');
     tutorRemainingRef.current = 0;
     tutorFilterRef.current = undefined;
+    tutorFilterSpecRef.current = undefined;
+    tutorTappedRef.current = false;
+    tutorShuffleRef.current = true;
+
+    if (pendingCastChoice) {
+      pendingCastChoiceActionRef.current = null;
+      pendingCastChoiceModeRef.current = null;
+      if (choiceMode === 'sacrificeCreature') {
+        addMessage('player', 'No creature sacrificed.');
+        submitActionRef.current?.(pendingCastChoice);
+        return;
+      }
+      addMessage('player', 'Cancelled the cast choice.');
+      syncState();
+      return;
+    }
+
+    if (pendingLandChoice) {
+      pendingPlayLandChoiceRef.current = null;
+      addMessage('player', 'Cancelled the land choice.');
+      syncState();
+      return;
+    }
+
     addMessage('player', `Stopped searching${tutorSourceNameRef.current ? ` (${tutorSourceNameRef.current})` : ''}.`);
 
     // Resume game loop after the tutor ends
@@ -2320,8 +3789,13 @@ export function useShelectorGame() {
     setUndosRemaining(prev => prev - 1);
 
     // Clear any special phases
+    pendingCastChoiceActionRef.current = null;
+    pendingCastChoiceModeRef.current = null;
+    pendingPlayLandChoiceRef.current = null;
     setDiscardPhase(false);
     setTutorPhase(false);
+    setTutorCards([]);
+    setTutorTitle('');
 
     syncState();
   }, [undosRemaining, syncState]);
@@ -2332,7 +3806,8 @@ export function useShelectorGame() {
     if (!engine) return;
 
     // Only allow untapping uncommitted taps (mana not yet spent on a spell)
-    if (!uncommittedTapsRef.current.has(cardInstanceId)) return;
+    const tapRecord = uncommittedTapsRef.current.get(cardInstanceId);
+    if (!tapRecord) return;
 
     const card = engine.cards.get(cardInstanceId);
     if (!card || !card.tapped || card.zone !== 'battlefield' || card.ownerId !== humanIdRef.current) return;
@@ -2349,21 +3824,7 @@ export function useShelectorGame() {
     const player = engine.players[playerIdx];
     const newPool = { ...player.manaPool };
 
-    if (def.manaProduction) {
-      for (const [color, amount] of Object.entries(def.manaProduction.amounts)) {
-        const c = color as keyof typeof newPool;
-        newPool[c] = Math.max(0, newPool[c] - amount);
-      }
-    } else {
-      // Fallback: remove 1 of whatever color seems right from oracle text
-      const oracle = def.oracle_text.toLowerCase();
-      for (const [sym, c] of [['w','W'],['u','U'],['b','B'],['r','R'],['g','G'],['c','C']] as const) {
-        if (oracle.includes(`{${sym}}`)) {
-          newPool[c as keyof typeof newPool] = Math.max(0, newPool[c as keyof typeof newPool] - 1);
-          break;
-        }
-      }
-    }
+    newPool[tapRecord.color] = Math.max(0, newPool[tapRecord.color] - tapRecord.amount);
 
     const newPlayers = engine.players.map((p, i) =>
       i === playerIdx ? { ...p, manaPool: newPool } : p
@@ -2376,6 +3837,32 @@ export function useShelectorGame() {
     addMessage('player', `Untapped ${def.name}. Floating: ${formatManaPool(newPool)}`);
     syncState();
   }, [addMessage, syncState]);
+
+  const adjustCounters = useCallback((cardInstanceId: string, counterType: string, delta: number) => {
+    const engine = engineRef.current;
+    if (!engine) return;
+
+    const card = engine.cards.get(cardInstanceId);
+    const def = card ? engine.cardDefinitions.get(card.definitionId) : undefined;
+    const result = tryAdjustCounters(engine, humanIdRef.current, cardInstanceId, counterType, delta);
+    if (!result.ok) {
+      setActionError({ reason: result.reason, message: result.message });
+      addMessage('system', `Cannot adjust counters: ${result.message}`);
+      syncState();
+      return;
+    }
+
+    engineRef.current = result.state as GameStateWithAI;
+    applyEvents(result.events, result.state);
+
+    const cleanCounterType = counterType.trim().replace(/\s+/g, ' ');
+    const sign = delta > 0 ? '+' : '';
+    addMessage(
+      'system',
+      `Manual correction: ${def?.name || 'Permanent'} ${sign}${delta} ${cleanCounterType} counter${Math.abs(delta) === 1 ? '' : 's'}.`,
+    );
+    syncState();
+  }, [addMessage, applyEvents, syncState]);
 
   // Deep-clone engine state for undo snapshots (Maps need special handling)
   const cloneEngineState = useCallback((s: GameStateWithAI): GameStateWithAI => {
@@ -2392,16 +3879,383 @@ export function useShelectorGame() {
     };
   }, []);
 
+  const skipEmptyPhases = useCallback(() => {
+    let state = engineRef.current as GameState | null;
+    if (!state || gameState?.gameOver || mulliganPhase || discardPhase || tutorPhase || libraryChoice) return;
+
+    const humanId = humanIdRef.current;
+    const loopMessages: { role: ChatMessage['role']; text: string }[] = [];
+    const loopLogEntries: GameLogEntry[] = [];
+    const collectedEvents: ActionGameEvent[] = [];
+    let skippedWindows = 0;
+    let safety = 80;
+
+    while (state && safety-- > 0) {
+      const humanIndex = state.players.findIndex(p => p.id === humanId);
+      if (humanIndex < 0 || state.players[humanIndex]?.hasLost) break;
+
+      if (state.priorityPlayerIndex !== humanIndex || state.hasPriorityPassed[humanIndex]) {
+        const advanced = advanceGameLoop(state, loopMessages, loopLogEntries);
+        if (advanced === state) break;
+        state = advanced;
+        continue;
+      }
+
+      if (hasMeaningfulHumanActionForAutoSkip(state, humanId)) {
+        break;
+      }
+
+      const actions = getLegalActions(state, humanId);
+      const emptyAttack = actions.find(
+        (a): a is Extract<AIAction, { kind: 'DeclareAttackers' }> =>
+          a.kind === 'DeclareAttackers' && a.attacks.length === 0,
+      );
+      const emptyBlocks = actions.find(
+        (a): a is Extract<AIAction, { kind: 'DeclareBlockers' }> =>
+          a.kind === 'DeclareBlockers' && a.blocks.length === 0,
+      );
+      const pass = actions.find(
+        (a): a is Extract<AIAction, { kind: 'PassPriority' }> =>
+          a.kind === 'PassPriority',
+      );
+
+      if (emptyAttack) {
+        state = applyAction(state, humanId, emptyAttack);
+      } else if (emptyBlocks) {
+        state = applyAction(state, humanId, emptyBlocks);
+      } else if (pass) {
+        const result = tryPassPriority(state, humanId);
+        if (!result.ok) break;
+        state = result.state;
+        collectedEvents.push(...result.events);
+      } else {
+        break;
+      }
+
+      skippedWindows += 1;
+      state = advanceGameLoop(state, loopMessages, loopLogEntries);
+    }
+
+    if (!state) return;
+
+    engineRef.current = state as GameStateWithAI;
+    applyEvents(collectedEvents, state);
+    for (const msg of loopMessages) addMessage(msg.role, msg.text);
+    if (loopLogEntries.length > 0) setGameLog(prev => [...prev, ...loopLogEntries]);
+    if (skippedWindows > 0) {
+      addMessage(
+        'player',
+        `Skipped ${skippedWindows} empty priority window${skippedWindows === 1 ? '' : 's'}.`,
+      );
+    }
+    syncState();
+  }, [
+    addMessage,
+    advanceGameLoop,
+    applyEvents,
+    discardPhase,
+    gameState?.gameOver,
+    libraryChoice,
+    mulliganPhase,
+    syncState,
+    tutorPhase,
+  ]);
+
+  const skipRestOfTurn = useCallback(() => {
+    let state = engineRef.current as GameState | null;
+    if (!state || gameState?.gameOver || mulliganPhase || discardPhase || tutorPhase || libraryChoice) return;
+
+    const humanId = humanIdRef.current;
+    if (state.players[state.activePlayerIndex]?.id !== humanId) {
+      skipEmptyPhases();
+      return;
+    }
+
+    const startingTurn = state.turnNumber;
+    const startingActivePlayerIndex = state.activePlayerIndex;
+    const loopMessages: { role: ChatMessage['role']; text: string }[] = [];
+    const loopLogEntries: GameLogEntry[] = [];
+    const collectedEvents: ActionGameEvent[] = [];
+    let skippedWindows = 0;
+    let safety = 120;
+    const combatSteps = new Set<NonNullable<GameState['step']>>([
+      'declare_attackers',
+      'declare_blockers',
+      'first_strike_damage',
+      'combat_damage',
+      'end_of_combat',
+    ]);
+    const allPriorityPassed = (s: GameState): boolean =>
+      s.hasPriorityPassed.every((passed, index) => passed || s.players[index].hasLost);
+    const resolveCombatDamageBeforeAdvance = (s: GameState): GameState => {
+      if (s.step !== 'combat_damage' || !s.combat || s.combat.attackers.length === 0) {
+        return s;
+      }
+
+      try {
+        return runSBAAndTriggers(resolveCombatDamage(s));
+      } catch (combatErr: unknown) {
+        console.error('Combat damage error while skipping turn:', combatErr);
+        return s;
+      }
+    };
+
+    const passWindowAndAdvance = (s: GameState): GameState => {
+      let next = s;
+      let passGuard = next.players.length + 2;
+      while (!allPriorityPassed(next) && passGuard-- > 0) {
+        next = passPriority(next);
+      }
+      next = resolveCombatDamageBeforeAdvance(next);
+      if (next.stack.length > 0) return next;
+      return advanceStep(next);
+    };
+    const skipRemainingCombat = (s: GameState): GameState => {
+      let next = s;
+      let combatGuard = 20;
+      while (combatSteps.has(next.step) && combatGuard-- > 0) {
+        if (next.stack.length > 0) break;
+        next = passWindowAndAdvance(next);
+      }
+      return next;
+    };
+
+    while (state && safety-- > 0) {
+      const humanIndex = state.players.findIndex(p => p.id === humanId);
+      if (humanIndex < 0 || state.players[humanIndex]?.hasLost) break;
+      if (state.turnNumber !== startingTurn || state.activePlayerIndex !== startingActivePlayerIndex) break;
+
+      const actions = getLegalActions(state, humanId);
+      const emptyAttack = actions.find(
+        (a): a is Extract<AIAction, { kind: 'DeclareAttackers' }> =>
+          a.kind === 'DeclareAttackers' && a.attacks.length === 0,
+      );
+      const emptyBlocks = actions.find(
+        (a): a is Extract<AIAction, { kind: 'DeclareBlockers' }> =>
+          a.kind === 'DeclareBlockers' && a.blocks.length === 0,
+      );
+      const pass = actions.find(
+        (a): a is Extract<AIAction, { kind: 'PassPriority' }> =>
+          a.kind === 'PassPriority',
+      );
+
+      if (state.step === 'declare_attackers' && emptyAttack) {
+        state = applyAction(state, humanId, emptyAttack);
+        skippedWindows += 1;
+        state = skipRemainingCombat(state);
+        continue;
+      } else if (state.step === 'declare_blockers' && emptyBlocks) {
+        state = applyAction(state, humanId, emptyBlocks);
+        skippedWindows += 1;
+        state = skipRemainingCombat(state);
+        continue;
+      } else if (
+        pass &&
+        state.priorityPlayerIndex === humanIndex &&
+        !state.hasPriorityPassed[humanIndex]
+      ) {
+        const result = tryPassPriority(state, humanId);
+        if (!result.ok) break;
+        state = result.state;
+        collectedEvents.push(...result.events);
+        skippedWindows += 1;
+      } else {
+        const advanced = advanceGameLoop(state, loopMessages, loopLogEntries);
+        if (advanced === state) break;
+        state = advanced;
+        continue;
+      }
+
+      const advanced = advanceGameLoop(state, loopMessages, loopLogEntries);
+      if (advanced === state) {
+        continue;
+      }
+      state = advanced;
+    }
+
+    if (!state) return;
+
+    engineRef.current = state as GameStateWithAI;
+    applyEvents(collectedEvents, state);
+    for (const msg of loopMessages) addMessage(msg.role, msg.text);
+    if (loopLogEntries.length > 0) setGameLog(prev => [...prev, ...loopLogEntries]);
+    addMessage(
+      'player',
+      skippedWindows > 0
+        ? `Skipped the rest of your turn (${skippedWindows} window${skippedWindows === 1 ? '' : 's'} passed).`
+        : 'Skipped the rest of your turn.',
+    );
+    syncState();
+  }, [
+    addMessage,
+    advanceGameLoop,
+    applyEvents,
+    discardPhase,
+    gameState?.gameOver,
+    libraryChoice,
+    mulliganPhase,
+    runSBAAndTriggers,
+    skipEmptyPhases,
+    syncState,
+    tutorPhase,
+  ]);
+
   // Handle player action
   const submitAction = useCallback(
     (action: SimpleLegalAction) => {
       const engine = engineRef.current;
       if (!engine || gameState?.gameOver) return;
 
+      if (action.kind === 'SkipRestOfTurn') {
+        skipRestOfTurn();
+        return;
+      }
+
+      if (action.kind === 'SkipEmptyPhases') {
+        skipEmptyPhases();
+        return;
+      }
+
       const engineAction = action._engineAction;
       if (!engineAction) {
         console.warn('No engine action attached to', action);
         return;
+      }
+
+      if (needsMoxDiamondDiscardChoice(engineAction, engine as GameState)) {
+        const card = engine.cards.get(engineAction.cardInstanceId);
+        const def = card ? engine.cardDefinitions.get(card.definitionId) : undefined;
+        const discardOptions = getCardsInZone(engine as GameState, humanIdRef.current, 'hand')
+          .filter(handCard => handCard.instanceId !== engineAction.cardInstanceId)
+          .filter(handCard => isLandDefinition(engine.cardDefinitions.get(handCard.definitionId)))
+          .flatMap(handCard => {
+            const option = toTutorCardOption(engine as GameState, handCard);
+            return option
+              ? [{ ...option, legal: true, reason: 'Land card you can discard', destination: 'graveyard' as const }]
+              : [];
+          })
+          .sort((a, b) => a.name.localeCompare(b.name));
+
+        if (discardOptions.length > 0) {
+          pendingCastChoiceActionRef.current = action;
+          pendingCastChoiceModeRef.current = 'discardLand';
+          tutorRemainingRef.current = 0;
+          tutorFilterRef.current = undefined;
+          tutorFilterSpecRef.current = undefined;
+          tutorTappedRef.current = false;
+          tutorShuffleRef.current = false;
+          tutorSourceNameRef.current = def?.name || 'Cast choice';
+          setTutorTitle(`${def?.name || 'Mox Diamond'}: discard a land card`);
+          setTutorCards(discardOptions);
+          setTutorPhase(true);
+          addMessage('system', `Choose a land to discard so ${def?.name || 'Mox Diamond'} can enter the battlefield.`);
+          syncState();
+          return;
+        }
+      }
+
+      if (needsCastSacrificeCreatureChoice(engineAction, engine as GameState)) {
+        const card = engine.cards.get(engineAction.cardInstanceId);
+        const def = card ? engine.cardDefinitions.get(card.definitionId) : undefined;
+        const sacrificeOptions = [...engine.cards.values()]
+          .filter(instance => instance.zone === 'battlefield')
+          .filter(instance => {
+            const permanentDef = engine.cardDefinitions.get(instance.definitionId);
+            return permanentDef?.card_types.includes('creature');
+          })
+          .flatMap(instance => {
+            const option = toTutorCardOption(engine as GameState, instance);
+            return option
+              ? [{ ...option, legal: true, reason: 'Creature that can be sacrificed', destination: 'graveyard' as const }]
+              : [];
+          })
+          .sort((a, b) => a.name.localeCompare(b.name));
+
+        if (sacrificeOptions.length > 0) {
+          pendingCastChoiceActionRef.current = action;
+          pendingCastChoiceModeRef.current = 'sacrificeCreature';
+          tutorRemainingRef.current = 0;
+          tutorFilterRef.current = undefined;
+          tutorFilterSpecRef.current = { types: ['creature'] };
+          tutorTappedRef.current = false;
+          tutorShuffleRef.current = false;
+          tutorSourceNameRef.current = def?.name || 'Cast choice';
+          setTutorTitle(`${def?.name || 'Cast trigger'}: choose a creature to sacrifice, or cancel to decline`);
+          setTutorCards(sacrificeOptions);
+          setTutorPhase(true);
+          addMessage('system', `${def?.name || 'This spell'} allows any player to sacrifice a creature to counter it.`);
+          syncState();
+          return;
+        }
+      }
+
+      if (engineAction.kind === 'PlayLand') {
+        const card = engine.cards.get(engineAction.cardInstanceId);
+        const def = card ? engine.cardDefinitions.get(card.definitionId) : undefined;
+
+        if (def && isCreatureTypeChoiceLand(def) && !engineAction.chosenCreatureType) {
+          const creatureTypes = getCreatureTypeChoices(engine as GameState, humanIdRef.current);
+          const typeOptions = (creatureTypes.length > 0 ? creatureTypes : ['Dragon'])
+            .map(type => ({
+              instanceId: type,
+              name: type,
+              typeLine: 'Creature type',
+              manaCost: '',
+              legal: true,
+              reason: 'Available creature type choice',
+              destination: 'choice' as const,
+            }));
+
+          pendingPlayLandChoiceRef.current = { kind: 'creatureType', action };
+          tutorRemainingRef.current = 0;
+          tutorFilterRef.current = undefined;
+          tutorFilterSpecRef.current = undefined;
+          tutorTappedRef.current = false;
+          tutorShuffleRef.current = false;
+          tutorSourceNameRef.current = def.name;
+          setTutorTitle(`${def.name}: choose a creature type`);
+          setTutorCards(typeOptions);
+          setTutorPhase(true);
+          addMessage('system', `Choose a creature type for ${def.name}.`);
+          syncState();
+          return;
+        }
+
+        const optionalLifeCost = def ? getOptionalUntappedLifeCostFromText(def.oracle_text) : undefined;
+        if (def && optionalLifeCost !== undefined && engineAction.payLifeToEnterUntapped === undefined) {
+          pendingPlayLandChoiceRef.current = { kind: 'payLife', action };
+          tutorRemainingRef.current = 0;
+          tutorFilterRef.current = undefined;
+          tutorFilterSpecRef.current = undefined;
+          tutorTappedRef.current = false;
+          tutorShuffleRef.current = false;
+          tutorSourceNameRef.current = def.name;
+          setTutorTitle(`${def.name}: enter untapped?`);
+          setTutorCards([
+            {
+              instanceId: 'pay-life',
+              name: `Pay ${optionalLifeCost} life`,
+              typeLine: 'Enter untapped',
+              manaCost: '',
+              legal: true,
+              reason: 'Land enters untapped',
+              destination: 'choice' as const,
+            },
+            {
+              instanceId: 'enter-tapped',
+              name: 'Enter tapped',
+              typeLine: 'Do not pay life',
+              manaCost: '',
+              legal: true,
+              reason: 'Land enters tapped',
+              destination: 'choice' as const,
+            },
+          ]);
+          setTutorPhase(true);
+          addMessage('system', `Choose whether to pay ${optionalLifeCost} life for ${def.name}.`);
+          syncState();
+          return;
+        }
       }
 
       // Snapshot state before meaningful human actions (for undo)
@@ -2420,9 +4274,23 @@ export function useShelectorGame() {
       }
 
       try {
-        // Coach mode: evaluate all options BEFORE applying the action
+        // Capture review data before applying the action so post-game grading
+        // can compare the chosen line against the available alternatives.
+        let decisionReview: DecisionReview | undefined;
+        try {
+          decisionReview = buildDecisionReview(engine, humanIdRef.current, action, legalActions);
+        } catch {
+          // Review capture is optional and must not break gameplay.
+        }
         let coachMessage: string | null = null;
-        if (coachMode && isUndoable && engineAction.kind !== 'DeclareAttackers' && engineAction.kind !== 'DeclareBlockers') {
+        if (
+          coachMode &&
+          decisionReview &&
+          engineAction.kind !== 'DeclareAttackers' &&
+          engineAction.kind !== 'DeclareBlockers'
+        ) {
+          coachMessage = coachMessageFromDecision(decisionReview);
+        } else if (coachMode && isUndoable && engineAction.kind !== 'DeclareAttackers' && engineAction.kind !== 'DeclareBlockers') {
           try {
             const allActions = getLegalActions(engine, humanIdRef.current);
             // Only evaluate if there were real choices (not just pass)
@@ -2492,10 +4360,9 @@ export function useShelectorGame() {
 
           if (card && player) {
             const def = getCardDefinition(engine, card);
-            const baseCost = parseManaString(def.mana_cost);
             const isFromCommandZone = card.zone === 'command';
-            const taxAmount = isFromCommandZone ? player.commanderCastCount * 2 : 0;
-            const totalCost: ManaCost = { ...baseCost, generic: baseCost.generic + taxAmount };
+            const taxAmount = isFromCommandZone ? getCommanderCastCount(player, card.instanceId) * 2 : 0;
+            const totalCost = reducedSpellCost(engine, humanId, def, taxAmount);
 
             if (!canPayCost(player.manaPool, totalCost)) {
               // Need to auto-tap lands first
@@ -2544,12 +4411,18 @@ export function useShelectorGame() {
 
           // Cast the spell via tryCastSpell (manaPayment=empty; pool-check is done internally)
           const emptyPayment: ManaCost = { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0, generic: 0 };
+          const castOptions = {
+            ...('chosenModes' in engineAction && engineAction.chosenModes ? { chosenModes: engineAction.chosenModes } : {}),
+            ...('namedCardChoices' in engineAction && engineAction.namedCardChoices ? { namedCardChoices: engineAction.namedCardChoices } : {}),
+            ...('cardChoices' in engineAction && engineAction.cardChoices ? { cardChoices: engineAction.cardChoices } : {}),
+          };
           const castResult = tryCastSpell(
             precastState,
             humanIdRef.current,
             engineAction.cardInstanceId,
             engineAction.targets,
             emptyPayment,
+            castOptions,
           );
           if (!castResult.ok) {
             setActionError({ reason: castResult.reason, message: castResult.message });
@@ -2560,7 +4433,18 @@ export function useShelectorGame() {
           newState = castResult.state;
           collectedEvents.push(...castResult.events);
         } else if (engineAction.kind === 'PlayLand') {
-          const result = tryPlayLand(engine as GameState, humanIdRef.current, engineAction.cardInstanceId);
+          const playLandOptions = {
+            ...(engineAction.chosenCreatureType ? { chosenCreatureType: engineAction.chosenCreatureType } : {}),
+            ...(engineAction.payLifeToEnterUntapped !== undefined
+              ? { payLifeToEnterUntapped: engineAction.payLifeToEnterUntapped }
+              : {}),
+          };
+          const result = tryPlayLand(
+            engine as GameState,
+            humanIdRef.current,
+            engineAction.cardInstanceId,
+            playLandOptions,
+          );
           if (!result.ok) {
             setActionError({ reason: result.reason, message: result.message });
             addMessage('system', `Cannot play land: ${result.message}`);
@@ -2620,7 +4504,51 @@ export function useShelectorGame() {
           newState = result.state;
           collectedEvents.push(...result.events);
         } else if (engineAction.kind === 'Equip') {
-          const result = tryEquip(engine as GameState, humanIdRef.current, engineAction.equipmentInstanceId, engineAction.targetCreatureId);
+          let preEquipState = engine as GameState;
+          const equipment = preEquipState.cards.get(engineAction.equipmentInstanceId);
+          const equipDef = equipment ? getCardDefinition(preEquipState, equipment) : undefined;
+          const equipCost = equipDef?.equipCost ? { ...equipDef.equipCost } as ManaCost : null;
+
+          if (equipCost) {
+            const player = preEquipState.players.find(p => p.id === humanIdRef.current);
+            if (player && !canPayCost(player.manaPool, equipCost)) {
+              const manaActions = getLegalActions(preEquipState, humanIdRef.current).filter(
+                (a): a is { kind: 'ActivateManaAbility'; cardInstanceId: string; color: ManaColor } =>
+                  a.kind === 'ActivateManaAbility',
+              );
+              const landsToTap = findLandsToTap(preEquipState, humanIdRef.current, equipCost, manaActions);
+              if (landsToTap && landsToTap.length > 0) {
+                let tapState = preEquipState;
+                for (const manaAction of landsToTap) {
+                  if (manaAction.kind !== 'ActivateManaAbility') continue;
+                  const beforePool = tapState.players.find(p => p.id === humanIdRef.current)?.manaPool;
+                  const tapResult = tryTapLandForMana(tapState, humanIdRef.current, manaAction.cardInstanceId, manaAction.color);
+                  if (!tapResult.ok) continue;
+                  tapState = tapResult.state;
+                  collectedEvents.push(...tapResult.events);
+
+                  const afterPool = tapState.players.find(p => p.id === humanIdRef.current)?.manaPool;
+                  const tappedCard = tapState.cards.get(manaAction.cardInstanceId);
+                  const tappedDef = tappedCard ? getCardDefinition(tapState, tappedCard) : undefined;
+                  const gained: string[] = [];
+                  if (afterPool && beforePool) {
+                    for (const c of ['W', 'U', 'B', 'R', 'G', 'C'] as const) {
+                      const diff = afterPool[c] - beforePool[c];
+                      if (diff > 0) gained.push(`+${diff}${c}`);
+                    }
+                  }
+                  addMessage('system', `Auto-tapped ${tappedDef?.name || 'a permanent'} (${gained.join(' ') || '+mana'}).`);
+                }
+                const poolBeforeEquip = tapState.players.find(p => p.id === humanIdRef.current)?.manaPool;
+                addMessage('system', `Mana available: ${poolBeforeEquip ? formatManaPool(poolBeforeEquip) : '?'}`);
+                preEquipState = tapState;
+              }
+            } else if (player) {
+              addMessage('system', `Using floating mana: ${formatManaPool(player.manaPool)}`);
+            }
+          }
+
+          const result = tryEquip(preEquipState, humanIdRef.current, engineAction.equipmentInstanceId, engineAction.targetCreatureId);
           if (!result.ok) {
             setActionError({ reason: result.reason, message: result.message });
             addMessage('system', `Cannot equip: ${result.message}`);
@@ -2638,16 +4566,28 @@ export function useShelectorGame() {
           rememberLastPlayedCard(newState, action.cardInstanceId, humanIdRef.current, 'Played');
         } else if (action.kind === 'CastSpell') {
           rememberLastPlayedCard(newState, action.cardInstanceId, humanIdRef.current, 'Cast');
-        } else if (action.kind === 'ActivateAbility') {
+        } else if (action.kind === 'ActivateAbility' || action.kind === 'Equip') {
           rememberLastPlayedCard(newState, action.cardInstanceId, humanIdRef.current, 'Activated');
         }
 
         // Accumulate events from this action and open the EndGameModal if needed
         applyEvents(collectedEvents, newState);
+        recordStateUpdate(engine as GameState, newState, action, collectedEvents);
 
         // Track uncommitted mana taps (can be untapped) vs committed (used for a spell)
         if (engineAction.kind === 'ActivateManaAbility' && 'cardInstanceId' in engineAction) {
-          uncommittedTapsRef.current.add(engineAction.cardInstanceId);
+          const activatedCard = newState.cards.get(engineAction.cardInstanceId);
+          if (activatedCard?.zone === 'battlefield' && activatedCard.tapped) {
+            const poolBefore = engine.players.find(p => p.id === humanIdRef.current)?.manaPool;
+            const poolAfterTap = newState.players.find(p => p.id === humanIdRef.current)?.manaPool;
+            const amount = poolBefore && poolAfterTap
+              ? Math.max(0, poolAfterTap[engineAction.color] - poolBefore[engineAction.color])
+              : 1;
+            uncommittedTapsRef.current.set(engineAction.cardInstanceId, {
+              color: engineAction.color,
+              amount: Math.max(0, amount),
+            });
+          }
         } else if (engineAction.kind === 'CastSpell') {
           // Spell was cast — all tapped mana sources are now committed
           uncommittedTapsRef.current.clear();
@@ -2682,6 +4622,8 @@ export function useShelectorGame() {
             ? `${action.label}. Floating: ${poolStr}`
             : `Activated ${action.cardName || 'an ability'}.`;
           addMessage('player', msg);
+        } else if (action.kind === 'Equip') {
+          addMessage('player', `${action.label}. Floating: ${poolStr}`);
         } else if (action.kind === 'ActivateManaAbility') {
           // Show mana gained and floating total
           const poolBefore = engine.players.find(p => p.id === humanIdRef.current)?.manaPool;
@@ -2709,6 +4651,8 @@ export function useShelectorGame() {
             ? action.label
             : action.kind === 'ActivateAbility'
             ? `Activated ${action.cardName || 'an ability'}`
+            : action.kind === 'Equip'
+            ? action.label
             : action.kind === 'PassPriority'
             ? 'Passed priority'
             : action.label;
@@ -2719,13 +4663,21 @@ export function useShelectorGame() {
             if (card) {
               const def = getCardDefinition(newState, card);
               const cost = parseManaString(def.mana_cost);
-              manaSpent = cost.W + cost.U + cost.B + cost.R + cost.G + cost.C + cost.generic;
+              manaSpent = manaCostValue(cost);
             }
           }
           appendLog(captureLogEntry(
             newState, humanIdRef.current, aiIdsRef.current,
             'human', humanAction, manaSpent,
+            undefined,
+            decisionReview,
           ));
+        }
+
+        if (engineAction.kind === 'ActivateManaAbility') {
+          engineRef.current = newState as GameStateWithAI;
+          syncState();
+          return;
         }
 
         // Run the game loop: resolve stack, advance steps, run AI turns
@@ -2788,8 +4740,157 @@ export function useShelectorGame() {
         syncState();
       }
     },
-    [gameState, addMessage, appendLog, syncState, advanceGameLoop, applyEvents, lastPlayedCard, rememberLastPlayedCard],
+    [gameState, addMessage, appendLog, syncState, advanceGameLoop, applyEvents, lastPlayedCard, rememberLastPlayedCard, recordStateUpdate, skipEmptyPhases, skipRestOfTurn],
   );
+  submitActionRef.current = submitAction;
+
+  const exportGameSave = useCallback((): ShelectorGameSaveSnapshot | null => {
+    const engine = engineRef.current;
+    if (!engine) return null;
+    return {
+      version: 1,
+      savedAt: Date.now(),
+      engine: serializeGameState(engine),
+      humanDeck: humanDeckRef.current,
+      aiDecks: aiDecksRef.current,
+      humanCommander: humanCommanderRef.current,
+      aiCommanderNames: aiCommanderNamesRef.current,
+      humanId: humanIdRef.current,
+      aiIds: aiIdsRef.current,
+      opponentInfo,
+      chatMessages,
+      gameLog,
+      authorityUpdates,
+      lastStateUpdate,
+      currentPrompt,
+      lastPlayedCard,
+      mulliganPhase,
+      mulliganCount,
+      selectedMulliganBottomIds,
+      discardPhase,
+      discardCount,
+      tutorPhase,
+      tutorCards,
+      tutorTitle,
+      libraryChoice,
+      undosRemaining,
+      coachMode,
+      newPlayerMode,
+      holdPriority,
+      actionError,
+      lastEvents,
+      endGame,
+    };
+  }, [
+    opponentInfo,
+    chatMessages,
+    gameLog,
+    authorityUpdates,
+    lastStateUpdate,
+    currentPrompt,
+    lastPlayedCard,
+    mulliganPhase,
+    mulliganCount,
+    selectedMulliganBottomIds,
+    discardPhase,
+    discardCount,
+    tutorPhase,
+    tutorCards,
+    tutorTitle,
+    libraryChoice,
+    undosRemaining,
+    coachMode,
+    newPlayerMode,
+    holdPriority,
+    actionError,
+    lastEvents,
+    endGame,
+  ]);
+
+  const restoreGameSave = useCallback((snapshot: ShelectorGameSaveSnapshot): boolean => {
+    try {
+      if (!snapshot || snapshot.version !== 1) {
+        throw new Error('Unsupported save snapshot');
+      }
+      const restored = deserializeGameState(snapshot.engine) as GameStateWithAI;
+      const aiIdSet = new Set(snapshot.aiIds || []);
+      restored.players = restored.players.map(player => ({
+        ...player,
+        isAI: aiIdSet.has(player.id),
+      }));
+
+      engineRef.current = restored;
+      humanDeckRef.current = snapshot.humanDeck;
+      aiDecksRef.current = snapshot.aiDecks || [];
+      humanCommanderRef.current = snapshot.humanCommander || 'Unknown Commander';
+      aiCommanderNamesRef.current = snapshot.aiCommanderNames || {};
+      humanIdRef.current = snapshot.humanId || 'human';
+      aiIdsRef.current = snapshot.aiIds || [];
+      cardLookupRef.current = (name: string) => {
+        const normalized = normalizeLookupName(name);
+        for (const def of restored.cardDefinitions.values()) {
+          if (normalizeLookupName(def.name) === normalized) {
+            return {
+              id: def.id,
+              name: def.name,
+              type_line: def.type_line,
+              oracle_text: def.oracle_text,
+              mana_cost: def.mana_cost,
+              cmc: def.cmc,
+              colors: def.colors,
+              color_identity: def.color_identity,
+              keywords: def.keywords,
+              power: def.power?.toString() ?? null,
+              toughness: def.toughness?.toString() ?? null,
+            } as ScryfallCard;
+          }
+        }
+        return undefined;
+      };
+
+      undoStackRef.current = [];
+      uncommittedTapsRef.current.clear();
+      stepEffectsDoneRef.current.clear();
+      pendingCastChoiceActionRef.current = null;
+      pendingPlayLandChoiceRef.current = null;
+      const restoredLibraryChoice = snapshot.libraryChoice || null;
+      pendingLibraryChoiceRef.current = restoredLibraryChoice
+        ? { stackItemId: restoredLibraryChoice.id.split(':')[0], mode: restoredLibraryChoice.mode }
+        : null;
+      setOpponentInfo(snapshot.opponentInfo || null);
+      setChatMessages(snapshot.chatMessages || []);
+      setGameLog(snapshot.gameLog || []);
+      setAuthorityUpdates(snapshot.authorityUpdates || []);
+      setLastStateUpdate(snapshot.lastStateUpdate || null);
+      setLastPlayedCard(snapshot.lastPlayedCard || null);
+      setMulliganPhase(Boolean(snapshot.mulliganPhase));
+      setMulliganCount(snapshot.mulliganCount || 0);
+      setSelectedMulliganBottomIds(snapshot.selectedMulliganBottomIds || []);
+      setDiscardPhase(Boolean(snapshot.discardPhase));
+      setDiscardCount(snapshot.discardCount || 0);
+      discardCountRef.current = snapshot.discardCount || 0;
+      setTutorPhase(Boolean(snapshot.tutorPhase));
+      setTutorCards(snapshot.tutorCards || []);
+      setTutorTitle(snapshot.tutorTitle || '');
+      setLibraryChoice(restoredLibraryChoice);
+      setUndosRemaining(snapshot.undosRemaining ?? 10);
+      setCoachMode(Boolean(snapshot.coachMode));
+      setNewPlayerMode(Boolean(snapshot.newPlayerMode));
+      setHoldPriority(Boolean(snapshot.holdPriority));
+      setActionError(snapshot.actionError || null);
+      setLastEvents(snapshot.lastEvents || []);
+      setEndGame(snapshot.endGame || { open: false, kind: 'loss' });
+      setIsLoading(false);
+      setError(null);
+      syncState();
+      return true;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Could not restore save';
+      setError(msg);
+      console.error('Restore save error:', err);
+      return false;
+    }
+  }, [setCoachMode, setHoldPriority, setNewPlayerMode, syncState]);
 
   const isHumanTurn = gameState?.priorityPlayerId === humanIdRef.current;
   const isGameOver = gameState?.gameOver ?? false;
@@ -2808,16 +4909,24 @@ export function useShelectorGame() {
     error,
     mulliganPhase,
     mulliganCount,
+    mulliganBottomCount: mulliganPhase && mulliganCount > 0 ? mulliganCount : 0,
+    selectedMulliganBottomIds,
     discardPhase,
     discardCount,
     tutorPhase,
     tutorCards,
     tutorTitle,
-    gameLog,
-    lastPlayedCard,
-    undosRemaining,
+    libraryChoice,
+      gameLog,
+      authorityUpdates,
+      lastStateUpdate,
+      currentPrompt,
+      lastPlayedCard,
+      undosRemaining,
     coachMode,
-    untappableCardIds: [...uncommittedTapsRef.current],
+    newPlayerMode,
+    holdPriority,
+    untappableCardIds: [...uncommittedTapsRef.current.keys()],
     // try* error state (Task 7)
     actionError,
     lastEvents,
@@ -2841,15 +4950,22 @@ export function useShelectorGame() {
     // Actions
     spawnOpponent,
     startGame,
+    exportGameSave,
+    restoreGameSave,
     submitAction,
     keepHand,
     mulligan,
+    toggleMulliganBottomCard,
     discardCard,
     resolveTutor,
     cancelTutor,
+    resolveLibraryChoice,
     undoAction,
     setCoachMode,
+    setNewPlayerMode,
+    setHoldPriority,
     untapManaSource,
+    adjustCounters,
     clearActionError: () => setActionError(null),
   };
 }

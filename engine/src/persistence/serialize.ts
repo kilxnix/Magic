@@ -4,7 +4,7 @@
  * Convert GameState to/from JSON-serializable format.
  */
 
-import { GameState, CardInstance, CardDefinition, Player, StackItem, TriggeredAbilityStackItem, CombatState } from '../types';
+import { GameState, CardInstance, CardDefinition, Player, StackItem, TriggeredAbilityStackItem, CombatState, RestrictedMana, ConditionalMana, Zone } from '../types';
 import { hasGrudgeTracking, GameStateWithGrudges } from '../ai/grudges';
 import type {
   SerializedGameStateV1,
@@ -31,8 +31,12 @@ function serializePlayer(player: Player, isAI: boolean = false): SerializedPlaye
     commanderDamage: { ...player.commanderDamage },
     commanderTax: player.commanderTax,
     commanderInstanceId: player.commanderInstanceId,
+    commanderInstanceIds: player.commanderInstanceIds ? [...player.commanderInstanceIds] : undefined,
     commanderCastCount: player.commanderCastCount,
+    commanderCastCounts: player.commanderCastCounts ? { ...player.commanderCastCounts } : undefined,
     manaPool: { ...player.manaPool },
+    restrictedMana: player.restrictedMana ? player.restrictedMana.map(m => ({ ...m })) : undefined,
+    conditionalMana: player.conditionalMana ? player.conditionalMana.map(m => ({ ...m })) : undefined,
     hasPlayedLand: player.hasPlayedLand,
     hasPriority: player.hasPriority,
     hasLost: player.hasLost,
@@ -52,8 +56,31 @@ function deserializePlayer(data: SerializedPlayerV1): Player {
     commanderDamage: { ...data.commanderDamage },
     commanderTax: data.commanderTax,
     commanderInstanceId: data.commanderInstanceId,
+    commanderInstanceIds: data.commanderInstanceIds
+      ? [...data.commanderInstanceIds]
+      : data.commanderInstanceId
+      ? [data.commanderInstanceId]
+      : [],
     commanderCastCount: data.commanderCastCount,
+    commanderCastCounts: data.commanderCastCounts
+      ? { ...data.commanderCastCounts }
+      : data.commanderInstanceId
+      ? { [data.commanderInstanceId]: data.commanderCastCount }
+      : {},
     manaPool: { ...data.manaPool },
+    restrictedMana: data.restrictedMana?.map(m => ({
+      color: m.color as RestrictedMana['color'],
+      amount: m.amount,
+      restriction: m.restriction as RestrictedMana['restriction'],
+      creatureType: m.creatureType,
+      sourceInstanceId: m.sourceInstanceId,
+    })),
+    conditionalMana: data.conditionalMana?.map(m => ({
+      color: m.color as ConditionalMana['color'],
+      amount: m.amount,
+      effect: m.effect as ConditionalMana['effect'],
+      sourceInstanceId: m.sourceInstanceId,
+    })) ?? [],
     hasPlayedLand: data.hasPlayedLand,
     hasPriority: data.hasPriority,
     hasLost: data.hasLost,
@@ -74,9 +101,27 @@ function serializeCardInstance(card: CardInstance): SerializedCardInstanceV1 {
     counters: { ...card.counters },
     attachedTo: card.attachedTo,
     damage: card.damage,
+    deathtouchDamage: card.deathtouchDamage,
     isCommander: card.isCommander,
     fromSideboard: card.fromSideboard,
+    choices: serializeCardChoices(card.choices),
   };
+}
+
+function serializeCardChoices(choices: CardInstance['choices']): SerializedCardInstanceV1['choices'] {
+  return choices ? {
+    chosenCreatureType: choices.chosenCreatureType,
+    imprintedCardIds: choices.imprintedCardIds ? [...choices.imprintedCardIds] : undefined,
+    discardedCardIds: choices.discardedCardIds ? [...choices.discardedCardIds] : undefined,
+  } : undefined;
+}
+
+function deserializeCardChoices(choices: SerializedCardInstanceV1['choices']): CardInstance['choices'] {
+  return choices ? {
+    chosenCreatureType: choices.chosenCreatureType,
+    imprintedCardIds: choices.imprintedCardIds ? [...choices.imprintedCardIds] : undefined,
+    discardedCardIds: choices.discardedCardIds ? [...choices.discardedCardIds] : undefined,
+  } : undefined;
 }
 
 /**
@@ -93,8 +138,10 @@ function deserializeCardInstance(data: SerializedCardInstanceV1): CardInstance {
     counters: { ...data.counters },
     attachedTo: data.attachedTo,
     damage: data.damage,
+    deathtouchDamage: data.deathtouchDamage,
     isCommander: data.isCommander,
     fromSideboard: data.fromSideboard,
+    choices: deserializeCardChoices(data.choices),
   };
 }
 
@@ -149,6 +196,13 @@ function serializeStackItem(item: StackItem): SerializedStackItemV1 {
       cardInstanceId: item.cardInstanceId,
       casterId: item.casterId,
       targets: [...item.targets],
+      castFromZone: item.castFromZone,
+      chosenModes: item.chosenModes ? [...item.chosenModes] : undefined,
+      namedCardChoices: item.namedCardChoices ? { ...item.namedCardChoices } : undefined,
+      cardChoices: serializeCardChoices(item.cardChoices),
+      cantBeCountered: item.cantBeCountered,
+      isCopy: item.isCopy,
+      copyOfCardInstanceId: item.copyOfCardInstanceId,
     };
   } else {
     return {
@@ -157,7 +211,10 @@ function serializeStackItem(item: StackItem): SerializedStackItemV1 {
       sourceInstanceId: item.sourceInstanceId,
       controllerId: item.controllerId,
       targets: [...item.targets],
+      targetSpecs: item.kind === 'TriggeredAbility' ? item.targetSpecs : undefined,
+      namedCardChoices: item.kind === 'TriggeredAbility' ? item.namedCardChoices ? { ...item.namedCardChoices } : undefined : undefined,
       ability: item.ability,
+      eventContext: item.kind === 'TriggeredAbility' ? item.eventContext : undefined,
     };
   }
 }
@@ -173,6 +230,13 @@ function deserializeStackItem(data: SerializedStackItemV1): StackItem {
       cardInstanceId: data.cardInstanceId!,
       casterId: data.casterId!,
       targets: [...data.targets],
+      castFromZone: data.castFromZone as Zone | undefined,
+      chosenModes: data.chosenModes ? [...data.chosenModes] : undefined,
+      namedCardChoices: data.namedCardChoices ? { ...data.namedCardChoices } : undefined,
+      cardChoices: deserializeCardChoices(data.cardChoices),
+      cantBeCountered: data.cantBeCountered,
+      isCopy: data.isCopy,
+      copyOfCardInstanceId: data.copyOfCardInstanceId,
     };
   } else {
     return {
@@ -181,7 +245,10 @@ function deserializeStackItem(data: SerializedStackItemV1): StackItem {
       sourceInstanceId: data.sourceInstanceId!,
       controllerId: data.controllerId!,
       targets: [...data.targets],
+      targetSpecs: data.targetSpecs,
+      namedCardChoices: data.namedCardChoices ? { ...data.namedCardChoices } : undefined,
       ability: data.ability as TriggeredAbilityStackItem['ability'],
+      eventContext: data.eventContext,
     };
   }
 }
@@ -199,6 +266,8 @@ function serializeCombatState(combat: CombatState): SerializedCombatStateV1 {
       cardInstanceId: b.cardInstanceId,
       blockingAttackerId: b.blockingAttackerId,
     })),
+    blockersDeclared: combat.blockersDeclared,
+    blockersDeclaredBy: combat.blockersDeclaredBy ? [...combat.blockersDeclaredBy] : undefined,
     damageAssignment: Array.from(combat.damageAssignment.entries()),
   };
 }
@@ -216,6 +285,8 @@ function deserializeCombatState(data: SerializedCombatStateV1): CombatState {
       cardInstanceId: b.cardInstanceId,
       blockingAttackerId: b.blockingAttackerId,
     })),
+    blockersDeclared: data.blockersDeclared,
+    blockersDeclaredBy: data.blockersDeclaredBy ? [...data.blockersDeclaredBy] : undefined,
     damageAssignment: new Map(data.damageAssignment),
   };
 }
@@ -233,6 +304,7 @@ export function serializeGameState(state: GameState): SerializedGameStateV1 {
     phase: state.phase,
     step: state.step,
     turnNumber: state.turnNumber,
+    spellsCastThisTurn: state.spellsCastThisTurn,
     hasPriorityPassed: [...state.hasPriorityPassed],
     stack: state.stack.map(serializeStackItem),
     combat: state.combat ? serializeCombatState(state.combat) : null,
@@ -272,6 +344,7 @@ export function deserializeGameState(data: SerializedGameStateV1): GameState {
     phase: data.phase as GameState['phase'],
     step: data.step as GameState['step'],
     turnNumber: data.turnNumber,
+    spellsCastThisTurn: data.spellsCastThisTurn ?? 0,
     hasPriorityPassed: [...data.hasPriorityPassed],
     stack: data.stack.map(deserializeStackItem),
     combat: data.combat ? deserializeCombatState(data.combat) : null,

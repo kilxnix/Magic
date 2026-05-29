@@ -4,7 +4,6 @@ import { Deck, Commander, Bracket, DeckRequest } from '../types';
 import { DeckHistory } from '../components/DeckHistory';
 import { DeckVisualView } from '../components/DeckVisualView';
 import { LiveRibbon } from '../components/LiveRibbon';
-import { AdPlaceholder } from '../components/AdPlaceholder';
 import { Menu, X, TrendingDown, RefreshCw, Lock, Brain, ChevronDown, ChevronUp } from 'lucide-react';
 
 // API functions
@@ -406,7 +405,7 @@ export function GeneratorPage() {
                   <p className="text-stone-500">
                     {deckFormat === 'standard'
                       ? 'Build 60-card Standard decks with a 15-card sideboard'
-                      : 'Build decks following Command Zone rules'
+                      : 'Build decks using Commander-style deckbuilding targets'
                     }
                   </p>
                 </div>
@@ -562,7 +561,7 @@ export function GeneratorPage() {
                       </p>
                       {brackets.find(b => b.id === selectedBracket)?.expected_turns && (
                         <p className="text-xs text-stone-600 font-medium">
-                          Expected Game Length: ~{brackets.find(b => b.id === selectedBracket)?.expected_turns} turns
+                          Target Game Length: ~{brackets.find(b => b.id === selectedBracket)?.expected_turns} turns
                         </p>
                       )}
                     </div>
@@ -624,7 +623,7 @@ export function GeneratorPage() {
                       <span className="text-stone-500 ml-1">
                         {deckFormat === 'standard'
                           ? '- scores card fit against your colors, archetype, and theme'
-                          : '- local model scores theme fit, then reviews synergy'
+                          : '- experimental local model scoring for theme fit and synergy'
                         }
                       </span>
                     </span>
@@ -667,7 +666,7 @@ export function GeneratorPage() {
                     </>
                   ) : (
                     <>
-                      <p>Decks are built following Command Zone rules:</p>
+                      <p>Decks currently target:</p>
                       <ul className="list-disc list-inside pl-2">
                         <li>Max 34 lands</li>
                         <li>10+ ramp cards</li>
@@ -809,30 +808,10 @@ export function GeneratorPage() {
                 />
               </div>
 
-              {/* Bottom Ad below deck display */}
-              <div className="flex justify-center p-4 border-t border-stone-200 bg-stone-100">
-                <AdPlaceholder size="leaderboard" className="hidden md:flex" />
-                <AdPlaceholder size="sidebar" className="md:hidden" />
-              </div>
             </div>
           )}
         </main>
-
-        {/* Right Sidebar - Ad (Desktop only) */}
-        <aside className="hidden lg:flex flex-col items-center gap-4 p-4 w-[332px] flex-shrink-0 border-l border-stone-200 bg-stone-50">
-          <AdPlaceholder size="sidebar" />
-          <div className="text-xs text-stone-400 text-center mt-2">
-            Support the site
-          </div>
-        </aside>
       </div>
-
-      {/* Mobile Bottom Ad */}
-      {!selectedDeck && (
-        <div className="md:hidden flex justify-center p-4 border-t border-stone-200 bg-stone-100">
-          <AdPlaceholder size="sidebar" />
-        </div>
-      )}
     </div>
   );
 }

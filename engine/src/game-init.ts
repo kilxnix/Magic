@@ -92,15 +92,19 @@ function setupPlayer(
     difficulty: options.difficulty,
   };
 
-  if (deck.commander) {
-    // Add commander definition
-    state.cardDefinitions.set(deck.commander.id, deck.commander);
+  const commanderDefs = deck.commanders?.length
+    ? deck.commanders
+    : deck.commander
+    ? [deck.commander]
+    : [];
 
-    // Create commander instance in command zone
+  for (const commanderDef of commanderDefs) {
+    state.cardDefinitions.set(commanderDef.id, commanderDef);
+
     const commanderInstanceId = generateInstanceId('cmd');
     const commanderInstance: CardInstance = {
       instanceId: commanderInstanceId,
-      definitionId: deck.commander.id,
+      definitionId: commanderDef.id,
       ownerId: id,
       zone: 'command',
       tapped: false,
@@ -110,7 +114,14 @@ function setupPlayer(
       isCommander: true,
     };
     state.cards.set(commanderInstanceId, commanderInstance);
-    player.commanderInstanceId = commanderInstanceId;
+    player.commanderInstanceIds = [...(player.commanderInstanceIds || []), commanderInstanceId];
+    player.commanderCastCounts = {
+      ...(player.commanderCastCounts || {}),
+      [commanderInstanceId]: 0,
+    };
+    if (!player.commanderInstanceId) {
+      player.commanderInstanceId = commanderInstanceId;
+    }
   }
 
   // Add library card definitions

@@ -1,5 +1,5 @@
 import { AttackerDeclaration, BlockerDeclaration, CombatState, GameState, Player } from './types';
-import { getCardDefinition, getPlayer } from './game-state';
+import { getPlayer } from './game-state';
 import {
   canAttackThisTurn,
   shouldTapWhenAttacking,
@@ -8,7 +8,8 @@ import {
   instanceHasKeyword,
   isLethalDamage,
 } from './keywords';
-import { getEffectivePower } from './effects/continuous';
+import { getEffectivePower, getEffectiveToughness } from './effects/continuous';
+import { isEffectiveCreature } from './effective-types';
 import { checkTriggersForEvent } from './stack';
 import { checkStateBasedActions } from './state-based';
 
@@ -22,8 +23,7 @@ export function canDeclareAttacker(state: GameState, playerId: string, cardInsta
   if (card.zone !== 'battlefield') return false;
   if (card.tapped) return false;
 
-  const def = getCardDefinition(state, card);
-  if (!def.card_types.includes('creature')) return false;
+  if (!isEffectiveCreature(state, cardInstanceId)) return false;
 
   // Use keyword helpers for defender/haste/summoning sickness
   if (!canAttackThisTurn(state, cardInstanceId)) return false;
@@ -54,6 +54,8 @@ export function declareAttackers(state: GameState, playerId: string, attacks: At
   const combat: CombatState = {
     attackers: attacks,
     blockers: [],
+    blockersDeclared: false,
+    blockersDeclaredBy: [],
     damageAssignment: new Map(),
   };
 
@@ -77,6 +79,23 @@ export function declareAttackers(state: GameState, playerId: string, attacks: At
   return resultState;
 }
 
+function defendingPlayerIds(combat: CombatState): string[] {
+  return [...new Set(combat.attackers.map(attack => attack.defendingPlayerId))];
+}
+
+export function hasPlayerDeclaredBlockers(state: GameState, playerId: string): boolean {
+  if (!state.combat) return false;
+  if (state.combat.blockersDeclaredBy) {
+    return state.combat.blockersDeclaredBy.includes(playerId);
+  }
+  return state.combat.blockersDeclared === true;
+}
+
+function allDefendersDeclared(combat: CombatState, declaredBy: string[]): boolean {
+  const defenders = defendingPlayerIds(combat);
+  return defenders.length === 0 || defenders.every(playerId => declaredBy.includes(playerId));
+}
+
 export function canDeclareBlocker(
   state: GameState,
   playerId: string,
@@ -84,6 +103,7 @@ export function canDeclareBlocker(
   attackerInstanceId: string
 ): boolean {
   if (!state.combat) return false;
+  if (hasPlayerDeclaredBlockers(state, playerId)) return false;
 
   const card = state.cards.get(cardInstanceId);
   if (!card) return false;
@@ -91,8 +111,7 @@ export function canDeclareBlocker(
   if (card.zone !== 'battlefield') return false;
   if (card.tapped) return false;
 
-  const def = getCardDefinition(state, card);
-  if (!def.card_types.includes('creature')) return false;
+  if (!isEffectiveCreature(state, cardInstanceId)) return false;
 
   // Can only block attackers targeting you
   const attacker = state.combat.attackers.find(a => a.cardInstanceId === attackerInstanceId);
@@ -107,6 +126,12 @@ export function canDeclareBlocker(
 
 export function declareBlockers(state: GameState, playerId: string, blocks: BlockerDeclaration[]): GameState {
   if (!state.combat) throw new Error('No combat state');
+  if (hasPlayerDeclaredBlockers(state, playerId)) throw new Error('Blockers already declared');
+
+  const defendingPlayers = defendingPlayerIds(state.combat);
+  if (!defendingPlayers.includes(playerId)) {
+    throw new Error('No attackers are attacking this player');
+  }
 
   for (const block of blocks) {
     if (!canDeclareBlocker(state, playerId, block.cardInstanceId, block.blockingAttackerId)) {
@@ -118,7 +143,7 @@ export function declareBlockers(state: GameState, playerId: string, blocks: Bloc
   const newBlockers = [...state.combat.blockers, ...blocks];
 
   // Validate menace for each attacker
-  for (const attacker of state.combat.attackers) {
+  for (const attacker of state.combat.attackers.filter(attack => attack.defendingPlayerId === playerId)) {
     const blockerIds = newBlockers
       .filter(b => b.blockingAttackerId === attacker.cardInstanceId)
       .map(b => b.cardInstanceId);
@@ -128,16 +153,25 @@ export function declareBlockers(state: GameState, playerId: string, blocks: Bloc
     }
   }
 
+  const blockersDeclaredBy = [...(state.combat.blockersDeclaredBy || []), playerId];
+  const blockersDeclared = allDefendersDeclared(state.combat, blockersDeclaredBy);
+  const nextBlockingPlayerId = defendingPlayers.find(defenderId => !blockersDeclaredBy.includes(defenderId));
+  const nextPriorityIndex = blockersDeclared
+    ? state.activePlayerIndex
+    : Math.max(0, state.players.findIndex(player => player.id === nextBlockingPlayerId));
+
   const combat: CombatState = {
     ...state.combat,
     blockers: newBlockers,
+    blockersDeclared,
+    blockersDeclaredBy,
   };
 
   return {
     ...state,
     combat,
     hasPriorityPassed: new Array(state.players.length).fill(false),
-    priorityPlayerIndex: state.activePlayerIndex,
+    priorityPlayerIndex: nextPriorityIndex,
   };
 }
 
@@ -201,15 +235,12 @@ function getLethalDamageAmount(
   const target = state.cards.get(targetId);
   if (!target) return 0;
 
-  const def = state.cardDefinitions.get(target.definitionId);
-  if (!def) return 0;
-
-  const toughness = def.toughness ?? 0;
+  const toughness = getEffectiveToughness(state, targetId);
   const remainingToughness = toughness - target.damage;
 
   // Deathtouch: 1 damage is lethal
   if (instanceHasKeyword(state, sourceId, 'Deathtouch')) {
-    return Math.min(1, remainingToughness);
+    return Math.max(0, Math.min(1, remainingToughness));
   }
 
   return Math.max(0, remainingToughness);
@@ -267,6 +298,12 @@ function resolveDamageStep(state: GameState, step: 'first' | 'normal'): GameStat
 
   const newCards = new Map(state.cards);
   const newPlayers = state.players.map(p => ({ ...p }));
+  const combatDamageEvents: Array<{
+    sourceInstanceId: string;
+    controllerId: string;
+    damagedPlayerId: string;
+    damage: number;
+  }> = [];
 
   for (const attacker of state.combat.attackers) {
     const attackerCard = newCards.get(attacker.cardInstanceId);
@@ -288,6 +325,14 @@ function resolveDamageStep(state: GameState, step: 'first' | 'normal'): GameStat
           newPlayers[defenderIndex].life -= attackerPower;
           applyLifelink(state, newPlayers, attacker.cardInstanceId, attackerPower);
           trackCommanderDamage(state, newPlayers, attacker.cardInstanceId, attacker.defendingPlayerId, attackerPower);
+          if (attackerPower > 0) {
+            combatDamageEvents.push({
+              sourceInstanceId: attacker.cardInstanceId,
+              controllerId: attackerCard.ownerId,
+              damagedPlayerId: attacker.defendingPlayerId,
+              damage: attackerPower,
+            });
+          }
         }
       }
     } else {
@@ -297,6 +342,7 @@ function resolveDamageStep(state: GameState, step: 'first' | 'normal'): GameStat
       if (attackerDeals) {
         let remainingDamage = attackerPower;
         const hasTrample = instanceHasKeyword(state, attacker.cardInstanceId, 'Trample');
+        const attackerHasDeathtouch = instanceHasKeyword(state, attacker.cardInstanceId, 'Deathtouch');
 
         // Deal damage to each blocker (in order)
         for (const blocker of blockers) {
@@ -315,6 +361,7 @@ function resolveDamageStep(state: GameState, step: 'first' | 'normal'): GameStat
             newCards.set(blockerCard.instanceId, {
               ...blockerCard,
               damage: blockerCard.damage + damageToBlocker,
+              deathtouchDamage: blockerCard.deathtouchDamage || attackerHasDeathtouch,
             });
             remainingDamage -= damageToBlocker;
             applyLifelink(state, newPlayers, attacker.cardInstanceId, damageToBlocker);
@@ -330,6 +377,12 @@ function resolveDamageStep(state: GameState, step: 'first' | 'normal'): GameStat
             newPlayers[defenderIndex].life -= remainingDamage;
             applyLifelink(state, newPlayers, attacker.cardInstanceId, remainingDamage);
             trackCommanderDamage(state, newPlayers, attacker.cardInstanceId, attacker.defendingPlayerId, remainingDamage);
+            combatDamageEvents.push({
+              sourceInstanceId: attacker.cardInstanceId,
+              controllerId: attackerCard.ownerId,
+              damagedPlayerId: attacker.defendingPlayerId,
+              damage: remainingDamage,
+            });
           }
         }
       }
@@ -346,10 +399,12 @@ function resolveDamageStep(state: GameState, step: 'first' | 'normal'): GameStat
 
         const currentAttacker = newCards.get(attacker.cardInstanceId);
         if (!currentAttacker || currentAttacker.zone !== 'battlefield') continue;
+        const blockerHasDeathtouch = blockerPower > 0 && instanceHasKeyword(state, blocker.cardInstanceId, 'Deathtouch');
 
         newCards.set(attacker.cardInstanceId, {
           ...currentAttacker,
           damage: currentAttacker.damage + blockerPower,
+          deathtouchDamage: currentAttacker.deathtouchDamage || blockerHasDeathtouch,
         });
         applyLifelink(state, newPlayers, blocker.cardInstanceId, blockerPower);
       }
@@ -359,12 +414,21 @@ function resolveDamageStep(state: GameState, step: 'first' | 'normal'): GameStat
   // Only clear combat state after the normal damage step
   const newCombat = step === 'normal' ? null : state.combat;
 
-  return {
+  let resultState: GameState = {
     ...state,
     cards: newCards,
     players: newPlayers,
     combat: newCombat,
   };
+
+  for (const event of combatDamageEvents) {
+    resultState = checkTriggersForEvent(resultState, {
+      kind: 'CombatDamageToPlayer',
+      ...event,
+    });
+  }
+
+  return resultState;
 }
 
 export function resolveCombatDamage(state: GameState): GameState {

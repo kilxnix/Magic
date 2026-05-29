@@ -10,6 +10,7 @@ import {
 import type { GeneratedDeck, ScryfallCard } from './cards/deck-loader';
 import { createCardLookup } from './cards/deck-loader';
 import { getCardsInZone, getSideboard } from './game-state';
+import { canCastSpell, castSpell } from './stack';
 
 // Create test cards
 function createTestCards(): ScryfallCard[] {
@@ -72,6 +73,34 @@ function createTestCards(): ScryfallCard[] {
     toughness: '2',
   });
 
+  cards.push({
+    id: 'partner-ravos',
+    name: 'Ravos, Soultender',
+    type_line: 'Legendary Creature - Human Cleric',
+    oracle_text: 'Partner\nOther creatures you control get +1/+1.',
+    mana_cost: '{3}{W}{B}',
+    cmc: 5,
+    colors: ['W', 'B'],
+    color_identity: ['W', 'B'],
+    keywords: ['Partner'],
+    power: '2',
+    toughness: '2',
+  });
+
+  cards.push({
+    id: 'partner-tana',
+    name: 'Tana, the Bloodsower',
+    type_line: 'Legendary Creature - Elf Druid',
+    oracle_text: 'Partner\nTrample',
+    mana_cost: '{2}{R}{G}',
+    cmc: 4,
+    colors: ['R', 'G'],
+    color_identity: ['R', 'G'],
+    keywords: ['Partner', 'Trample'],
+    power: '2',
+    toughness: '2',
+  });
+
   // Add 99 unique cards for each deck (we'll reuse some)
   for (let i = 0; i < 100; i++) {
     cards.push({
@@ -105,6 +134,22 @@ function createTestDeck(commanderName: string): GeneratedDeck {
     colors: ['U'],
     bracket: 3,
     theme: 'Test',
+  };
+}
+
+function createPartnerDeck(): GeneratedDeck {
+  const list: string[] = [];
+  for (let i = 0; i < 98; i++) {
+    list.push(`Test Card ${i}`);
+  }
+
+  return {
+    id: 'deck-partners',
+    commander: 'Ravos, Soultender // Tana, the Bloodsower',
+    list,
+    colors: ['W', 'B', 'R', 'G'],
+    bracket: 3,
+    theme: 'Partners',
   };
 }
 
@@ -218,6 +263,47 @@ describe('initGameFromDecks', () => {
     expect(aiCommander).toBeDefined();
     expect(aiCommander!.zone).toBe('command');
     expect(aiCommander!.isCommander).toBe(true);
+  });
+
+  it('places partner commanders in command zone and tracks tax separately', () => {
+    const config: GameInitConfig = {
+      humanDeck: createPartnerDeck(),
+      aiDecks: [createTestDeck('AI Commander 1')],
+      aiDifficulty: 3,
+      cardLookup,
+    };
+
+    let state = initGameFromDecks(config);
+
+    const human = state.players[0];
+    expect(human.commanderInstanceIds).toHaveLength(2);
+
+    const commandCards = getCardsInZone(state, 'human', 'command');
+    const commandNames = commandCards.map(card => state.cardDefinitions.get(card.definitionId)?.name);
+    expect(commandNames).toEqual(expect.arrayContaining([
+      'Ravos, Soultender',
+      'Tana, the Bloodsower',
+    ]));
+
+    const tana = commandCards.find(card => state.cardDefinitions.get(card.definitionId)?.name === 'Tana, the Bloodsower')!;
+    const ravos = commandCards.find(card => state.cardDefinitions.get(card.definitionId)?.name === 'Ravos, Soultender')!;
+
+    state = {
+      ...state,
+      phase: 'precombat_main',
+      players: state.players.map((player, index) =>
+        index === 0
+          ? { ...player, manaPool: { W: 0, U: 0, B: 0, R: 1, G: 1, C: 2 } }
+          : player,
+      ),
+    };
+
+    expect(canCastSpell(state, 'human', tana.instanceId)).toBe(true);
+
+    const afterCast = castSpell(state, 'human', tana.instanceId);
+    expect(afterCast.players[0].commanderCastCounts?.[tana.instanceId]).toBe(1);
+    expect(afterCast.players[0].commanderCastCounts?.[ravos.instanceId]).toBe(0);
+    expect(afterCast.players[0].commanderCastCount).toBe(0);
   });
 
   it('draws opening hands', () => {

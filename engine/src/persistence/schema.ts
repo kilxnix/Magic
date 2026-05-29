@@ -35,7 +35,9 @@ export interface SerializedPlayerV1 {
   commanderDamage: Record<string, number>;
   commanderTax: number;
   commanderInstanceId: string | null;
+  commanderInstanceIds?: string[];
   commanderCastCount: number;
+  commanderCastCounts?: Record<string, number>;
   manaPool: {
     W: number;
     U: number;
@@ -44,6 +46,19 @@ export interface SerializedPlayerV1 {
     G: number;
     C: number;
   };
+  restrictedMana?: Array<{
+    color: string;
+    amount: number;
+    restriction: string;
+    creatureType?: string;
+    sourceInstanceId?: string;
+  }>;
+  conditionalMana?: Array<{
+    color: string;
+    amount: number;
+    effect: string;
+    sourceInstanceId?: string;
+  }>;
   hasPlayedLand: boolean;
   hasPriority: boolean;
   hasLost: boolean;
@@ -65,8 +80,14 @@ export interface SerializedCardInstanceV1 {
   counters: Record<string, number>;
   attachedTo?: string;
   damage: number;
+  deathtouchDamage?: boolean;
   isCommander: boolean;
   fromSideboard?: boolean;
+  choices?: {
+    chosenCreatureType?: string;
+    imprintedCardIds?: string[];
+    discardedCardIds?: string[];
+  };
 }
 
 /**
@@ -98,7 +119,23 @@ export interface SerializedStackItemV1 {
   casterId?: string;
   controllerId?: string;
   targets: string[];
+  castFromZone?: string;
+  chosenModes?: number[];
+  namedCardChoices?: Record<string, string>;
+  cardChoices?: {
+    chosenCreatureType?: string;
+    imprintedCardIds?: string[];
+    discardedCardIds?: string[];
+  };
+  cantBeCountered?: boolean;
+  isCopy?: boolean;
+  copyOfCardInstanceId?: string;
+  targetSpecs?: unknown[];
   ability?: unknown;
+  eventContext?: {
+    casterId?: string;
+    cardInstanceId?: string;
+  };
 }
 
 /**
@@ -113,6 +150,8 @@ export interface SerializedCombatStateV1 {
     cardInstanceId: string;
     blockingAttackerId: string;
   }>;
+  blockersDeclared?: boolean;
+  blockersDeclaredBy?: string[];
   damageAssignment: Array<[string, number]>;
 }
 
@@ -138,6 +177,7 @@ export interface SerializedGameStateV1 {
   phase: string;
   step: string;
   turnNumber: number;
+  spellsCastThisTurn?: number;
   hasPriorityPassed: boolean[];
   stack: SerializedStackItemV1[];
   combat: SerializedCombatStateV1 | null;

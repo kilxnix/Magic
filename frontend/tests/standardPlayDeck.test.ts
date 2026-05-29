@@ -79,6 +79,17 @@ describe('standard match deck builders', () => {
     }
   });
 
+  it('keeps Snow-Covered basics as lands with local card data', () => {
+    const deck = buildStandardMatchDeck('You', [
+      ...Array.from({ length: 36 }, (_, index) => `Test Spell ${index}`),
+      ...Array.from({ length: 24 }, () => 'Snow-Covered Island'),
+    ]);
+
+    expect(deck.lands).toHaveLength(24);
+    expect(deck.lands.every(card => card === 'Snow-Covered Island')).toBe(true);
+    expect(deck.cardData?.['Snow-Covered Island']?.type_line).toContain('Basic Snow Land');
+  });
+
   it('initializes the game engine from the offline Standard match decks', () => {
     const importedUrl = importDeckUrlLocally('https://www.mtggoldfish.com/deck/7752458#paper');
     const parsed = importStandardDeckLocally(importedUrl!.deckText);

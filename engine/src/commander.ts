@@ -18,7 +18,9 @@ export function isOwnersCommander(state: GameState, cardInstanceId: string): boo
   const owner = state.players.find(p => p.id === card.ownerId);
   if (!owner) return false;
 
-  return owner.commanderInstanceId === cardInstanceId;
+  return card.isCommander === true
+    || owner.commanderInstanceId === cardInstanceId
+    || owner.commanderInstanceIds?.includes(cardInstanceId) === true;
 }
 
 /**
@@ -29,7 +31,8 @@ export function isOwnersCommander(state: GameState, cardInstanceId: string): boo
  * or exile from anywhere, that player may put it into the command zone instead.
  *
  * The `ownerChoosesCommandZone` parameter controls whether the owner opts for command zone.
- * When null/undefined, defaults to true for graveyard/exile, false for hand.
+ * When null/undefined, defaults to true for hand/graveyard/exile so the trainer
+ * consistently returns commanders to the command zone without a missing prompt.
  */
 export function getCommanderDestinationZone(
   state: GameState,
@@ -44,8 +47,7 @@ export function getCommanderDestinationZone(
 
   // Check if this is the owner's commander
   if (isOwnersCommander(state, cardInstanceId)) {
-    // Default: always redirect from graveyard/exile, never from hand (unless explicitly chosen)
-    const choosesCommandZone = ownerChoosesCommandZone ?? (intendedZone !== 'hand');
+    const choosesCommandZone = ownerChoosesCommandZone ?? true;
     if (choosesCommandZone) {
       return 'command';
     }

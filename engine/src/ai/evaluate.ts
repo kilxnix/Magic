@@ -7,6 +7,8 @@
 
 import { GameState, CardInstance, CardDefinition, Player } from '../types';
 import { getCardsInZone, getCardDefinition } from '../game-state';
+import { getEffectivePower, getEffectiveToughness } from '../effects/continuous';
+import { getNormalizedThreat } from './threat';
 import type { AIAction, ActionEvaluation } from './types';
 
 // Scoring constants
@@ -28,8 +30,8 @@ export function evaluateCreature(
   card: CardInstance,
 ): number {
   const def = getCardDefinition(state, card);
-  const power = def.power ?? 0;
-  const toughness = def.toughness ?? 0;
+  const power = card.zone === 'battlefield' ? getEffectivePower(state, card.instanceId) : def.power ?? 0;
+  const toughness = card.zone === 'battlefield' ? getEffectiveToughness(state, card.instanceId) : def.toughness ?? 0;
 
   let value = CREATURE_BASE_VALUE;
   value += power * CREATURE_POWER_VALUE;
@@ -157,8 +159,12 @@ function evaluateCastSpell(
 
   // Value based on card type
   if (def.card_types.includes('creature')) {
-    const power = def.power ?? 0;
-    const toughness = def.toughness ?? 0;
+    const power = card.zone === 'battlefield'
+      ? getEffectivePower(state, cardInstanceId)
+      : def.power ?? 0;
+    const toughness = card.zone === 'battlefield'
+      ? getEffectiveToughness(state, cardInstanceId)
+      : def.toughness ?? 0;
     score += CREATURE_BASE_VALUE + power * CREATURE_POWER_VALUE + toughness * CREATURE_TOUGHNESS_VALUE;
   }
 
@@ -208,14 +214,18 @@ function evaluateDeclareAttackers(
     if (!attackerCard) continue;
 
     const def = getCardDefinition(state, attackerCard);
-    const power = def.power ?? 0;
+    const power = attackerCard.zone === 'battlefield'
+      ? getEffectivePower(state, attack.cardInstanceId)
+      : def.power ?? 0;
 
     // Value of dealing damage
     const defender = state.players.find(p => p.id === attack.defendingPlayerId);
     if (defender) {
       // More valuable to attack players with lower life
       const lifeFactor = Math.max(1, 40 / Math.max(1, defender.life));
+      const threatFactor = getNormalizedThreat(state, defender.id, playerId);
       score += power * lifeFactor;
+      score += power * threatFactor * 1.5;
 
       // Commander damage is extra valuable
       if (attackerCard.isCommander) {
@@ -250,8 +260,7 @@ function evaluateDeclareBlockers(
     const attackerCard = state.cards.get(attacker.cardInstanceId);
     if (!attackerCard) continue;
 
-    const def = state.cardDefinitions.get(attackerCard.definitionId);
-    const power = def?.power ?? 0;
+    const power = getEffectivePower(state, attacker.cardInstanceId);
 
     // Check if this attacker is blocked
     const isBlocked = blocks.some(b => b.blockingAttackerId === attacker.cardInstanceId);
@@ -276,13 +285,10 @@ function evaluateDeclareBlockers(
     const attackerCard = state.cards.get(block.blockingAttackerId);
     if (!blockerCard || !attackerCard) continue;
 
-    const blockerDef = state.cardDefinitions.get(blockerCard.definitionId);
-    const attackerDef = state.cardDefinitions.get(attackerCard.definitionId);
-
-    const blockerPower = blockerDef?.power ?? 0;
-    const blockerToughness = blockerDef?.toughness ?? 0;
-    const attackerPower = attackerDef?.power ?? 0;
-    const attackerToughness = attackerDef?.toughness ?? 0;
+    const blockerPower = getEffectivePower(state, block.cardInstanceId);
+    const blockerToughness = getEffectiveToughness(state, block.cardInstanceId);
+    const attackerPower = getEffectivePower(state, block.blockingAttackerId);
+    const attackerToughness = getEffectiveToughness(state, block.blockingAttackerId);
 
     // Good block: kills attacker, blocker survives
     const attackerDies = blockerPower >= attackerToughness;

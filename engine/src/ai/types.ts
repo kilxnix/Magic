@@ -4,7 +4,7 @@
  * Represents all possible actions an AI can take during a game.
  */
 
-import { AttackerDeclaration, BlockerDeclaration, ManaColor } from '../types';
+import { AttackerDeclaration, BlockerDeclaration, ManaColor, CardInstance } from '../types';
 
 /**
  * An action to cast a spell from hand or command zone.
@@ -14,6 +14,8 @@ export interface CastSpellAction {
   cardInstanceId: string;
   targets: string[];
   chosenModes?: number[];
+  namedCardChoices?: Record<string, string>;
+  cardChoices?: CardInstance['choices'];
 }
 
 /**
@@ -22,6 +24,8 @@ export interface CastSpellAction {
 export interface PlayLandAction {
   kind: 'PlayLand';
   cardInstanceId: string;
+  chosenCreatureType?: string;
+  payLifeToEnterUntapped?: boolean;
 }
 
 /**

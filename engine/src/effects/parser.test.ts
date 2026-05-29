@@ -358,6 +358,29 @@ describe('parseOracleText', () => {
     });
   });
 
+  describe('d20 roll patterns', () => {
+    it('parses Goblin Morningstar-style roll tables as one d20 effect', () => {
+      const result = parseOracleText(
+        'When Goblin Morningstar enters the battlefield, roll a d20. 1-9 | Create a 1/1 red Goblin creature token. 10-20 | Create a 1/1 red Goblin creature token, then attach Goblin Morningstar to it. Equipped creature gets +1/+0 and has trample.',
+      );
+
+      expect(result.kind).toBe('ETB');
+      if (result.kind !== 'ETB') return;
+
+      expect(result.ability.effects).toHaveLength(1);
+      const roll = result.ability.effects[0];
+      expect(roll.kind).toBe('RollD20');
+      if (roll.kind !== 'RollD20') return;
+
+      expect(roll.outcomes).toHaveLength(2);
+      expect(roll.outcomes[0].effects[0].kind).toBe('CreateToken');
+      const highRollCreate = roll.outcomes[1].effects[0];
+      expect(highRollCreate.kind).toBe('CreateToken');
+      if (highRollCreate.kind !== 'CreateToken') return;
+      expect(highRollCreate.attachSourceToCreated).toBe(true);
+    });
+  });
+
   describe('scry patterns', () => {
     it('parses "Scry 2."', () => {
       const result = parseOracleText('Scry 2.');
@@ -608,6 +631,16 @@ describe('parseOracleText', () => {
       expect(result.effects[0].filter).toBe('noncreature');
       expect(result.targets[0].type).toBe('NoncreatureSpell');
     });
+
+    it('parses "Counter target creature spell."', () => {
+      const result = parseOracleText('Counter target creature spell.');
+      expect(result.kind).toBe('Spell');
+      if (result.kind !== 'Spell') return;
+      expect(result.effects[0].kind).toBe('CounterSpell');
+      if (result.effects[0].kind !== 'CounterSpell') return;
+      expect(result.effects[0].filter).toBe('creature');
+      expect(result.targets[0].type).toBe('CreatureSpell');
+    });
   });
 
   describe('graveyard recursion patterns', () => {
@@ -683,6 +716,21 @@ describe('parseOracleText', () => {
       if (result.kind !== 'Triggered') return;
       expect(result.ability.trigger).toEqual({ kind: 'Upkeep', whose: 'yours' });
       expect(result.ability.effects[0].kind).toBe('Draw');
+    });
+
+    it('parses beginning-combat target boost triggers with dynamic target power', () => {
+      const result = parseOracleText("At the beginning of combat on your turn, another target creature you control gains haste until end of turn and gets +X/+X until end of turn, where X is that creature's power.");
+      expect(result.kind).toBe('Triggered');
+      if (result.kind !== 'Triggered') return;
+      expect(result.ability.trigger).toEqual({ kind: 'BeginningCombat', whose: 'yours' });
+      expect(result.targets).toHaveLength(1);
+      expect(result.ability.effects[0].kind).toBe('GrantKeyword');
+      expect(result.ability.effects[1].kind).toBe('ModifyPT');
+      if (result.ability.effects[1].kind !== 'ModifyPT') return;
+      expect(result.ability.effects[1].power).toEqual({
+        kind: 'TargetPower',
+        target: { kind: 'Chosen', targetId: result.targets[0].id },
+      });
     });
 
     it('parses "At the beginning of your end step, gain 2 life."', () => {
@@ -906,10 +954,13 @@ describe('parseOracleText', () => {
       expect(result.kind).toBe('Spell');
       if (result.kind !== 'Spell') return;
       expect(result.effects).toHaveLength(2);
-      // Simplified as Draw 1
-      expect(result.effects[0].kind).toBe('Draw');
-      if (result.effects[0].kind !== 'Draw') return;
-      expect(result.effects[0].count).toBe(1);
+      expect(result.effects[0]).toMatchObject({
+        kind: 'SearchLibrary',
+        filter: {},
+        destination: 'hand',
+        namedCardChoiceId: 'tutorCard',
+        selectedCardChoiceId: 'tutorCardId',
+      });
       // Plus shuffle
       expect(result.effects[1].kind).toBe('ShuffleLibrary');
     });
@@ -918,7 +969,11 @@ describe('parseOracleText', () => {
       const result = parseOracleText('Search your library for a card.');
       expect(result.kind).toBe('Spell');
       if (result.kind !== 'Spell') return;
-      expect(result.effects[0].kind).toBe('Draw');
+      expect(result.effects[0]).toMatchObject({
+        kind: 'SearchLibrary',
+        filter: {},
+        destination: 'hand',
+      });
     });
   });
 

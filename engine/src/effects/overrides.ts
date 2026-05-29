@@ -75,37 +75,6 @@ export function getOverrideCounts(): { byId: number; byName: number } {
 // =============================================================================
 
 // Terramorphic Expanse - {T}, Sacrifice: Search for basic land, put onto battlefield tapped, shuffle
-const fetchLandAbility: ActivatedAbility = {
-  kind: 'ActivatedAbility',
-  cost: { tap: true, sacrifice: 'self' },
-  effects: [
-    {
-      kind: 'SearchLibrary',
-      player: { kind: 'Controller' },
-      filter: { types: ['land'], supertypes: ['basic'] },
-      destination: 'battlefield',
-      tapped: true,
-      shuffle: true,
-    },
-    {
-      kind: 'ShuffleLibrary',
-      player: { kind: 'Controller' },
-    },
-  ],
-  isManaAbility: false,
-  targets: [],
-};
-
-registerOverrideByName('Terramorphic Expanse', {
-  kind: 'Activated',
-  ability: fetchLandAbility,
-});
-
-registerOverrideByName('Evolving Wilds', {
-  kind: 'Activated',
-  ability: fetchLandAbility,
-});
-
 // =============================================================================
 // Commander Staples — Mana / Ramp
 // =============================================================================
@@ -124,8 +93,7 @@ registerOverrideByName("Jeska's Will", {
   targets: [],
 });
 
-// Cultivate — "Search for up to two basic lands, one to battlefield tapped,
-// one to hand, shuffle." → Search basic land to battlefield + draw 1
+// Cultivate — search two basic lands: one to battlefield tapped, one to hand.
 registerOverrideByName('Cultivate', {
   kind: 'Spell',
   effects: [
@@ -138,9 +106,11 @@ registerOverrideByName('Cultivate', {
       shuffle: false,
     },
     {
-      kind: 'Draw',
+      kind: 'SearchLibrary',
       player: { kind: 'Controller' },
-      count: 1,
+      filter: { types: ['land'], supertypes: ['basic'] },
+      destination: 'hand',
+      shuffle: false,
     },
     {
       kind: 'ShuffleLibrary',
@@ -163,15 +133,48 @@ registerOverrideByName("Kodama's Reach", {
       shuffle: false,
     },
     {
-      kind: 'Draw',
+      kind: 'SearchLibrary',
       player: { kind: 'Controller' },
-      count: 1,
+      filter: { types: ['land'], supertypes: ['basic'] },
+      destination: 'hand',
+      shuffle: false,
     },
     {
       kind: 'ShuffleLibrary',
       player: { kind: 'Controller' },
     },
   ],
+  targets: [],
+});
+
+// Dockside Extortionist - ETB: create X Treasures where X is the number of
+// artifacts and enchantments opponents control.
+registerOverrideByName('Dockside Extortionist', {
+  kind: 'ETB',
+  ability: {
+    kind: 'TriggeredAbility',
+    trigger: { kind: 'ETB', who: 'self' },
+    effects: [
+      {
+        kind: 'CreateToken',
+        controller: { kind: 'Controller' },
+        token: {
+          name: 'Treasure',
+          colors: [],
+          types: ['artifact'],
+          subtypes: ['Treasure'],
+          power: 0,
+          toughness: 0,
+        },
+        count: {
+          kind: 'ForEach',
+          zone: 'battlefield',
+          filter: { types: ['artifact', 'enchantment'] },
+          controller: 'opponent',
+        },
+      },
+    ],
+  },
   targets: [],
 });
 
@@ -205,7 +208,7 @@ registerOverrideByName('Beast Within', {
     },
     {
       kind: 'CreateToken',
-      controller: { kind: 'Controller' },
+      controller: { kind: 'TargetController', targetId: 'target_1' },
       token: {
         name: 'Beast',
         colors: ['G'],
@@ -221,14 +224,15 @@ registerOverrideByName('Beast Within', {
 });
 
 // Chaos Warp — "Owner shuffles target permanent into library, reveals top card.
-// If permanent card, put on battlefield." → Simplified: shuffle target into library
-// (approximated as exile since there's no ShuffleIntoLibrary effect)
+// If permanent card, put on battlefield." The reveal is not modeled yet, but
+// the target now goes to its owner's shuffled library instead of exile.
 registerOverrideByName('Chaos Warp', {
   kind: 'Spell',
   effects: [
     {
-      kind: 'Exile',
+      kind: 'PutIntoLibrary',
       target: { kind: 'Chosen', targetId: 'target_1' },
+      position: 'shuffle',
     },
   ],
   targets: [{ id: 'target_1', type: 'Permanent', count: 1 }],
@@ -268,29 +272,39 @@ registerOverrideByName('Wrath of God', {
 // Commander Staples — Card Advantage / Tutors
 // =============================================================================
 
-// Demonic Tutor — "Search your library for a card, put into hand, shuffle."
-// → Simplified: draw 1 (proxy for tutoring best card)
+// Demonic Tutor - choose a real library card through namedCardChoices.
 registerOverrideByName('Demonic Tutor', {
   kind: 'Spell',
   effects: [
     {
-      kind: 'Draw',
+      kind: 'SearchLibrary',
       player: { kind: 'Controller' },
-      count: 1,
+      filter: {},
+      destination: 'hand',
+      shuffle: true,
+      namedCardChoiceId: 'tutorCard',
+      selectedCardChoiceId: 'tutorCardId',
+    },
+    {
+      kind: 'ShuffleLibrary',
+      player: { kind: 'Controller' },
     },
   ],
   targets: [],
 });
 
-// Enlightened Tutor — "Search for artifact or enchantment, put on top of library."
-// → Simplified: draw 1 (proxy for tutoring)
+// Enlightened Tutor - search for artifact or enchantment, put on top of library.
 registerOverrideByName('Enlightened Tutor', {
   kind: 'Spell',
   effects: [
     {
-      kind: 'Draw',
+      kind: 'SearchLibrary',
       player: { kind: 'Controller' },
-      count: 1,
+      filter: { types: ['artifact', 'enchantment'] },
+      destination: 'top',
+      shuffle: true,
+      namedCardChoiceId: 'tutorCard',
+      selectedCardChoiceId: 'tutorCardId',
     },
   ],
   targets: [],
@@ -303,6 +317,36 @@ registerOverrideByName('Enlightened Tutor', {
 // Teferi's Protection — "Your life total can't change. Prevent all damage.
 // Your permanents phase out." → Simplified: gain 99 life as damage buffer proxy
 // (no 'PreventDamage' effect type exists, so we approximate with life gain)
+// cEDH library naming effects. The chosen card comes from the spell action's
+// namedCardChoices.namedCard value so Tainted Pact / Consultation are not
+// hard-coded to a single win line.
+registerOverrideByName('Tainted Pact', {
+  kind: 'Spell',
+  effects: [
+    {
+      kind: 'ExileUntilNamed',
+      player: { kind: 'Controller' },
+      namedCardChoiceId: 'namedCard',
+      foundDestination: 'hand',
+    },
+  ],
+  targets: [],
+});
+
+registerOverrideByName('Demonic Consultation', {
+  kind: 'Spell',
+  effects: [
+    {
+      kind: 'ExileUntilNamed',
+      player: { kind: 'Controller' },
+      namedCardChoiceId: 'namedCard',
+      foundDestination: 'hand',
+      exileBeforeSearch: 6,
+    },
+  ],
+  targets: [],
+});
+
 registerOverrideByName("Teferi's Protection", {
   kind: 'Spell',
   effects: [
@@ -436,7 +480,7 @@ registerOverrideByName('Reclamation Sage', {
   targets: [{ id: 'target_1', type: 'ArtifactOrEnchantment', count: 1 }],
 });
 
-// Acidic Slime — ETB: destroy target permanent
+// Acidic Slime — ETB: destroy target artifact, enchantment, or land
 registerOverrideByName('Acidic Slime', {
   kind: 'ETB',
   ability: {
@@ -449,7 +493,7 @@ registerOverrideByName('Acidic Slime', {
       },
     ],
   },
-  targets: [{ id: 'target_1', type: 'Permanent', count: 1 }],
+  targets: [{ id: 'target_1', type: 'ArtifactEnchantmentOrLand', count: 1 }],
 });
 
 // =============================================================================
@@ -466,7 +510,7 @@ registerOverrideByName('Swan Song', {
     },
     {
       kind: 'CreateToken',
-      controller: { kind: 'EachOpponent' },
+      controller: { kind: 'TargetController', targetId: 'target_1' },
       token: {
         name: 'Bird',
         colors: ['U'],
@@ -487,6 +531,24 @@ registerOverrideByName('Swan Song', {
 // =============================================================================
 
 // Brainstorm — Draw 3 (simplified)
+registerOverrideByName('Wheel of Fortune', {
+  kind: 'Spell',
+  effects: [
+    {
+      kind: 'Discard',
+      player: { kind: 'EachPlayer' },
+      count: 99,
+      random: false,
+    },
+    {
+      kind: 'Draw',
+      player: { kind: 'EachPlayer' },
+      count: 7,
+    },
+  ],
+  targets: [],
+});
+
 registerOverrideByName('Brainstorm', {
   kind: 'Spell',
   effects: [
@@ -496,6 +558,112 @@ registerOverrideByName('Brainstorm', {
       count: 3,
     },
   ],
+  targets: [],
+});
+
+// Opt — Scry 1, then draw a card.
+registerOverrideByName('Opt', {
+  kind: 'Spell',
+  effects: [
+    {
+      kind: 'Scry',
+      player: { kind: 'Controller' },
+      count: 1,
+    },
+    {
+      kind: 'Draw',
+      player: { kind: 'Controller' },
+      count: 1,
+    },
+  ],
+  targets: [],
+});
+
+// Consider — Surveil 1, then draw a card.
+registerOverrideByName('Consider', {
+  kind: 'Spell',
+  effects: [
+    {
+      kind: 'Surveil',
+      player: { kind: 'Controller' },
+      count: 1,
+    },
+    {
+      kind: 'Draw',
+      player: { kind: 'Controller' },
+      count: 1,
+    },
+  ],
+  targets: [],
+});
+
+// Impulse — choose a card from the top four; simplified to putting one library card into hand.
+registerOverrideByName('Impulse', {
+  kind: 'Spell',
+  effects: [
+    {
+      kind: 'SearchLibrary',
+      player: { kind: 'Controller' },
+      filter: {},
+      destination: 'hand',
+      shuffle: false,
+    },
+  ],
+  targets: [],
+});
+
+// Chart a Course — draw two, then discard a card unless you attacked. The engine
+// does not yet carry attacked-this-turn choice state, so the conservative floor is
+// the normal draw-two-discard-one mode.
+registerOverrideByName('Chart a Course', {
+  kind: 'Spell',
+  effects: [
+    {
+      kind: 'Draw',
+      player: { kind: 'Controller' },
+      count: 2,
+    },
+    {
+      kind: 'Discard',
+      player: { kind: 'Controller' },
+      count: 1,
+    },
+  ],
+  targets: [],
+});
+
+// Return of the Wildspeaker — starter-deck mode uses the card-draw option.
+registerOverrideByName('Return of the Wildspeaker', {
+  kind: 'Spell',
+  effects: [
+    {
+      kind: 'Draw',
+      player: { kind: 'Controller' },
+      count: {
+        kind: 'GreatestPower',
+        zone: 'battlefield',
+        controller: 'you',
+        filter: { types: ['creature'], excludeSubtypes: ['Human'] },
+      },
+    },
+  ],
+  targets: [],
+});
+
+// Garruk's Uprising — ETB draw when the pilot controls a large creature.
+registerOverrideByName("Garruk's Uprising", {
+  kind: 'ETB',
+  ability: {
+    kind: 'TriggeredAbility',
+    trigger: { kind: 'ETB', who: 'self' },
+    effects: [
+      {
+        kind: 'Draw',
+        player: { kind: 'Controller' },
+        count: 1,
+      },
+    ],
+  },
   targets: [],
 });
 
@@ -751,14 +919,18 @@ registerOverrideByName('Burnished Hart', {
 // Batch 5 — Tutors
 // =============================================================================
 
-// Vampiric Tutor — Draw 1 + Lose 2 life (proxy for tutoring)
+// Vampiric Tutor - search for any card, put on top of library, lose 2 life.
 registerOverrideByName('Vampiric Tutor', {
   kind: 'Spell',
   effects: [
     {
-      kind: 'Draw',
+      kind: 'SearchLibrary',
       player: { kind: 'Controller' },
-      count: 1,
+      filter: {},
+      destination: 'top',
+      shuffle: true,
+      namedCardChoiceId: 'tutorCard',
+      selectedCardChoiceId: 'tutorCardId',
     },
     {
       kind: 'LoseLife',
@@ -769,40 +941,52 @@ registerOverrideByName('Vampiric Tutor', {
   targets: [],
 });
 
-// Mystical Tutor — Draw 1 (proxy for tutoring)
+// Mystical Tutor - search for instant or sorcery, put on top of library.
 registerOverrideByName('Mystical Tutor', {
   kind: 'Spell',
   effects: [
     {
-      kind: 'Draw',
+      kind: 'SearchLibrary',
       player: { kind: 'Controller' },
-      count: 1,
+      filter: { types: ['instant', 'sorcery'] },
+      destination: 'top',
+      shuffle: true,
+      namedCardChoiceId: 'tutorCard',
+      selectedCardChoiceId: 'tutorCardId',
     },
   ],
   targets: [],
 });
 
-// Worldly Tutor — Draw 1 (proxy for tutoring)
+// Worldly Tutor - search for creature, put on top of library.
 registerOverrideByName('Worldly Tutor', {
   kind: 'Spell',
   effects: [
     {
-      kind: 'Draw',
+      kind: 'SearchLibrary',
       player: { kind: 'Controller' },
-      count: 1,
+      filter: { types: ['creature'] },
+      destination: 'top',
+      shuffle: true,
+      namedCardChoiceId: 'tutorCard',
+      selectedCardChoiceId: 'tutorCardId',
     },
   ],
   targets: [],
 });
 
-// Imperial Seal — Draw 1 + Lose 2 life (proxy for tutoring)
+// Imperial Seal - search for any card, put on top of library, lose 2 life.
 registerOverrideByName('Imperial Seal', {
   kind: 'Spell',
   effects: [
     {
-      kind: 'Draw',
+      kind: 'SearchLibrary',
       player: { kind: 'Controller' },
-      count: 1,
+      filter: {},
+      destination: 'top',
+      shuffle: true,
+      namedCardChoiceId: 'tutorCard',
+      selectedCardChoiceId: 'tutorCardId',
     },
     {
       kind: 'LoseLife',
@@ -813,14 +997,22 @@ registerOverrideByName('Imperial Seal', {
   targets: [],
 });
 
-// Diabolic Tutor — Draw 1 (proxy for tutoring)
+// Diabolic Tutor - choose a real library card through namedCardChoices.
 registerOverrideByName('Diabolic Tutor', {
   kind: 'Spell',
   effects: [
     {
-      kind: 'Draw',
+      kind: 'SearchLibrary',
       player: { kind: 'Controller' },
-      count: 1,
+      filter: {},
+      destination: 'hand',
+      shuffle: true,
+      namedCardChoiceId: 'tutorCard',
+      selectedCardChoiceId: 'tutorCardId',
+    },
+    {
+      kind: 'ShuffleLibrary',
+      player: { kind: 'Controller' },
     },
   ],
   targets: [],
@@ -829,49 +1021,6 @@ registerOverrideByName('Diabolic Tutor', {
 // =============================================================================
 // Fetch Lands — Activated: tap + sacrifice self, search for land by subtype, shuffle
 // =============================================================================
-
-const FETCH_OVERRIDE = (subtypes: string[]): OverrideDefinition => ({
-  kind: 'Activated',
-  ability: {
-    kind: 'ActivatedAbility',
-    cost: { tap: true, sacrifice: 'self' },
-    effects: [
-      {
-        kind: 'SearchLibrary',
-        player: { kind: 'Controller' },
-        filter: { subtypes },
-        destination: 'battlefield',
-        tapped: false,
-        shuffle: false,
-      },
-      {
-        kind: 'ShuffleLibrary',
-        player: { kind: 'Controller' },
-      },
-    ],
-    isManaAbility: false,
-    targets: [],
-  },
-});
-
-// Enemy fetches
-registerOverrideByName('Scalding Tarn', FETCH_OVERRIDE(['Island', 'Mountain']));
-registerOverrideByName('Misty Rainforest', FETCH_OVERRIDE(['Forest', 'Island']));
-registerOverrideByName('Verdant Catacombs', FETCH_OVERRIDE(['Swamp', 'Forest']));
-registerOverrideByName('Marsh Flats', FETCH_OVERRIDE(['Plains', 'Swamp']));
-registerOverrideByName('Arid Mesa', FETCH_OVERRIDE(['Mountain', 'Plains']));
-
-// Allied fetches
-registerOverrideByName('Flooded Strand', FETCH_OVERRIDE(['Plains', 'Island']));
-registerOverrideByName('Polluted Delta', FETCH_OVERRIDE(['Island', 'Swamp']));
-registerOverrideByName('Bloodstained Mire', FETCH_OVERRIDE(['Swamp', 'Mountain']));
-registerOverrideByName('Wooded Foothills', FETCH_OVERRIDE(['Mountain', 'Forest']));
-registerOverrideByName('Windswept Heath', FETCH_OVERRIDE(['Forest', 'Plains']));
-
-// Budget fetches (search for any basic land type)
-const BASIC_FETCH = FETCH_OVERRIDE(['Plains', 'Island', 'Swamp', 'Mountain', 'Forest']);
-registerOverrideByName('Prismatic Vista', BASIC_FETCH);
-registerOverrideByName('Fabled Passage', BASIC_FETCH);
 
 // === MANA-PRODUCING SPELLS ===
 

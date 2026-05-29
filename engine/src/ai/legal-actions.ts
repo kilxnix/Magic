@@ -4,14 +4,16 @@
  * Enumerates all legal actions available to a player from a game state.
  */
 
-import { GameState, CardInstance, AttackerDeclaration, BlockerDeclaration } from '../types';
+import { GameState, CardInstance, AttackerDeclaration, BlockerDeclaration, isSpellStackItem } from '../types';
 import { getCardsInZone, getCardDefinition } from '../game-state';
 import { canCastSpell } from '../stack';
-import { canPlayLand, getActivatedAbilities, canActivateAbility } from '../actions';
-import { canDeclareAttacker, canDeclareBlocker } from '../combat';
-import { canPayCost } from '../mana';
+import { canPlayLand, getActivatedAbilities, canActivateAbility, isBlockedBySummoningSicknessForTap, getAvailableManaColors } from '../actions';
+import { canDeclareAttacker, canDeclareBlocker, hasPlayerDeclaredBlockers } from '../combat';
+import { canPayUnrestrictedCost } from '../mana';
 import { getOverride } from '../effects/overrides';
 import { parseOracleText } from '../effects/parser';
+import { matchesCardFilter } from '../effects/executor';
+import { isEffectiveCreature } from '../effective-types';
 import type { TargetSpec } from '../effects/targets';
 import type {
   AIAction,
@@ -24,6 +26,12 @@ import type {
   PassPriorityAction,
   EquipAction,
 } from './types';
+
+function normalizeOracleForParser(oracleText: string, cardName: string): string {
+  if (!cardName) return oracleText;
+  const escaped = cardName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return oracleText.replace(new RegExp(escaped, 'gi'), '~');
+}
 
 /**
  * Check if player has priority in the current game state.
@@ -45,8 +53,22 @@ export function getSpellTargetSpecs(state: GameState, card: CardInstance): Targe
     return override.targets;
   }
 
+  if (def.card_types.includes('enchantment') && /\baura\b/i.test(def.type_line)) {
+    if (/\benchant\s+creature\b/i.test(def.oracle_text)) {
+      return [{ id: 'aura_target', type: 'Creature', count: 1 }];
+    }
+  }
+
+  // Permanent cards usually do not choose their ETB/activated-ability targets
+  // while being cast. Those choices happen after the spell resolves and the
+  // ability is on the stack. Without this guard, cards like Stella Lee can have
+  // their activated ability text mistaken for cast-time spell targets.
+  if (def.card_types.some(type => ['creature', 'artifact', 'enchantment', 'planeswalker', 'battle'].includes(type))) {
+    return [];
+  }
+
   // Try to parse oracle text
-  const parsed = parseOracleText(def.oracle_text);
+  const parsed = parseOracleText(normalizeOracleForParser(def.oracle_text, def.name), def.mana_cost);
   if (parsed.kind === 'Spell') {
     return parsed.targets;
   }
@@ -73,8 +95,7 @@ export function getLegalTargets(
   } else if (spec.type === 'Creature') {
     for (const card of state.cards.values()) {
       if (card.zone !== 'battlefield') continue;
-      const def = state.cardDefinitions.get(card.definitionId);
-      if (!def?.card_types.includes('creature')) continue;
+      if (!isEffectiveCreature(state, card.instanceId)) continue;
 
       // Check opponentControls constraint
       if (spec.constraints?.opponentControls && card.ownerId === casterId) continue;
@@ -91,8 +112,57 @@ export function getLegalTargets(
     // Creatures
     for (const card of state.cards.values()) {
       if (card.zone !== 'battlefield') continue;
+      if (!isEffectiveCreature(state, card.instanceId)) continue;
+      targets.push(card.instanceId);
+    }
+  } else if (spec.type === 'Spell' || spec.type === 'NoncreatureSpell' || spec.type === 'CreatureSpell' || spec.type === 'InstantOrSorcerySpell') {
+    for (const item of state.stack) {
+      if (!isSpellStackItem(item)) continue;
+      const card = state.cards.get(item.cardInstanceId);
+      const def = card ? state.cardDefinitions.get(card.definitionId) : undefined;
+      if (!card || !def) continue;
+      if (spec.type === 'NoncreatureSpell' && def.card_types.includes('creature')) continue;
+      if (spec.type === 'CreatureSpell' && !def.card_types.includes('creature')) continue;
+      if (spec.type === 'InstantOrSorcerySpell' && !def.card_types.includes('instant') && !def.card_types.includes('sorcery')) continue;
+      targets.push(card.instanceId);
+    }
+  } else if (
+    spec.type === 'Permanent'
+    || spec.type === 'NonlandPermanent'
+    || spec.type === 'Artifact'
+    || spec.type === 'Enchantment'
+    || spec.type === 'ArtifactOrEnchantment'
+    || spec.type === 'ArtifactEnchantmentOrLand'
+  ) {
+    for (const card of state.cards.values()) {
+      if (card.zone !== 'battlefield') continue;
+      const def = state.cardDefinitions.get(card.definitionId);
+      if (!def) continue;
+
+      if (spec.type === 'NonlandPermanent' && def.card_types.includes('land')) continue;
+      if (spec.type === 'Artifact' && !def.card_types.includes('artifact')) continue;
+      if (spec.type === 'Enchantment' && !def.card_types.includes('enchantment')) continue;
+      if (
+        spec.type === 'ArtifactOrEnchantment'
+        && !def.card_types.includes('artifact')
+        && !def.card_types.includes('enchantment')
+      ) continue;
+      if (
+        spec.type === 'ArtifactEnchantmentOrLand'
+        && !def.card_types.includes('artifact')
+        && !def.card_types.includes('enchantment')
+        && !def.card_types.includes('land')
+      ) continue;
+      if (spec.constraints?.opponentControls && card.ownerId === casterId) continue;
+
+      targets.push(card.instanceId);
+    }
+  } else if (spec.type === 'CreatureCardInGraveyard') {
+    for (const card of state.cards.values()) {
+      if (card.zone !== 'graveyard') continue;
       const def = state.cardDefinitions.get(card.definitionId);
       if (!def?.card_types.includes('creature')) continue;
+      if (spec.constraints?.opponentControls && card.ownerId === casterId) continue;
       targets.push(card.instanceId);
     }
   }
@@ -111,6 +181,7 @@ function generateModalActions(
   parsed: ReturnType<typeof parseOracleText>,
 ): boolean {
   if (parsed.kind !== 'Modal') return false;
+  const startingActionCount = actions.length;
 
   const modal = parsed.modal;
 
@@ -164,7 +235,7 @@ function generateModalActions(
     }
   }
 
-  return true;
+  return actions.length > startingActionCount;
 }
 
 function generateCastSpellActions(state: GameState, playerId: string): CastSpellAction[] {
@@ -176,7 +247,7 @@ function generateCastSpellActions(state: GameState, playerId: string): CastSpell
     if (canCastSpell(state, playerId, card.instanceId)) {
       // Check for modal spells first
       const def = getCardDefinition(state, card);
-      const parsed = parseOracleText(def.oracle_text, def.mana_cost);
+      const parsed = parseOracleText(normalizeOracleForParser(def.oracle_text, def.name), def.mana_cost);
 
       if (generateModalActions(state, playerId, card, actions, parsed)) {
         continue; // Skip normal spell handling for modal spells
@@ -216,7 +287,7 @@ function generateCastSpellActions(state: GameState, playerId: string): CastSpell
     if (canCastSpell(state, playerId, card.instanceId)) {
       // Check for modal spells first
       const def = getCardDefinition(state, card);
-      const parsed = parseOracleText(def.oracle_text, def.mana_cost);
+      const parsed = parseOracleText(normalizeOracleForParser(def.oracle_text, def.name), def.mana_cost);
 
       if (generateModalActions(state, playerId, card, actions, parsed)) {
         continue; // Skip normal spell handling for modal commanders
@@ -264,15 +335,39 @@ function generateManaActions(state: GameState, playerId: string): ActivateManaAb
 
   const battlefield = getCardsInZone(state, playerId, 'battlefield');
   for (const card of battlefield) {
-    if (card.tapped) continue;
-
     const def = getCardDefinition(state, card);
 
     if (!def.manaProduction) continue;
+    if (def.manaProduction.activationZone === 'hand') continue;
+    if (def.manaProduction.isTapAbility && card.tapped) continue;
+    if (def.manaProduction.isTapAbility && isBlockedBySummoningSicknessForTap(state, card.instanceId)) continue;
+    if (def.manaProduction.sacrificeFilter) {
+      const canPaySacrificeCost = battlefield.some(candidate => {
+        if (candidate.instanceId === card.instanceId) return false;
+        const candidateDef = getCardDefinition(state, candidate);
+        return matchesCardFilter(candidateDef, def.manaProduction!.sacrificeFilter!);
+      });
+      if (!canPaySacrificeCost) continue;
+    }
     // Sacrifice-cost mana abilities (Lotus Petal, Tinder Wall, etc.) are now
     // legal actions — tapLandForMana sacrifices the card as part of activation.
 
-    for (const color of def.manaProduction.colors) {
+    for (const color of getAvailableManaColors(state, card.instanceId)) {
+      actions.push({
+        kind: 'ActivateManaAbility',
+        cardInstanceId: card.instanceId,
+        color,
+      });
+    }
+  }
+
+  const hand = getCardsInZone(state, playerId, 'hand');
+  for (const card of hand) {
+    const def = getCardDefinition(state, card);
+    if (def.manaProduction?.activationZone !== 'hand') continue;
+    if (!def.manaProduction.requiresExileFromHand) continue;
+
+    for (const color of getAvailableManaColors(state, card.instanceId)) {
       actions.push({
         kind: 'ActivateManaAbility',
         cardInstanceId: card.instanceId,
@@ -345,10 +440,12 @@ function generateActivateAbilityActions(state: GameState, playerId: string): Act
  * To keep the search space bounded, we generate:
  * 1. Attack with no creatures
  * 2. Attack with each creature individually
- * 3. Attack with all eligible creatures
+ * 3. Attack with all eligible creatures against one defender
+ * 4. Attack with all eligible creatures distributed across defenders
  *
- * In multiplayer, creatures can attack different players.
- * For v0, we simplify by having all attackers target the same defender.
+ * In multiplayer, creatures can attack different players. We keep this
+ * bounded by adding one split-table attack pattern instead of enumerating
+ * every possible assignment.
  */
 function generateAttackerActions(state: GameState, playerId: string): DeclareAttackersAction[] {
   if (state.step !== 'declare_attackers') return [];
@@ -401,6 +498,19 @@ function generateAttackerActions(state: GameState, playerId: string): DeclareAtt
     }
   }
 
+  // Option 4: Split attackers across multiple defenders. This is important
+  // for real four-player Commander pods where one player can pressure the
+  // archenemy while also sending evasive/chip damage elsewhere.
+  if (eligibleAttackers.length > 1 && defenders.length > 1) {
+    const splitAttacks: AttackerDeclaration[] = eligibleAttackers.map((attacker, index) => ({
+      cardInstanceId: attacker.instanceId,
+      defendingPlayerId: defenders[index % defenders.length].id,
+    }));
+    if (new Set(splitAttacks.map(attack => attack.defendingPlayerId)).size > 1) {
+      actions.push({ kind: 'DeclareAttackers', attacks: splitAttacks });
+    }
+  }
+
   return actions;
 }
 
@@ -415,6 +525,7 @@ function generateAttackerActions(state: GameState, playerId: string): DeclareAtt
 function generateBlockerActions(state: GameState, playerId: string): DeclareBlockersAction[] {
   if (state.step !== 'declare_blockers') return [];
   if (!state.combat) return [];
+  if (hasPlayerDeclaredBlockers(state, playerId)) return [];
 
   const actions: DeclareBlockersAction[] = [];
 
@@ -424,8 +535,7 @@ function generateBlockerActions(state: GameState, playerId: string): DeclareBloc
   );
 
   if (incomingAttackers.length === 0) {
-    // No attackers to block
-    return [{ kind: 'DeclareBlockers', blocks: [] }];
+    return [];
   }
 
   // Find eligible blockers
@@ -494,10 +604,7 @@ function generateEquipActions(state: GameState, playerId: string): EquipAction[]
   if (state.stack.length > 0) return actions;
 
   const battlefield = getCardsInZone(state, playerId, 'battlefield');
-  const creatures = battlefield.filter(c => {
-    const def = getCardDefinition(state, c);
-    return def.card_types.includes('creature');
-  });
+  const creatures = battlefield.filter(c => isEffectiveCreature(state, c.instanceId));
 
   if (creatures.length === 0) return actions;
 
@@ -514,7 +621,7 @@ function generateEquipActions(state: GameState, playerId: string): EquipAction[]
 
     // Check if player can pay equip cost
     const player = state.players[playerIndex];
-    if (!canPayCost(player.manaPool, costAsMana)) continue;
+    if (!canPayUnrestrictedCost(player, costAsMana)) continue;
 
     // Can equip any creature you control (skip if already equipped to this creature)
     for (const creature of creatures) {

@@ -133,6 +133,24 @@ describe('parseActivatedAbilities', () => {
     expect(searchEffect.shuffle).toBe(true);
   });
 
+  it('parses typed fetch lands generically without name overrides', () => {
+    const text = '{T}, Pay 1 life, Sacrifice Arid Mesa: Search your library for a Mountain or Plains card, put it onto the battlefield, then shuffle.';
+    const abilities = parseActivatedAbilities(text);
+    expect(abilities).toHaveLength(1);
+
+    const ability = abilities[0];
+    expect(ability.cost.tap).toBe(true);
+    expect(ability.cost.payLife).toBe(1);
+    expect(ability.cost.sacrifice).toBe('self');
+
+    const searchEffect = ability.effects[0] as any;
+    expect(searchEffect.kind).toBe('SearchLibrary');
+    expect(searchEffect.filter.types).toEqual(['land']);
+    expect(searchEffect.filter.subtypes).toEqual(['Mountain', 'Plains']);
+    expect(searchEffect.destination).toBe('battlefield');
+    expect(searchEffect.tapped).toBe(false);
+  });
+
   it('parses {T}: effect as tap-only cost', () => {
     const text = '{T}: Draw a card.';
     const abilities = parseActivatedAbilities(text);

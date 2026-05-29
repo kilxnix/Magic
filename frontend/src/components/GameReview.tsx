@@ -2,12 +2,13 @@
  * GameReview -- post-game analysis component.
  *
  * Shows a turn-by-turn timeline with move ratings, counter analysis,
- * and an overall accuracy grade.
+ * and an overall review confidence grade.
  */
 
 import { useState, useMemo } from 'react';
 import { X, ChevronRight } from 'lucide-react';
 import type { GameLogEntry, SimpleGameState } from '../hooks/useShelectorGame';
+import { ratingFromDecisionDelta } from '../lib/turnReview';
 
 // ========== Rating Types ==========
 
@@ -38,6 +39,24 @@ function rateMove(entry: GameLogEntry, allEntries: GameLogEntry[], index: number
   // Only rate human moves
   if (player !== 'human') {
     return { rating: 'okay', reasoning: 'AI action.' };
+  }
+
+  if (entry.decision) {
+    const selectedIsBest = entry.decision.best?.label === entry.decision.selected.label && entry.decision.scoreDelta <= 0.5;
+    const rating = ratingFromDecisionDelta(entry.decision.scoreDelta, selectedIsBest);
+    const confidence = entry.decision.confidence;
+    if (selectedIsBest) {
+      return {
+        rating,
+        reasoning: `Best line found by ${entry.decision.evaluator}. Confidence: ${confidence}.`,
+      };
+    }
+    if (entry.decision.best) {
+      return {
+        rating,
+        reasoning: `${entry.decision.evaluator} preferred ${entry.decision.best.label} by ${entry.decision.scoreDelta.toFixed(1)} points. Confidence: ${confidence}.`,
+      };
+    }
   }
 
   // === PASS PRIORITY ===
@@ -341,10 +360,10 @@ export function GameReview({ gameLog, finalState, winner, onClose, embedded = fa
               <div className="text-[10px] text-stone-500 uppercase tracking-wider">Grade</div>
             </div>
 
-            {/* Accuracy */}
+            {/* Review confidence */}
             <div className="text-center">
               <div className="text-xl sm:text-2xl font-bold text-stone-200">{accuracy}%</div>
-              <div className="text-[10px] text-stone-500 uppercase tracking-wider">Accuracy</div>
+              <div className="text-[10px] text-stone-500 uppercase tracking-wider">Review Confidence</div>
             </div>
 
             {/* Move counts */}
@@ -437,6 +456,11 @@ export function GameReview({ gameLog, finalState, winner, onClose, embedded = fa
                                 {entry.manaSpent > 0 && ` | Mana: ${entry.manaSpent}`}
                                 {' | '}Board: {entry.boardCreatureCount.human}v{entry.boardCreatureCount.ai}
                               </div>
+                              {entry.playByPlay && (
+                                <div className="mt-1 truncate text-[10px] text-stone-400">
+                                  {entry.playByPlay}
+                                </div>
+                              )}
                             </div>
 
                             {/* Chevron */}
@@ -457,6 +481,23 @@ export function GameReview({ gameLog, finalState, winner, onClose, embedded = fa
                                   {selectedEntry.reasoning}
                                 </p>
                               </div>
+
+                              {selectedEntry.decision && (
+                                <div className="rounded-lg border border-emerald-700/50 bg-emerald-950/20 px-3 py-2">
+                                  <div className="text-[10px] font-semibold text-emerald-300 uppercase tracking-wider mb-1">
+                                    Play-by-play
+                                  </div>
+                                  <p className="text-xs text-stone-200 leading-relaxed">
+                                    {selectedEntry.playByPlay}
+                                  </p>
+                                  {selectedEntry.decision.best && (
+                                    <div className="mt-2 text-[10px] text-stone-400">
+                                      Best line: <span className="font-semibold text-stone-200">{selectedEntry.decision.best.label}</span>
+                                      {' '}({selectedEntry.decision.best.score})
+                                    </div>
+                                  )}
+                                </div>
+                              )}
 
                               {/* Counter Analysis */}
                               {selectedEntry.counterAnalysis && (
@@ -540,6 +581,44 @@ export function GameReview({ gameLog, finalState, winner, onClose, embedded = fa
                     {selectedEntry.reasoning}
                   </p>
                 </div>
+
+                {selectedEntry.decision && (
+                  <div className="rounded-lg border border-emerald-700/50 bg-emerald-950/20 px-4 py-3">
+                    <div className="mb-1 text-xs font-semibold uppercase tracking-wider text-emerald-300">
+                      Play-by-play Review
+                    </div>
+                    <p className="text-sm leading-relaxed text-stone-200">
+                      {selectedEntry.playByPlay}
+                    </p>
+                    <div className="mt-3 grid gap-2 text-xs">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-stone-500">Chosen</span>
+                        <span className="text-right font-semibold text-stone-200">
+                          {selectedEntry.decision.selected.label} ({selectedEntry.decision.selected.score})
+                        </span>
+                      </div>
+                      {selectedEntry.decision.best && (
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-stone-500">Best line</span>
+                          <span className="text-right font-semibold text-emerald-200">
+                            {selectedEntry.decision.best.label} ({selectedEntry.decision.best.score})
+                          </span>
+                        </div>
+                      )}
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-stone-500">Confidence</span>
+                        <span className="font-semibold text-stone-200">
+                          {selectedEntry.decision.confidence}
+                        </span>
+                      </div>
+                    </div>
+                    {selectedEntry.decision.confidenceReasons.length > 0 && (
+                      <p className="mt-2 text-xs leading-relaxed text-stone-400">
+                        {selectedEntry.decision.confidenceReasons.join(' ')}
+                      </p>
+                    )}
+                  </div>
+                )}
 
                 {/* Counter Analysis */}
                 {selectedEntry.counterAnalysis && (

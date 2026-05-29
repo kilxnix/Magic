@@ -45,4 +45,47 @@ describe('importStandardDeckLocally', () => {
     expect(result.errors.join(' ')).toContain('Main deck has 59 cards');
     expect(result.errors.join(' ')).toContain('Lightning Strike has 6 copies');
   });
+
+  it('handles category headers, MTGO set prefixes, tags, and inline notes', () => {
+    const text = [
+      'Name Red Deck Wins',
+      'Creatures (8)',
+      '4 [BRO:144] Monastery Swiftspear *F* # threat',
+      '4x Phoenix Chick [DMU] 140',
+      'Instants (8)',
+      '4 Lightning Strike (DMU) 137',
+      '4 Play with Fire',
+      'Lands (44)',
+      '44 Mountain',
+      'Sideboard (2)',
+      'SB 2 Witchstalker Frenzy',
+      'Maybeboard',
+      '4 Stoke the Flames',
+    ].join('\n');
+
+    const result = importStandardDeckLocally(text);
+
+    expect(result.valid).toBe(true);
+    expect(result.mainDeck).toHaveLength(60);
+    expect(result.sideboard).toEqual(['Witchstalker Frenzy', 'Witchstalker Frenzy']);
+    expect(result.mainDeck.filter(card => card === 'Monastery Swiftspear')).toHaveLength(4);
+    expect(result.mainDeck).not.toContain('Name Red Deck Wins');
+    expect(result.mainDeck).not.toContain('Stoke the Flames');
+  });
+
+  it('caps impossible quantities without allocating runaway arrays', () => {
+    const result = importStandardDeckLocally('999999 Mountain');
+
+    expect(result.mainDeck).toHaveLength(250);
+    expect(result.valid).toBe(false);
+    expect(result.errors.join(' ')).toContain('capped');
+  });
+
+  it('allows more than four Snow-Covered basics', () => {
+    const result = importStandardDeckLocally('60 Snow-Covered Island');
+
+    expect(result.valid).toBe(true);
+    expect(result.mainDeck).toHaveLength(60);
+    expect(result.mainDeck.filter(card => card === 'Snow-Covered Island')).toHaveLength(60);
+  });
 });

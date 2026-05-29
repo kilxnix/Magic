@@ -267,11 +267,9 @@ describe('Stack + Effect System Integration', () => {
     it('rejects invalid target types', () => {
       let state = createIntegrationState();
 
-      // Cast Murder targeting a player (invalid - Murder targets creatures)
-      state = castSpell(state, 'player-1', 'murder-1', ['player-2']);
-
-      // Resolution should throw due to invalid target
-      expect(() => resolveTopOfStack(state)).toThrow();
+      // Invalid targets are rejected at cast time before mana is spent.
+      expect(() => castSpell(state, 'player-1', 'murder-1', ['player-2']))
+        .toThrow(/expected creature/i);
     });
   });
 

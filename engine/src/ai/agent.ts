@@ -49,7 +49,10 @@ export function dispatchAIAction(
 ): ActionResult {
   switch (action.kind) {
     case 'PlayLand':
-      return tryPlayLand(state, playerId, action.cardInstanceId);
+      return tryPlayLand(state, playerId, action.cardInstanceId, {
+        chosenCreatureType: action.chosenCreatureType,
+        payLifeToEnterUntapped: action.payLifeToEnterUntapped,
+      });
 
     case 'ActivateManaAbility':
       return tryTapLandForMana(state, playerId, action.cardInstanceId, action.color);
@@ -61,6 +64,10 @@ export function dispatchAIAction(
       // payment object so the wrapper uses the pool as-is.
       return tryCastSpell(state, playerId, action.cardInstanceId, action.targets, {
         W: 0, U: 0, B: 0, R: 0, G: 0, C: 0, generic: 0,
+      }, {
+        chosenModes: action.chosenModes,
+        namedCardChoices: action.namedCardChoices,
+        cardChoices: action.cardChoices,
       });
 
     case 'DeclareAttackers':

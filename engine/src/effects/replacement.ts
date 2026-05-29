@@ -10,7 +10,7 @@
  * - "If you would draw a card, draw two cards instead" (card draw doubling)
  */
 
-import type { GameState, CardInstance } from '../types';
+import type { GameState, CardInstance, Zone } from '../types';
 
 // Types of events that can be replaced
 export type ReplacementEventType =
@@ -42,6 +42,7 @@ export interface ReplacementEvent {
   sourceId?: string;      // Source of the event
   amount?: number;        // For damage, life, counters
   cardInstanceId?: string; // For draw, dies, ETB
+  destinationZone?: Zone; // For zone-change replacements such as dies -> exile
 }
 
 // Result of applying replacement effects
@@ -171,14 +172,7 @@ export function createExileInsteadOfDieEffect(
       }
       return true;
     },
-    replace: (_state, event) => {
-      // Change the event to exile instead
-      return {
-        ...event,
-        type: 'EntersBattlefield', // This is a placeholder; in practice we'd need a different zone change event
-        // The actual zone change would be handled elsewhere
-      };
-    },
+    replace: (_state, event) => ({ ...event, destinationZone: 'exile' }),
   };
 }
 

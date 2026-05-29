@@ -6,7 +6,7 @@
 // Converts tokenized oracle text into Effect AST + required TargetSpecs
 
 import { tokenizeOracleText } from './tokens';
-import type { Effect, TriggeredAbility, Trigger, TargetRef, SourceRef, TokenDefinition, AmountRef, ModalSpell, ModalChoice, ActivatedAbility, ActivatedAbilityCost, CardFilter, ForEachAmount, BlinkEffect, CopyEffect, GrantKeywordEffect, PhaseOutEffect, LoyaltyAbility, StaticAbilityEffect, StaticModifier, Condition, ConditionalEffect, WinGameEffect, LoseGameEffect } from './ast';
+import type { Effect, TriggeredAbility, Trigger, TargetRef, SourceRef, TokenDefinition, AmountRef, ModalSpell, ModalChoice, ActivatedAbility, ActivatedAbilityCost, CardFilter, ForEachAmount, BlinkEffect, CopyEffect, CopySpellEffect, GrantKeywordEffect, PhaseOutEffect, LoyaltyAbility, StaticAbilityEffect, StaticModifier, Condition, ConditionalEffect, WinGameEffect, LoseGameEffect, RollD20Outcome } from './ast';
 import type { TargetSpec, TargetType } from './targets';
 
 export type ParsedOracle =
@@ -33,9 +33,62 @@ function makeChosenRef(spec: TargetSpec): TargetRef {
   return { kind: 'Chosen', targetId: spec.id };
 }
 
+function parseSmallNumberToken(token: string): number {
+  const numeric = parseInt(token, 10);
+  return Number.isNaN(numeric) ? parseWordNumber(token) : numeric;
+}
+
+function parsePowerToughnessToken(token: string): { fixed: number; amount?: AmountRef } | null {
+  if (token === 'x') {
+    return { fixed: 0, amount: { kind: 'EventSpellManaValue' } };
+  }
+  const fixed = parseInt(token, 10);
+  if (Number.isNaN(fixed)) return null;
+  return { fixed };
+}
+
 // Pattern matchers return [Effect[], TargetSpec[], tokensConsumed] or null
 
 type PatternResult = { effects: Effect[]; targets: TargetSpec[]; consumed: number } | null;
+type CreatureETBPrefixMatch = {
+  effectStart: number;
+  controller?: 'yours' | 'any';
+  nontoken?: boolean;
+  tokenOnly?: boolean;
+};
+
+const SELF_ETB_SUBJECT_TYPES = new Set([
+  'creature',
+  'artifact',
+  'enchantment',
+  'permanent',
+  'planeswalker',
+  'battle',
+  'land',
+]);
+
+function consumeOptionalBattlefield(tokens: string[], idx: number): number {
+  if (tokens[idx] === 'the' && tokens[idx + 1] === 'battlefield') return idx + 2;
+  return idx;
+}
+
+function consumeOptionalComma(tokens: string[], idx: number): number {
+  return tokens[idx] === ',' ? idx + 1 : idx;
+}
+
+function consumeSelfETBSubject(tokens: string[], idx: number): number {
+  if (tokens[idx] === '~') return idx + 1;
+  if (tokens[idx] === 'this') {
+    if (SELF_ETB_SUBJECT_TYPES.has(tokens[idx + 1])) return idx + 2;
+    return idx + 1;
+  }
+  if (!['a', 'an', 'another', 'one', 'each', 'target'].includes(tokens[idx])) {
+    for (let scan = idx + 1; scan < Math.min(tokens.length, idx + 8); scan++) {
+      if (tokens[scan] === 'enters') return scan;
+    }
+  }
+  return -1;
+}
 
 /**
  * Match: "~ deals N damage to any target"
@@ -50,32 +103,66 @@ function matchDealDamage(tokens: string[], startIndex: number): PatternResult {
   // or:     ["~", "deals", "3", "damage", "to", "target", "creature"]
 
   if (slice.length < 6) return null;
-  if (slice[0] !== '~') return null;
-  if (slice[1] !== 'deals') return null;
 
-  const amount = parseInt(slice[2], 10);
+  let idx = 0;
+  let source: SourceRef = { kind: 'ThisSpell' };
+  if (slice[idx] === '~') {
+    idx++;
+  } else if (slice[idx] === 'it') {
+    source = { kind: 'ThisPermanent' };
+    idx++;
+  } else if (slice[idx] === 'this' && ['creature', 'artifact', 'enchantment', 'permanent', 'spell'].includes(slice[idx + 1])) {
+    source = slice[idx + 1] === 'spell' ? { kind: 'ThisSpell' } : { kind: 'ThisPermanent' };
+    idx += 2;
+  } else {
+    return null;
+  }
+
+  if (slice[idx] !== 'deals') return null;
+  idx++;
+
+  const amount = parseInt(slice[idx], 10);
   if (isNaN(amount)) return null;
+  idx++;
 
-  if (slice[3] !== 'damage') return null;
-  if (slice[4] !== 'to') return null;
+  if (slice[idx] !== 'damage') return null;
+  idx++;
+  if (slice[idx] !== 'to') return null;
+  idx++;
 
   let targetType: TargetType;
   let consumed: number;
+  let effectTarget: TargetRef | null = null;
+  let targets: TargetSpec[] = [];
 
   // "any target"
-  if (slice[5] === 'any' && slice[6] === 'target') {
+  if (slice[idx] === 'any' && slice[idx + 1] === 'target') {
     targetType = 'Any';
-    consumed = 7;
+    consumed = idx + 2;
+    const spec = makeTargetSpec(targetType);
+    targets = [spec];
+    effectTarget = makeChosenRef(spec);
   }
   // "target creature"
-  else if (slice[5] === 'target' && slice[6] === 'creature') {
+  else if (slice[idx] === 'target' && slice[idx + 1] === 'creature') {
     targetType = 'Creature';
-    consumed = 7;
+    consumed = idx + 2;
+    const spec = makeTargetSpec(targetType);
+    targets = [spec];
+    effectTarget = makeChosenRef(spec);
   }
   // "target player"
-  else if (slice[5] === 'target' && slice[6] === 'player') {
+  else if (slice[idx] === 'target' && slice[idx + 1] === 'player') {
     targetType = 'Player';
-    consumed = 7;
+    consumed = idx + 2;
+    const spec = makeTargetSpec(targetType);
+    targets = [spec];
+    effectTarget = makeChosenRef(spec);
+  }
+  // "each opponent"
+  else if (slice[idx] === 'each' && slice[idx + 1] === 'opponent') {
+    consumed = idx + 2;
+    effectTarget = { kind: 'EachOpponent' };
   }
   else {
     return null;
@@ -86,15 +173,14 @@ function matchDealDamage(tokens: string[], startIndex: number): PatternResult {
     consumed++;
   }
 
-  const spec = makeTargetSpec(targetType);
   const effect: Effect = {
     kind: 'DealDamage',
-    source: { kind: 'ThisSpell' } as SourceRef,
-    target: makeChosenRef(spec),
+    source,
+    target: effectTarget,
     amount,
   };
 
-  return { effects: [effect], targets: [spec], consumed };
+  return { effects: [effect], targets, consumed };
 }
 
 /**
@@ -104,6 +190,7 @@ function matchDealDamage(tokens: string[], startIndex: number): PatternResult {
  * Match: "destroy target artifact"
  * Match: "destroy target enchantment"
  * Match: "destroy target artifact or enchantment"
+ * Match: "destroy target artifact, enchantment, or land"
  */
 function matchDestroy(tokens: string[], startIndex: number): PatternResult {
   const slice = tokens.slice(startIndex);
@@ -123,6 +210,13 @@ function matchDestroy(tokens: string[], startIndex: number): PatternResult {
   } else if (slice[2] === 'artifact' && slice[3] === 'or' && slice[4] === 'enchantment') {
     targetType = 'ArtifactOrEnchantment';
     consumed = 5;
+  } else if (
+    slice[2] === 'artifact'
+    && slice.includes('enchantment')
+    && slice.includes('land')
+  ) {
+    targetType = 'ArtifactEnchantmentOrLand';
+    consumed = slice.indexOf('land') + 1;
   } else if (slice[2] === 'artifact') {
     targetType = 'Artifact';
   } else if (slice[2] === 'enchantment') {
@@ -154,6 +248,7 @@ function matchDestroy(tokens: string[], startIndex: number): PatternResult {
 /**
  * Match: "draw a card"
  * Match: "draw N cards"
+ * Match: "draw two cards"
  */
 function matchDraw(tokens: string[], startIndex: number): PatternResult {
   const slice = tokens.slice(startIndex);
@@ -171,7 +266,7 @@ function matchDraw(tokens: string[], startIndex: number): PatternResult {
   }
   // "draw N cards"
   else {
-    const n = parseInt(slice[1], 10);
+    const n = parseSmallNumberToken(slice[1]);
     if (isNaN(n)) return null;
     if (slice[2] !== 'cards') return null;
     count = n;
@@ -187,6 +282,180 @@ function matchDraw(tokens: string[], startIndex: number): PatternResult {
     kind: 'Draw',
     player: { kind: 'Controller' },
     count,
+  };
+
+  return { effects: [effect], targets: [], consumed };
+}
+
+/**
+ * Match: "target player draws N cards"
+ * Match: "target player draws three cards"
+ */
+function matchTargetPlayerDraw(tokens: string[], startIndex: number): PatternResult {
+  const slice = tokens.slice(startIndex);
+
+  if (slice.length < 5) return null;
+  if (slice[0] !== 'target' || slice[1] !== 'player' || slice[2] !== 'draws') return null;
+
+  let count: AmountRef;
+  let consumed: number;
+
+  if (slice[3] === 'a' && slice[4] === 'card') {
+    count = 1;
+    consumed = 5;
+  } else {
+    count = slice[3] === 'x' ? { kind: 'X' } : parseSmallNumberToken(slice[3]);
+    if (typeof count === 'number' && isNaN(count)) return null;
+    if (slice[4] !== 'cards') return null;
+    consumed = 5;
+  }
+
+  if (tokens[startIndex + consumed] === '.') consumed++;
+
+  const spec = makeTargetSpec('Player');
+  const effect: Effect = {
+    kind: 'Draw',
+    player: makeChosenRef(spec),
+    count,
+  };
+
+  return { effects: [effect], targets: [spec], consumed };
+}
+
+/**
+ * Match: "that player draws seven cards"
+ * In an opponent-cast trigger, "that player" is the spell's caster.
+ */
+function matchThatPlayerDraw(tokens: string[], startIndex: number): PatternResult {
+  const slice = tokens.slice(startIndex);
+
+  if (slice.length < 5) return null;
+  if (slice[0] !== 'that' || slice[1] !== 'player' || slice[2] !== 'draws') return null;
+
+  let count: AmountRef;
+  let consumed: number;
+  if (slice[3] === 'a' && slice[4] === 'card') {
+    count = 1;
+    consumed = 5;
+  } else {
+    count = parseSmallNumberToken(slice[3]);
+    if (typeof count === 'number' && isNaN(count)) return null;
+    if (slice[4] !== 'cards') return null;
+    consumed = 5;
+  }
+
+  if (tokens[startIndex + consumed] === '.') consumed++;
+
+  return {
+    effects: [{
+      kind: 'Draw',
+      player: { kind: 'EventCaster' },
+      count,
+    }],
+    targets: [],
+    consumed,
+  };
+}
+
+/**
+ * Match: "put a land card from your hand onto the battlefield"
+ * Match: "put a land card from your hand onto the battlefield tapped"
+ */
+function matchPutLandFromHandOntoBattlefield(tokens: string[], startIndex: number): PatternResult {
+  const slice = tokens.slice(startIndex);
+
+  if (
+    slice[0] !== 'put' ||
+    slice[1] !== 'a' ||
+    slice[2] !== 'land' ||
+    slice[3] !== 'card' ||
+    slice[4] !== 'from' ||
+    slice[5] !== 'your' ||
+    slice[6] !== 'hand' ||
+    slice[7] !== 'onto' ||
+    slice[8] !== 'the' ||
+    slice[9] !== 'battlefield'
+  ) {
+    return null;
+  }
+
+  let consumed = 10;
+  let tapped = false;
+  if (slice[consumed] === 'tapped') {
+    tapped = true;
+    consumed++;
+  }
+  if (tokens[startIndex + consumed] === '.') consumed++;
+
+  return {
+    effects: [{
+      kind: 'PutLandFromHandOntoBattlefield',
+      player: { kind: 'Controller' },
+      tapped,
+      selectedCardChoiceId: 'putLandCardId',
+    }],
+    targets: [],
+    consumed,
+  };
+}
+
+/**
+ * Match: "look at target player's hand"
+ */
+function matchLookAtTargetPlayerHand(tokens: string[], startIndex: number): PatternResult {
+  const slice = tokens.slice(startIndex);
+
+  if (slice.length < 5) return null;
+  if (slice[0] !== 'look' || slice[1] !== 'at' || slice[2] !== 'target') return null;
+  if (slice[3] !== "player's" && slice[3] !== 'players') return null;
+  if (slice[4] !== 'hand') return null;
+
+  let consumed = 5;
+  if (slice[consumed] === '.') consumed++;
+
+  const spec = makeTargetSpec('Player');
+  const effect: Effect = {
+    kind: 'LookAtHand',
+    player: makeChosenRef(spec),
+  };
+
+  return { effects: [effect], targets: [spec], consumed };
+}
+
+/**
+ * Match filtering spells like:
+ * "look at the top three cards of your library. put one of them into your hand..."
+ *
+ * The current engine has no live card-selection prompt for this family yet, so
+ * the executable behavior is the conservative training shortcut: draw one.
+ */
+function matchLookAtTopPutOneIntoHand(tokens: string[], startIndex: number): PatternResult {
+  const slice = tokens.slice(startIndex);
+
+  if (slice.length < 14) return null;
+  if (slice[0] !== 'look' || slice[1] !== 'at' || slice[2] !== 'the' || slice[3] !== 'top') return null;
+
+  const lookedAt = parseSmallNumberToken(slice[4]);
+  if (isNaN(lookedAt) || lookedAt < 1) return null;
+  if (slice[5] !== 'cards' || slice[6] !== 'of' || slice[7] !== 'your' || slice[8] !== 'library') return null;
+
+  let idx = 9;
+  while (idx < slice.length) {
+    if (slice[idx] === 'put' && slice[idx + 1] === 'one' && slice[idx + 2] === 'of') break;
+    idx++;
+  }
+  if (idx >= slice.length) return null;
+
+  const handIdx = slice.indexOf('hand', idx);
+  if (handIdx === -1) return null;
+
+  let consumed = handIdx + 1;
+  if (slice[consumed] === '.') consumed++;
+
+  const effect: Effect = {
+    kind: 'Draw',
+    player: { kind: 'Controller' },
+    count: 1,
   };
 
   return { effects: [effect], targets: [], consumed };
@@ -527,7 +796,7 @@ function matchAddCounters(tokens: string[], startIndex: number): PatternResult {
 
       const effect: Effect = {
         kind: 'AddCounters',
-        target: { kind: 'Controller' },
+        target: { kind: 'Source' },
         counterType,
         count,
       };
@@ -657,27 +926,63 @@ function matchCreateToken(tokens: string[], startIndex: number): PatternResult {
   const slice = tokens.slice(startIndex);
 
   if (slice.length < 5) return null;
-  if (slice[0] !== 'create') return null;
+  if (slice[0] !== 'create' && slice[0] !== 'creates') return null;
 
-  let tokenCount: number;
+  let tokenCount: AmountRef;
   let idx: number;
 
   // "create a" or "create N"
   if (slice[1] === 'a' || slice[1] === 'an') {
     tokenCount = 1;
     idx = 2;
+  } else if (slice[1] === 'x') {
+    tokenCount = { kind: 'X' };
+    idx = 2;
   } else {
     const n = parseInt(slice[1], 10);
-    if (isNaN(n)) return null;
-    tokenCount = n;
+    const wordNumber = parseWordNumber(slice[1]);
+    const parsedCount = !isNaN(n) ? n : wordNumber;
+    if (isNaN(parsedCount)) return null;
+    tokenCount = parsedCount;
     idx = 2;
   }
 
-  // Parse P/T (e.g., "1/1", "2/2")
-  const ptMatch = slice[idx]?.match(/^(\d+)\/(\d+)$/);
+  const artifactTokenNames = new Set(['blood', 'clue', 'food', 'map', 'treasure']);
+  const artifactName = slice[idx];
+  if (artifactTokenNames.has(artifactName) && (slice[idx + 1] === 'token' || slice[idx + 1] === 'tokens')) {
+    idx += 2;
+    if (slice[idx] === '.') idx++;
+
+    const subtype = artifactName.charAt(0).toUpperCase() + artifactName.slice(1);
+    const token: TokenDefinition = {
+      name: subtype,
+      colors: [],
+      types: ['artifact'],
+      subtypes: [subtype],
+      power: 0,
+      toughness: 0,
+    };
+
+    const effect: Effect = {
+      kind: 'CreateToken',
+      controller: { kind: 'Controller' },
+      token,
+      count: tokenCount,
+    };
+
+    return { effects: [effect], targets: [], consumed: idx };
+  }
+
+  // Parse P/T (e.g., "1/1", "2/2", "x/x")
+  const ptMatch = slice[idx]?.match(/^(\d+|x)\/(\d+|x)$/);
   if (!ptMatch) return null;
-  const power = parseInt(ptMatch[1], 10);
-  const toughness = parseInt(ptMatch[2], 10);
+  const parsedPower = parsePowerToughnessToken(ptMatch[1]);
+  const parsedToughness = parsePowerToughnessToken(ptMatch[2]);
+  if (!parsedPower || !parsedToughness) return null;
+  const power = parsedPower.fixed;
+  const toughness = parsedToughness.fixed;
+  const powerAmount = parsedPower.amount;
+  const toughnessAmount = parsedToughness.amount;
   idx++;
 
   // Parse optional color
@@ -685,7 +990,8 @@ function matchCreateToken(tokens: string[], startIndex: number): PatternResult {
   const colorMap: Record<string, 'W' | 'U' | 'B' | 'R' | 'G'> = {
     white: 'W', blue: 'U', black: 'B', red: 'R', green: 'G',
   };
-  while (colorMap[slice[idx]]) {
+  while (colorMap[slice[idx]] || (slice[idx] === 'and' && colorMap[slice[idx + 1]])) {
+    if (slice[idx] === 'and') idx++;
     colors.push(colorMap[slice[idx]]);
     idx++;
   }
@@ -703,8 +1009,36 @@ function matchCreateToken(tokens: string[], startIndex: number): PatternResult {
   if (slice[idx] !== 'token' && slice[idx] !== 'tokens') return null;
   idx++;
 
+  const keywords: string[] = [];
+  if (slice[idx] === 'with') {
+    idx++;
+    while (slice[idx] && slice[idx] !== ',' && slice[idx] !== '.') {
+      if (slice[idx] !== 'and') {
+        keywords.push(slice[idx].charAt(0).toUpperCase() + slice[idx].slice(1));
+      }
+      idx++;
+    }
+  }
+
+  if (slice[idx] === ',' && slice[idx + 1] === 'where' && slice[idx + 2] === 'x') {
+    if (
+      slice[idx + 3] === 'is' &&
+      slice[idx + 4] === 'that' &&
+      (slice[idx + 5] === "spell's" || slice[idx + 5] === 'spells') &&
+      slice[idx + 6] === 'mana' &&
+      slice[idx + 7] === 'value'
+    ) {
+      idx += 8;
+    }
+  }
+
   // Handle trailing period
   if (slice[idx] === '.') idx++;
+  const dynamicXCount = parseCreateTokenWhereXCount(slice, idx);
+  if (dynamicXCount && typeof tokenCount !== 'number' && tokenCount.kind === 'X') {
+    tokenCount = dynamicXCount.count;
+    idx = dynamicXCount.consumed;
+  }
 
   const token: TokenDefinition = {
     name: subtypes.length > 0 ? subtypes.map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(' ') : 'Creature',
@@ -713,7 +1047,35 @@ function matchCreateToken(tokens: string[], startIndex: number): PatternResult {
     subtypes: subtypes.length > 0 ? subtypes : undefined,
     power,
     toughness,
+    ...(powerAmount ? { powerAmount } : {}),
+    ...(toughnessAmount ? { toughnessAmount } : {}),
+    ...(keywords.length > 0 ? { keywords } : {}),
   };
+
+  if (
+    slice[idx] === 'put' &&
+    slice[idx + 1] === 'x' &&
+    slice[idx + 2] === '+1/+1' &&
+    slice[idx + 3] === 'counters' &&
+    slice[idx + 4] === 'on' &&
+    slice[idx + 5] === 'it'
+  ) {
+    token.counters = { '+1/+1': { kind: 'EventSpellManaValue' } };
+    idx += 6;
+    if (
+      slice[idx] === ',' &&
+      slice[idx + 1] === 'where' &&
+      slice[idx + 2] === 'x' &&
+      slice[idx + 3] === 'is' &&
+      slice[idx + 4] === 'that' &&
+      (slice[idx + 5] === "spell's" || slice[idx + 5] === 'spells') &&
+      slice[idx + 6] === 'mana' &&
+      slice[idx + 7] === 'value'
+    ) {
+      idx += 8;
+    }
+    if (slice[idx] === '.') idx++;
+  }
 
   const effect: Effect = {
     kind: 'CreateToken',
@@ -723,6 +1085,204 @@ function matchCreateToken(tokens: string[], startIndex: number): PatternResult {
   };
 
   return { effects: [effect], targets: [], consumed: idx };
+}
+
+/**
+ * Match: "that player creates a 1/1 red Goblin creature token"
+ *
+ * In beginning/end-step triggers, "that player" refers to the active player
+ * whose step caused the trigger to fire.
+ */
+function matchThatPlayerCreatesToken(tokens: string[], startIndex: number): PatternResult {
+  if (tokens[startIndex] !== 'that' || tokens[startIndex + 1] !== 'player') {
+    return null;
+  }
+
+  const tokenResult = matchCreateToken(tokens, startIndex + 2);
+  if (!tokenResult) return null;
+
+  return {
+    ...tokenResult,
+    effects: tokenResult.effects.map(effect => (
+      effect.kind === 'CreateToken'
+        ? { ...effect, controller: { kind: 'ActivePlayer' as const } }
+        : effect
+    )),
+    consumed: tokenResult.consumed + 2,
+  };
+}
+
+function parseD20Range(tokens: string[], startIndex: number): { min: number; max: number; nextIndex: number } | null {
+  const min = parseInt(tokens[startIndex], 10);
+  if (isNaN(min)) return null;
+  const dash = tokens[startIndex + 1];
+  if (dash !== '-' && dash !== 'â€“' && dash !== 'â€”') return null;
+  const max = parseInt(tokens[startIndex + 2], 10);
+  if (isNaN(max)) return null;
+
+  let nextIndex = startIndex + 3;
+  if (tokens[nextIndex] === '|') nextIndex++;
+  return { min, max, nextIndex };
+}
+
+function findNextD20Outcome(tokens: string[], startIndex: number): number {
+  for (let i = startIndex; i < tokens.length - 3; i++) {
+    if (parseD20Range(tokens, i)) return i;
+  }
+  return -1;
+}
+
+function attachSourceToCreatedIfRequested(effects: Effect[], outcomeTokens: string[]): Effect[] {
+  const attachIndex = outcomeTokens.indexOf('attach');
+  const attachesToIt = attachIndex >= 0 && outcomeTokens.some((token, index) =>
+    index > attachIndex && token === 'to' && outcomeTokens[index + 1] === 'it'
+  );
+  if (!attachesToIt) return effects;
+
+  let attachedFirstToken = false;
+  return effects.map(effect => {
+    if (!attachedFirstToken && effect.kind === 'CreateToken') {
+      attachedFirstToken = true;
+      return { ...effect, attachSourceToCreated: true };
+    }
+    return effect;
+  });
+}
+
+/**
+ * Match dice-table text like:
+ * "roll a d20. 1-9 | create a 1/1 red Goblin creature token.
+ *  10-20 | create a 1/1 red Goblin creature token, then attach CARD to it."
+ */
+function matchRollD20(tokens: string[], startIndex: number): PatternResult {
+  if (tokens[startIndex] !== 'roll' || tokens[startIndex + 1] !== 'a' || tokens[startIndex + 2] !== 'd20') {
+    return null;
+  }
+
+  let idx = startIndex + 3;
+  while (tokens[idx] === '.' || tokens[idx] === ',') idx++;
+
+  const outcomes: RollD20Outcome[] = [];
+  while (idx < tokens.length) {
+    while (tokens[idx] === '.' || tokens[idx] === ',') idx++;
+
+    const range = parseD20Range(tokens, idx);
+    if (!range) break;
+
+    const outcomeStart = range.nextIndex;
+    const nextOutcome = findNextD20Outcome(tokens, outcomeStart);
+    const outcomeEnd = nextOutcome === -1 ? tokens.length : nextOutcome;
+    const outcomeTokens = tokens.slice(outcomeStart, outcomeEnd);
+    const parsed = parseMultipleEffects(outcomeTokens, 0);
+    if (parsed && parsed.effects.length > 0) {
+      outcomes.push({
+        min: range.min,
+        max: range.max,
+        effects: attachSourceToCreatedIfRequested(parsed.effects, outcomeTokens),
+      });
+    }
+
+    idx = outcomeEnd;
+  }
+
+  if (outcomes.length === 0) return null;
+
+  return {
+    effects: [{ kind: 'RollD20', outcomes }],
+    targets: [],
+    consumed: Math.max(idx - startIndex, 3),
+  };
+}
+
+function singularizeSubtypeWord(word: string): string {
+  const subtypeMap: Record<string, string> = {
+    elf: 'elf', elves: 'elf',
+    goblin: 'goblin', goblins: 'goblin',
+    zombie: 'zombie', zombies: 'zombie',
+    dragon: 'dragon', dragons: 'dragon',
+    angel: 'angel', angels: 'angel',
+    demon: 'demon', demons: 'demon',
+    merfolk: 'merfolk',
+    soldier: 'soldier', soldiers: 'soldier',
+    wizard: 'wizard', wizards: 'wizard',
+    knight: 'knight', knights: 'knight',
+    warrior: 'warrior', warriors: 'warrior',
+    cleric: 'cleric', clerics: 'cleric',
+    rogue: 'rogue', rogues: 'rogue',
+    shaman: 'shaman', shamans: 'shaman',
+    beast: 'beast', beasts: 'beast',
+    elemental: 'elemental', elementals: 'elemental',
+    vampire: 'vampire', vampires: 'vampire',
+    sliver: 'sliver', slivers: 'sliver',
+    human: 'human', humans: 'human',
+    spirit: 'spirit', spirits: 'spirit',
+    bird: 'bird', birds: 'bird',
+    cat: 'cat', cats: 'cat',
+    dinosaur: 'dinosaur', dinosaurs: 'dinosaur',
+    pirate: 'pirate', pirates: 'pirate',
+    dwarf: 'dwarf', dwarves: 'dwarf',
+    wolf: 'wolf', wolves: 'wolf',
+  };
+  return subtypeMap[word] || word.replace(/s$/, '');
+}
+
+function parseCreateTokenWhereXCount(
+  slice: string[],
+  startIndex: number,
+): { count: ForEachAmount; consumed: number } | null {
+  let idx = startIndex;
+  if (slice[idx] === ',') idx++;
+
+  if (
+    slice[idx] !== 'where' ||
+    slice[idx + 1] !== 'x' ||
+    slice[idx + 2] !== 'is' ||
+    slice[idx + 3] !== 'the' ||
+    slice[idx + 4] !== 'number' ||
+    slice[idx + 5] !== 'of'
+  ) {
+    return null;
+  }
+
+  idx += 6;
+  const countedWords: string[] = [];
+  while (idx < slice.length && !(slice[idx] === 'you' && slice[idx + 1] === 'control')) {
+    if (slice[idx] !== ',' && slice[idx] !== '.') countedWords.push(slice[idx]);
+    idx++;
+  }
+  if (slice[idx] !== 'you' || slice[idx + 1] !== 'control' || countedWords.length === 0) {
+    return null;
+  }
+  idx += 2;
+  if (slice[idx] === '.') idx++;
+
+  const countedType = countedWords[countedWords.length - 1];
+  let filter: CardFilter | undefined;
+  if (countedType === 'creatures' || countedType === 'creature') {
+    filter = { types: ['creature'] };
+  } else if (countedType === 'artifacts' || countedType === 'artifact') {
+    filter = { types: ['artifact'] };
+  } else if (countedType === 'enchantments' || countedType === 'enchantment') {
+    filter = { types: ['enchantment'] };
+  } else if (countedType === 'lands' || countedType === 'land') {
+    filter = { types: ['land'] };
+  } else {
+    const subtype = singularizeSubtypeWord(countedType);
+    filter = {
+      types: ['creature'],
+      subtypes: [subtype.charAt(0).toUpperCase() + subtype.slice(1)],
+    };
+  }
+
+  return {
+    count: {
+      kind: 'ForEach',
+      zone: 'battlefield',
+      filter,
+      controller: 'you',
+    },
+    consumed: idx,
+  };
 }
 
 /**
@@ -879,6 +1439,7 @@ function matchDrawX(tokens: string[], startIndex: number): PatternResult {
 /**
  * Match: "counter target spell"
  * Match: "counter target noncreature spell"
+ * Match: "counter target creature spell"
  */
 function matchCounterSpell(tokens: string[], startIndex: number): PatternResult {
   const slice = tokens.slice(startIndex);
@@ -889,11 +1450,15 @@ function matchCounterSpell(tokens: string[], startIndex: number): PatternResult 
 
   let targetType: TargetType;
   let consumed: number;
-  let filter: 'noncreature' | undefined;
+  let filter: 'noncreature' | 'creature' | undefined;
 
   if (slice[2] === 'noncreature' && slice[3] === 'spell') {
     targetType = 'NoncreatureSpell';
     filter = 'noncreature';
+    consumed = 4;
+  } else if (slice[2] === 'creature' && slice[3] === 'spell') {
+    targetType = 'CreatureSpell';
+    filter = 'creature';
     consumed = 4;
   } else if (slice[2] === 'spell') {
     targetType = 'Spell';
@@ -967,6 +1532,32 @@ function matchReturnFromGraveyard(tokens: string[], startIndex: number): Pattern
 function matchModifyPT(tokens: string[], startIndex: number): PatternResult {
   const slice = tokens.slice(startIndex);
 
+  // "~ gets +N/+N until end of turn"
+  if (
+    slice.length >= 7 &&
+    slice[0] === '~' &&
+    slice[1] === 'gets'
+  ) {
+    const ptMatch = slice[2]?.match(/^([+-]\d+)\/([+-]\d+)$/);
+    if (!ptMatch) return null;
+    const power = parseInt(ptMatch[1], 10);
+    const toughness = parseInt(ptMatch[2], 10);
+    if (slice[3] !== 'until' || slice[4] !== 'end' || slice[5] !== 'of' || slice[6] !== 'turn') return null;
+
+    let consumed = 7;
+    if (tokens[startIndex + consumed] === '.') consumed++;
+
+    const effect: Effect = {
+      kind: 'ModifyPT',
+      target: { kind: 'Source' },
+      power,
+      toughness,
+      untilEndOfTurn: true,
+    };
+
+    return { effects: [effect], targets: [], consumed };
+  }
+
   // "creatures you control get +N/+N until end of turn"
   if (slice.length >= 8 &&
       slice[0] === 'creatures' && slice[1] === 'you' && slice[2] === 'control' &&
@@ -1037,7 +1628,7 @@ function matchDiscardSelf(tokens: string[], startIndex: number): PatternResult {
     count = 1;
     consumed = 3;
   } else {
-    const n = parseInt(slice[1], 10);
+    const n = parseSmallNumberToken(slice[1]);
     if (isNaN(n)) return null;
     if (slice[2] !== 'cards' && slice[2] !== 'card') return null;
     count = n;
@@ -1271,13 +1862,24 @@ function matchExileFromLibraryTop(tokens: string[], startIndex: number): Pattern
   if (slice[1] !== 'the') return null;
   if (slice[2] !== 'top') return null;
 
-  let count: number;
+  let count: AmountRef;
   let idx: number;
 
   // "the top card" (singular)
   if (slice[3] === 'card') {
     count = 1;
     idx = 4;
+  }
+  // "the top X cards ... where X is the number of creatures you control with power 4 or greater"
+  else if (slice[3] === 'x') {
+    if (slice[4] !== 'cards' && slice[4] !== 'card') return null;
+    count = {
+      kind: 'ForEach',
+      zone: 'battlefield',
+      filter: { types: ['creature'], power: { op: 'gte', value: 4 } },
+      controller: 'you',
+    };
+    idx = 5;
   }
   // "the top N cards" or "the top three cards"
   else {
@@ -1295,22 +1897,53 @@ function matchExileFromLibraryTop(tokens: string[], startIndex: number): Pattern
   if (slice[idx + 2] !== 'library') return null;
   idx += 3;
 
+  if (slice[idx] === ',' && slice[idx + 1] === 'where' && slice[idx + 2] === 'x') {
+    while (idx < slice.length && slice[idx] !== '.') idx++;
+  }
   if (slice[idx] === '.') idx++;
 
   // Check for "you may play them/it this turn" / "until end of turn"
   let mayPlay = false;
+  let delayedDamageEachOpponentPerCard: number | undefined;
   if (slice[idx] === 'you' && slice[idx + 1] === 'may' && slice[idx + 2] === 'play') {
     mayPlay = true;
     idx += 3;
-    // skip "them" or "it"
+    // skip "them", "it", or "those cards"
     if (slice[idx] === 'them' || slice[idx] === 'it') idx++;
-    // skip "this turn" or "until end of turn"
+    if (slice[idx] === 'those' && slice[idx + 1] === 'cards') idx += 2;
+    // skip "this turn", "until end of turn", or "until your next end step"
     if (slice[idx] === 'this' && slice[idx + 1] === 'turn') {
       idx += 2;
     } else if (slice[idx] === 'until' && slice[idx + 1] === 'end' && slice[idx + 2] === 'of' && slice[idx + 3] === 'turn') {
       idx += 4;
+    } else if (slice[idx] === 'until' && slice[idx + 1] === 'your' && slice[idx + 2] === 'next' && slice[idx + 3] === 'end' && slice[idx + 4] === 'step') {
+      idx += 5;
     }
     if (slice[idx] === '.') idx++;
+  }
+
+  if (
+    slice[idx] === 'at' &&
+    slice[idx + 1] === 'the' &&
+    slice[idx + 2] === 'beginning' &&
+    slice[idx + 3] === 'of' &&
+    slice[idx + 4] === 'your' &&
+    slice[idx + 5] === 'next' &&
+    slice[idx + 6] === 'end' &&
+    slice[idx + 7] === 'step'
+  ) {
+    const damageIndex = slice.indexOf('damage', idx);
+    const opponentIndex = slice.indexOf('opponent', idx);
+    if (damageIndex > idx && opponentIndex > idx) {
+      const amountToken = slice[damageIndex - 1];
+      const parsedAmount = parseInt(amountToken, 10);
+      const wordAmount = parseWordNumber(amountToken);
+      delayedDamageEachOpponentPerCard = Number.isFinite(parsedAmount)
+        ? parsedAmount
+        : Number.isFinite(wordAmount)
+          ? wordAmount
+          : undefined;
+    }
   }
 
   const effect: Effect = {
@@ -1318,6 +1951,7 @@ function matchExileFromLibraryTop(tokens: string[], startIndex: number): Pattern
     player: { kind: 'Controller' },
     count,
     mayPlay,
+    delayedDamageEachOpponentPerCard,
   };
 
   return { effects: [effect], targets: [], consumed: idx };
@@ -1327,7 +1961,7 @@ function matchExileFromLibraryTop(tokens: string[], startIndex: number): Pattern
  * Match: "search your library for a card" (generic tutor — any card type)
  * Match: "search your library for a card, put it into your hand, then shuffle"
  * Match: "search your library for a card and put that card on top"
- * Simplified: treated as Draw 1 (since we can't prompt for specific card choice)
+ * Uses namedCardChoices.tutorCard / namedCard to choose a real library card when provided.
  */
 function matchSearchLibraryGeneric(tokens: string[], startIndex: number): PatternResult {
   const slice = tokens.slice(startIndex);
@@ -1337,23 +1971,43 @@ function matchSearchLibraryGeneric(tokens: string[], startIndex: number): Patter
   if (slice[1] !== 'your') return null;
   if (slice[2] !== 'library') return null;
   if (slice[3] !== 'for') return null;
-  if (slice[4] !== 'a') return null;
-  if (slice[5] !== 'card') return null;
+  if (slice[4] !== 'a' && slice[4] !== 'an') return null;
 
-  let idx = 6;
+  let idx = 5;
+  let filter: CardFilter = {};
+  if (slice[idx] === 'card') {
+    idx++;
+  } else if (slice[idx + 1] === 'card') {
+    const filterWord = slice[idx];
+    const parsedFilter = parseStaticFilterType(filterWord);
+    const subtype = singularizeSubtypeWord(filterWord);
+    filter = parsedFilter ?? {
+      types: ['creature'],
+      subtypes: [subtype.charAt(0).toUpperCase() + subtype.slice(1)],
+    };
+    idx += 2;
+  } else {
+    return null;
+  }
 
   // Skip optional destination clauses and shuffle
   // "put it into your hand" / "put that card on top" etc.
   // We consume everything until end of tokens or next sentence
   let shuffle = false;
-  let destination: 'hand' | 'battlefield' | 'graveyard' = 'hand';
+  let destination: 'hand' | 'battlefield' | 'top' | 'graveyard' = 'hand';
 
   if (slice[idx] === ',') idx++;
+  if (slice[idx] === 'reveal') {
+    while (idx < slice.length && slice[idx] !== ',' && slice[idx] !== '.' && slice[idx] !== 'then') {
+      idx++;
+    }
+    if (slice[idx] === ',') idx++;
+  }
   if (slice[idx] === 'put') {
     // Skip "put it into your hand" or "put that card on top"
     while (idx < slice.length && slice[idx] !== ',' && slice[idx] !== '.' && slice[idx] !== 'then') {
       if (slice[idx] === 'top') {
-        destination = 'hand'; // treat "on top" as effectively draw-like
+        destination = 'top';
       }
       idx++;
     }
@@ -1372,16 +2026,19 @@ function matchSearchLibraryGeneric(tokens: string[], startIndex: number): Patter
   }
   if (slice[idx] === '.') idx++;
 
-  // Simplify: generic tutor = Draw 1 (card goes to hand)
   const effects: Effect[] = [
     {
-      kind: 'Draw',
+      kind: 'SearchLibrary',
       player: { kind: 'Controller' },
-      count: 1,
+      filter,
+      destination,
+      shuffle,
+      namedCardChoiceId: 'tutorCard',
+      selectedCardChoiceId: 'tutorCardId',
     },
   ];
 
-  if (shuffle) {
+  if (shuffle && destination !== 'top') {
     effects.push({
       kind: 'ShuffleLibrary',
       player: { kind: 'Controller' },
@@ -1697,6 +2354,29 @@ function matchReturnAllToHand(tokens: string[], startIndex: number): PatternResu
 
   let idx = 2;
   const filter: CardFilter = {};
+
+  if (slice[idx] === 'attacking' && slice[idx + 1] === 'creatures') {
+    idx += 2;
+
+    // "to their owners' hands" / "to their owner's hand"
+    if (slice[idx] !== 'to') return null;
+    idx++;
+    if (slice[idx] !== 'their') return null;
+    idx++;
+    if (slice[idx] !== "owners'" && slice[idx] !== "owner's") return null;
+    idx++;
+    if (slice[idx] !== 'hands' && slice[idx] !== 'hand') return null;
+    idx++;
+
+    if (slice[idx] === '.') idx++;
+
+    const effect: Effect = {
+      kind: 'ReturnToHand',
+      target: { kind: 'AllAttackingCreatures' },
+    };
+
+    return { effects: [effect], targets: [], consumed: idx };
+  }
 
   if (slice[idx] === 'creatures') {
     filter.types = ['creature'];
@@ -2016,6 +2696,69 @@ function matchBlink(tokens: string[], startIndex: number): PatternResult {
 }
 
 /**
+ * Match: "copy target instant or sorcery spell"
+ * Match: "copy target instant or sorcery spell with mana value 4 or less"
+ */
+function matchCopySpell(tokens: string[], startIndex: number): PatternResult {
+  const slice = tokens.slice(startIndex);
+  if (slice.length < 6) return null;
+  if (slice[0] !== 'copy') return null;
+  if (slice[1] !== 'target') return null;
+  if (slice[2] !== 'instant' || slice[3] !== 'or' || slice[4] !== 'sorcery' || slice[5] !== 'spell') return null;
+
+  let idx = 6;
+  let maxManaValue: number | undefined;
+
+  if (slice[idx] === 'with' && slice[idx + 1] === 'mana' && slice[idx + 2] === 'value') {
+    const value = parseInt(slice[idx + 3], 10);
+    if (Number.isNaN(value)) return null;
+    maxManaValue = value;
+    idx += 4;
+    if (slice[idx] === 'or' && slice[idx + 1] === 'less') idx += 2;
+  }
+
+  while (idx < slice.length && slice[idx] !== '.') {
+    // "You may choose new targets for the copy" is represented by the copy's target list.
+    idx++;
+  }
+  if (slice[idx] === '.') idx++;
+
+  const spec = makeTargetSpec('InstantOrSorcerySpell');
+  const effect: CopySpellEffect = {
+    kind: 'CopySpell',
+    target: makeChosenRef(spec),
+    ...(maxManaValue !== undefined ? { maxManaValue } : {}),
+  };
+
+  return { effects: [effect], targets: [spec], consumed: idx };
+}
+
+/**
+ * Match: "copy that spell"
+ * Used by triggered abilities such as Swarm Intelligence where the target is
+ * the spell that caused the trigger.
+ */
+function matchCopyThatSpell(tokens: string[], startIndex: number): PatternResult {
+  const slice = tokens.slice(startIndex);
+  if (slice[0] !== 'copy' || slice[1] !== 'that' || slice[2] !== 'spell') return null;
+
+  let idx = 3;
+  while (idx < slice.length && slice[idx] !== '.') {
+    idx++;
+  }
+  if (slice[idx] === '.') idx++;
+
+  return {
+    effects: [{
+      kind: 'CopySpell',
+      target: { kind: 'EventSpell' },
+    }],
+    targets: [],
+    consumed: idx,
+  };
+}
+
+/**
  * Match: "create a token that's a copy of target creature"
  * Match: "create a copy of target creature"
  * Match: "create a token that is a copy of target creature"
@@ -2142,6 +2885,84 @@ function matchGrantKeyword(tokens: string[], startIndex: number): PatternResult 
 }
 
 /**
+ * Match: "another target creature you control gains haste until end of turn and gets +X/+X until end of turn, where X is that creature's power"
+ * Also handles the same pattern without "another" or "you control".
+ */
+function matchGrantKeywordAndDynamicPT(tokens: string[], startIndex: number): PatternResult {
+  const slice = tokens.slice(startIndex);
+  if (slice.length < 15) return null;
+
+  let idx = 0;
+  if (slice[idx] === 'another') idx++;
+  if (slice[idx] !== 'target') return null;
+  idx++;
+  if (slice[idx] !== 'creature') return null;
+  idx++;
+  if (slice[idx] === 'you' && slice[idx + 1] === 'control') idx += 2;
+  if (slice[idx] !== 'gains') return null;
+  idx++;
+
+  const twoWordKey = slice[idx] + ' ' + slice[idx + 1];
+  let keyword: string | null = null;
+  if (GRANTABLE_KEYWORDS[twoWordKey]) {
+    keyword = GRANTABLE_KEYWORDS[twoWordKey];
+    idx += 2;
+  } else if (GRANTABLE_KEYWORDS[slice[idx]]) {
+    keyword = GRANTABLE_KEYWORDS[slice[idx]];
+    idx++;
+  }
+  if (!keyword) return null;
+
+  let keywordUntilEndOfTurn = false;
+  if (slice[idx] === 'until' && slice[idx + 1] === 'end' && slice[idx + 2] === 'of' && slice[idx + 3] === 'turn') {
+    keywordUntilEndOfTurn = true;
+    idx += 4;
+  }
+
+  if (slice[idx] !== 'and' || slice[idx + 1] !== 'gets') return null;
+  idx += 2;
+
+  const ptMatch = slice[idx]?.match(/^\+x\/\+x$/);
+  if (!ptMatch) return null;
+  idx++;
+
+  if (slice[idx] !== 'until' || slice[idx + 1] !== 'end' || slice[idx + 2] !== 'of' || slice[idx + 3] !== 'turn') return null;
+  idx += 4;
+
+  if (slice[idx] === ',') idx++;
+  if (slice[idx] !== 'where' || slice[idx + 1] !== 'x' || slice[idx + 2] !== 'is') return null;
+  idx += 3;
+
+  const refersToTargetPower =
+    (slice[idx] === 'that' && slice[idx + 1] === "creature's" && slice[idx + 2] === 'power')
+    || (slice[idx] === 'its' && slice[idx + 1] === 'power');
+  if (!refersToTargetPower) return null;
+  idx += slice[idx] === 'that' ? 3 : 2;
+
+  if (slice[idx] === '.') idx++;
+
+  const spec = makeTargetSpec('Creature');
+  const target = makeChosenRef(spec);
+  const effects: Effect[] = [
+    {
+      kind: 'GrantKeyword',
+      target,
+      keyword,
+      untilEndOfTurn: keywordUntilEndOfTurn,
+    },
+    {
+      kind: 'ModifyPT',
+      target,
+      power: { kind: 'TargetPower', target },
+      toughness: { kind: 'TargetPower', target },
+      untilEndOfTurn: true,
+    },
+  ];
+
+  return { effects, targets: [spec], consumed: idx };
+}
+
+/**
  * Match: "target permanent phases out"
  * Match: "target creature phases out"
  */
@@ -2230,6 +3051,13 @@ function matchLoseGame(tokens: string[], startIndex: number): PatternResult {
 // ============================================================================
 
 function parseStaticFilterType(word: string): CardFilter | null {
+  const colorMap: Record<string, 'W' | 'U' | 'B' | 'R' | 'G'> = {
+    white: 'W',
+    blue: 'U',
+    black: 'B',
+    red: 'R',
+    green: 'G',
+  };
   // Map of plural → singular for creature subtypes
   const subtypeMap: Record<string, string> = {
     'elf': 'elf', 'elves': 'elf',
@@ -2264,28 +3092,102 @@ function parseStaticFilterType(word: string): CardFilter | null {
   if (word === 'creatures' || word === 'creature') return { types: ['creature'] };
   if (word === 'artifacts' || word === 'artifact') return { types: ['artifact'] };
   if (word === 'enchantments' || word === 'enchantment') return { types: ['enchantment'] };
+  if (word === 'instants' || word === 'instant') return { types: ['instant'] };
+  if (word === 'sorceries' || word === 'sorcery') return { types: ['sorcery'] };
   if (word === 'lands' || word === 'land') return { types: ['land'] };
   if (word === 'permanents' || word === 'permanent') return {};
   if (word === 'spells' || word === 'spell') return {};
+  if (colorMap[word]) return { colors: [colorMap[word]] };
   if (creatureSubtypes.includes(word)) return { types: ['creature'], subtypes: [singular] };
   return null;
+}
+
+function mergeStaticFilters(a: CardFilter, b: CardFilter): CardFilter {
+  const merge = <T,>(left?: T[], right?: T[]): T[] | undefined => {
+    const values = [...(left || []), ...(right || [])];
+    return values.length > 0 ? [...new Set(values)] : undefined;
+  };
+  return {
+    types: merge(a.types, b.types),
+    subtypes: merge(a.subtypes, b.subtypes),
+    excludeSubtypes: merge(a.excludeSubtypes, b.excludeSubtypes),
+    supertypes: merge(a.supertypes, b.supertypes),
+    colors: merge(a.colors, b.colors),
+    cmc: b.cmc || a.cmc,
+    power: b.power || a.power,
+  };
+}
+
+function parseStaticSubject(tokens: string[], startIndex: number): { filter: CardFilter; nextIndex: number } | null {
+  let idx = startIndex;
+  const first = parseStaticFilterType(tokens[idx]);
+  if (!first) return null;
+  let filter = first;
+  idx++;
+
+  while (idx < tokens.length) {
+    if (tokens[idx] === 'and') {
+      const nextFilter = parseStaticFilterType(tokens[idx + 1]);
+      if (!nextFilter) break;
+      filter = mergeStaticFilters(filter, nextFilter);
+      idx += 2;
+      continue;
+    }
+
+    const nextFilter = parseStaticFilterType(tokens[idx]);
+    const currentIsOnlyColor = !!filter.colors?.length
+      && !filter.types?.length
+      && !filter.subtypes?.length
+      && !filter.supertypes?.length;
+    if (nextFilter && currentIsOnlyColor) {
+      filter = mergeStaticFilters(filter, nextFilter);
+      idx++;
+      continue;
+    }
+    break;
+  }
+
+  if (['creature', 'creatures', 'spell', 'spells'].includes(tokens[idx])) {
+    idx++;
+  }
+
+  return { filter, nextIndex: idx };
 }
 
 function matchStaticAbility(tokens: string[]): StaticAbilityEffect | null {
   let idx = 0;
   let excludeSelf = false;
   if (tokens[idx] === 'other') { excludeSelf = true; idx++; }
-  const typeWord = tokens[idx];
-  if (!typeWord) return null;
-  const filter = parseStaticFilterType(typeWord);
-  if (!filter) return null;
-  idx++;
+  const subject = parseStaticSubject(tokens, idx);
+  if (!subject) return null;
+  const filter = subject.filter;
+  idx = subject.nextIndex;
 
   let controller: 'you' | 'opponent' | 'any' = 'you';
   if (tokens[idx] === 'you' && tokens[idx + 1] === 'control') { controller = 'you'; idx += 2; }
   else if (tokens[idx] === 'an' && tokens[idx + 1] === 'opponent' && tokens[idx + 2] === 'controls') { controller = 'opponent'; idx += 3; }
   else if (tokens[idx] === 'you' && tokens[idx + 1] === 'cast') { controller = 'you'; idx += 2; }
   else return null;
+
+  if (tokens[idx] === 'with' && tokens[idx + 1] === 'power') {
+    const power = parseInt(tokens[idx + 2], 10);
+    if (isNaN(power)) return null;
+    if (tokens[idx + 3] === 'or' && tokens[idx + 4] === 'greater') {
+      filter.power = { op: 'gte', value: power };
+      idx += 5;
+    } else if (tokens[idx + 3] === 'or' && tokens[idx + 4] === 'less') {
+      filter.power = { op: 'lte', value: power };
+      idx += 5;
+    } else {
+      return null;
+    }
+  }
+
+  if ((tokens[idx] === 'with' && tokens[idx + 1] === 'power')) return null;
+
+  if (tokens[idx] === 'of' && tokens[idx + 1] === 'the' && tokens[idx + 2] === 'chosen' && tokens[idx + 3] === 'type') {
+    idx += 4;
+  }
 
   if (tokens[idx] === 'get' || tokens[idx] === 'gets') {
     idx++;
@@ -2299,9 +3201,14 @@ function matchStaticAbility(tokens: string[]): StaticAbilityEffect | null {
   }
   if (tokens[idx] === 'have' || tokens[idx] === 'has') {
     idx++;
-    const keyword = tokens[idx];
+    let keyword = tokens[idx];
     if (!keyword) return null;
-    idx++;
+    if ((keyword === 'first' || keyword === 'double') && tokens[idx + 1] === 'strike') {
+      keyword = `${keyword} strike`;
+      idx += 2;
+    } else {
+      idx++;
+    }
     if (tokens[idx] === '.') idx++;
     return { kind: 'StaticAbility', modifier: { kind: 'GrantKeyword', keyword }, filter, controller, excludeSelf };
   }
@@ -2357,23 +3264,34 @@ function matchConditionalEffect(tokens: string[], startIndex: number): PatternRe
 }
 
 function parseEffectClauseInternal(tokens: string[], startIndex: number): PatternResult {
+  let actualStartIndex = startIndex;
+  if (tokens[actualStartIndex] === 'you' && tokens[actualStartIndex + 1] === 'may') {
+    actualStartIndex += 2;
+  }
+
   const patterns = [
     matchWinGame, matchLoseGame,
-    matchBlink, matchCopyCreature, matchGrantKeyword, matchPhaseOut,
+    matchBlink, matchCopyThatSpell, matchCopySpell, matchCopyCreature, matchGrantKeywordAndDynamicPT, matchGrantKeyword, matchPhaseOut,
     matchDealDamageForEach, matchForEachDraw, matchCreateTokenForEach,
     matchExileFromLibraryTop, matchSearchLibraryGeneric, matchEachOpponentSacrifice,
     matchEachPlayerEffect, matchTargetPlayerSacrifice, matchSacrificeAsEffect,
     matchGainControl, matchReturnAllToHand, matchExileAll, matchDestroyAllExpanded,
     matchDealXDamage, matchDrawX, matchEachOpponentLosesLife,
     matchEachOpponentDiscardsCard, matchDestroyAll, matchDealDamage, matchDestroy,
-    matchDraw, matchGainLife, matchLoseLife, matchExile, matchReturnFromGraveyard,
+    matchLookAtTargetPlayerHand, matchLookAtTopPutOneIntoHand, matchPutLandFromHandOntoBattlefield, matchThatPlayerDraw, matchTargetPlayerDraw, matchDraw,
+    matchGainLife, matchLoseLife, matchExile, matchReturnFromGraveyard,
     matchReturnToHand, matchMill, matchAddCounters, matchModifyPT, matchTap,
-    matchUntap, matchCreateToken, matchDiscard, matchDiscardSelf, matchScry,
+    matchUntap, matchRollD20, matchThatPlayerCreatesToken, matchCreateToken, matchDiscard, matchDiscardSelf, matchScry,
     matchSurveil, matchCounterSpell,
   ];
   for (const pattern of patterns) {
-    const result = pattern(tokens, startIndex);
-    if (result) return result;
+    const result = pattern(tokens, actualStartIndex);
+    if (result) {
+      return {
+        ...result,
+        consumed: result.consumed + (actualStartIndex - startIndex),
+      };
+    }
   }
   return null;
 }
@@ -2383,6 +3301,11 @@ function parseEffectClauseInternal(tokens: string[], startIndex: number): Patter
  * Returns the first matching pattern.
  */
 function parseEffectClause(tokens: string[], startIndex: number): PatternResult {
+  let actualStartIndex = startIndex;
+  if (tokens[actualStartIndex] === 'you' && tokens[actualStartIndex + 1] === 'may') {
+    actualStartIndex += 2;
+  }
+
   // Try patterns in priority order (specific/complex before general, X patterns first)
   const patterns = [
     // Win/lose game effects (simple patterns, high priority)
@@ -2394,7 +3317,10 @@ function parseEffectClause(tokens: string[], startIndex: number): PatternResult 
 
     // Phase 16: Blink, copy, keyword granting, phasing (must come before simpler exile/target patterns)
     matchBlink,                   // "exile target creature, then return it to the battlefield..."
+    matchCopyThatSpell,           // "copy that spell"
+    matchCopySpell,               // "copy target instant or sorcery spell"
     matchCopyCreature,            // "create a token that's a copy of target creature"
+    matchGrantKeywordAndDynamicPT,
     matchGrantKeyword,            // "target creature gains hexproof until end of turn"
     matchPhaseOut,                // "target permanent phases out"
 
@@ -2425,6 +3351,11 @@ function parseEffectClause(tokens: string[], startIndex: number): PatternResult 
     // Core patterns
     matchDealDamage,
     matchDestroy,
+    matchLookAtTargetPlayerHand,
+    matchLookAtTopPutOneIntoHand,
+    matchPutLandFromHandOntoBattlefield,
+    matchThatPlayerDraw,
+    matchTargetPlayerDraw,
     matchDraw,
     matchGainLife,
     matchLoseLife,
@@ -2436,6 +3367,8 @@ function parseEffectClause(tokens: string[], startIndex: number): PatternResult 
     matchModifyPT,
     matchTap,
     matchUntap,
+    matchRollD20,
+    matchThatPlayerCreatesToken,
     matchCreateToken,
     matchDiscard,
     matchDiscardSelf,
@@ -2445,8 +3378,13 @@ function parseEffectClause(tokens: string[], startIndex: number): PatternResult 
   ];
 
   for (const pattern of patterns) {
-    const result = pattern(tokens, startIndex);
-    if (result) return result;
+    const result = pattern(tokens, actualStartIndex);
+    if (result) {
+      return {
+        ...result,
+        consumed: result.consumed + (actualStartIndex - startIndex),
+      };
+    }
   }
 
   return null;
@@ -2459,19 +3397,26 @@ function parseEffectClause(tokens: string[], startIndex: number): PatternResult 
 function matchETBPrefix(tokens: string[]): number {
   // "when ~ enters the battlefield ,"
   // "whenever ~ enters the battlefield ,"
+  // "when this creature enters ,"
+  // "whenever ~ enters or attacks ,"
 
-  if (tokens.length < 6) return -1;
+  if (tokens.length < 4) return -1;
 
   const first = tokens[0];
   if (first !== 'when' && first !== 'whenever') return -1;
-  if (tokens[1] !== '~') return -1;
-  if (tokens[2] !== 'enters') return -1;
-  if (tokens[3] !== 'the') return -1;
-  if (tokens[4] !== 'battlefield') return -1;
+  let idx = consumeSelfETBSubject(tokens, 1);
+  if (idx < 0) return -1;
+  if (tokens[idx] !== 'enters') return -1;
+  idx++;
 
-  // Optional comma
-  let idx = 5;
-  if (tokens[idx] === ',') idx++;
+  if (tokens[idx] === 'or' && tokens[idx + 1] === 'attacks') {
+    idx += 2;
+    if (tokens[idx] === ',') idx++;
+    return idx;
+  }
+
+  idx = consumeOptionalBattlefield(tokens, idx);
+  idx = consumeOptionalComma(tokens, idx);
 
   return idx;
 }
@@ -2516,6 +3461,58 @@ function matchAttacksPrefix(tokens: string[]): number {
   return idx;
 }
 
+function matchCreatureYouControlAttacksPrefix(tokens: string[]): number {
+  if (tokens.length < 7) return -1;
+  if (tokens[0] !== 'whenever') return -1;
+  if (tokens[1] !== 'a') return -1;
+  if (tokens[2] !== 'creature') return -1;
+  if (tokens[3] !== 'you') return -1;
+  if (tokens[4] !== 'control') return -1;
+  if (tokens[5] !== 'attacks') return -1;
+
+  let idx = 6;
+  if (tokens[idx] === ',') idx++;
+
+  return idx;
+}
+
+function matchSelfCombatDamageToPlayerPrefix(tokens: string[]): number {
+  if (tokens.length < 9) return -1;
+  if (tokens[0] !== 'whenever') return -1;
+  if (tokens[1] !== '~') return -1;
+  if (tokens[2] !== 'deals') return -1;
+  if (tokens[3] !== 'combat') return -1;
+  if (tokens[4] !== 'damage') return -1;
+  if (tokens[5] !== 'to') return -1;
+  if (tokens[6] !== 'a') return -1;
+  if (tokens[7] !== 'player') return -1;
+
+  let idx = 8;
+  if (tokens[idx] === ',') idx++;
+
+  return idx;
+}
+
+function matchCreatureYouControlCombatDamageToPlayerPrefix(tokens: string[]): number {
+  if (tokens.length < 12) return -1;
+  if (tokens[0] !== 'whenever') return -1;
+  if (tokens[1] !== 'a') return -1;
+  if (tokens[2] !== 'creature') return -1;
+  if (tokens[3] !== 'you') return -1;
+  if (tokens[4] !== 'control') return -1;
+  if (tokens[5] !== 'deals') return -1;
+  if (tokens[6] !== 'combat') return -1;
+  if (tokens[7] !== 'damage') return -1;
+  if (tokens[8] !== 'to') return -1;
+  if (tokens[9] !== 'a') return -1;
+  if (tokens[10] !== 'player') return -1;
+
+  let idx = 11;
+  if (tokens[idx] === ',') idx++;
+
+  return idx;
+}
+
 /**
  * Check if tokens start with "At the beginning of your upkeep ," trigger prefix.
  * Returns the index after the trigger prefix, or -1 if no match.
@@ -2531,6 +3528,27 @@ function matchUpkeepPrefix(tokens: string[]): number {
   if (tokens[5] !== 'upkeep') return -1;
 
   let idx = 6;
+  if (tokens[idx] === ',') idx++;
+
+  return idx;
+}
+
+/**
+ * Check if tokens start with "At the beginning of combat on your turn ,"
+ * Returns the index after the trigger prefix, or -1 if no match.
+ */
+function matchBeginningCombatPrefix(tokens: string[]): number {
+  if (tokens.length < 9) return -1;
+  if (tokens[0] !== 'at') return -1;
+  if (tokens[1] !== 'the') return -1;
+  if (tokens[2] !== 'beginning') return -1;
+  if (tokens[3] !== 'of') return -1;
+  if (tokens[4] !== 'combat') return -1;
+  if (tokens[5] !== 'on') return -1;
+  if (tokens[6] !== 'your') return -1;
+  if (tokens[7] !== 'turn') return -1;
+
+  let idx = 8;
   if (tokens[idx] === ',') idx++;
 
   return idx;
@@ -2558,26 +3576,68 @@ function matchEndStepPrefix(tokens: string[]): number {
 }
 
 /**
- * Check if tokens start with "Whenever another creature enters the battlefield under your control ,"
+ * Check if tokens start with "At the beginning of each opponent's end step ,"
  * Returns the index after the trigger prefix, or -1 if no match.
  */
-function matchAnotherCreatureETBPrefix(tokens: string[]): number {
-  // "whenever another creature enters the battlefield under your control ,"
-  if (tokens.length < 10) return -1;
-  if (tokens[0] !== 'whenever') return -1;
-  if (tokens[1] !== 'another') return -1;
-  if (tokens[2] !== 'creature') return -1;
-  if (tokens[3] !== 'enters') return -1;
-  if (tokens[4] !== 'the') return -1;
-  if (tokens[5] !== 'battlefield') return -1;
-  if (tokens[6] !== 'under') return -1;
-  if (tokens[7] !== 'your') return -1;
-  if (tokens[8] !== 'control') return -1;
+function matchEachOpponentEndStepPrefix(tokens: string[]): number {
+  if (tokens.length < 9) return -1;
+  if (tokens[0] !== 'at') return -1;
+  if (tokens[1] !== 'the') return -1;
+  if (tokens[2] !== 'beginning') return -1;
+  if (tokens[3] !== 'of') return -1;
+  if (tokens[4] !== 'each') return -1;
+  if (tokens[5] !== "opponent's" && tokens[5] !== 'opponents') return -1;
+  if (tokens[6] !== 'end') return -1;
+  if (tokens[7] !== 'step') return -1;
 
-  let idx = 9;
+  let idx = 8;
   if (tokens[idx] === ',') idx++;
 
   return idx;
+}
+
+/**
+ * Check if tokens start with "Whenever another creature enters the battlefield under your control ,"
+ * Returns the index after the trigger prefix, or -1 if no match.
+ */
+function matchAnotherCreatureETBPrefix(tokens: string[]): CreatureETBPrefixMatch | null {
+  // "whenever another creature enters the battlefield under your control ,"
+  // "whenever another creature you control enters ,"
+  // "whenever another nontoken creature enters under your control ,"
+  if (tokens.length < 6) return null;
+  if (tokens[0] !== 'whenever' && tokens[0] !== 'when') return null;
+  if (tokens[1] !== 'another') return null;
+
+  let idx = 2;
+  let nontoken = false;
+  if (tokens[idx] === 'nontoken' || (tokens[idx] === 'non' && tokens[idx + 1] === 'token')) {
+    nontoken = true;
+    idx += tokens[idx] === 'non' ? 2 : 1;
+  }
+
+  if (tokens[idx] !== 'creature' && tokens[idx] !== 'creatures') return null;
+  idx++;
+
+  if (tokens[idx] === 'you' && tokens[idx + 1] === 'control') {
+    idx += 2;
+    if (tokens[idx] !== 'enters' && tokens[idx] !== 'enter') return null;
+    idx++;
+    idx = consumeOptionalBattlefield(tokens, idx);
+    idx = consumeOptionalComma(tokens, idx);
+    return { effectStart: idx, nontoken: nontoken || undefined };
+  }
+
+  if (tokens[idx] !== 'enters' && tokens[idx] !== 'enter') return null;
+  idx++;
+  idx = consumeOptionalBattlefield(tokens, idx);
+
+  if (tokens[idx] !== 'under' || tokens[idx + 1] !== 'your' || tokens[idx + 2] !== 'control') {
+    return null;
+  }
+  idx += 3;
+  idx = consumeOptionalComma(tokens, idx);
+
+  return { effectStart: idx, nontoken: nontoken || undefined };
 }
 
 /**
@@ -2614,6 +3674,25 @@ function matchYouCastSpellPrefix(tokens: string[]): number {
   if (tokens[4] !== 'spell') return -1;
 
   let idx = 5;
+  if (tokens[idx] === ',') idx++;
+
+  return idx;
+}
+
+/**
+ * Check if tokens start with "Whenever you cast a noncreature spell ,"
+ * Returns the index after the trigger prefix, or -1 if no match.
+ */
+function matchYouCastNoncreatureSpellPrefix(tokens: string[]): number {
+  if (tokens.length < 7) return -1;
+  if (tokens[0] !== 'whenever') return -1;
+  if (tokens[1] !== 'you') return -1;
+  if (tokens[2] !== 'cast') return -1;
+  if (tokens[3] !== 'a') return -1;
+  if (tokens[4] !== 'noncreature') return -1;
+  if (tokens[5] !== 'spell') return -1;
+
+  let idx = 6;
   if (tokens[idx] === ',') idx++;
 
   return idx;
@@ -2684,20 +3763,91 @@ function matchOpponentCastSpellPrefix(tokens: string[]): number {
  * Check if tokens start with "Whenever a creature enters the battlefield ,"
  * Returns the index after the trigger prefix, or -1 if no match.
  */
-function matchAnyCreatureETBPrefix(tokens: string[]): number {
+function matchAnyCreatureETBPrefix(tokens: string[]): CreatureETBPrefixMatch | null {
   // "whenever a creature enters the battlefield ,"
-  if (tokens.length < 7) return -1;
-  if (tokens[0] !== 'whenever') return -1;
-  if (tokens[1] !== 'a') return -1;
-  if (tokens[2] !== 'creature') return -1;
-  if (tokens[3] !== 'enters') return -1;
-  if (tokens[4] !== 'the') return -1;
-  if (tokens[5] !== 'battlefield') return -1;
+  // "whenever a nontoken creature enters ,"
+  // "whenever one or more creatures enter the battlefield ,"
+  if (tokens.length < 5) return null;
+  if (tokens[0] !== 'whenever' && tokens[0] !== 'when') return null;
 
-  let idx = 6;
-  if (tokens[idx] === ',') idx++;
+  let idx = 1;
+  if (tokens[idx] === 'one' && tokens[idx + 1] === 'or' && tokens[idx + 2] === 'more') {
+    idx += 3;
+  } else if (tokens[idx] === 'a' || tokens[idx] === 'an') {
+    idx++;
+  } else {
+    return null;
+  }
 
-  return idx;
+  let nontoken = false;
+  if (tokens[idx] === 'nontoken' || (tokens[idx] === 'non' && tokens[idx + 1] === 'token')) {
+    nontoken = true;
+    idx += tokens[idx] === 'non' ? 2 : 1;
+  }
+
+  if (tokens[idx] !== 'creature' && tokens[idx] !== 'creatures') return null;
+  idx++;
+  if (tokens[idx] !== 'enters' && tokens[idx] !== 'enter') return null;
+  idx++;
+  idx = consumeOptionalBattlefield(tokens, idx);
+  idx = consumeOptionalComma(tokens, idx);
+
+  return { effectStart: idx, nontoken: nontoken || undefined };
+}
+
+/**
+ * Check creature-enter triggers restricted to creatures you control.
+ * Handles:
+ *   "Whenever a creature enters the battlefield under your control, ..."
+ *   "Whenever a creature you control enters, ..."
+ */
+function matchCreatureYouControlETBPrefix(tokens: string[]): CreatureETBPrefixMatch | null {
+  if (tokens.length < 6) return null;
+  if (tokens[0] !== 'whenever' && tokens[0] !== 'when') return null;
+
+  let idx = 1;
+  if (tokens[idx] === 'one' && tokens[idx + 1] === 'or' && tokens[idx + 2] === 'more') {
+    idx += 3;
+  } else if (tokens[idx] === 'a' || tokens[idx] === 'an') {
+    idx++;
+  } else {
+    return null;
+  }
+
+  let nontoken = false;
+  if (tokens[idx] === 'nontoken' || (tokens[idx] === 'non' && tokens[idx + 1] === 'token')) {
+    nontoken = true;
+    idx += tokens[idx] === 'non' ? 2 : 1;
+  }
+
+  if (tokens[idx] !== 'creature' && tokens[idx] !== 'creatures') return null;
+  idx++;
+
+  if (
+    (tokens[idx] === 'enters' || tokens[idx] === 'enter')
+  ) {
+    idx++;
+    idx = consumeOptionalBattlefield(tokens, idx);
+    if (tokens[idx] === 'under' && tokens[idx + 1] === 'your' && tokens[idx + 2] === 'control') {
+      idx += 3;
+      idx = consumeOptionalComma(tokens, idx);
+      return { effectStart: idx, controller: 'yours', nontoken: nontoken || undefined };
+    }
+    return null;
+  }
+
+  if (
+    tokens[idx] === 'you' &&
+    tokens[idx + 1] === 'control' &&
+    (tokens[idx + 2] === 'enters' || tokens[idx + 2] === 'enter')
+  ) {
+    idx += 3;
+    idx = consumeOptionalBattlefield(tokens, idx);
+    idx = consumeOptionalComma(tokens, idx);
+    return { effectStart: idx, controller: 'yours', nontoken: nontoken || undefined };
+  }
+
+  return null;
 }
 
 /**
@@ -2717,6 +3867,29 @@ function matchCastInstantOrSorceryPrefix(tokens: string[]): number {
   if (tokens[7] !== 'spell') return -1;
 
   let idx = 8;
+  if (tokens[idx] === ',') idx++;
+
+  return idx;
+}
+
+/**
+ * Check if tokens start with "Whenever you cast or copy an instant or sorcery spell ,"
+ * Returns the index after the trigger prefix, or -1 if no match.
+ */
+function matchCastOrCopyInstantOrSorceryPrefix(tokens: string[]): number {
+  if (tokens.length < 11) return -1;
+  if (tokens[0] !== 'whenever') return -1;
+  if (tokens[1] !== 'you') return -1;
+  if (tokens[2] !== 'cast') return -1;
+  if (tokens[3] !== 'or') return -1;
+  if (tokens[4] !== 'copy') return -1;
+  if (tokens[5] !== 'an') return -1;
+  if (tokens[6] !== 'instant') return -1;
+  if (tokens[7] !== 'or') return -1;
+  if (tokens[8] !== 'sorcery') return -1;
+  if (tokens[9] !== 'spell') return -1;
+
+  let idx = 10;
   if (tokens[idx] === ',') idx++;
 
   return idx;
@@ -2794,22 +3967,53 @@ function matchTriggerPrefix(tokens: string[]): { trigger: Trigger; effectStart: 
   idx = matchAttacksPrefix(tokens);
   if (idx > 0) return { trigger: { kind: 'Attacks', who: 'self' }, effectStart: idx };
 
+  idx = matchCreatureYouControlAttacksPrefix(tokens);
+  if (idx > 0) return { trigger: { kind: 'CreatureYouControlAttacks' }, effectStart: idx };
+
+  idx = matchSelfCombatDamageToPlayerPrefix(tokens);
+  if (idx > 0) return { trigger: { kind: 'CombatDamageToPlayer', who: 'self' }, effectStart: idx };
+
+  idx = matchCreatureYouControlCombatDamageToPlayerPrefix(tokens);
+  if (idx > 0) return { trigger: { kind: 'CombatDamageToPlayer', who: 'creatureYouControl' }, effectStart: idx };
+
   idx = matchUpkeepPrefix(tokens);
   if (idx > 0) return { trigger: { kind: 'Upkeep', whose: 'yours' }, effectStart: idx };
+
+  idx = matchBeginningCombatPrefix(tokens);
+  if (idx > 0) return { trigger: { kind: 'BeginningCombat', whose: 'yours' }, effectStart: idx };
 
   idx = matchEndStepPrefix(tokens);
   if (idx > 0) return { trigger: { kind: 'EndStep', whose: 'yours' }, effectStart: idx };
 
+  idx = matchEachOpponentEndStepPrefix(tokens);
+  if (idx > 0) return { trigger: { kind: 'EndStep', whose: 'opponents' }, effectStart: idx };
+
   // Phase 17: Must check AnotherCreatureETB before AnyCreatureETB (more specific first)
-  idx = matchAnotherCreatureETBPrefix(tokens);
-  if (idx > 0) return { trigger: { kind: 'AnotherCreatureETB', controller: 'yours' }, effectStart: idx };
+  const anotherCreatureEtb = matchAnotherCreatureETBPrefix(tokens);
+  if (anotherCreatureEtb) {
+    return {
+      trigger: {
+        kind: 'AnotherCreatureETB',
+        controller: 'yours',
+        ...(anotherCreatureEtb.nontoken ? { nontoken: true } : {}),
+        ...(anotherCreatureEtb.tokenOnly ? { tokenOnly: true } : {}),
+      },
+      effectStart: anotherCreatureEtb.effectStart,
+    };
+  }
 
   idx = matchCreatureYouControlDiesPrefix(tokens);
   if (idx > 0) return { trigger: { kind: 'CreatureYouControlDies' }, effectStart: idx };
 
-  // Phase 17: Must check CastInstantOrSorcery before YouCastSpell (more specific first)
+  // Phase 17: Must check cast/copy and CastInstantOrSorcery before YouCastSpell (more specific first)
+  idx = matchCastOrCopyInstantOrSorceryPrefix(tokens);
+  if (idx > 0) return { trigger: { kind: 'CastOrCopyInstantOrSorcery' }, effectStart: idx };
+
   idx = matchCastInstantOrSorceryPrefix(tokens);
   if (idx > 0) return { trigger: { kind: 'CastInstantOrSorcery' }, effectStart: idx };
+
+  idx = matchYouCastNoncreatureSpellPrefix(tokens);
+  if (idx > 0) return { trigger: { kind: 'CastNoncreatureSpell' }, effectStart: idx };
 
   idx = matchYouCastSpellPrefix(tokens);
   if (idx > 0) return { trigger: { kind: 'YouCastSpell' }, effectStart: idx };
@@ -2824,8 +4028,31 @@ function matchTriggerPrefix(tokens: string[]): { trigger: Trigger; effectStart: 
   idx = matchOpponentCastSpellPrefix(tokens);
   if (idx > 0) return { trigger: { kind: 'OpponentCastSpell' }, effectStart: idx };
 
-  idx = matchAnyCreatureETBPrefix(tokens);
-  if (idx > 0) return { trigger: { kind: 'AnyCreatureETB' }, effectStart: idx };
+  const controlledCreatureEtb = matchCreatureYouControlETBPrefix(tokens);
+  if (controlledCreatureEtb) {
+    return {
+      trigger: {
+        kind: 'AnyCreatureETB',
+        controller: 'yours',
+        ...(controlledCreatureEtb.nontoken ? { nontoken: true } : {}),
+        ...(controlledCreatureEtb.tokenOnly ? { tokenOnly: true } : {}),
+      },
+      effectStart: controlledCreatureEtb.effectStart,
+    };
+  }
+
+  const anyCreatureEtb = matchAnyCreatureETBPrefix(tokens);
+  if (anyCreatureEtb) {
+    return {
+      trigger: {
+        kind: 'AnyCreatureETB',
+        ...(anyCreatureEtb.controller ? { controller: anyCreatureEtb.controller } : {}),
+        ...(anyCreatureEtb.nontoken ? { nontoken: true } : {}),
+        ...(anyCreatureEtb.tokenOnly ? { tokenOnly: true } : {}),
+      },
+      effectStart: anyCreatureEtb.effectStart,
+    };
+  }
 
   idx = matchEachPlayerUpkeepPrefix(tokens);
   if (idx > 0) return { trigger: { kind: 'Upkeep', whose: 'each' }, effectStart: idx };
@@ -2863,6 +4090,15 @@ function parseMultipleEffects(tokens: string[], startIndex: number): PatternResu
     }
 
     if (pos >= tokens.length) break;
+
+    if (
+      allEffects.length > 0 &&
+      tokens[pos] === 'at' &&
+      tokens[pos + 1] === 'the' &&
+      tokens[pos + 2] === 'beginning'
+    ) {
+      break;
+    }
 
     const result = parseEffectClause(tokens, pos);
     if (result) {
@@ -3114,6 +4350,16 @@ function parseCostTokens(tokens: string[]): ActivatedAbilityCost | null {
       continue;
     }
 
+    // "pay 1 life"
+    if (tok === 'pay') {
+      const amount = parseInt(tokens[i + 1], 10);
+      if (isNaN(amount) || tokens[i + 2] !== 'life') return null;
+      cost.payLife = (cost.payLife || 0) + amount;
+      i += 3;
+      if (tokens[i] === ',') i++;
+      continue;
+    }
+
     // Mana symbol(s) like {2}{b}
     if (tok.startsWith('{') && tok.endsWith('}')) {
       cost.mana = tok;
@@ -3127,7 +4373,7 @@ function parseCostTokens(tokens: string[]): ActivatedAbilityCost | null {
   }
 
   // Must have at least one cost component
-  if (!cost.tap && !cost.sacrifice && !cost.mana) return null;
+  if (!cost.tap && !cost.sacrifice && !cost.mana && !cost.payLife) return null;
 
   return cost;
 }
@@ -3140,6 +4386,7 @@ function matchSearchLibrary(tokens: string[], startIndex: number): PatternResult
   const slice = tokens.slice(startIndex);
 
   // "search your library for a basic land card"
+  // "search your library for a Mountain or Plains card"
   if (slice.length < 7) return null;
   if (slice[0] !== 'search') return null;
   if (slice[1] !== 'your') return null;
@@ -3149,20 +4396,35 @@ function matchSearchLibrary(tokens: string[], startIndex: number): PatternResult
 
   let idx = 5;
 
-  // Parse optional "basic" supertype
   const supertypes: string[] = [];
+  const types: string[] = [];
+  const subtypes: string[] = [];
+  const BASIC_LAND_SUBTYPES = new Set(['plains', 'island', 'swamp', 'mountain', 'forest']);
+
   if (slice[idx] === 'basic') {
     supertypes.push('basic');
     idx++;
   }
 
-  // Parse type (e.g., "land")
-  const types: string[] = [];
   if (slice[idx] === 'land') {
     types.push('land');
     idx++;
   } else {
-    return null;
+    while (idx < slice.length) {
+      const token = slice[idx];
+      if (token === 'or' || token === ',') {
+        idx++;
+        continue;
+      }
+      if (BASIC_LAND_SUBTYPES.has(token)) {
+        subtypes.push(token.charAt(0).toUpperCase() + token.slice(1));
+        if (!types.includes('land')) types.push('land');
+        idx++;
+        continue;
+      }
+      break;
+    }
+    if (subtypes.length === 0) return null;
   }
 
   // Skip "card"
@@ -3171,7 +4433,7 @@ function matchSearchLibrary(tokens: string[], startIndex: number): PatternResult
   if (slice[idx] === ',') idx++;
 
   // Parse destination: "put it onto the battlefield [tapped]" or "put it into your hand"
-  let destination: 'battlefield' | 'hand' | 'graveyard' = 'battlefield';
+  let destination: 'battlefield' | 'hand' | 'top' | 'graveyard' = 'battlefield';
   let tapped = false;
 
   if (slice[idx] === 'put' && slice[idx + 1] === 'it') {
@@ -3186,6 +4448,9 @@ function matchSearchLibrary(tokens: string[], startIndex: number): PatternResult
     } else if (slice[idx] === 'into' && slice[idx + 1] === 'your' && slice[idx + 2] === 'hand') {
       destination = 'hand';
       idx += 3;
+    } else if (slice[idx] === 'on' && slice[idx + 1] === 'top' && slice[idx + 2] === 'of' && slice[idx + 3] === 'your' && slice[idx + 4] === 'library') {
+      destination = 'top';
+      idx += 5;
     }
   }
 
@@ -3207,6 +4472,7 @@ function matchSearchLibrary(tokens: string[], startIndex: number): PatternResult
 
   const filter: CardFilter = {
     types: types.length > 0 ? types : undefined,
+    subtypes: subtypes.length > 0 ? subtypes : undefined,
     supertypes: supertypes.length > 0 ? supertypes : undefined,
   };
 
@@ -3221,7 +4487,7 @@ function matchSearchLibrary(tokens: string[], startIndex: number): PatternResult
     },
   ];
 
-  if (shuffle) {
+  if (shuffle && destination !== 'top') {
     effects.push({
       kind: 'ShuffleLibrary',
       player: { kind: 'Controller' },

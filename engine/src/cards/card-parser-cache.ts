@@ -14,6 +14,7 @@ import type {
   EquipCostInfo,
   UnlessTaxInfo,
   SearchAbilityInfo,
+  CardFilter,
 } from '../effects/ast';
 
 /**
@@ -63,10 +64,12 @@ function parseEquipCost(oracle: string): EquipCostInfo | undefined {
 }
 
 function parseEquipmentBonus(oracle: string): EquipmentBonusInfo | undefined {
-  if (!oracle.toLowerCase().includes('equipped creature')) return undefined;
+  if (!oracle.toLowerCase().includes('equipped creature') && !oracle.toLowerCase().includes('enchanted creature')) return undefined;
   let power = 0, toughness = 0;
 
-  const ptMatch = oracle.match(/equipped creature gets? ([+-]\d+)\/([+-]\d+)/i);
+  const subject = '(?:equipped|enchanted) creature';
+
+  const ptMatch = oracle.match(new RegExp(`${subject} gets? ([+-]\\d+)\\/([+-]\\d+)`, 'i'));
   if (ptMatch) { power = parseInt(ptMatch[1], 10); toughness = parseInt(ptMatch[2], 10); }
 
   // Extract keyword clause: "equipped creature has X, Y, and Z" or "gains X, Y, and Z"
@@ -78,8 +81,8 @@ function parseEquipmentBonus(oracle: string): EquipmentBonusInfo | undefined {
     'unblockable',
   ];
   const keywords: string[] = [];
-  // Search for any "has" or "gains" clause in the sentence containing "equipped creature"
-  const sentenceMatch = oracle.match(/equipped creature[^.]+/i);
+  // Search for any "has" or "gains" clause in the sentence containing the attached creature.
+  const sentenceMatch = oracle.match(new RegExp(`${subject}[^.]+`, 'i'));
   if (sentenceMatch) {
     const sentence = sentenceMatch[0].toLowerCase();
     // Find "has" or "gains" keyword clause within the sentence
@@ -101,6 +104,96 @@ function parseEquipmentBonus(oracle: string): EquipmentBonusInfo | undefined {
 // ========== Mana Production ==========
 
 function parseManaProduction(oracle: string, typeLine: string): ManaProductionInfo | undefined {
+  const parseSacrificeFilter = (word: string): CardFilter => {
+    const subtypeMap: Record<string, string> = {
+      goblin: 'Goblin', goblins: 'Goblin',
+      elf: 'Elf', elves: 'Elf',
+      dragon: 'Dragon', dragons: 'Dragon',
+      creature: 'Creature', creatures: 'Creature',
+      artifact: 'Artifact', artifacts: 'Artifact',
+    };
+    const normalized = subtypeMap[word.toLowerCase()] || word.replace(/s$/, '').replace(/^\w/, c => c.toUpperCase());
+    if (normalized === 'Creature') return { types: ['creature'] };
+    if (normalized === 'Artifact') return { types: ['artifact'] };
+    return { types: ['creature'], subtypes: [normalized] };
+  };
+
+  const parseSpendRestriction = (): ManaProductionInfo['restriction'] | undefined => {
+    if (/\bspend\s+this\s+mana\s+only\s+to\s+cast\s+your\s+commander\b/i.test(oracle)) {
+      return 'commanderSpell';
+    }
+    if (/\bspend\s+this\s+mana\s+only\s+to\s+cast\s+a\s+creature\s+spell\s+of\s+the\s+chosen\s+type\b/i.test(oracle)) {
+      return 'creatureTypeSpell';
+    }
+    if (/\bspend\s+this\s+mana\s+only\s+to\s+cast\s+legendary\s+spells?\b/i.test(oracle)) {
+      return 'legendarySpell';
+    }
+    if (/\bspend\s+this\s+mana\s+only\s+to\s+cast\s+(?:a\s+)?creature\s+spells?\b/i.test(oracle)) {
+      return 'creatureSpell';
+    }
+    return undefined;
+  };
+
+  const restriction = parseSpendRestriction();
+
+  const parseAddPart = (
+    addPart: string,
+    options: {
+      isTapAbility: boolean;
+      requiresSacrifice: boolean;
+      exileAfterUse?: boolean;
+      activationZone?: 'battlefield' | 'hand';
+      requiresExileFromHand?: boolean;
+    },
+  ): ManaProductionInfo => {
+    const amountScale = /for each creature you control/i.test(addPart)
+      ? 'creaturesYouControl' as const
+      : undefined;
+    const extras = {
+      ...options,
+      ...(amountScale ? { amountScale } : {}),
+      ...(restriction ? { restriction } : {}),
+    };
+
+    // "any color" / "any one color" / "any combination of colors" variants.
+    // Chrome Mox-style dynamic colors are narrowed later from the imprinted card.
+    if (
+      /any\s+(?:one\s+)?color/i.test(addPart)
+      || /any\s+combination\s+of\s+colors/i.test(addPart)
+      || /any\s+of\s+the\s+exiled\s+card'?s\s+colors/i.test(addPart)
+    ) {
+      const textNumbers: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5 };
+      let amount = 1;
+      const numMatch = addPart.match(/\b(one|two|three|four|five)\b/i);
+      if (numMatch) amount = textNumbers[numMatch[1].toLowerCase()];
+      return {
+        colors: ['W', 'U', 'B', 'R', 'G'],
+        amounts: { W: amount, U: amount, B: amount, R: amount, G: amount },
+        ...extras,
+      };
+    }
+
+    // Count explicit mana symbols
+    const colors: Array<'W' | 'U' | 'B' | 'R' | 'G' | 'C'> = [];
+    const amounts: Record<string, number> = {};
+    const symbolMap: Record<string, 'W' | 'U' | 'B' | 'R' | 'G' | 'C'> = {
+      w: 'W', u: 'U', b: 'B', r: 'R', g: 'G', c: 'C',
+    };
+    const syms = addPart.match(/\{([wubrgc])\}/gi) ?? [];
+    for (const sym of syms) {
+      const color = symbolMap[sym.slice(1, -1).toLowerCase()];
+      if (!amounts[color]) { colors.push(color); amounts[color] = 0; }
+      amounts[color] += 1;
+    }
+
+    if (colors.length === 0) {
+      colors.push('C');
+      amounts['C'] = 1;
+    }
+
+    return { colors, amounts, ...extras };
+  };
+
   // Basic-land subtype shortcut
   const subtypeColors: Array<'W' | 'U' | 'B' | 'R' | 'G' | 'C'> = [];
   const tl = typeLine.toLowerCase();
@@ -112,49 +205,72 @@ function parseManaProduction(oracle: string, typeLine: string): ManaProductionIn
   if (subtypeColors.length > 0) {
     const amounts: Record<string, number> = {};
     for (const c of subtypeColors) amounts[c] = 1;
-    return { colors: subtypeColors, amounts, isTapAbility: true, requiresSacrifice: false };
-  }
-
-  // Find a "{T}: Add ..." clause (stop at . " or newline)
-  const tapAdd = oracle.match(/\{t\}\s*(?:,\s*[^:]+)?:\s*add\s+([^."\n]+)/i);
-  if (!tapAdd) return undefined;
-
-  const requiresSacrifice = /\{t\}\s*,\s*sacrifice[^:]*:\s*add/i.test(oracle);
-  const addPart = tapAdd[1];
-
-  // "any color" / "any one color" variants
-  if (/any\s+(?:one\s+)?color/i.test(addPart)) {
-    const textNumbers: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5 };
-    let amount = 1;
-    const numMatch = addPart.match(/\b(one|two|three|four|five)\b/i);
-    if (numMatch) amount = textNumbers[numMatch[1].toLowerCase()];
     return {
-      colors: ['W', 'U', 'B', 'R', 'G'],
-      amounts: { W: amount, U: amount, B: amount, R: amount, G: amount },
+      colors: subtypeColors,
+      amounts,
       isTapAbility: true,
-      requiresSacrifice,
+      requiresSacrifice: false,
+      activationZone: 'battlefield',
+      ...(restriction ? { restriction } : {}),
     };
   }
 
-  // Count explicit mana symbols
-  const colors: Array<'W' | 'U' | 'B' | 'R' | 'G' | 'C'> = [];
-  const amounts: Record<string, number> = {};
-  const symbolMap: Record<string, 'W' | 'U' | 'B' | 'R' | 'G' | 'C'> = {
-    w: 'W', u: 'U', b: 'B', r: 'R', g: 'G', c: 'C',
+  const exileHandAdd = oracle.match(/exile\s+[^:]+?\s+from your hand:\s*add\s+([^."\n]+)/i);
+  if (exileHandAdd) {
+    return parseAddPart(exileHandAdd[1], {
+      isTapAbility: false,
+      requiresSacrifice: false,
+      activationZone: 'hand',
+      requiresExileFromHand: true,
+    });
+  }
+
+  const sacrificePermanentAdd = oracle.match(/sacrifice\s+(?:a|an)\s+([a-z]+):\s*add\s+([^."\n]+)/i);
+  if (sacrificePermanentAdd) {
+    return {
+      ...parseAddPart(sacrificePermanentAdd[2], {
+        isTapAbility: false,
+        requiresSacrifice: false,
+        activationZone: 'battlefield',
+      }),
+      sacrificeFilter: parseSacrificeFilter(sacrificePermanentAdd[1]),
+    };
+  }
+
+  const scoreManaCandidate = (info: ManaProductionInfo): number => {
+    const nonColorless = info.colors.filter(c => c !== 'C').length;
+    const bestAmount = Math.max(...info.colors.map(c => info.amounts[c] ?? 1));
+    return nonColorless * 100 + info.colors.length * 10 + bestAmount;
   };
-  const syms = addPart.match(/\{([wubrgc])\}/gi) ?? [];
-  for (const sym of syms) {
-    const color = symbolMap[sym.slice(1, -1).toLowerCase()];
-    if (!amounts[color]) { colors.push(color); amounts[color] = 0; }
-    amounts[color] += 1;
+
+  const tapCandidates: ManaProductionInfo[] = [];
+  const pushTapCandidate = (fullClause: string, addPart: string) => {
+    const requiresSacrifice = /sacrifice|tear\s+(?:this\s+artifact|[^:]+?)\s+into\s+pieces|remove\s+[^.]+from\s+the\s+game/i.test(fullClause);
+    const exileAfterUse = requiresSacrifice && /remove\s+[^.]+from\s+the\s+game/i.test(oracle);
+    tapCandidates.push(parseAddPart(addPart, {
+      isTapAbility: true,
+      requiresSacrifice,
+      ...(exileAfterUse ? { exileAfterUse: true } : {}),
+      activationZone: 'battlefield',
+    }));
+  };
+
+  // Find all "{T}: Add ..." clauses. Cards such as Cavern of Souls and
+  // Delighted Halfling have a colorless line first and a richer colored line
+  // later; choosing the first clause makes them feel broken in play.
+  for (const tapAdd of oracle.matchAll(/\{t\}\s*(?:,\s*[^:]+)?:\s*add\s+([^."\n]+)/gi)) {
+    pushTapCandidate(tapAdd[0], tapAdd[1]);
   }
 
-  if (colors.length === 0) {
-    colors.push('C');
-    amounts['C'] = 1;
+  // Weird old-card text can put a non-add instruction between the tap cost and
+  // the Add sentence ("{T}: Tear this artifact into pieces. Add four mana...").
+  for (const delayedTapAdd of oracle.matchAll(/\{t\}:[^.]*\.\s*add\s+([^."\n]+)/gi)) {
+    pushTapCandidate(delayedTapAdd[0], delayedTapAdd[1]);
   }
 
-  return { colors, amounts, isTapAbility: true, requiresSacrifice };
+  if (tapCandidates.length === 0) return undefined;
+
+  return tapCandidates.sort((a, b) => scoreManaCandidate(b) - scoreManaCandidate(a))[0];
 }
 
 // ========== Search Ability ==========

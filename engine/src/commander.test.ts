@@ -120,7 +120,7 @@ describe('Commander Replacement Rule', () => {
       expect(zone).toBe('graveyard');
     });
 
-    it('allows commander to go to hand (no replacement)', () => {
+    it('returns command zone when commander would go to hand by default', () => {
       const commander = makeCommander();
       const decks = [
         { playerId: 'p1', name: 'Alice', cards: [commander], commanderId: 'cmd-1' },
@@ -130,6 +130,19 @@ describe('Commander Replacement Rule', () => {
       const commanderInstance = getCardsInZone(state, 'p1', 'command')[0];
 
       const zone = getCommanderDestinationZone(state, commanderInstance.instanceId, 'hand');
+      expect(zone).toBe('command');
+    });
+
+    it('can still explicitly allow commander to go to hand for future choice prompts', () => {
+      const commander = makeCommander();
+      const decks = [
+        { playerId: 'p1', name: 'Alice', cards: [commander], commanderId: 'cmd-1' },
+        { playerId: 'p2', name: 'Bob', cards: [], commanderId: 'cmd-2' },
+      ];
+      const state = initGameState(decks);
+      const commanderInstance = getCardsInZone(state, 'p1', 'command')[0];
+
+      const zone = getCommanderDestinationZone(state, commanderInstance.instanceId, 'hand', false);
       expect(zone).toBe('hand');
     });
 

@@ -8,20 +8,35 @@ import type { CardDefinition, CardType, ManaColor } from '../types';
 import { populateParsedCache } from './card-parser-cache';
 
 /**
+ * Scryfall card face data format (from cards_min.jsonl card_faces).
+ */
+export interface ScryfallCardFace {
+  name: string;
+  type_line?: string;
+  oracle_text?: string | null;
+  mana_cost?: string | null;
+  colors?: string[] | null;
+  power?: string | null;
+  toughness?: string | null;
+}
+
+/**
  * Scryfall card data format (from cards_min.jsonl).
  */
 export interface ScryfallCard {
   id: string;
   name: string;
   type_line: string;
-  oracle_text: string;
-  mana_cost: string;
+  oracle_text: string | null;
+  mana_cost: string | null;
   cmc: string | number;
-  colors: string[];
-  color_identity: string[];
-  keywords: string[];
-  power?: string;
-  toughness?: string;
+  colors: string[] | null;
+  color_identity: string[] | null;
+  keywords: string[] | null;
+  power?: string | null;
+  toughness?: string | null;
+  layout?: string;
+  card_faces?: ScryfallCardFace[] | null;
   legalities?: Record<string, string>;
   rarity?: string;
   prices?: Record<string, string | null>;
@@ -45,6 +60,7 @@ export interface GeneratedDeck {
  */
 export interface EngineDeck {
   commander?: CardDefinition;
+  commanders?: CardDefinition[];
   library: CardDefinition[];
   sideboard: CardDefinition[];
 }
@@ -70,9 +86,34 @@ function resolveCommanderNames(commander: string, lookup: CardLookup): string[] 
   if (lookup(commander)) {
     return [commander];
   }
-  return commander.includes(' // ')
-    ? commander.split(' // ').map(n => n.trim()).filter(Boolean)
-    : [commander];
+  if (!commander.includes(' // ')) {
+    return [commander];
+  }
+
+  const parts = commander.split(' // ').map(n => n.trim()).filter(Boolean);
+  if (parts.length <= 1) return parts.length === 1 ? parts : [commander];
+
+  const front = lookup(parts[0]);
+  const otherFaces = parts.slice(1).map(name => lookup(name));
+  if (front && otherFaces.some(card => !card)) {
+    return [parts[0]];
+  }
+
+  const commanderEligibleFaces = parts.filter(name => {
+    const card = lookup(name);
+    if (!card) return false;
+    const typeLine = card.type_line.toLowerCase();
+    const oracleText = (card.oracle_text || '').toLowerCase();
+    return (
+      typeLine.includes('legendary')
+      && (typeLine.includes('creature') || typeLine.includes('planeswalker'))
+    ) || oracleText.includes('can be your commander');
+  });
+  if (commanderEligibleFaces.length === 1 && commanderEligibleFaces[0] === parts[0]) {
+    return [parts[0]];
+  }
+
+  return parts;
 }
 
 /**
@@ -104,8 +145,8 @@ function parseCardTypes(typeLine: string): CardType[] {
 /**
  * Parse power/toughness string to number (handles '*' as 0).
  */
-function parsePT(value: string | undefined): number | undefined {
-  if (value === undefined) return undefined;
+function parsePT(value: string | null | undefined): number | undefined {
+  if (value == null) return undefined;
   const num = parseInt(value, 10);
   return isNaN(num) ? 0 : num;
 }
@@ -114,24 +155,51 @@ function parsePT(value: string | undefined): number | undefined {
  * Convert a Scryfall card to an engine CardDefinition.
  */
 export function convertCard(card: ScryfallCard): CardDefinition {
+  const firstFace = !card.oracle_text && card.card_faces?.[0] ? card.card_faces[0] : null;
   const cmc = typeof card.cmc === 'string' ? parseFloat(card.cmc) : card.cmc;
 
   const baseDef: CardDefinition = {
     id: card.id,
     name: card.name,
-    type_line: card.type_line,
-    oracle_text: card.oracle_text || '',
-    mana_cost: card.mana_cost || '',
+    type_line: firstFace?.type_line || card.type_line,
+    oracle_text: firstFace?.oracle_text || card.oracle_text || '',
+    mana_cost: firstFace?.mana_cost || card.mana_cost || '',
     cmc: Math.floor(cmc),
-    colors: toManaColors(card.colors || []),
+    colors: toManaColors(firstFace?.colors || card.colors || []),
     color_identity: toManaColors(card.color_identity || []),
     keywords: card.keywords || [],
-    card_types: parseCardTypes(card.type_line),
-    power: parsePT(card.power),
-    toughness: parsePT(card.toughness),
+    card_types: parseCardTypes(firstFace?.type_line || card.type_line),
+    power: parsePT(firstFace?.power ?? card.power),
+    toughness: parsePT(firstFace?.toughness ?? card.toughness),
   };
 
   return populateParsedCache(baseDef);
+}
+
+function cardFromFace(card: ScryfallCard, face: ScryfallCardFace, faceIndex: number): ScryfallCard {
+  const faceManaCost = face.mana_cost ?? '';
+  return {
+    ...card,
+    id: `${card.id}:face:${faceIndex}`,
+    name: face.name,
+    type_line: face.type_line || card.type_line,
+    oracle_text: face.oracle_text ?? '',
+    mana_cost: faceManaCost,
+    colors: face.colors ?? [],
+    color_identity: card.color_identity ?? face.colors ?? [],
+    keywords: card.keywords ?? [],
+    power: face.power ?? null,
+    toughness: face.toughness ?? null,
+    card_faces: null,
+  };
+}
+
+function lookupKey(name: string): string {
+  return name
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '');
 }
 
 function convertSideboard(cardNames: string[], lookup: CardLookup): CardDefinition[] {
@@ -169,17 +237,21 @@ export function convertGeneratedDeck(
   lookup: CardLookup,
 ): EngineDeck {
   const commanderNames = resolveCommanderNames(deck.commander, lookup);
-
-  // Look up primary commander (first partner)
-  const commanderCard = lookup(commanderNames[0]);
-  if (!commanderCard) {
-    throw new Error(`Commander not found: ${commanderNames[0]}`);
-  }
+  const commanderCards = commanderNames.map(name => {
+    const card = lookup(name);
+    if (!card) {
+      throw new Error(`Commander not found: ${name}`);
+    }
+    return card;
+  });
 
   // Pad short decks with basic lands (handles decks saved without lands)
-  const deckList = [...deck.list];
+  let deckList = [...deck.list];
   // For partners, the target library size is 100 - number_of_commanders
   const targetLibrarySize = 100 - commanderNames.length;
+  if (deckList.length > targetLibrarySize) {
+    deckList = deckList.slice(0, targetLibrarySize);
+  }
   if (deckList.length < targetLibrarySize) {
     const colors = deck.colors.length > 0 ? deck.colors : ['U'];
     const deficit = targetLibrarySize - deckList.length;
@@ -195,16 +267,9 @@ export function convertGeneratedDeck(
   }
 
   // Convert all cards
-  const commander = convertCard(commanderCard);
+  const commanders = commanderCards.map(convertCard);
+  const commander = commanders[0];
   const library: CardDefinition[] = [];
-
-  // Add second partner to the library (it will be a playable card)
-  if (commanderNames.length > 1) {
-    const partnerCard = lookup(commanderNames[1]);
-    if (partnerCard) {
-      library.push(convertCard(partnerCard));
-    }
-  }
   const missingCards: string[] = [];
 
   for (const cardName of deckList) {
@@ -233,7 +298,7 @@ export function convertGeneratedDeck(
     );
   }
 
-  return { commander, library, sideboard: convertSideboard(deck.sideboard || [], lookup) };
+  return { commander, commanders, library, sideboard: convertSideboard(deck.sideboard || [], lookup) };
 }
 
 /**
@@ -274,14 +339,42 @@ export function convertLimitedDeck(
  * Create a card lookup function from a card database array.
  */
 export function createCardLookup(cards: ScryfallCard[]): CardLookup {
-  const byName = new Map<string, ScryfallCard>();
+  const byName = new Map<string, { card: ScryfallCard; score: number }>();
+  const scoreCard = (card: ScryfallCard): number => {
+    const typeLine = (card.type_line || '').toLowerCase();
+    let score = 0;
+    if (card.legalities?.commander === 'legal') score += 100;
+    if (/(creature|instant|sorcery|artifact|enchantment|planeswalker|battle|land)/.test(typeLine)) score += 20;
+    if (card.layout === 'art_series' || typeLine === 'card' || typeLine === 'card // card') score -= 100;
+    if (card.oracle_text || card.mana_cost || card.power || card.toughness) score += 5;
+    return score;
+  };
+  const addCard = (name: string | undefined, card: ScryfallCard) => {
+    const key = name?.trim().toLowerCase();
+    if (!key) return;
+    const score = scoreCard(card);
+    for (const candidateKey of [key, lookupKey(name || '')]) {
+      if (!candidateKey) continue;
+      const existing = byName.get(candidateKey);
+      if (!existing || score > existing.score) {
+        byName.set(candidateKey, { card, score });
+      }
+    }
+  };
 
   for (const card of cards) {
-    // Store by normalized name (lowercase)
-    byName.set(card.name.toLowerCase(), card);
+    // Store by normalized full printed name.
+    addCard(card.name, card);
+
+    // Store individual card faces as playable/importable names. Scryfall stores
+    // MDFCs/adventures as one top-level card, while decklists often use the
+    // front-face name only (for example "Disciple of Freyalise").
+    for (const [index, face] of (card.card_faces ?? []).entries()) {
+      addCard(face.name, cardFromFace(card, face, index));
+    }
   }
 
-  return (name: string) => byName.get(name.toLowerCase());
+  return (name: string) => byName.get(name.trim().toLowerCase())?.card || byName.get(lookupKey(name))?.card;
 }
 
 /**

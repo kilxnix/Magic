@@ -9,9 +9,11 @@ export type Effect =
   | DrawEffect
   | DestroyEffect
   | DealDamageEffect
+  | DealDamageForExiledCardsEffect
   | GainLifeEffect
   | LoseLifeEffect
   | ExileEffect
+  | PutIntoLibraryEffect
   | ReturnToHandEffect
   | SacrificeEffect
   | MillEffect
@@ -20,36 +22,51 @@ export type Effect =
   | TapEffect
   | UntapEffect
   | CreateTokenEffect
+  | RollD20Effect
   | DiscardEffect
   | ScryEffect
   | SurveilEffect
+  | LookAtHandEffect
   | SearchLibraryEffect
   | ShuffleLibraryEffect
   | CounterSpellEffect
   | ReturnFromGraveyardEffect
   | ModifyPTEffect
   | ExileFromLibraryEffect
+  | ExileUntilNamedEffect
   | GainControlEffect
   | ConditionalEffect
   | BlinkEffect
   | CopyEffect
+  | CopySpellEffect
   | GrantKeywordEffect
   | PhaseOutEffect
   | WinGameEffect
   | LoseGameEffect
-  | AddManaEffect;
+  | AddManaEffect
+  | PutLandFromHandOntoBattlefieldEffect;
 
 // Amount can be a fixed number, reference to X, or a dynamic "for each" count
 export type AmountRef =
   | number
   | { kind: 'X' }
   | { kind: 'XMultiplied'; multiplier: number }
+  | { kind: 'EventSpellManaValue' }
+  | { kind: 'TargetPower'; target: TargetRef }
+  | GreatestPowerAmount
   | ForEachAmount;
 
 // Dynamic count: "for each [condition]" — evaluated at resolution time
 export interface ForEachAmount {
   kind: 'ForEach';
   zone: 'battlefield' | 'hand' | 'graveyard' | 'library';
+  filter?: CardFilter;
+  controller: 'you' | 'opponent' | 'each';
+}
+
+export interface GreatestPowerAmount {
+  kind: 'GreatestPower';
+  zone: 'battlefield';
   filter?: CardFilter;
   controller: 'you' | 'opponent' | 'each';
 }
@@ -72,6 +89,13 @@ export interface DealDamageEffect {
   amount: AmountRef;
 }
 
+export interface DealDamageForExiledCardsEffect {
+  kind: 'DealDamageForExiledCards';
+  target: TargetRef;
+  exiledCardIds: string[];
+  amountPerCard: number;
+}
+
 export interface GainLifeEffect {
   kind: 'GainLife';
   player: TargetRef;
@@ -87,6 +111,12 @@ export interface LoseLifeEffect {
 export interface ExileEffect {
   kind: 'Exile';
   target: TargetRef;
+}
+
+export interface PutIntoLibraryEffect {
+  kind: 'PutIntoLibrary';
+  target: TargetRef;
+  position: 'top' | 'bottom' | 'shuffle';
 }
 
 export interface ReturnToHandEffect {
@@ -136,6 +166,24 @@ export interface CreateTokenEffect {
   controller: TargetRef;
   token: TokenDefinition;
   count: AmountRef;
+  /**
+   * Attach the source permanent to the first token this effect creates.
+   * This covers dice/table cards such as "create a token, then attach this to it".
+   */
+  attachSourceToCreated?: boolean;
+}
+
+export interface RollD20Outcome {
+  min: number;
+  max: number;
+  effects: Effect[];
+}
+
+export interface RollD20Effect {
+  kind: 'RollD20';
+  outcomes: RollD20Outcome[];
+  /** Test-only deterministic value; normal gameplay rolls randomly. */
+  rollOverride?: number;
 }
 
 export interface DiscardEffect {
@@ -157,13 +205,20 @@ export interface SurveilEffect {
   count: AmountRef;
 }
 
+export interface LookAtHandEffect {
+  kind: 'LookAtHand';
+  player: TargetRef;
+}
+
 export interface SearchLibraryEffect {
   kind: 'SearchLibrary';
   player: TargetRef;
   filter: CardFilter;
-  destination: 'battlefield' | 'hand' | 'graveyard';
+  destination: 'battlefield' | 'hand' | 'top' | 'graveyard';
   tapped?: boolean;
   shuffle: boolean;
+  namedCardChoiceId?: string;
+  selectedCardChoiceId?: string;
 }
 
 export interface ShuffleLibraryEffect {
@@ -174,7 +229,7 @@ export interface ShuffleLibraryEffect {
 export interface CounterSpellEffect {
   kind: 'CounterSpell';
   target: TargetRef;
-  filter?: 'noncreature'; // undefined = any spell
+  filter?: 'noncreature' | 'creature'; // undefined = any spell
 }
 
 export interface ReturnFromGraveyardEffect {
@@ -186,8 +241,8 @@ export interface ReturnFromGraveyardEffect {
 export interface ModifyPTEffect {
   kind: 'ModifyPT';
   target: TargetRef;
-  power: number; // e.g. +2 or -2
-  toughness: number;
+  power: AmountRef; // e.g. +2, -2, or a dynamic amount such as target power
+  toughness: AmountRef;
   untilEndOfTurn: boolean;
 }
 
@@ -197,6 +252,16 @@ export interface ExileFromLibraryEffect {
   player: TargetRef;
   count: AmountRef;
   mayPlay?: boolean; // "you may play them this turn"
+  delayedDamageEachOpponentPerCard?: number;
+}
+
+export interface ExileUntilNamedEffect {
+  kind: 'ExileUntilNamed';
+  player: TargetRef;
+  namedCard?: string;
+  namedCardChoiceId?: string;
+  foundDestination: 'hand' | 'exile';
+  exileBeforeSearch?: number;
 }
 
 // Gain control of a permanent
@@ -221,6 +286,13 @@ export interface BlinkEffect {
 export interface CopyEffect {
   kind: 'Copy';
   target: TargetRef;
+}
+
+// CopySpell: copy a spell on the stack, optionally with mana value limit.
+export interface CopySpellEffect {
+  kind: 'CopySpell';
+  target: TargetRef;
+  maxManaValue?: number;
 }
 
 // Grant a keyword to a creature (one-shot, not static)
@@ -256,6 +328,13 @@ export interface AddManaEffect {
   mana: { W?: number; U?: number; B?: number; R?: number; G?: number; C?: number };
 }
 
+export interface PutLandFromHandOntoBattlefieldEffect {
+  kind: 'PutLandFromHandOntoBattlefield';
+  player: TargetRef;
+  tapped?: boolean;
+  selectedCardChoiceId?: string;
+}
+
 // Token definition for CreateToken
 export interface TokenDefinition {
   name: string;
@@ -264,6 +343,9 @@ export interface TokenDefinition {
   subtypes?: string[];
   power: number;
   toughness: number;
+  powerAmount?: AmountRef;
+  toughnessAmount?: AmountRef;
+  counters?: Record<string, AmountRef>;
   keywords?: string[];
   abilities?: string[];
 }
@@ -272,9 +354,11 @@ export interface TokenDefinition {
 export interface CardFilter {
   types?: string[];
   subtypes?: string[];
+  excludeSubtypes?: string[];
   supertypes?: string[];
   colors?: Array<'W' | 'U' | 'B' | 'R' | 'G'>;
   cmc?: { op: 'eq' | 'lte' | 'gte'; value: number };
+  power?: { op: 'eq' | 'lte' | 'gte'; value: number };
 }
 
 // Modal choice (for "Choose one" spells)
@@ -302,27 +386,38 @@ export type Trigger =
   | { kind: 'Dies'; who: 'self' | 'any' }
   | { kind: 'Attacks'; who: 'self' }
   | { kind: 'Upkeep'; whose: 'yours' | 'each' }
-  | { kind: 'EndStep'; whose: 'yours' }
-  | { kind: 'AnotherCreatureETB'; controller: 'yours' }
+  | { kind: 'BeginningCombat'; whose: 'yours' | 'each' }
+  | { kind: 'EndStep'; whose: 'yours' | 'opponents' }
+  | { kind: 'AnotherCreatureETB'; controller: 'yours'; nontoken?: boolean; tokenOnly?: boolean }
   | { kind: 'CreatureYouControlDies' }
+  | { kind: 'CreatureYouControlAttacks' }
   | { kind: 'YouCastSpell' }
+  | { kind: 'CastNoncreatureSpell' }
   // Phase 17: Additional trigger types
   | { kind: 'LifeGain' }
   | { kind: 'CardDrawn' }
   | { kind: 'OpponentCastSpell' }
-  | { kind: 'AnyCreatureETB' }
+  | { kind: 'AnyCreatureETB'; controller?: 'yours' | 'any'; nontoken?: boolean; tokenOnly?: boolean }
+  | { kind: 'CombatDamageToPlayer'; who: 'self' | 'creatureYouControl' }
   | { kind: 'CastInstantOrSorcery' }
+  | { kind: 'CastOrCopyInstantOrSorcery' }
   | { kind: 'Landfall' };
 
 export type TargetRef =
   | { kind: 'Chosen'; targetId: string }
+  | { kind: 'TargetController'; targetId: string }
   | { kind: 'Controller' }
+  | { kind: 'ActivePlayer' }
   | { kind: 'Player'; playerId: string }
   | { kind: 'EachOpponent' }
   | { kind: 'EachPlayer' }
   | { kind: 'AllCreatures' }
+  | { kind: 'AllAttackingCreatures' }
   | { kind: 'AllCreaturesYouControl' }
-  | { kind: 'AllOfType'; filter: CardFilter };
+  | { kind: 'AllOfType'; filter: CardFilter }
+  | { kind: 'Source' }
+  | { kind: 'EventCaster' }
+  | { kind: 'EventSpell' };
 
 export type SourceRef = { kind: 'ThisSpell' } | { kind: 'ThisPermanent' };
 
@@ -331,6 +426,7 @@ export interface ActivatedAbilityCost {
   tap?: boolean;
   sacrifice?: 'self' | CardFilter;
   mana?: string; // raw mana cost like "{2}{B}"
+  payLife?: number;
 }
 
 // Activated ability definition parsed from oracle text
@@ -425,6 +521,12 @@ export interface ManaProductionInfo {
   amounts: Record<string, number>;
   isTapAbility: boolean;
   requiresSacrifice: boolean;
+  exileAfterUse?: boolean;
+  sacrificeFilter?: CardFilter;
+  activationZone?: 'battlefield' | 'hand';
+  requiresExileFromHand?: boolean;
+  amountScale?: 'creaturesYouControl';
+  restriction?: 'creatureSpell' | 'creatureTypeSpell' | 'legendarySpell' | 'commanderSpell';
 }
 
 export interface EquipmentBonusInfo {

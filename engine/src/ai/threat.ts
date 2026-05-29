@@ -7,6 +7,8 @@
 
 import { GameState, Player, CardInstance } from '../types';
 import { getCardsInZone, getCardDefinition } from '../game-state';
+import { getEffectivePower } from '../effects/continuous';
+import { isEffectiveCreature } from '../effective-types';
 import type { ThreatAssessment } from './types';
 
 // Scoring constants
@@ -26,9 +28,8 @@ function calculateBoardPower(state: GameState, playerId: string): number {
   let totalPower = 0;
 
   for (const card of battlefield) {
-    const def = getCardDefinition(state, card);
-    if (def.card_types.includes('creature')) {
-      totalPower += def.power ?? 0;
+    if (isEffectiveCreature(state, card.instanceId)) {
+      totalPower += getEffectivePower(state, card.instanceId);
     }
   }
 
@@ -41,8 +42,7 @@ function calculateBoardPower(state: GameState, playerId: string): number {
 function countCreatures(state: GameState, playerId: string): number {
   const battlefield = getCardsInZone(state, playerId, 'battlefield');
   return battlefield.filter(card => {
-    const def = getCardDefinition(state, card);
-    return def.card_types.includes('creature');
+    return isEffectiveCreature(state, card.instanceId);
   }).length;
 }
 

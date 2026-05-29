@@ -1,11 +1,19 @@
 """FastAPI backend for MTG Commander deck generation."""
 
 import logging
+import os
+import re
+import secrets
+import time
+import unicodedata
+from collections import defaultdict, deque
+from pathlib import Path
 from typing import List, Optional
 
 import requests
-from fastapi import FastAPI, HTTPException, Query, Response
+from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
 
 from backend.deck_generator import get_generator, reload_generator
@@ -18,30 +26,186 @@ from backend.card_alternatives import get_alternative_finder, CardAlternative
 from backend.price_service import get_card_prices, get_cheapest_price, get_price_category
 from backend.deck_url_parser import fetch_deck_from_url, detect_site
 from backend.draft import get_cards_for_draft_sets, get_draft_set_summaries
+from backend.feedback import router as feedback_router
+from backend.multiplayer import router as multiplayer_router
+from backend.ops import router as ops_router
+from backend.admin import router as admin_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+DEFAULT_ALLOWED_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:8000",
+    "http://127.0.0.1:8000",
+]
+
+DEFAULT_ALLOWED_ORIGIN_REGEX = (
+    r"^https?://(localhost|127\.0\.0\.1|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+)(:\d+)?$"
+    r"|^https://.*\.trycloudflare\.com$"
+)
+
+
+def _split_env_list(value: str | None) -> list[str]:
+    if not value:
+        return []
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
+ALLOWED_ORIGINS = _split_env_list(os.getenv("ALLOWED_ORIGINS")) or DEFAULT_ALLOWED_ORIGINS
+ALLOWED_ORIGIN_REGEX = os.getenv("ALLOWED_ORIGIN_REGEX", DEFAULT_ALLOWED_ORIGIN_REGEX).strip() or None
+SHELECTOR_API_URL = os.getenv("SHELECTOR_API_URL", "http://localhost:8100").rstrip("/")
+ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "")
+MAX_REQUEST_BODY_BYTES = int(os.getenv("MAX_REQUEST_BODY_BYTES", str(2 * 1024 * 1024)))
+RATE_LIMIT_ENABLED = os.getenv("RATE_LIMIT_ENABLED", "true").lower() == "true"
+RATE_LIMIT_WINDOW_SECONDS = int(os.getenv("RATE_LIMIT_WINDOW_SECONDS", "60"))
+RATE_LIMIT_DEFAULT = int(os.getenv("RATE_LIMIT_DEFAULT_PER_MINUTE", "240"))
+RATE_LIMIT_QA_BYPASS_ENABLED = os.getenv("RATE_LIMIT_QA_BYPASS_ENABLED", "true").lower() == "true"
+TRUST_PROXY_HEADERS = os.getenv("TRUST_PROXY_HEADERS", "true").lower() == "true"
+RATE_LIMIT_MULTIPLAYER_DEFAULT = int(os.getenv("RATE_LIMIT_MULTIPLAYER_PER_MINUTE", "1200"))
+
+RATE_LIMIT_RULES = [
+    ("/api/generate-deck", int(os.getenv("RATE_LIMIT_DECK_GENERATION_PER_MINUTE", "6"))),
+    ("/api/regenerate-deck", int(os.getenv("RATE_LIMIT_DECK_REGEN_PER_MINUTE", "10"))),
+    ("/api/parse-deck-url", int(os.getenv("RATE_LIMIT_DECK_IMPORT_PER_MINUTE", "20"))),
+    ("/api/cards-batch", int(os.getenv("RATE_LIMIT_CARD_BATCH_PER_MINUTE", "60"))),
+    ("/api/deck/optimize", int(os.getenv("RATE_LIMIT_OPTIMIZER_PER_MINUTE", "20"))),
+    ("/api/feedback", int(os.getenv("RATE_LIMIT_FEEDBACK_PER_MINUTE", "10"))),
+    ("/api/admin", int(os.getenv("RATE_LIMIT_ADMIN_PER_MINUTE", "600"))),
+    ("/api/ops/client-events", int(os.getenv("RATE_LIMIT_CLIENT_EVENTS_PER_MINUTE", "60"))),
+    ("/api/multiplayer/events", RATE_LIMIT_MULTIPLAYER_DEFAULT),
+    ("/api/multiplayer/rooms", RATE_LIMIT_MULTIPLAYER_DEFAULT),
+    ("/shelector-api/generate-ai-deck", int(os.getenv("RATE_LIMIT_AI_DECK_PER_MINUTE", "10"))),
+    ("/shelector-api/import-deck", int(os.getenv("RATE_LIMIT_DECK_IMPORT_PER_MINUTE", "20"))),
+    ("/shelector-api/spawn-opponent", int(os.getenv("RATE_LIMIT_SPAWN_PER_MINUTE", "30"))),
+    ("/shelector-api/decide", int(os.getenv("RATE_LIMIT_DECIDE_PER_MINUTE", "120"))),
+    ("/shelector-api/chat", int(os.getenv("RATE_LIMIT_CHAT_PER_MINUTE", "60"))),
+]
+
+RATE_LIMIT_EXEMPT_PATHS = {
+    "/api/health",
+    "/api/readiness",
+    "/manifest.json",
+    "/manifest.webmanifest",
+    "/robots.txt",
+    "/sw.js",
+    "/registerSW.js",
+}
+
+_rate_limit_buckets: dict[str, deque[float]] = defaultdict(deque)
+
 app = FastAPI(
-    title="MTG Commander Deck Generator",
-    description="Generate Commander decks using semantic search and deck building rules",
+    title="Magic Brains Commander Practice",
+    description="Practice Commander decks with beta browser reps and post-game review",
     version="1.0.0"
 )
 
 # CORS for frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://localhost:8000",
-        "http://127.0.0.1:8000",
-    ],
-    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+)(:\d+)?$|^https://.*\.trycloudflare\.com$",
+    allow_origins=ALLOWED_ORIGINS,
+    allow_origin_regex=ALLOWED_ORIGIN_REGEX,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["X-Request-ID"],
 )
+
+app.include_router(multiplayer_router)
+app.include_router(feedback_router)
+app.include_router(ops_router)
+app.include_router(admin_router)
+
+
+def _client_ip(request: Request) -> str:
+    if TRUST_PROXY_HEADERS:
+        forwarded_for = request.headers.get("x-forwarded-for", "")
+        if forwarded_for:
+            return forwarded_for.split(",", 1)[0].strip()
+        real_ip = request.headers.get("x-real-ip")
+        if real_ip:
+            return real_ip.strip()
+    return request.client.host if request.client else "unknown"
+
+
+def _rate_limit_for_path(path: str) -> tuple[str, int]:
+    for prefix, limit in RATE_LIMIT_RULES:
+        if path.startswith(prefix):
+            return prefix, limit
+    return "default", RATE_LIMIT_DEFAULT
+
+
+def _admin_token_from_request(request: Request) -> str:
+    auth_header = request.headers.get("authorization", "")
+    bearer_token = auth_header.removeprefix("Bearer ").strip() if auth_header.startswith("Bearer ") else ""
+    return request.headers.get("x-admin-token", "") or bearer_token
+
+
+def _has_valid_admin_token(request: Request) -> bool:
+    provided = _admin_token_from_request(request)
+    return bool(ADMIN_TOKEN and provided and secrets.compare_digest(provided, ADMIN_TOKEN))
+
+
+def _require_admin(request: Request) -> None:
+    if not ADMIN_TOKEN:
+        raise HTTPException(status_code=403, detail="Admin endpoint disabled until ADMIN_TOKEN is configured")
+
+    if not _has_valid_admin_token(request):
+        raise HTTPException(status_code=403, detail="Admin token required")
+
+
+def _should_bypass_rate_limit(request: Request, path: str) -> bool:
+    if not RATE_LIMIT_QA_BYPASS_ENABLED:
+        return False
+    if not path.startswith(("/api/multiplayer/rooms", "/api/multiplayer/replays", "/api/multiplayer/events")):
+        return False
+    requested = request.headers.get("x-qa-rate-limit-bypass", "").strip().lower()
+    if requested not in {"1", "true", "yes"}:
+        return False
+    return _has_valid_admin_token(request)
+
+
+@app.middleware("http")
+async def production_guardrails(request: Request, call_next):
+    path = request.url.path
+    request_id = request.headers.get("x-request-id", "").strip()[:80] or secrets.token_hex(8)
+
+    content_length = request.headers.get("content-length")
+    if content_length and int(content_length) > MAX_REQUEST_BODY_BYTES:
+        return JSONResponse(
+            status_code=413,
+            headers={"X-Request-ID": request_id},
+            content={"detail": f"Request body too large. Limit is {MAX_REQUEST_BODY_BYTES} bytes."},
+        )
+
+    if (
+        RATE_LIMIT_ENABLED
+        and request.method not in {"OPTIONS", "HEAD"}
+        and not path.startswith("/assets/")
+        and path not in RATE_LIMIT_EXEMPT_PATHS
+        and not _should_bypass_rate_limit(request, path)
+    ):
+        bucket_name, limit = _rate_limit_for_path(path)
+        if limit > 0:
+            now = time.monotonic()
+            bucket_key = f"{_client_ip(request)}:{bucket_name}"
+            bucket = _rate_limit_buckets[bucket_key]
+            cutoff = now - RATE_LIMIT_WINDOW_SECONDS
+            while bucket and bucket[0] < cutoff:
+                bucket.popleft()
+            if len(bucket) >= limit:
+                retry_after = max(1, int(RATE_LIMIT_WINDOW_SECONDS - (now - bucket[0])))
+                return JSONResponse(
+                    status_code=429,
+                    headers={"Retry-After": str(retry_after), "X-Request-ID": request_id},
+                    content={"detail": "Too many requests. Please wait and try again."},
+                )
+            bucket.append(now)
+
+    response = await call_next(request)
+    response.headers["X-Request-ID"] = request_id
+    return response
 
 
 class DeckRequest(BaseModel):
@@ -181,6 +345,7 @@ class CardFaceData(BaseModel):
     type_line: str = ""
     oracle_text: str = ""
     mana_cost: str = ""
+    colors: List[str] = Field(default_factory=list)
     power: Optional[str] = None
     toughness: Optional[str] = None
 
@@ -198,6 +363,33 @@ class CardData(BaseModel):
     toughness: Optional[str] = None
     layout: Optional[str] = None
     card_faces: Optional[List[CardFaceData]] = None
+
+
+def _card_lookup_key(name: str) -> str:
+    without_accents = unicodedata.normalize("NFKD", name or "").encode("ascii", "ignore").decode("ascii")
+    return re.sub(r"[^a-z0-9]+", "", without_accents.lower())
+
+
+def _find_card_by_requested_name(generator, name: str):
+    card = generator.card_by_name.get(name)
+    if card:
+        return card
+    lookup_key = _card_lookup_key(name)
+    if not lookup_key:
+        return None
+    normalised = getattr(generator, "_card_by_lookup_key", None)
+    if normalised is None:
+        normalised = {}
+        for candidate in generator.card_by_name.values():
+            key = _card_lookup_key(candidate.get("name") or "")
+            if key and key not in normalised:
+                normalised[key] = candidate
+            for face in candidate.get("card_faces") or []:
+                face_key = _card_lookup_key(face.get("name") or "")
+                if face_key and face_key not in normalised:
+                    normalised[face_key] = candidate
+        setattr(generator, "_card_by_lookup_key", normalised)
+    return normalised.get(lookup_key)
 
 
 class CardAlternativeResponse(BaseModel):
@@ -280,7 +472,33 @@ async def health_check():
     return {"status": "healthy"}
 
 
-SHELECTOR_URL = "http://localhost:8100"
+@app.get("/api/readiness")
+async def readiness_check():
+    """Production readiness checks for static assets and local MTG data."""
+    project_root = Path(__file__).parent.parent
+    frontend_dist = project_root / "frontend" / "dist" / "index.html"
+    mtg_data = project_root / "mtg_data"
+    required_files = {
+        "frontend_dist": frontend_dist,
+        "cards_min": mtg_data / "cards_min.jsonl",
+        "embeddings": mtg_data / "card_embeddings.npy",
+        "embeddings_meta": mtg_data / "card_embeddings_meta.json",
+        "faiss_index": mtg_data / "card_index.faiss",
+        "ai_deck_pool": project_root / "data" / "ai_decks" / "deck_pool.json",
+    }
+    checks = {
+        name: {
+            "ok": path.exists(),
+            "path": str(path),
+        }
+        for name, path in required_files.items()
+    }
+    ready = all(item["ok"] for item in checks.values())
+    return {
+        "status": "ready" if ready else "degraded",
+        "checks": checks,
+        "shelector_api_url": SHELECTOR_API_URL,
+    }
 
 
 def _shelector_rerank(
@@ -313,7 +531,7 @@ def _shelector_rerank(
     # Ask Shelector to rank the swappable cards
     try:
         resp = requests.post(
-            f"{SHELECTOR_URL}/evaluate-cards",
+            f"{SHELECTOR_API_URL}/evaluate-cards",
             json={
                 "commander": commander,
                 "theme": theme,
@@ -707,7 +925,7 @@ async def get_cards_batch(request: CardsBatchRequest):
     generator = get_generator()
     results = []
     for name in request.names:
-        card = generator.card_by_name.get(name)
+        card = _find_card_by_requested_name(generator, name)
         if card:
             # Parse power/toughness from card data
             power = card.get('power')
@@ -722,6 +940,7 @@ async def get_cards_batch(request: CardsBatchRequest):
                         type_line=f.get('type_line') or '',
                         oracle_text=f.get('oracle_text') or '',
                         mana_cost=f.get('mana_cost') or '',
+                        colors=f.get('colors') or [],
                         power=str(f['power']) if f.get('power') is not None else None,
                         toughness=str(f['toughness']) if f.get('toughness') is not None else None,
                     )
@@ -1105,6 +1324,7 @@ async def get_update_status():
 
 @app.post("/api/update/trigger")
 async def trigger_update(
+    request: Request,
     cards: bool = Query(False, description="Update cards and embeddings"),
     prices: bool = Query(False, description="Update prices"),
     images: bool = Query(False, description="Download new images"),
@@ -1115,6 +1335,8 @@ async def trigger_update(
     Note: This runs synchronously and may take several minutes.
     For production, consider using a background task queue.
     """
+    _require_admin(request)
+
     from backend.daily_update import DailyUpdater
 
     updater = DailyUpdater(dry_run=False)
@@ -1141,7 +1363,12 @@ async def trigger_update(
 
 class ParseDeckURLRequest(BaseModel):
     """Request model for deck URL parsing."""
-    url: str = Field(..., description="URL from Moxfield, Archidekt, TappedOut, or MTGGoldfish")
+    url: str = Field(
+        ...,
+        min_length=1,
+        max_length=2048,
+        description="URL from Moxfield, Archidekt, TappedOut, or MTGGoldfish",
+    )
 
 
 class ParseDeckURLResponse(BaseModel):
@@ -1206,7 +1433,7 @@ async def proxy_shelector(path: str, request: Request):
     """Forward requests to the Shelector agent service."""
     import httpx
     async with httpx.AsyncClient() as client:
-        target_url = f"http://localhost:8100/{path}"
+        target_url = f"{SHELECTOR_API_URL}/{path}"
         body = await request.body()
         resp = await client.request(
             method=request.method,
@@ -1226,13 +1453,43 @@ async def proxy_shelector(path: str, request: Request):
 # ---------------------------------------------------------------------------
 # Static file serving & SPA fallback (MUST be last)
 # ---------------------------------------------------------------------------
-import os
-from pathlib import Path
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
 # Serve frontend production build
 FRONTEND_DIST = Path(__file__).parent.parent / "frontend" / "dist"
+AUTO_ADS_UNSAFE_SPA_PREFIXES = (
+    "play",
+    "multiplayer",
+    "shelector",
+    "optimizer",
+    "deck",
+    "generate",
+)
+ADSENSE_LOADER_RE = re.compile(
+    r"\s*<script\b[^>]*pagead2\.googlesyndication\.com/pagead/js/adsbygoogle\.js\?client=[^\"']+[^>]*>\s*</script>",
+    re.IGNORECASE,
+)
+
+
+def _allows_auto_ads(full_path: str) -> bool:
+    normalized = full_path.strip("/")
+    if not normalized:
+        return True
+    return not any(
+        normalized == prefix or normalized.startswith(f"{prefix}/")
+        for prefix in AUTO_ADS_UNSAFE_SPA_PREFIXES
+    )
+
+
+def _spa_index_response(full_path: str):
+    index_path = FRONTEND_DIST / "index.html"
+    if _allows_auto_ads(full_path):
+        return FileResponse(str(index_path))
+
+    html = index_path.read_text(encoding="utf-8")
+    html = ADSENSE_LOADER_RE.sub("", html)
+    return HTMLResponse(html)
 
 if FRONTEND_DIST.exists():
     # Serve static assets
@@ -1265,7 +1522,7 @@ if FRONTEND_DIST.exists():
         file_path = FRONTEND_DIST / full_path
         if file_path.exists() and file_path.is_file():
             return FileResponse(str(file_path))
-        return FileResponse(str(FRONTEND_DIST / "index.html"))
+        return _spa_index_response(full_path)
 
 
 if __name__ == "__main__":

@@ -1,11 +1,11 @@
 {
-  "name": "Magic Brains - MTG Commander",
+  "name": "Magic Brains - MTG Commander Practice",
   "short_name": "Magic Brains",
-  "description": "MTG Commander deck generator, game engine, and AI opponent",
+  "description": "MTG Commander practice with early browser reps and post-game play-by-play review",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#1c1917",
-  "theme_color": "#292524",
+  "background_color": "#17120f",
+  "theme_color": "#17120f",
   "orientation": "any",
   "icons": [
     { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },

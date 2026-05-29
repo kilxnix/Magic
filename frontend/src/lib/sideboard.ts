@@ -1,4 +1,16 @@
-const BASIC_LANDS = new Set(['Plains', 'Island', 'Swamp', 'Mountain', 'Forest', 'Wastes']);
+const BASIC_LANDS = new Set([
+  'Plains',
+  'Island',
+  'Swamp',
+  'Mountain',
+  'Forest',
+  'Wastes',
+  'Snow-Covered Plains',
+  'Snow-Covered Island',
+  'Snow-Covered Swamp',
+  'Snow-Covered Mountain',
+  'Snow-Covered Forest',
+]);
 
 export const CONSTRUCTED_MIN_MAIN_DECK_SIZE = 60;
 export const CONSTRUCTED_MAX_SIDEBOARD_SIZE = 15;

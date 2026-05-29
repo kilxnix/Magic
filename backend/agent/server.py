@@ -19,6 +19,7 @@ from pydantic import BaseModel
 from backend.agent.brain import AgentBrain
 from backend.agent.deck_import import (
     BASIC_LAND_NAMES,
+    _effective_commander_color_identity,
     fill_missing_slots,
     parse_decklist,
     validate_constructed_deck,
@@ -637,7 +638,7 @@ async def import_deck(req: ImportDeckRequest):
         for cmd_name in commander_names:
             cmd_entry = card_db.get(cmd_name)
             if cmd_entry:
-                cmd_colors.update(cmd_entry.get("color_identity") or [])
+                cmd_colors.update(_effective_commander_color_identity(cmd_entry))
         if cmd_colors:
             parsed["cards"] = [
                 c for c in parsed.get("cards", [])
@@ -725,11 +726,11 @@ async def generate_ai_deck(req: GenerateAIDeckRequest):
         cmd_colors: set[str] = set()
         for pn in commander_names:
             pd = gen.card_by_name.get(pn, {})
-            cmd_colors.update(pd.get("color_identity") or [])
+            cmd_colors.update(_effective_commander_color_identity(pd))
         cmd_data = gen.card_by_name.get(commander_names[0], {})
     else:
         cmd_data = gen.card_by_name.get(commander_name, {})
-        cmd_colors = set(cmd_data.get("color_identity") or [])
+        cmd_colors = set(_effective_commander_color_identity(cmd_data))
 
     # Extract card names from the categories dict (type-based categories)
     categories = result.get("categories", {})
@@ -745,7 +746,7 @@ async def generate_ai_deck(req: GenerateAIDeckRequest):
             card_ci = set(card_data.get("color_identity") or [])
             type_line = (card_data.get("type_line") or "").lower()
             # Basic lands and colorless cards are always legal
-            is_basic = name in {"Plains", "Island", "Swamp", "Mountain", "Forest", "Wastes"}
+            is_basic = name in BASIC_LAND_NAMES
             is_land = "land" in type_line
             if not is_basic and card_ci and not card_ci.issubset(cmd_colors):
                 continue  # Illegal — skip this card

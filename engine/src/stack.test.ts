@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { canCastSpell, castSpell, resolveTopOfStack } from './stack';
+import { tryTapLandForMana } from './actions-public';
 import { initGameState, getCardsInZone } from './game-state';
 import { CardDefinition, StackItem } from './types';
 
@@ -22,6 +23,26 @@ function makeInstant(): CardDefinition {
   };
 }
 
+function makeScrySpell(): CardDefinition {
+  return {
+    id: 'scry-test-1', name: 'Choice Scry', type_line: 'Instant',
+    oracle_text: 'Scry 2.', mana_cost: '{U}', cmc: 1,
+    colors: ['U'], color_identity: ['U'], keywords: [],
+    card_types: ['instant'],
+  };
+}
+
+function makeVanillaCard(id: string, name: string, typeLine = 'Creature - Test'): CardDefinition {
+  return {
+    id, name, type_line: typeLine,
+    oracle_text: '', mana_cost: '{1}', cmc: 1,
+    colors: [], color_identity: [], keywords: [],
+    card_types: typeLine.toLowerCase().includes('land') ? ['land'] : ['creature'],
+    power: typeLine.toLowerCase().includes('land') ? undefined : 1,
+    toughness: typeLine.toLowerCase().includes('land') ? undefined : 1,
+  };
+}
+
 function makeSorcery(): CardDefinition {
   return {
     id: 'divination-1', name: 'Divination', type_line: 'Sorcery',
@@ -37,6 +58,130 @@ function makeArtifact(): CardDefinition {
     oracle_text: '{T}: Add {C}{C}.', mana_cost: '{1}', cmc: 1,
     colors: [], color_identity: [], keywords: [],
     card_types: ['artifact'],
+  };
+}
+
+function makeCounterspell(): CardDefinition {
+  return {
+    id: 'counterspell-1',
+    name: 'Counterspell',
+    type_line: 'Instant',
+    oracle_text: 'Counter target spell.',
+    mana_cost: '{U}{U}',
+    cmc: 2,
+    colors: ['U'],
+    color_identity: ['U'],
+    keywords: [],
+    card_types: ['instant'],
+  };
+}
+
+function makePinger(): CardDefinition {
+  return {
+    id: 'pinger-1',
+    name: 'Prodigal Pyromancer',
+    type_line: 'Creature - Human Wizard',
+    oracle_text: '{T}: Prodigal Pyromancer deals 1 damage to any target.',
+    mana_cost: '{2}{R}',
+    cmc: 3,
+    colors: ['R'],
+    color_identity: ['R'],
+    keywords: [],
+    card_types: ['creature'],
+    power: 1,
+    toughness: 1,
+  };
+}
+
+function setupTargetedAbilityState() {
+  const sourceDef = makePinger();
+  const targetDef = makeCreature();
+  const decks = [
+    { playerId: 'p1', name: 'Alice', cards: [sourceDef], commanderId: 'cmd1' },
+    { playerId: 'p2', name: 'Bob', cards: [targetDef], commanderId: 'cmd2' },
+  ];
+  let state = initGameState(decks);
+  const source = getCardsInZone(state, 'p1', 'library')[0];
+  const target = getCardsInZone(state, 'p2', 'library')[0];
+  state.cards.set(source.instanceId, { ...source, zone: 'battlefield' });
+  state.cards.set(target.instanceId, { ...target, zone: 'battlefield' });
+  return { state, sourceId: source.instanceId, targetId: target.instanceId };
+}
+
+function makeChromeMox(): CardDefinition {
+  return {
+    id: 'chrome-mox-1',
+    name: 'Chrome Mox',
+    type_line: 'Artifact',
+    oracle_text: 'Imprint - When Chrome Mox enters the battlefield, you may exile a nonartifact, nonland card from your hand.\n{T}: Add one mana of any of the exiled card\'s colors.',
+    mana_cost: '{0}',
+    cmc: 0,
+    colors: [],
+    color_identity: [],
+    keywords: [],
+    card_types: ['artifact'],
+  };
+}
+
+function makeMoxDiamond(): CardDefinition {
+  return {
+    id: 'mox-diamond-1',
+    name: 'Mox Diamond',
+    type_line: 'Artifact',
+    oracle_text: 'If Mox Diamond would enter the battlefield, you may discard a land card instead. If you don\'t, put it into its owner\'s graveyard.\n{T}: Add one mana of any color.',
+    mana_cost: '{0}',
+    cmc: 0,
+    colors: [],
+    color_identity: [],
+    keywords: [],
+    card_types: ['artifact'],
+  };
+}
+
+function makeGreenSpell(): CardDefinition {
+  return {
+    id: 'green-spell-1',
+    name: 'Elvish Test Spell',
+    type_line: 'Creature - Elf',
+    oracle_text: '',
+    mana_cost: '{G}',
+    cmc: 1,
+    colors: ['G'],
+    color_identity: ['G'],
+    keywords: [],
+    card_types: ['creature'],
+    power: 1,
+    toughness: 1,
+  };
+}
+
+function makeTestLand(): CardDefinition {
+  return {
+    id: 'test-land-1',
+    name: 'Test Forest',
+    type_line: 'Basic Land - Forest',
+    oracle_text: '{T}: Add {G}.',
+    mana_cost: '',
+    cmc: 0,
+    colors: [],
+    color_identity: ['G'],
+    keywords: [],
+    card_types: ['land'],
+  };
+}
+
+function makeCavernOfSouls(): CardDefinition {
+  return {
+    id: 'cavern-of-souls-1',
+    name: 'Cavern of Souls',
+    type_line: 'Land',
+    oracle_text: 'As Cavern of Souls enters, choose a creature type.\n{T}: Add {C}.\n{T}: Add one mana of any color. Spend this mana only to cast a creature spell of the chosen type, and that spell can\'t be countered.',
+    mana_cost: '',
+    cmc: 0,
+    colors: [],
+    color_identity: [],
+    keywords: [],
+    card_types: ['land'],
   };
 }
 
@@ -207,10 +352,55 @@ describe('Stack', () => {
     });
 
     it('supports casting with targets', () => {
-      const { state, cardInstanceId } = setupWithCardInHand(makeInstant());
+      const { state, cardInstanceId } = setupWithCardInHand({
+        ...makeInstant(),
+        name: 'Lightning Bolt',
+        oracle_text: '~ deals 3 damage to any target.',
+      });
       state.players[0].manaPool = { W: 0, U: 0, B: 0, R: 1, G: 0, C: 0 };
-      const next = castSpell(state, 'p1', cardInstanceId, ['target_1']);
-      expect(next.stack[0].targets).toEqual(['target_1']);
+      const next = castSpell(state, 'p1', cardInstanceId, ['p2']);
+      expect(next.stack[0].targets).toEqual(['p2']);
+    });
+
+    it('uses a selected creature for cast-trigger sacrifice-to-counter spells', () => {
+      const brainGorgers: CardDefinition = {
+        id: 'brain-gorgers-1',
+        name: 'Brain Gorgers',
+        type_line: 'Creature - Zombie',
+        oracle_text: 'When you cast this spell, any player may sacrifice a creature. If a player does, counter Brain Gorgers.',
+        mana_cost: '{3}{B}',
+        cmc: 4,
+        colors: ['B'],
+        color_identity: ['B'],
+        keywords: [],
+        card_types: ['creature'],
+        power: 4,
+        toughness: 2,
+      };
+      const victimDef: CardDefinition = {
+        ...makeCreature(),
+        id: 'victim-1',
+        name: 'Sacrifice Creature',
+      };
+      const decks = [
+        { playerId: 'p1', name: 'Alice', cards: [brainGorgers], commanderId: 'cmd1' },
+        { playerId: 'p2', name: 'Bob', cards: [victimDef], commanderId: 'cmd2' },
+      ];
+      let state = initGameState(decks);
+      const brain = getCardsInZone(state, 'p1', 'library')[0];
+      const victim = getCardsInZone(state, 'p2', 'library')[0];
+      state.cards.set(brain.instanceId, { ...brain, zone: 'hand' });
+      state.cards.set(victim.instanceId, { ...victim, zone: 'battlefield' });
+      state = { ...state, phase: 'precombat_main' as any };
+      state.players[0].manaPool = { W: 0, U: 0, B: 4, R: 0, G: 0, C: 0 };
+
+      const next = castSpell(state, 'p1', brain.instanceId, [], {
+        namedCardChoices: { sacrificeCardId: victim.instanceId },
+      });
+
+      expect(next.cards.get(victim.instanceId)?.zone).toBe('graveyard');
+      expect(next.cards.get(brain.instanceId)?.zone).toBe('graveyard');
+      expect(next.stack.some(item => item.cardInstanceId === brain.instanceId)).toBe(false);
     });
 
     it('multiple spells stack in LIFO order', () => {
@@ -234,9 +424,110 @@ describe('Stack', () => {
       expect(state.stack[1].cardInstanceId).toBe(cards[1].instanceId);
       expect(state.stack[0].cardInstanceId).toBe(cards[0].instanceId);
     });
+
+    it('marks matching Cavern of Souls creature spells as unable to be countered', () => {
+      const decks = [
+        { playerId: 'p1', name: 'Alice', cards: [makeCavernOfSouls(), makeGreenSpell()], commanderId: 'cmd1' },
+        { playerId: 'p2', name: 'Bob', cards: [makeCounterspell()], commanderId: 'cmd2' },
+      ];
+      let state = initGameState(decks);
+      const cavern = getCardsInZone(state, 'p1', 'library')
+        .find(card => state.cardDefinitions.get(card.definitionId)?.name === 'Cavern of Souls')!;
+      const elf = getCardsInZone(state, 'p1', 'library')
+        .find(card => state.cardDefinitions.get(card.definitionId)?.name === 'Elvish Test Spell')!;
+      const counter = getCardsInZone(state, 'p2', 'library')[0];
+
+      state.cards.set(cavern.instanceId, {
+        ...cavern,
+        zone: 'battlefield',
+        tapped: false,
+        choices: { chosenCreatureType: 'Elf' },
+      });
+      state.cards.set(elf.instanceId, { ...elf, zone: 'hand' });
+      state.cards.set(counter.instanceId, { ...counter, zone: 'hand' });
+      state = { ...state, phase: 'precombat_main' as any };
+
+      const manaResult = tryTapLandForMana(state, 'p1', cavern.instanceId, 'G');
+      expect(manaResult.ok).toBe(true);
+      if (!manaResult.ok) return;
+      state = manaResult.state;
+      state = castSpell(state, 'p1', elf.instanceId);
+
+      expect(state.stack[0].cardInstanceId).toBe(elf.instanceId);
+      expect((state.stack[0] as any).cantBeCountered).toBe(true);
+
+      state = {
+        ...state,
+        priorityPlayerIndex: 1,
+        players: state.players.map(player =>
+          player.id === 'p2'
+            ? { ...player, manaPool: { W: 0, U: 2, B: 0, R: 0, G: 0, C: 0 } }
+            : player,
+        ),
+      };
+      state = castSpell(state, 'p2', counter.instanceId, [elf.instanceId]);
+      state = resolveTopOfStack(state);
+
+      expect(state.cards.get(counter.instanceId)?.zone).toBe('graveyard');
+      expect(state.cards.get(elf.instanceId)?.zone).toBe('stack');
+      expect(state.stack).toHaveLength(1);
+      expect(state.stack[0].cardInstanceId).toBe(elf.instanceId);
+
+      state = resolveTopOfStack(state);
+
+      expect(state.cards.get(elf.instanceId)?.zone).toBe('battlefield');
+    });
   });
 
   describe('resolveTopOfStack', () => {
+    it('fizzles activated abilities when their target gains hexproof before resolution', () => {
+      const { state, sourceId, targetId } = setupTargetedAbilityState();
+      state.stack.push({
+        kind: 'ActivatedAbility',
+        id: 'activated_ping',
+        sourceInstanceId: sourceId,
+        controllerId: 'p1',
+        ability: {
+          effects: [{ kind: 'DealDamage', target: { kind: 'Chosen', targetId: 'target' }, amount: 3 }],
+          targets: [{ id: 'target', type: 'Creature' }],
+        },
+        targets: [targetId],
+      });
+
+      const target = state.cards.get(targetId)!;
+      state.cards.set(targetId, { ...target, grantedKeywords: ['Hexproof'] });
+
+      const next = resolveTopOfStack(state);
+      expect(next.stack).toHaveLength(0);
+      expect(next.cards.get(targetId)?.damage).toBe(0);
+      expect(next.cards.get(targetId)?.zone).toBe('battlefield');
+    });
+
+    it('fizzles triggered abilities when their target gains hexproof before resolution', () => {
+      const { state, sourceId, targetId } = setupTargetedAbilityState();
+      state.stack.push({
+        kind: 'TriggeredAbility',
+        id: 'trigger_ping',
+        sourceInstanceId: sourceId,
+        controllerId: 'p1',
+        ability: {
+          kind: 'TriggeredAbility',
+          trigger: { kind: 'ETB', who: 'self' },
+          effects: [{ kind: 'DealDamage', target: { kind: 'Chosen', targetId: 'target' }, amount: 3 }],
+        },
+        targetSpecs: [{ id: 'target', type: 'Creature', count: 1 }],
+        targets: [targetId],
+      });
+
+      const target = state.cards.get(targetId)!;
+      state.cards.set(targetId, { ...target, grantedKeywords: ['Hexproof'] });
+
+      const next = resolveTopOfStack(state);
+      expect(next.stack).toHaveLength(0);
+      expect(next.cards.get(targetId)?.damage).toBe(0);
+      expect(next.cards.get(targetId)?.zone).toBe('battlefield');
+    });
+
     it('creature resolves to battlefield with summoning sickness', () => {
       const { state, cardInstanceId } = setupWithCardInHand(makeCreature());
       state.players[0].manaPool = { W: 0, U: 0, B: 0, R: 0, G: 2, C: 0 };
@@ -256,6 +547,128 @@ describe('Stack', () => {
 
       expect(next.cards.get(cardInstanceId)!.zone).toBe('battlefield');
       expect(next.cards.get(cardInstanceId)!.summoningSick).toBe(false);
+    });
+
+    it('passes explicit scry choices from the stack item into spell resolution', () => {
+      const decks = [
+        {
+          playerId: 'p1',
+          name: 'Alice',
+          cards: [
+            makeScrySpell(),
+            makeVanillaCard('top-a', 'Top A'),
+            makeVanillaCard('top-b', 'Top B'),
+            makeVanillaCard('rest-c', 'Rest C'),
+          ],
+          commanderId: 'cmd1',
+        },
+        { playerId: 'p2', name: 'Bob', cards: [], commanderId: 'cmd2' },
+      ];
+      let state = initGameState(decks);
+      const spell = getCardsInZone(state, 'p1', 'library')
+        .find(card => state.cardDefinitions.get(card.definitionId)?.name === 'Choice Scry')!;
+      const [first, second] = getCardsInZone(state, 'p1', 'library')
+        .filter(card => card.instanceId !== spell.instanceId)
+        .slice(0, 2);
+
+      state.cards.set(spell.instanceId, { ...spell, zone: 'stack' });
+      state.stack.push({
+        kind: 'Spell',
+        id: 'choice-scry-stack',
+        cardInstanceId: spell.instanceId,
+        casterId: 'p1',
+        targets: [],
+        namedCardChoices: {
+          scryTopIds: second.instanceId,
+          scryBottomIds: first.instanceId,
+        },
+      });
+
+      const next = resolveTopOfStack(state);
+      const libraryOrder = getCardsInZone(next, 'p1', 'library').map(card => card.instanceId);
+
+      expect(libraryOrder[0]).toBe(second.instanceId);
+      expect(libraryOrder[libraryOrder.length - 1]).toBe(first.instanceId);
+      expect(next.cards.get(spell.instanceId)?.zone).toBe('graveyard');
+    });
+
+    it('resolves Chrome Mox with an imprinted nonartifact nonland card choice', () => {
+      const decks = [
+        { playerId: 'p1', name: 'Alice', cards: [makeChromeMox(), makeGreenSpell()], commanderId: 'cmd1' },
+        { playerId: 'p2', name: 'Bob', cards: [], commanderId: 'cmd2' },
+      ];
+      let state = initGameState(decks);
+      const chrome = getCardsInZone(state, 'p1', 'library')
+        .find(card => state.cardDefinitions.get(card.definitionId)?.name === 'Chrome Mox')!;
+      const imprint = getCardsInZone(state, 'p1', 'library')
+        .find(card => state.cardDefinitions.get(card.definitionId)?.name === 'Elvish Test Spell')!;
+      state.cards.set(chrome.instanceId, { ...chrome, zone: 'hand' });
+      state.cards.set(imprint.instanceId, { ...imprint, zone: 'hand' });
+      state = { ...state, phase: 'precombat_main' as any };
+
+      state = castSpell(state, 'p1', chrome.instanceId, [], {
+        cardChoices: { imprintedCardIds: [imprint.instanceId] },
+      });
+      state = resolveTopOfStack(state);
+
+      expect(state.cards.get(chrome.instanceId)?.zone).toBe('battlefield');
+      expect(state.cards.get(chrome.instanceId)?.choices?.imprintedCardIds).toEqual([imprint.instanceId]);
+      expect(state.cards.get(imprint.instanceId)?.zone).toBe('exile');
+
+      const redMana = tryTapLandForMana(state, 'p1', chrome.instanceId, 'R');
+      expect(redMana.ok).toBe(false);
+      if (!redMana.ok) expect(redMana.reason).toBe('illegal_target');
+
+      const greenMana = tryTapLandForMana(state, 'p1', chrome.instanceId, 'G');
+      expect(greenMana.ok).toBe(true);
+      if (greenMana.ok) expect(greenMana.state.players[0].manaPool.G).toBe(1);
+    });
+
+    it('leaves Chrome Mox unable to make mana when no card is imprinted', () => {
+      const { state, cardInstanceId } = setupWithCardInHand(makeChromeMox());
+      let next = castSpell(state, 'p1', cardInstanceId);
+      next = resolveTopOfStack(next);
+
+      const result = tryTapLandForMana(next, 'p1', cardInstanceId, 'G');
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.reason).toBe('illegal_target');
+    });
+
+    it('resolves Mox Diamond with a discarded land choice', () => {
+      const decks = [
+        { playerId: 'p1', name: 'Alice', cards: [makeMoxDiamond(), makeTestLand()], commanderId: 'cmd1' },
+        { playerId: 'p2', name: 'Bob', cards: [], commanderId: 'cmd2' },
+      ];
+      let state = initGameState(decks);
+      const mox = getCardsInZone(state, 'p1', 'library')
+        .find(card => state.cardDefinitions.get(card.definitionId)?.name === 'Mox Diamond')!;
+      const land = getCardsInZone(state, 'p1', 'library')
+        .find(card => state.cardDefinitions.get(card.definitionId)?.name === 'Test Forest')!;
+      state.cards.set(mox.instanceId, { ...mox, zone: 'hand' });
+      state.cards.set(land.instanceId, { ...land, zone: 'hand' });
+      state = { ...state, phase: 'precombat_main' as any };
+
+      state = castSpell(state, 'p1', mox.instanceId, [], {
+        cardChoices: { discardedCardIds: [land.instanceId] },
+      });
+      state = resolveTopOfStack(state);
+
+      expect(state.cards.get(mox.instanceId)?.zone).toBe('battlefield');
+      expect(state.cards.get(mox.instanceId)?.choices?.discardedCardIds).toEqual([land.instanceId]);
+      expect(state.cards.get(land.instanceId)?.zone).toBe('graveyard');
+
+      const mana = tryTapLandForMana(state, 'p1', mox.instanceId, 'U');
+      expect(mana.ok).toBe(true);
+      if (mana.ok) expect(mana.state.players[0].manaPool.U).toBe(1);
+    });
+
+    it('puts Mox Diamond into the graveyard when no land is discarded', () => {
+      const { state, cardInstanceId } = setupWithCardInHand(makeMoxDiamond());
+      let next = castSpell(state, 'p1', cardInstanceId);
+      next = resolveTopOfStack(next);
+
+      expect(next.cards.get(cardInstanceId)?.zone).toBe('graveyard');
     });
 
     it('enchantment resolves to battlefield', () => {
@@ -307,6 +720,37 @@ describe('Stack', () => {
       expect(state.stack).toHaveLength(1);
       expect(state.cards.get(cards[1].instanceId)!.zone).toBe('graveyard');
       expect(state.stack[0].cardInstanceId).toBe(cards[0].instanceId);
+    });
+
+    it('lets a counterspell fizzle if its target has already left the stack', () => {
+      const decks = [
+        { playerId: 'p1', name: 'Alice', cards: [makeCreature()], commanderId: 'cmd1' },
+        { playerId: 'p2', name: 'Bob', cards: [makeCounterspell()], commanderId: 'cmd2' },
+      ];
+      let state = initGameState(decks);
+      const creature = getCardsInZone(state, 'p1', 'library')[0];
+      const counter = getCardsInZone(state, 'p2', 'library')[0];
+
+      state.cards.set(creature.instanceId, { ...creature, zone: 'hand' });
+      state.cards.set(counter.instanceId, { ...counter, zone: 'hand' });
+      state = { ...state, phase: 'precombat_main' as any };
+      state.players[0].manaPool = { W: 0, U: 0, B: 0, R: 0, G: 2, C: 1 };
+      state.players[1].manaPool = { W: 0, U: 2, B: 0, R: 0, G: 0, C: 0 };
+
+      state = castSpell(state, 'p1', creature.instanceId);
+      state = castSpell(state, 'p2', counter.instanceId, [creature.instanceId]);
+
+      state.cards.set(creature.instanceId, { ...state.cards.get(creature.instanceId)!, zone: 'battlefield' });
+      state = {
+        ...state,
+        stack: state.stack.filter(item => (item as StackItem).cardInstanceId !== creature.instanceId),
+      };
+
+      state = resolveTopOfStack(state);
+
+      expect(state.cards.get(counter.instanceId)?.zone).toBe('graveyard');
+      expect(state.cards.get(creature.instanceId)?.zone).toBe('battlefield');
+      expect(state.stack).toHaveLength(0);
     });
 
     it('throws if stack is empty', () => {

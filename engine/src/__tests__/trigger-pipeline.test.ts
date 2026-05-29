@@ -13,9 +13,11 @@ import { parseOracleText } from '../effects/parser';
 import { initGameState, getCardsInZone, getCardDefinition } from '../game-state';
 import { castSpell, canCastSpell, resolveTopOfStack, putTriggersOnStack, checkTriggersForEvent, registerBattlefieldAbilities } from '../stack';
 import { checkStateBasedActions } from '../state-based';
-import { playLand, tapLandForMana, drawCards } from '../actions';
+import { activateAbility, getActivatedAbilities, playLand, tapLandForMana, drawCards } from '../actions';
 import { declareAttackers } from '../combat';
 import { addMana } from '../mana';
+import { getEffectivePower } from '../effects/continuous';
+import { instanceHasKeyword } from '../keywords';
 import type { CardDefinition, GameState, CardInstance, TriggeredAbilityRef } from '../types';
 
 // ============================================================================
@@ -204,6 +206,149 @@ describe('Trigger Parsing', () => {
     if (result.kind !== 'Triggered') return;
     expect(result.ability.trigger.kind).toBe('YouCastSpell');
   });
+
+  it('parses Vivi-style noncreature cast triggers with self counters and opponent damage', () => {
+    const result = parseOracleText('Whenever you cast a noncreature spell, put a +1/+1 counter on ~ and it deals 1 damage to each opponent.');
+    expect(result.kind).toBe('Triggered');
+    if (result.kind !== 'Triggered') return;
+    expect(result.ability.trigger.kind).toBe('CastNoncreatureSpell');
+    expect(result.ability.effects).toHaveLength(2);
+    expect(result.ability.effects[0]).toMatchObject({
+      kind: 'AddCounters',
+      target: { kind: 'Source' },
+      counterType: '+1/+1',
+      count: 1,
+    });
+    expect(result.ability.effects[1]).toMatchObject({
+      kind: 'DealDamage',
+      target: { kind: 'EachOpponent' },
+      amount: 1,
+    });
+  });
+
+  it('parses controlled creature ETB triggers for Impact Tremors-style payoffs', () => {
+    const result = parseOracleText('Whenever a creature you control enters, this enchantment deals 1 damage to each opponent.');
+    expect(result.kind).toBe('Triggered');
+    if (result.kind !== 'Triggered') return;
+    expect(result.ability.trigger).toEqual({ kind: 'AnyCreatureETB', controller: 'yours' });
+    expect(result.ability.effects[0].kind).toBe('DealDamage');
+  });
+
+  it('parses modern self-ETB wording variants as the same self trigger family', () => {
+    const variants = [
+      'When ~ enters, draw a card.',
+      'When ~ enters the battlefield, draw a card.',
+      'When this creature enters, draw a card.',
+      'When this permanent enters the battlefield, draw a card.',
+    ];
+
+    for (const oracle of variants) {
+      const result = parseOracleText(oracle);
+      expect(result.kind, oracle).toBe('ETB');
+      if (result.kind !== 'ETB') continue;
+      expect(result.ability.trigger).toEqual({ kind: 'ETB', who: 'self' });
+      expect(result.ability.effects[0].kind).toBe('Draw');
+    }
+  });
+
+  it('parses common external creature-ETB wording variants without card-specific fixes', () => {
+    const result = parseOracleText('Whenever another creature you control enters, draw a card.');
+    expect(result.kind).toBe('Triggered');
+    if (result.kind !== 'Triggered') return;
+    expect(result.ability.trigger).toEqual({ kind: 'AnotherCreatureETB', controller: 'yours' });
+  });
+
+  it('preserves nontoken restrictions on external ETB triggers', () => {
+    const result = parseOracleText('Whenever another nontoken creature enters the battlefield under your control, draw a card.');
+    expect(result.kind).toBe('Triggered');
+    if (result.kind !== 'Triggered') return;
+    expect(result.ability.trigger).toEqual({ kind: 'AnotherCreatureETB', controller: 'yours', nontoken: true });
+  });
+
+  it('parses one-or-more controlled creature ETB wording into the controlled ETB family', () => {
+    const result = parseOracleText('Whenever one or more nontoken creatures enter the battlefield under your control, draw a card.');
+    expect(result.kind).toBe('Triggered');
+    if (result.kind !== 'Triggered') return;
+    expect(result.ability.trigger).toEqual({ kind: 'AnyCreatureETB', controller: 'yours', nontoken: true });
+  });
+
+  it('parses Krenko-style activated token counts from a controlled subtype count', () => {
+    const abilities = getActivatedAbilities({
+      ...createTestGame([], []),
+      cardDefinitions: new Map([
+        ['krenko', {
+          id: 'krenko',
+          name: 'Krenko, Mob Boss',
+          type_line: 'Legendary Creature - Goblin Warrior',
+          oracle_text: '{T}: Create X 1/1 red Goblin creature tokens, where X is the number of Goblins you control.',
+          mana_cost: '{2}{R}{R}',
+          cmc: 4,
+          colors: ['R'],
+          color_identity: ['R'],
+          keywords: [],
+          power: 3,
+          toughness: 3,
+          card_types: ['creature'],
+        }],
+      ]),
+      cards: new Map([
+        ['krenko-inst', {
+          instanceId: 'krenko-inst',
+          definitionId: 'krenko',
+          ownerId: 'p1',
+          zone: 'battlefield',
+          tapped: false,
+          summoningSick: false,
+          counters: {},
+          damage: 0,
+          isCommander: true,
+        }],
+      ]),
+    }, 'krenko-inst');
+
+    expect(abilities).toHaveLength(1);
+    expect(abilities[0].effects[0]).toMatchObject({
+      kind: 'CreateToken',
+      count: {
+        kind: 'ForEach',
+        zone: 'battlefield',
+        filter: { types: ['creature'], subtypes: ['Goblin'] },
+        controller: 'you',
+      },
+    });
+  });
+
+  it('parses Goblin Matron-style optional subtype tutor ETBs', () => {
+    const result = parseOracleText('When this creature enters, you may search your library for a Goblin card, reveal that card, put it into your hand, then shuffle.');
+    expect(result.kind).toBe('ETB');
+    if (result.kind !== 'ETB') return;
+    expect(result.ability.effects[0]).toMatchObject({
+      kind: 'SearchLibrary',
+      filter: { types: ['creature'], subtypes: ['goblin'] },
+      destination: 'hand',
+      shuffle: true,
+    });
+  });
+
+  it('parses Goblin Spymaster-style opponent end step token triggers', () => {
+    const result = parseOracleText("At the beginning of each opponent's end step, that player creates a 1/1 red Goblin creature token.");
+    expect(result.kind).toBe('Triggered');
+    if (result.kind !== 'Triggered') return;
+    expect(result.ability.trigger).toEqual({ kind: 'EndStep', whose: 'opponents' });
+    expect(result.ability.effects[0]).toMatchObject({
+      kind: 'CreateToken',
+      controller: { kind: 'ActivePlayer' },
+      token: {
+        name: 'Goblin',
+        colors: ['R'],
+        types: ['creature'],
+        subtypes: ['goblin'],
+        power: 1,
+        toughness: 1,
+      },
+      count: 1,
+    });
+  });
 });
 
 // ============================================================================
@@ -262,6 +407,270 @@ describe('ETB Trigger Pipeline', () => {
     // p1 should have drawn a card (hand count = handBefore - 1 (creature cast) + 1 (drawn))
     const handAfter = countCardsInZone(state, 'p1', 'hand');
     expect(handAfter).toBe(handBefore - 1 + 1);
+  });
+
+  it('Krenko starter ETB creature creates its Goblin token', () => {
+    const instigator = makeCreatureWithETB(
+      'goblin-instigator',
+      'Goblin Instigator',
+      'When this creature enters, create a 1/1 red Goblin creature token.',
+    );
+    const island = makeLand('island', 'Island');
+
+    let state = createTestGame(
+      [instigator, island, island, island],
+      [island],
+    );
+
+    const instigatorInst = findCard(state, 'goblin-instigator')!;
+    state = moveToZone(state, instigatorInst.instanceId, 'hand');
+    state = giveMana(state, 'p1', 5, 'U');
+    state = { ...state, activePlayerIndex: 0, phase: 'precombat_main' as any, step: 'upkeep' as any };
+
+    state = castSpell(state, 'p1', instigatorInst.instanceId);
+    state = resolveTopOfStack(state);
+    state = putTriggersOnStack(state);
+    state = resolveTopOfStack(state);
+
+    const goblinTokens = Array.from(state.cards.values()).filter(card => {
+      const def = state.cardDefinitions.get(card.definitionId);
+      return card.isToken && card.zone === 'battlefield' && def?.name === 'Goblin';
+    });
+
+    expect(goblinTokens).toHaveLength(1);
+  });
+
+  it('Impact Tremors fires for both a creature entering and that creature creating a token', () => {
+    const impactTremors = makeEnchantment(
+      'impact-tremors',
+      'Impact Tremors',
+      'Whenever a creature you control enters, this enchantment deals 1 damage to each opponent.',
+    );
+    const instigator = makeCreatureWithETB(
+      'goblin-instigator',
+      'Goblin Instigator',
+      'When this creature enters, create a 1/1 red Goblin creature token.',
+    );
+    const island = makeLand('island', 'Island');
+
+    let state = createTestGame(
+      [impactTremors, instigator, island, island, island],
+      [island],
+    );
+
+    const impactInst = findCard(state, 'impact-tremors')!;
+    const instigatorInst = findCard(state, 'goblin-instigator')!;
+    state = moveToZone(state, impactInst.instanceId, 'battlefield');
+    state = registerBattlefieldAbilities(state, impactInst.instanceId);
+    state = moveToZone(state, instigatorInst.instanceId, 'hand');
+    state = giveMana(state, 'p1', 5, 'U');
+    state = { ...state, activePlayerIndex: 0, phase: 'precombat_main' as any, step: 'upkeep' as any };
+
+    state = castSpell(state, 'p1', instigatorInst.instanceId);
+    state = resolveTopOfStack(state);
+
+    while (state.pendingTriggers.length > 0 || state.stack.length > 0) {
+      if (state.pendingTriggers.length > 0) {
+        state = putTriggersOnStack(state);
+      }
+      if (state.stack.length > 0) {
+        state = resolveTopOfStack(state);
+      }
+    }
+
+    expect(state.players.find(player => player.id === 'p2')!.life).toBe(38);
+  });
+
+  it('nontoken creature ETB payoffs do not fire for tokens created by an ETB', () => {
+    const nontokenPayoff = makeEnchantment(
+      'guardian-project-lite',
+      'Guardian Project Lite',
+      'Whenever another nontoken creature enters the battlefield under your control, draw a card.',
+    );
+    const instigator = makeCreatureWithETB(
+      'goblin-instigator',
+      'Goblin Instigator',
+      'When this creature enters, create a 1/1 red Goblin creature token.',
+    );
+    const island = makeLand('island', 'Island');
+
+    let state = createTestGame(
+      [nontokenPayoff, instigator, island, island, island],
+      [island],
+    );
+
+    const payoffInst = findCard(state, 'guardian-project-lite')!;
+    const instigatorInst = findCard(state, 'goblin-instigator')!;
+    state = moveToZone(state, payoffInst.instanceId, 'battlefield');
+    state = registerBattlefieldAbilities(state, payoffInst.instanceId);
+    state = moveToZone(state, instigatorInst.instanceId, 'hand');
+    state = giveMana(state, 'p1', 5, 'U');
+    state = { ...state, activePlayerIndex: 0, phase: 'precombat_main' as any, step: 'upkeep' as any };
+
+    const handBefore = countCardsInZone(state, 'p1', 'hand');
+    state = castSpell(state, 'p1', instigatorInst.instanceId);
+    state = resolveTopOfStack(state);
+
+    while (state.pendingTriggers.length > 0 || state.stack.length > 0) {
+      if (state.pendingTriggers.length > 0) {
+        state = putTriggersOnStack(state);
+      }
+      if (state.stack.length > 0) {
+        state = resolveTopOfStack(state);
+      }
+    }
+
+    const handAfter = countCardsInZone(state, 'p1', 'hand');
+    expect(handAfter).toBe(handBefore - 1 + 1);
+  });
+
+  it('self ETB target requirements are found even when the ETB is not the first oracle line', () => {
+    const removalCreature = makeCreatureWithETB(
+      'line-two-etb',
+      'Line Two ETB',
+      'Flying\nWhen ~ enters the battlefield, destroy target creature.',
+    );
+    const target = makeVanillaCreature('target-bear', 'Target Bear');
+    const island = makeLand('island', 'Island');
+
+    let state = createTestGame(
+      [removalCreature, island, island, island],
+      [target, island],
+    );
+
+    const removalInst = findCard(state, 'line-two-etb')!;
+    state = moveToZone(state, removalInst.instanceId, 'hand');
+    state = giveMana(state, 'p1', 5, 'U');
+    state = { ...state, activePlayerIndex: 0, phase: 'precombat_main' as any, step: 'upkeep' as any };
+
+    state = castSpell(state, 'p1', removalInst.instanceId);
+    state = resolveTopOfStack(state);
+
+    expect(state.pendingTriggers).toHaveLength(1);
+    expect(state.pendingTriggers[0].requiredTargets).toMatchObject([
+      { type: 'Creature', count: 1 },
+    ]);
+  });
+
+  it('Krenko tap ability creates one token for each Goblin you control', () => {
+    const krenko: CardDefinition = {
+      id: 'krenko',
+      name: 'Krenko, Mob Boss',
+      type_line: 'Legendary Creature - Goblin Warrior',
+      oracle_text: '{T}: Create X 1/1 red Goblin creature tokens, where X is the number of Goblins you control.',
+      mana_cost: '{2}{R}{R}',
+      cmc: 4,
+      colors: ['R'],
+      color_identity: ['R'],
+      keywords: [],
+      power: 3,
+      toughness: 3,
+      card_types: ['creature'],
+    };
+    const goblin = {
+      ...makeVanillaCreature('goblin-token-seed', 'Goblin Token Seed', '{R}'),
+      type_line: 'Creature - Goblin',
+    };
+    const island = makeLand('island', 'Island');
+
+    let state = createTestGame(
+      [krenko, goblin, goblin, island],
+      [island],
+    );
+
+    const krenkoInst = findCard(state, 'krenko')!;
+    const goblinInsts = Array.from(state.cards.values()).filter(card => card.definitionId === 'goblin-token-seed');
+    state = moveToZone(state, krenkoInst.instanceId, 'battlefield');
+    state = moveToZone(state, goblinInsts[0].instanceId, 'battlefield');
+    state = moveToZone(state, goblinInsts[1].instanceId, 'battlefield');
+
+    state = activateAbility(state, 'p1', krenkoInst.instanceId, 0);
+    expect(state.cards.get(krenkoInst.instanceId)!.tapped).toBe(true);
+    state = resolveTopOfStack(state);
+
+    const goblinTokens = Array.from(state.cards.values()).filter(card => {
+      const def = state.cardDefinitions.get(card.definitionId);
+      return card.isToken && card.zone === 'battlefield' && def?.name === 'Goblin';
+    });
+
+    expect(goblinTokens).toHaveLength(3);
+  });
+
+  it('Krenko starter Goblin Matron ETB tutors a Goblin into hand', () => {
+    const matron = makeCreatureWithETB(
+      'goblin-matron',
+      'Goblin Matron',
+      'When this creature enters, you may search your library for a Goblin card, reveal that card, put it into your hand, then shuffle.',
+    );
+    const targetGoblin: CardDefinition = {
+      ...makeVanillaCreature('goblin-warchief', 'Goblin Warchief', '{1}{R}{R}'),
+      type_line: 'Creature - Goblin Warrior',
+      colors: ['R'],
+      color_identity: ['R'],
+    };
+    const island = makeLand('island', 'Island');
+
+    let state = createTestGame(
+      [matron, targetGoblin, island, island, island],
+      [island],
+    );
+
+    const matronInst = findCard(state, 'goblin-matron')!;
+    const targetInst = findCard(state, 'goblin-warchief')!;
+    state = moveToZone(state, matronInst.instanceId, 'hand');
+    state = giveMana(state, 'p1', 5, 'U');
+    state = { ...state, activePlayerIndex: 0, phase: 'precombat_main' as any, step: 'upkeep' as any };
+
+    state = castSpell(state, 'p1', matronInst.instanceId);
+    state = resolveTopOfStack(state);
+    state = putTriggersOnStack(state);
+    state = resolveTopOfStack(state);
+
+    expect(state.cards.get(targetInst.instanceId)!.zone).toBe('hand');
+  });
+
+  it('Krenko starter Skirk Prospector sacrifices a Goblin for red mana without tapping', () => {
+    const skirk: CardDefinition = {
+      id: 'skirk-prospector',
+      name: 'Skirk Prospector',
+      type_line: 'Creature - Goblin',
+      oracle_text: 'Sacrifice a Goblin: Add {R}.',
+      mana_cost: '{R}',
+      cmc: 1,
+      colors: ['R'],
+      color_identity: ['R'],
+      keywords: [],
+      power: 1,
+      toughness: 1,
+      card_types: ['creature'],
+    };
+    const goblin: CardDefinition = {
+      ...makeVanillaCreature('goblin-token-seed', 'Goblin Token Seed', '{R}'),
+      type_line: 'Creature - Goblin',
+      colors: ['R'],
+      color_identity: ['R'],
+    };
+    const island = makeLand('island', 'Island');
+
+    let state = createTestGame(
+      [skirk, goblin, island],
+      [island],
+    );
+
+    const skirkInst = findCard(state, 'skirk-prospector')!;
+    const goblinInst = findCard(state, 'goblin-token-seed')!;
+    state = moveToZone(state, skirkInst.instanceId, 'battlefield');
+    state = moveToZone(state, goblinInst.instanceId, 'battlefield');
+    const cards = new Map(state.cards);
+    cards.set(skirkInst.instanceId, { ...cards.get(skirkInst.instanceId)!, tapped: true });
+    state = { ...state, cards };
+
+    state = tapLandForMana(state, 'p1', skirkInst.instanceId, 'R');
+
+    expect(state.players.find(player => player.id === 'p1')!.manaPool.R).toBe(1);
+    expect(state.cards.get(skirkInst.instanceId)!.zone).toBe('battlefield');
+    expect(state.cards.get(skirkInst.instanceId)!.tapped).toBe(true);
+    expect(state.cards.get(goblinInst.instanceId)!.zone).toBe('graveyard');
   });
 });
 
@@ -442,6 +851,111 @@ describe('Attack Trigger Pipeline', () => {
 });
 
 // ============================================================================
+// BEGINNING OF COMBAT TRIGGER PIPELINE
+// ============================================================================
+
+describe('Beginning of Combat Trigger Pipeline', () => {
+  it('queues and resolves Xenagos-style target power boosts before attacks', () => {
+    const combatTrigger = makeEnchantment(
+      'combat-god',
+      'Combat God',
+      "At the beginning of combat on your turn, another target creature you control gains haste until end of turn and gets +X/+X until end of turn, where X is that creature's power.",
+    );
+    const targetCreature = makeCreatureWithETB('large-creature', 'Large Creature', '');
+    const island = makeLand('island-combat', 'Island');
+
+    let state = createTestGame(
+      [combatTrigger, targetCreature, island],
+      [island],
+    );
+
+    const triggerInst = findCard(state, 'combat-god')!;
+    const targetInst = findCard(state, 'large-creature')!;
+    state = moveToZone(state, triggerInst.instanceId, 'battlefield');
+    state = moveToZone(state, targetInst.instanceId, 'battlefield');
+    state = registerBattlefieldAbilities(state, triggerInst.instanceId);
+
+    state = checkTriggersForEvent(state, {
+      kind: 'BeginningCombatStart',
+      activePlayerId: 'p1',
+    });
+
+    expect(state.pendingTriggers).toHaveLength(1);
+    expect(state.pendingTriggers[0].ability.trigger.kind).toBe('BeginningCombat');
+
+    const triggerId = state.pendingTriggers[0].id;
+    state = putTriggersOnStack(state, { [triggerId]: [targetInst.instanceId] });
+    state = resolveTopOfStack(state);
+
+    expect(instanceHasKeyword(state, targetInst.instanceId, 'Haste')).toBe(true);
+    expect(getEffectivePower(state, targetInst.instanceId)).toBe(4);
+  });
+});
+
+// ============================================================================
+// END STEP TRIGGER PIPELINE
+// ============================================================================
+
+describe('End Step Trigger Pipeline', () => {
+  it("Goblin Spymaster creates the Goblin for the opponent whose end step triggered it", () => {
+    const spymaster = makeCreatureWithETB(
+      'goblin-spymaster',
+      'Goblin Spymaster',
+      "At the beginning of each opponent's end step, that player creates a 1/1 red Goblin creature token.",
+    );
+    const island = makeLand('island', 'Island');
+
+    let state = createTestGame([spymaster, island], [island]);
+    const spymasterInst = findCard(state, 'goblin-spymaster')!;
+    state = moveToZone(state, spymasterInst.instanceId, 'battlefield');
+    state = registerBattlefieldAbilities(state, spymasterInst.instanceId);
+
+    state = {
+      ...state,
+      activePlayerIndex: 1,
+      priorityPlayerIndex: 1,
+      phase: 'ending',
+      step: 'end',
+    };
+    state = checkTriggersForEvent(state, { kind: 'EndStepStart', activePlayerId: 'p2' });
+
+    expect(state.pendingTriggers).toHaveLength(1);
+    state = putTriggersOnStack(state);
+    state = resolveTopOfStack(state);
+
+    const p2Goblins = Array.from(state.cards.values()).filter(card => {
+      const def = state.cardDefinitions.get(card.definitionId);
+      return card.ownerId === 'p2' && card.zone === 'battlefield' && card.isToken && def?.name === 'Goblin';
+    });
+    const p1Goblins = Array.from(state.cards.values()).filter(card => {
+      const def = state.cardDefinitions.get(card.definitionId);
+      return card.ownerId === 'p1' && card.zone === 'battlefield' && card.isToken && def?.name === 'Goblin';
+    });
+
+    expect(p2Goblins).toHaveLength(1);
+    expect(p1Goblins).toHaveLength(0);
+  });
+
+  it("Goblin Spymaster does not trigger on its controller's own end step", () => {
+    const spymaster = makeCreatureWithETB(
+      'goblin-spymaster',
+      'Goblin Spymaster',
+      "At the beginning of each opponent's end step, that player creates a 1/1 red Goblin creature token.",
+    );
+    const island = makeLand('island', 'Island');
+
+    let state = createTestGame([spymaster, island], [island]);
+    const spymasterInst = findCard(state, 'goblin-spymaster')!;
+    state = moveToZone(state, spymasterInst.instanceId, 'battlefield');
+    state = registerBattlefieldAbilities(state, spymasterInst.instanceId);
+    state = { ...state, activePlayerIndex: 0, priorityPlayerIndex: 0, phase: 'ending', step: 'end' };
+    state = checkTriggersForEvent(state, { kind: 'EndStepStart', activePlayerId: 'p1' });
+
+    expect(state.pendingTriggers).toHaveLength(0);
+  });
+});
+
+// ============================================================================
 // LANDFALL TRIGGER PIPELINE
 // ============================================================================
 
@@ -548,6 +1062,52 @@ describe('YouCastSpell Trigger Pipeline', () => {
 
     // Should have gained 1 life
     expect(state.players[0].life).toBe(lifeBefore + 1);
+  });
+
+  it('fires Vivi-style triggers only for noncreature spells and resolves self counter plus opponent damage', () => {
+    const vivi = makeVanillaCreature('vivi', 'Vivi Ornitier', '{1}{U}{R}');
+    vivi.oracle_text = 'Whenever you cast a noncreature spell, put a +1/+1 counter on Vivi Ornitier and it deals 1 damage to each opponent.';
+    vivi.power = 0;
+    vivi.toughness = 3;
+
+    const opt = makeInstant('opt', 'Opt', 'Draw a card.');
+    const bear = makeVanillaCreature('bear', 'Grizzly Bears', '{1}{G}');
+    const island = makeLand('island', 'Island');
+
+    let state = createTestGame(
+      [vivi, opt, bear, island, island],
+      [island],
+    );
+
+    const viviInst = findCard(state, 'vivi')!;
+    state = moveToZone(state, viviInst.instanceId, 'battlefield');
+    state = registerBattlefieldAbilities(state, viviInst.instanceId);
+
+    const abilities = state.battlefieldAbilities.get(viviInst.instanceId);
+    expect(abilities!.some(a => a.trigger.kind === 'CastNoncreatureSpell')).toBe(true);
+
+    const bearInst = findCard(state, 'bear')!;
+    state = moveToZone(state, bearInst.instanceId, 'hand');
+    state = giveMana(state, 'p1', 5, 'G');
+    state = { ...state, activePlayerIndex: 0, phase: 'precombat_main' as any, step: 'upkeep' as any };
+    state = castSpell(state, 'p1', bearInst.instanceId);
+    expect(state.pendingTriggers).toHaveLength(0);
+    state = resolveTopOfStack(state);
+
+    const optInst = findCard(state, 'opt')!;
+    state = moveToZone(state, optInst.instanceId, 'hand');
+    state = giveMana(state, 'p1', 1, 'U');
+    const opponentLifeBefore = state.players[1].life;
+
+    state = castSpell(state, 'p1', optInst.instanceId);
+    expect(state.pendingTriggers).toHaveLength(1);
+    expect(state.pendingTriggers[0].ability.trigger.kind).toBe('CastNoncreatureSpell');
+
+    state = putTriggersOnStack(state);
+    state = resolveTopOfStack(state);
+
+    expect(state.cards.get(viviInst.instanceId)!.counters['+1/+1']).toBe(1);
+    expect(state.players[1].life).toBe(opponentLifeBefore - 1);
   });
 });
 

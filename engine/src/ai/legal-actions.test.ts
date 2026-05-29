@@ -197,6 +197,107 @@ describe('getLegalActions', () => {
 
       expect(castActions).toHaveLength(0);
     });
+
+    it('generates counterspell actions targeting spells on the stack', () => {
+      const state = createTestState({
+        priorityPlayerIndex: 0,
+        activePlayerIndex: 1,
+        phase: 'combat',
+        stack: [{
+          kind: 'Spell',
+          id: 'stack_1',
+          cardInstanceId: 'spell1',
+          casterId: 'p2',
+          targets: [],
+        }],
+      });
+      state.players[0].manaPool = { W: 0, U: 2, B: 0, R: 0, G: 0, C: 0 };
+
+      addCard(state, 'spell1', 'p2', 'hand', {
+        name: 'Lightning Bolt',
+        type_line: 'Instant',
+        card_types: ['instant'],
+      });
+      addCard(state, 'counter1', 'p1', 'hand', {
+        name: 'Counterspell',
+        type_line: 'Instant',
+        oracle_text: 'Counter target spell.',
+        mana_cost: '{U}{U}',
+        cmc: 2,
+        card_types: ['instant'],
+      });
+
+      const actions = getLegalActions(state, 'p1');
+      const castActions = actions.filter(a => a.kind === 'CastSpell' && a.cardInstanceId === 'counter1');
+
+      expect(castActions).toContainEqual({
+        kind: 'CastSpell',
+        cardInstanceId: 'counter1',
+        targets: ['spell1'],
+      });
+    });
+
+    it('does not generate Essence Scatter with no creature spell on the stack', () => {
+      const state = createTestState({
+        priorityPlayerIndex: 0,
+        activePlayerIndex: 0,
+        phase: 'precombat_main',
+      });
+      state.players[0].manaPool = { W: 0, U: 2, B: 0, R: 0, G: 0, C: 0 };
+
+      addCard(state, 'scatter1', 'p1', 'hand', {
+        name: 'Essence Scatter',
+        type_line: 'Instant',
+        oracle_text: 'Counter target creature spell.',
+        mana_cost: '{1}{U}',
+        cmc: 2,
+        card_types: ['instant'],
+      });
+
+      const actions = getLegalActions(state, 'p1');
+      expect(actions.some(a => a.kind === 'CastSpell' && a.cardInstanceId === 'scatter1')).toBe(false);
+    });
+
+    it('generates Essence Scatter only for creature spells on the stack', () => {
+      const state = createTestState({
+        priorityPlayerIndex: 0,
+        activePlayerIndex: 1,
+        phase: 'combat',
+      });
+      state.players[0].manaPool = { W: 0, U: 2, B: 0, R: 0, G: 0, C: 0 };
+
+      addCard(state, 'bear-spell', 'p2', 'hand', {
+        name: 'Grizzly Bears',
+        type_line: 'Creature - Bear',
+        card_types: ['creature'],
+      });
+      addCard(state, 'bolt-spell', 'p2', 'hand', {
+        name: 'Lightning Bolt',
+        type_line: 'Instant',
+        card_types: ['instant'],
+      });
+      addCard(state, 'scatter1', 'p1', 'hand', {
+        name: 'Essence Scatter',
+        type_line: 'Instant',
+        oracle_text: 'Counter target creature spell.',
+        mana_cost: '{1}{U}',
+        cmc: 2,
+        card_types: ['instant'],
+      });
+      state.stack = [
+        { kind: 'Spell', id: 'stack_creature', cardInstanceId: 'bear-spell', casterId: 'p2', targets: [] },
+        { kind: 'Spell', id: 'stack_instant', cardInstanceId: 'bolt-spell', casterId: 'p2', targets: [] },
+      ];
+
+      const actions = getLegalActions(state, 'p1');
+      const scatterActions = actions.filter(a => a.kind === 'CastSpell' && a.cardInstanceId === 'scatter1');
+
+      expect(scatterActions).toEqual([{
+        kind: 'CastSpell',
+        cardInstanceId: 'scatter1',
+        targets: ['bear-spell'],
+      }]);
+    });
   });
 
   describe('ActivateManaAbility actions', () => {
@@ -258,6 +359,128 @@ describe('getLegalActions', () => {
       expect(manaActions).toHaveLength(2);
       expect(manaActions.find(a => a.kind === 'ActivateManaAbility' && a.color === 'W')).toBeDefined();
       expect(manaActions.find(a => a.kind === 'ActivateManaAbility' && a.color === 'U')).toBeDefined();
+    });
+
+    it('does not generate Temple of the False God mana before five lands', () => {
+      const state = createTestState({ priorityPlayerIndex: 0 });
+
+      addCard(state, 'temple1', 'p1', 'battlefield', {
+        name: 'Temple of the False God',
+        type_line: 'Land',
+        oracle_text: '{T}: Add {C}{C}. Activate only if you control five or more lands.',
+        card_types: ['land'],
+      });
+
+      const actions = getLegalActions(state, 'p1');
+      const manaActions = actions.filter(a => a.kind === 'ActivateManaAbility' && a.cardInstanceId === 'temple1');
+
+      expect(manaActions).toHaveLength(0);
+    });
+
+    it('generates Temple of the False God mana at five lands', () => {
+      const state = createTestState({ priorityPlayerIndex: 0 });
+
+      addCard(state, 'temple1', 'p1', 'battlefield', {
+        name: 'Temple of the False God',
+        type_line: 'Land',
+        oracle_text: '{T}: Add {C}{C}. Activate only if you control five or more lands.',
+        card_types: ['land'],
+      });
+      for (let i = 0; i < 4; i++) {
+        addCard(state, `land${i}`, 'p1', 'battlefield', {
+          name: `Island ${i}`,
+          type_line: 'Basic Land - Island',
+          card_types: ['land'],
+        });
+      }
+
+      const actions = getLegalActions(state, 'p1');
+      const manaActions = actions.filter(a => a.kind === 'ActivateManaAbility' && a.cardInstanceId === 'temple1');
+
+      expect(manaActions).toEqual([{
+        kind: 'ActivateManaAbility',
+        cardInstanceId: 'temple1',
+        color: 'C',
+      }]);
+    });
+
+    it('generates mana actions for creature mana abilities', () => {
+      const state = createTestState({ priorityPlayerIndex: 0 });
+
+      addCard(state, 'sage1', 'p1', 'battlefield', {
+        name: 'Somberwald Sage',
+        type_line: 'Creature — Human Druid',
+        oracle_text: '{T}: Add three mana of any one color. Spend this mana only to cast creature spells.',
+        card_types: ['creature'],
+      });
+      state.cards.get('sage1')!.summoningSick = false;
+
+      const actions = getLegalActions(state, 'p1');
+      const manaActions = actions.filter(a => a.kind === 'ActivateManaAbility' && a.cardInstanceId === 'sage1');
+
+      expect(manaActions).toHaveLength(5);
+      expect(manaActions.map(a => a.kind === 'ActivateManaAbility' ? a.color : null).sort()).toEqual(['B', 'G', 'R', 'U', 'W']);
+    });
+
+    it('does not generate tap mana actions for summoning-sick creatures', () => {
+      const state = createTestState({ priorityPlayerIndex: 0 });
+
+      addCard(state, 'sage1', 'p1', 'battlefield', {
+        name: 'Somberwald Sage',
+        type_line: 'Creature - Human Druid',
+        oracle_text: '{T}: Add three mana of any one color. Spend this mana only to cast creature spells.',
+        card_types: ['creature'],
+      });
+
+      const actions = getLegalActions(state, 'p1');
+      const manaActions = actions.filter(a => a.kind === 'ActivateManaAbility' && a.cardInstanceId === 'sage1');
+
+      expect(manaActions).toHaveLength(0);
+    });
+
+    it('allows tap mana actions for summoning-sick creatures with haste', () => {
+      const state = createTestState({ priorityPlayerIndex: 0 });
+
+      addCard(state, 'druid1', 'p1', 'battlefield', {
+        name: 'Hasty Mana Druid',
+        type_line: 'Creature - Elf Druid',
+        oracle_text: 'Haste\n{T}: Add {G}.',
+        keywords: ['Haste'],
+        card_types: ['creature'],
+      });
+
+      const actions = getLegalActions(state, 'p1');
+      const manaActions = actions.filter(a => a.kind === 'ActivateManaAbility' && a.cardInstanceId === 'druid1');
+
+      expect(manaActions).toEqual([{
+        kind: 'ActivateManaAbility',
+        cardInstanceId: 'druid1',
+        color: 'G',
+      }]);
+    });
+
+    it('generates hand-exile mana actions for Elvish Spirit Guide', () => {
+      const state = createTestState({ priorityPlayerIndex: 0 });
+
+      addCard(state, 'guide1', 'p1', 'hand', {
+        name: 'Elvish Spirit Guide',
+        type_line: 'Creature - Elf Spirit',
+        oracle_text: 'Exile Elvish Spirit Guide from your hand: Add {G}.',
+        mana_cost: '{2}{G}',
+        cmc: 3,
+        colors: ['G'],
+        color_identity: ['G'],
+        card_types: ['creature'],
+      });
+
+      const actions = getLegalActions(state, 'p1');
+      const manaActions = actions.filter(a => a.kind === 'ActivateManaAbility' && a.cardInstanceId === 'guide1');
+
+      expect(manaActions).toEqual([{
+        kind: 'ActivateManaAbility',
+        cardInstanceId: 'guide1',
+        color: 'G',
+      }]);
     });
   });
 
@@ -465,6 +688,58 @@ describe('getLegalTargets', () => {
 
     expect(targets).toContain('creature1');
     expect(targets).not.toContain('creature2');
+  });
+
+  it('returns spells on the stack for Spell target type', () => {
+    const state = createTestState();
+
+    addCard(state, 'spell1', 'p2', 'hand', {
+      name: 'Lightning Bolt',
+      type_line: 'Instant',
+      card_types: ['instant'],
+    });
+    state.stack = [{
+      kind: 'Spell',
+      id: 'stack_1',
+      cardInstanceId: 'spell1',
+      casterId: 'p2',
+      targets: [],
+    }];
+
+    const targets = getLegalTargets(state, 'p1', {
+      id: 'target1',
+      type: 'Spell',
+      count: 1,
+    });
+
+    expect(targets).toEqual(['spell1']);
+  });
+
+  it('returns only creature spells for CreatureSpell target type', () => {
+    const state = createTestState();
+
+    addCard(state, 'creature-spell', 'p2', 'hand', {
+      name: 'Grizzly Bears',
+      type_line: 'Creature - Bear',
+      card_types: ['creature'],
+    });
+    addCard(state, 'instant-spell', 'p2', 'hand', {
+      name: 'Lightning Bolt',
+      type_line: 'Instant',
+      card_types: ['instant'],
+    });
+    state.stack = [
+      { kind: 'Spell', id: 'stack_creature', cardInstanceId: 'creature-spell', casterId: 'p2', targets: [] },
+      { kind: 'Spell', id: 'stack_instant', cardInstanceId: 'instant-spell', casterId: 'p2', targets: [] },
+    ];
+
+    const targets = getLegalTargets(state, 'p1', {
+      id: 'target1',
+      type: 'CreatureSpell',
+      count: 1,
+    });
+
+    expect(targets).toEqual(['creature-spell']);
   });
 });
 

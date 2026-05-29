@@ -1,14 +1,42 @@
-import { defineConfig } from 'vite'
+import { defineConfig, loadEnv, type PluginOption } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
 // https://vitejs.dev/config/
-export default defineConfig({
-  plugins: [
-    react(),
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, '.', '');
+  const adsenseClientId = env.VITE_ADSENSE_CLIENT_ID?.trim();
+  const adsEnabled = env.VITE_ENABLE_ADS === 'true' && Boolean(adsenseClientId);
+  const plugins: PluginOption[] = [react()];
+
+  if (adsEnabled) {
+    plugins.push({
+      name: 'magicbrains-adsense-loader',
+      transformIndexHtml() {
+        return [
+          {
+            tag: 'script',
+            attrs: {
+              async: true,
+              src: `https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${adsenseClientId}`,
+              crossorigin: 'anonymous',
+              'data-magicbrains-adsense': 'true',
+            },
+            injectTo: 'head',
+          },
+        ];
+      },
+    });
+  }
+
+  plugins.push(
     VitePWA({
       registerType: 'autoUpdate',
+      selfDestroying: true,
       workbox: {
+        cleanupOutdatedCaches: true,
+        clientsClaim: true,
+        skipWaiting: true,
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
         runtimeCaching: [
           {
@@ -41,11 +69,11 @@ export default defineConfig({
         ],
       },
       manifest: {
-        name: 'Magic Brains - MTG Commander',
+        name: 'Magic Brains - MTG Commander Practice',
         short_name: 'Magic Brains',
-        description: 'MTG Commander deck generator and AI game',
-        theme_color: '#292524',
-        background_color: '#1c1917',
+        description: 'MTG Commander practice with early browser reps and post-game play-by-play review',
+        theme_color: '#17120f',
+        background_color: '#17120f',
         display: 'standalone',
         icons: [
           { src: 'icon-192.png', sizes: '192x192', type: 'image/png' },
@@ -53,20 +81,24 @@ export default defineConfig({
         ],
       },
     }),
-  ],
-  server: {
-    host: "0.0.0.0",
-    allowedHosts: true,
-    proxy: {
-      '/api': {
-        target: 'http://localhost:8000',
-        changeOrigin: true,
-      },
-      '/shelector-api': {
-        target: 'http://localhost:8100',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/shelector-api/, ''),
+  );
+
+  return {
+    plugins,
+    server: {
+      host: "0.0.0.0",
+      allowedHosts: true,
+      proxy: {
+        '/api': {
+          target: 'http://localhost:8000',
+          changeOrigin: true,
+        },
+        '/shelector-api': {
+          target: 'http://localhost:8100',
+          changeOrigin: true,
+          rewrite: (path) => path.replace(/^\/shelector-api/, ''),
+        }
       }
     }
-  }
+  };
 })

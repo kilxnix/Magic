@@ -1,8 +1,9 @@
-import { describe, it, expect } from 'vitest';
+import { beforeEach, describe, it, expect } from 'vitest';
 import { checkStateBasedActions, cleanupDamage } from './state-based';
 import { initGameState, getCardsInZone } from './game-state';
 import { CardDefinition } from './types';
 import { makeTestState } from './__tests__/test-helpers';
+import { clearReplacements, createExileInsteadOfDieEffect, registerReplacement } from './effects/replacement';
 
 function makeBear(id: string = 'bear-1'): CardDefinition {
   return {
@@ -22,6 +23,10 @@ function makeBear(id: string = 'bear-1'): CardDefinition {
 }
 
 describe('State-Based Actions', () => {
+  beforeEach(() => {
+    clearReplacements();
+  });
+
   it('creature with damage >= toughness moves to graveyard', () => {
     const decks = [
       { playerId: 'p1', name: 'Alice', cards: [makeBear()], commanderId: 'cmd1' },
@@ -33,6 +38,21 @@ describe('State-Based Actions', () => {
 
     const next = checkStateBasedActions(state);
     expect(next.cards.get(card.instanceId)!.zone).toBe('graveyard');
+  });
+
+  it('applies dies-to-exile replacement to lethal damage state-based death', () => {
+    const decks = [
+      { playerId: 'p1', name: 'Alice', cards: [makeBear()], commanderId: 'cmd1' },
+      { playerId: 'p2', name: 'Bob', cards: [], commanderId: 'cmd2' },
+    ];
+    let state = initGameState(decks);
+    const card = getCardsInZone(state, 'p1', 'library')[0];
+    state.cards.set(card.instanceId, { ...card, zone: 'battlefield', damage: 2 });
+    registerReplacement(createExileInsteadOfDieEffect('rest-in-peace', 'p2'));
+
+    const next = checkStateBasedActions(state);
+    expect(next.cards.get(card.instanceId)!.zone).toBe('exile');
+    expect(next.cards.get(card.instanceId)!.damage).toBe(0);
   });
 
   it('creature with damage > toughness also dies', () => {

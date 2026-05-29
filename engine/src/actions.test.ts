@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { playLand, canPlayLand, tapLandForMana, drawCards } from './actions';
 import { initGameState, getCardsInZone } from './game-state';
 import { CardDefinition } from './types';
+import { populateParsedCache } from './cards/card-parser-cache';
+import { getLegalActions } from './ai/legal-actions';
 
 function makeForest(): CardDefinition {
   return {
@@ -28,6 +30,21 @@ function makeIsland(): CardDefinition {
     cmc: 0,
     colors: [],
     color_identity: ['U'],
+    keywords: [],
+    card_types: ['land'],
+  };
+}
+
+function makeStompingGround(): CardDefinition {
+  return {
+    id: 'stomping-ground-1',
+    name: 'Stomping Ground',
+    type_line: 'Land — Mountain Forest',
+    oracle_text: 'As Stomping Ground enters, you may pay 2 life. If you don\'t, it enters tapped.',
+    mana_cost: '',
+    cmc: 0,
+    colors: [],
+    color_identity: ['R', 'G'],
     keywords: [],
     card_types: ['land'],
   };
@@ -153,6 +170,33 @@ describe('Land Actions', () => {
       expect(played.zone).toBe('battlefield');
       expect(next.players[0].hasPlayedLand).toBe(true);
     });
+
+    it('supports generic shock-land pay-life entry choices', () => {
+      const decks = [{
+        playerId: 'p1', name: 'Alice',
+        cards: [makeStompingGround()], commanderId: 'cmd1',
+      }, {
+        playerId: 'p2', name: 'Bob',
+        cards: [], commanderId: 'cmd2',
+      }];
+      let state = initGameState(decks);
+      const card = getCardsInZone(state, 'p1', 'library')[0];
+      state.cards.set(card.instanceId, { ...card, zone: 'hand' });
+      state = { ...state, phase: 'precombat_main' };
+
+      const tappedDefault = playLand(state, 'p1', card.instanceId);
+      expect(tappedDefault.cards.get(card.instanceId)?.tapped).toBe(true);
+      expect(tappedDefault.players[0].life).toBe(40);
+
+      state = initGameState(decks);
+      const secondCard = getCardsInZone(state, 'p1', 'library')[0];
+      state.cards.set(secondCard.instanceId, { ...secondCard, zone: 'hand' });
+      state = { ...state, phase: 'precombat_main' };
+
+      const paid = playLand(state, 'p1', secondCard.instanceId, { payLifeToEnterUntapped: true });
+      expect(paid.cards.get(secondCard.instanceId)?.tapped).toBe(false);
+      expect(paid.players[0].life).toBe(38);
+    });
   });
 
   describe('tapLandForMana', () => {
@@ -186,6 +230,210 @@ describe('Land Actions', () => {
       state.cards.set(card.instanceId, { ...card, zone: 'battlefield', tapped: true });
 
       expect(() => tapLandForMana(state, 'p1', card.instanceId, 'G')).toThrow();
+    });
+
+    it("adds G for each creature from Gaea's Cradle", () => {
+      const decks = [{
+        playerId: 'p1', name: 'Alice',
+        cards: [makeCreature(), makeCreature()], commanderId: 'cmd1',
+      }, {
+        playerId: 'p2', name: 'Bob',
+        cards: [], commanderId: 'cmd2',
+      }];
+      let state = initGameState(decks);
+      const cradleDef = populateParsedCache({
+        id: 'gaeas-cradle',
+        name: "Gaea's Cradle",
+        type_line: 'Legendary Land',
+        oracle_text: '{T}: Add {G} for each creature you control.',
+        mana_cost: '',
+        cmc: 0,
+        colors: [],
+        color_identity: ['G'],
+        keywords: [],
+        card_types: ['land'],
+      });
+      state.cardDefinitions.set(cradleDef.id, cradleDef);
+      state.cards.set('cradle-1', {
+        instanceId: 'cradle-1',
+        definitionId: cradleDef.id,
+        ownerId: 'p1',
+        zone: 'battlefield',
+        tapped: false,
+        summoningSick: false,
+        counters: {},
+        damage: 0,
+        isCommander: false,
+      });
+      const creatures = getCardsInZone(state, 'p1', 'library');
+      for (const creature of creatures) {
+        state.cards.set(creature.instanceId, { ...creature, zone: 'battlefield', summoningSick: false });
+      }
+
+      const next = tapLandForMana(state, 'p1', 'cradle-1', 'G');
+
+      expect(next.players[0].manaPool.G).toBe(2);
+      expect(next.cards.get('cradle-1')?.tapped).toBe(true);
+    });
+
+    it('exiles Elvish Spirit Guide from hand to add green mana', () => {
+      const decks = [{
+        playerId: 'p1', name: 'Alice',
+        cards: [], commanderId: 'cmd1',
+      }, {
+        playerId: 'p2', name: 'Bob',
+        cards: [], commanderId: 'cmd2',
+      }];
+      let state = initGameState(decks);
+      const spiritGuideDef = populateParsedCache({
+        id: 'elvish-spirit-guide',
+        name: 'Elvish Spirit Guide',
+        type_line: 'Creature — Elf Spirit',
+        oracle_text: 'Exile Elvish Spirit Guide from your hand: Add {G}.',
+        mana_cost: '{2}{G}',
+        cmc: 3,
+        colors: ['G'],
+        color_identity: ['G'],
+        keywords: [],
+        card_types: ['creature'],
+        power: 2,
+        toughness: 2,
+      });
+      state.cardDefinitions.set(spiritGuideDef.id, spiritGuideDef);
+      state.cards.set('esg-1', {
+        instanceId: 'esg-1',
+        definitionId: spiritGuideDef.id,
+        ownerId: 'p1',
+        zone: 'hand',
+        tapped: false,
+        summoningSick: false,
+        counters: {},
+        damage: 0,
+        isCommander: false,
+      });
+
+      const next = tapLandForMana(state, 'p1', 'esg-1', 'G');
+
+      expect(next.players[0].manaPool.G).toBe(1);
+      expect(next.cards.get('esg-1')?.zone).toBe('exile');
+    });
+
+    it('does not let Skirk Prospector sacrifice itself for its filtered mana cost', () => {
+      const skirkDef: CardDefinition = {
+        id: 'skirk-prospector',
+        name: 'Skirk Prospector',
+        type_line: 'Creature - Goblin',
+        oracle_text: 'Sacrifice a Goblin: Add {R}.',
+        mana_cost: '{R}',
+        cmc: 1,
+        colors: ['R'],
+        color_identity: ['R'],
+        keywords: [],
+        card_types: ['creature'],
+        power: 1,
+        toughness: 1,
+        manaProduction: {
+          colors: ['R'],
+          amounts: { R: 1 },
+          isTapAbility: false,
+          requiresSacrifice: false,
+          sacrificeFilter: { subtypes: ['Goblin'] },
+        },
+      };
+      let state = initGameState([
+        { playerId: 'p1', name: 'Alice', cards: [], commanderId: 'cmd1' },
+        { playerId: 'p2', name: 'Bob', cards: [], commanderId: 'cmd2' },
+      ]);
+      state.cardDefinitions.set(skirkDef.id, skirkDef);
+      state.cards.set('skirk-1', {
+        instanceId: 'skirk-1',
+        definitionId: skirkDef.id,
+        ownerId: 'p1',
+        zone: 'battlefield',
+        tapped: false,
+        summoningSick: false,
+        counters: {},
+        damage: 0,
+        isCommander: false,
+      });
+
+      expect(() => tapLandForMana(state, 'p1', 'skirk-1', 'R')).toThrow('No sacrifice candidate');
+      expect(getLegalActions(state, 'p1').some(action =>
+        action.kind === 'ActivateManaAbility' && action.cardInstanceId === 'skirk-1'
+      )).toBe(false);
+      expect(state.cards.get('skirk-1')?.zone).toBe('battlefield');
+    });
+
+    it('uses another Goblin for Skirk Prospector and leaves the Prospector alive', () => {
+      const skirkDef: CardDefinition = {
+        id: 'skirk-prospector',
+        name: 'Skirk Prospector',
+        type_line: 'Creature - Goblin',
+        oracle_text: 'Sacrifice a Goblin: Add {R}.',
+        mana_cost: '{R}',
+        cmc: 1,
+        colors: ['R'],
+        color_identity: ['R'],
+        keywords: [],
+        card_types: ['creature'],
+        power: 1,
+        toughness: 1,
+        manaProduction: {
+          colors: ['R'],
+          amounts: { R: 1 },
+          isTapAbility: false,
+          requiresSacrifice: false,
+          sacrificeFilter: { subtypes: ['Goblin'] },
+        },
+      };
+      const goblinDef: CardDefinition = {
+        id: 'goblin-token',
+        name: 'Goblin Token',
+        type_line: 'Token Creature - Goblin',
+        oracle_text: '',
+        mana_cost: '',
+        cmc: 0,
+        colors: ['R'],
+        color_identity: ['R'],
+        keywords: [],
+        card_types: ['creature'],
+        power: 1,
+        toughness: 1,
+      };
+      let state = initGameState([
+        { playerId: 'p1', name: 'Alice', cards: [], commanderId: 'cmd1' },
+        { playerId: 'p2', name: 'Bob', cards: [], commanderId: 'cmd2' },
+      ]);
+      state.cardDefinitions.set(skirkDef.id, skirkDef);
+      state.cardDefinitions.set(goblinDef.id, goblinDef);
+      state.cards.set('skirk-1', {
+        instanceId: 'skirk-1',
+        definitionId: skirkDef.id,
+        ownerId: 'p1',
+        zone: 'battlefield',
+        tapped: false,
+        summoningSick: false,
+        counters: {},
+        damage: 0,
+        isCommander: false,
+      });
+      state.cards.set('goblin-1', {
+        instanceId: 'goblin-1',
+        definitionId: goblinDef.id,
+        ownerId: 'p1',
+        zone: 'battlefield',
+        tapped: false,
+        summoningSick: false,
+        counters: {},
+        damage: 0,
+        isCommander: false,
+      });
+
+      const next = tapLandForMana(state, 'p1', 'skirk-1', 'R');
+
+      expect(next.players[0].manaPool.R).toBe(1);
+      expect(next.cards.get('skirk-1')?.zone).toBe('battlefield');
+      expect(next.cards.get('goblin-1')?.zone).toBe('graveyard');
     });
   });
 

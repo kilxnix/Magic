@@ -109,6 +109,33 @@ def _mock_card_db() -> dict:
             "oracle_text": "Partner",
             "color_identity": ["R", "G"],
         },
+        "The Fourteenth Doctor": {
+            "name": "The Fourteenth Doctor",
+            "type_line": "Legendary Creature - Time Lord Doctor",
+            "oracle_text": "Doctor's companion",
+            "color_identity": ["G", "R", "U", "W"],
+        },
+        "Clara Oswald": {
+            "name": "Clara Oswald",
+            "type_line": "Legendary Creature - Human Advisor",
+            "oracle_text": (
+                "Impossible Girl - If Clara Oswald is your commander, choose a color before the game begins. "
+                "Clara Oswald is the chosen color.\nDoctor's companion"
+            ),
+            "color_identity": ["G"],
+        },
+        "Eerie Ultimatum": {
+            "name": "Eerie Ultimatum",
+            "type_line": "Sorcery",
+            "oracle_text": "Return any number of permanent cards with different names from your graveyard to the battlefield.",
+            "color_identity": ["W", "B", "G"],
+        },
+        "The World Tree": {
+            "name": "The World Tree",
+            "type_line": "Land",
+            "oracle_text": "{T}: Add {G}.",
+            "color_identity": ["W", "U", "B", "R", "G"],
+        },
     }
 
 
@@ -178,6 +205,13 @@ class TestParseDecklist:
         assert result["lands"].count("Wastes") == 5
         assert result["errors"] == []
 
+    def test_snow_basic_land_duplicates_allowed(self):
+        text = "14 Snow-Covered Forest"
+        result = parse_decklist(text)
+        assert result["lands"].count("Snow-Covered Forest") == 14
+        assert result["total"] == 14
+        assert result["errors"] == []
+
     def test_nonbasic_duplicate_flagged(self):
         text = "1 Sol Ring\n1 Sol Ring"
         result = parse_decklist(text)
@@ -212,6 +246,44 @@ class TestParseDecklist:
         assert result["lands"].count("Forest") == 10
         assert result["lands"].count("Island") == 5
         assert result["total"] == 1 + 2 + 15  # commander + 2 cards + 15 lands
+
+    def test_category_header_ends_commander_section(self):
+        text = (
+            "Commander\n"
+            "1 Atraxa, Praetors' Voice\n"
+            "Artifacts (2)\n"
+            "1 Sol Ring (C21) 267 *F* # ramp\n"
+            "1 [C21:123] Arcane Signet\n"
+            "Lands (2)\n"
+            "2 Forest\n"
+        )
+        result = parse_decklist(text)
+        assert result["commander"] == "Atraxa, Praetors' Voice"
+        assert result["commanders"] == ["Atraxa, Praetors' Voice"]
+        assert result["cards"] == ["Sol Ring", "Arcane Signet"]
+        assert result["lands"] == ["Forest", "Forest"]
+
+    def test_sideboard_prefixes_and_skip_sections(self):
+        text = (
+            "Deck\n"
+            "1 Sol Ring\n"
+            "SB 1 Arcane Signet\n"
+            "Maybeboard (1)\n"
+            "1 Rhystic Study\n"
+            "Deck\n"
+            "1 Forest\n"
+        )
+        result = parse_decklist(text, singleton=False)
+        assert result["cards"] == ["Sol Ring"]
+        assert result["sideboard"] == ["Arcane Signet"]
+        assert result["lands"] == ["Forest"]
+        assert "Rhystic Study" not in result["cards"]
+
+    def test_rejects_unbounded_quantities(self):
+        text = "999999 Forest"
+        result = parse_decklist(text)
+        assert result["lands"].count("Forest") == 250
+        assert any("capped" in e for e in result["errors"])
 
 
 # ---------------------------------------------------------------------------
@@ -322,6 +394,19 @@ class TestValidateDeck:
         color_errors = [e for e in result["errors"] if "color identity" in e.lower()]
         assert color_errors == []
 
+    def test_snow_basic_lands_always_valid(self):
+        card_db = _mock_card_db()
+        parsed = {
+            "commander": "Krenko, Mob Boss",
+            "cards": [],
+            "lands": ["Snow-Covered Mountain"] * 99,
+            "total": 100,
+            "errors": [],
+        }
+        result = validate_deck(parsed, card_db)
+        assert result["valid"]
+        assert parsed["lands"].count("Snow-Covered Mountain") == 99
+
     def test_reclassify_nonbasic_land(self):
         """Cards with 'Land' in type_line should move to the lands list."""
         card_db = _mock_card_db()
@@ -431,3 +516,21 @@ class TestValidateDeck:
         assert result["valid"]
         assert parsed["commanders"] == ["Ravos, Soultender", "Tana, the Bloodsower"]
         assert parsed["total"] == 100
+
+    def test_clara_oswald_commander_choice_allows_any_color(self):
+        card_db = _mock_card_db()
+        parsed = {
+            "commander": "The Fourteenth Doctor // Clara Oswald",
+            "cards": ["Eerie Ultimatum"],
+            "lands": ["The World Tree"] + ["Forest"] * 96,
+            "total": 100,
+            "errors": [],
+        }
+
+        result = validate_deck(parsed, card_db)
+
+        assert result["valid"]
+        assert set(result["color_identity"]) == {"W", "U", "B", "R", "G"}
+        assert parsed["commanders"] == ["The Fourteenth Doctor", "Clara Oswald"]
+        color_errors = [e for e in result["errors"] if "color identity" in e.lower()]
+        assert color_errors == []

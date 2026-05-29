@@ -7,11 +7,13 @@
  */
 
 import { useEffect, useState } from 'react';
-import type { SimpleGameState, SimpleLegalAction, SimpleCard, LastPlayedCard } from '../hooks/useShelectorGame';
-import { Loader2, ChevronDown, ChevronRight, Search, X } from 'lucide-react';
+import type { LibraryManipulationChoice, SimpleGameState, SimpleLegalAction, SimpleCard, LastPlayedCard } from '../hooks/useShelectorGame';
+import type { EnginePrompt, EngineStateUpdate } from 'commander-engine';
+import { Loader2, ChevronDown, ChevronRight, Search, X, Lightbulb } from 'lucide-react';
 import { CardPickerModal } from './CardPickerModal';
 import { CardImage } from './CardImage';
 import { CARD_TILE_LAYOUT, FLOATING_TABLE_LAYOUT } from '../lib/gameBoardLayout';
+import { getNewPlayerSuggestion } from '../lib/newPlayerSuggestions';
 
 // Phase display names
 const PHASE_DISPLAY: Record<string, string> = {
@@ -73,23 +75,37 @@ interface GameBoardProps {
   onAction: (action: SimpleLegalAction) => void;
   mulliganPhase?: boolean;
   mulliganCount?: number;
+  mulliganBottomCount?: number;
+  selectedMulliganBottomIds?: string[];
   onKeepHand?: () => void;
   onMulligan?: () => void;
+  onToggleMulliganBottom?: (cardInstanceId: string) => void;
   discardPhase?: boolean;
   discardCount?: number;
   onDiscardCard?: (cardInstanceId: string) => void;
   tutorPhase?: boolean;
-  tutorCards?: { instanceId: string; name: string; typeLine: string; manaCost: string }[];
+  tutorCards?: { instanceId: string; name: string; typeLine: string; manaCost: string; oracleText?: string }[];
   tutorTitle?: string;
   onTutorPick?: (cardInstanceId: string) => void;
   onTutorCancel?: () => void;
+  libraryChoice?: LibraryManipulationChoice | null;
+  onResolveLibraryChoice?: (topIds: string[], movedIds: string[]) => void;
   undosRemaining?: number;
   onUndo?: () => void;
   coachMode?: boolean;
   onToggleCoach?: (on: boolean) => void;
+  newPlayerMode?: boolean;
+  onToggleNewPlayerMode?: (on: boolean) => void;
+  holdPriority?: boolean;
+  onToggleHoldPriority?: (on: boolean) => void;
+  collapseModeControlsOnMobile?: boolean;
   onUntapMana?: (cardInstanceId: string) => void;
+  onAdjustCounters?: (cardInstanceId: string, counterType: string, delta: number) => void;
   untappableCardIds?: string[];
   lastPlayedCard?: LastPlayedCard | null;
+  authorityUpdates?: EngineStateUpdate[];
+  lastStateUpdate?: EngineStateUpdate | null;
+  currentPrompt?: EnginePrompt | null;
 }
 
 /** Compute counter badge entries from a card's counters record */
@@ -105,6 +121,112 @@ function getBattlefieldRowKey(card: SimpleCard): BattlefieldRowKey {
   if (card.cardTypes.includes('artifact')) return 'artifacts';
   if (card.cardTypes.includes('enchantment')) return 'enchantments';
   return 'other';
+}
+
+type PlayerNameResolver = (playerId: string | undefined) => string;
+
+function summarizeStateUpdate(
+  update: EngineStateUpdate | null | undefined,
+  nameForPlayer: PlayerNameResolver = playerId => playerId || 'none',
+): string {
+  if (!update) return '';
+  const accepted = update.rulesEvents.find(event => event.kind === 'ActionAccepted');
+  const label = accepted?.kind === 'ActionAccepted' ? accepted.label || accepted.actionKind : 'State update';
+  const diffs = summarizeVisibleDiffs(update.visibleDiffs, nameForPlayer);
+  const prompt = update.prompt?.title;
+  return [label, diffs, prompt].filter(Boolean).join(' - ');
+}
+
+function stateUpdateActor(update: EngineStateUpdate, gameState: SimpleGameState): string {
+  const accepted = update.rulesEvents.find(event => event.kind === 'ActionAccepted');
+  if (accepted?.kind !== 'ActionAccepted') return 'Engine';
+  if (accepted.playerId === gameState.humanPlayer.id) return 'You';
+  return gameState.aiCommanderNames[accepted.playerId]
+    || gameState.aiPlayers.find(player => player.id === accepted.playerId)?.name
+    || accepted.playerId;
+}
+
+function summarizeVisibleDiffs(diffs: EngineStateUpdate['visibleDiffs'], nameForPlayer: PlayerNameResolver): string {
+  if (diffs.length === 0) return 'no visible board change';
+  const shown = diffs.slice(0, 2).map(diff => describeVisibleDiff(diff, nameForPlayer));
+  const extra = diffs.length > shown.length ? ` +${diffs.length - shown.length} more` : '';
+  return `${shown.join('; ')}${extra}`;
+}
+
+function describeVisibleDiff(diff: EngineStateUpdate['visibleDiffs'][number], nameForPlayer: PlayerNameResolver): string {
+  switch (diff.kind) {
+    case 'CardZoneChanged':
+      return `${diff.cardName || 'Card'}: ${diff.from || 'new'} -> ${diff.to || 'gone'}`;
+    case 'CardTappedChanged':
+      return `${diff.cardName || 'Card'} ${diff.to ? 'tapped' : 'untapped'}`;
+    case 'CounterChanged':
+      return `${diff.cardName || 'Card'} ${diff.counterType} ${diff.from} -> ${diff.to}`;
+    case 'CardDamageChanged':
+      return `${diff.cardName || 'Card'} damage ${diff.from} -> ${diff.to}`;
+    case 'CardSummoningSicknessChanged':
+      return `${diff.cardName || 'Card'} ${diff.to ? 'is summoning sick' : 'can tap/attack'}`;
+    case 'CardPhasedOutChanged':
+      return `${diff.cardName || 'Card'} ${diff.to ? 'phased out' : 'phased in'}`;
+    case 'AttachmentChanged':
+      return `${diff.cardName || 'Card'} attachment changed`;
+    case 'LifeChanged':
+      return `${nameForPlayer(diff.playerId)} life ${diff.from} -> ${diff.to}`;
+    case 'ManaPoolChanged':
+      return `${nameForPlayer(diff.playerId)} ${diff.color} mana ${diff.from} -> ${diff.to}`;
+    case 'PoisonChanged':
+      return `${nameForPlayer(diff.playerId)} poison ${diff.from} -> ${diff.to}`;
+    case 'PlayerLostChanged':
+      return diff.to ? `${nameForPlayer(diff.playerId)} lost` : `${nameForPlayer(diff.playerId)} returned`;
+    case 'CommanderDamageChanged':
+      return `${nameForPlayer(diff.playerId)} commander damage ${diff.from} -> ${diff.to}`;
+    case 'CommanderTaxChanged':
+      return `${nameForPlayer(diff.playerId)} commander tax ${diff.from} -> ${diff.to}`;
+    case 'CommanderCastCountChanged':
+      return `${nameForPlayer(diff.playerId)} commander casts ${diff.from} -> ${diff.to}`;
+    case 'PhaseChanged':
+      return `T${diff.to.turnNumber} ${diff.to.phase}`;
+    case 'PriorityChanged':
+      return `priority ${nameForPlayer(diff.from)} -> ${nameForPlayer(diff.to)}`;
+    case 'StackChanged':
+      return diff.toTop?.name
+        ? `stack ${diff.fromCount} -> ${diff.toCount}: ${diff.toTop.name}`
+        : `stack ${diff.fromCount} -> ${diff.toCount}`;
+    case 'CombatChanged':
+      return `combat ${diff.from?.attackers.length || 0}/${diff.from?.blockers.length || 0} -> ${diff.to?.attackers.length || 0}/${diff.to?.blockers.length || 0}`;
+    default: {
+      const _never: never = diff;
+      return _never;
+    }
+  }
+}
+
+const PROMPT_TYPE_LABELS: Record<string, string> = {
+  'main-action': 'Action',
+  priority: 'Priority',
+  'stack-response': 'Stack',
+  'declare-attackers': 'Attackers',
+  'declare-blockers': 'Blockers',
+  'game-over': 'Complete',
+};
+
+function promptMeta(prompt: EnginePrompt | null | undefined): string {
+  if (!prompt) return '';
+  const choiceCount = prompt.legalChoices.length;
+  const stackText = prompt.priority.stackSize > 0
+    ? ` - stack ${prompt.priority.stackSize}${prompt.priority.stackTop?.name ? `: ${prompt.priority.stackTop.name}` : ''}`
+    : '';
+  const passText = prompt.priority.passedPriorityPlayerIds.length > 0
+    ? ` - passed ${prompt.priority.passedPriorityPlayerIds.length}`
+    : '';
+  return `${choiceCount} option${choiceCount === 1 ? '' : 's'}${stackText}${passText}`;
+}
+
+function promptChoiceSummaryText(prompt: EnginePrompt | null | undefined): string {
+  const summary = prompt?.legalChoiceSummary;
+  if (!summary?.length) return '';
+  return summary
+    .map(group => `${group.label} ${group.count}`)
+    .join(' / ');
 }
 
 function groupBattlefieldCards(cards: SimpleCard[], stackLands: boolean): Record<BattlefieldRowKey, BattlefieldGroup[]> {
@@ -264,18 +386,26 @@ function getCounterProbability(
 function CardTile({
   card,
   playable,
+  targetable,
+  targetLabel,
   onClick,
   onInspect,
+  onHoverCard,
   compact,
   inspectable,
+  selected,
   stackCount = 1,
 }: {
   card: SimpleCard;
   playable: boolean;
+  targetable?: boolean;
+  targetLabel?: string;
   onClick?: () => void;
   onInspect?: () => void;
+  onHoverCard?: (card: SimpleCard | null) => void;
   compact?: boolean;
   inspectable?: boolean;
+  selected?: boolean;
   stackCount?: number;
 }) {
   const isCreature = card.cardTypes.includes('creature');
@@ -291,17 +421,27 @@ function CardTile({
   // Border color: playable > token > default
   const borderClass = playable
     ? 'border-green-500 bg-stone-700 hover:bg-stone-600 cursor-pointer ring-1 ring-green-500/50 shadow-lg shadow-green-900/20'
+    : targetable
+      ? 'border-sky-400 bg-sky-950/70 cursor-pointer ring-2 ring-sky-400/45 shadow-lg shadow-sky-950/30 hover:bg-sky-900/80'
+    : selected
+      ? 'border-amber-400 bg-amber-950/60 cursor-pointer ring-2 ring-amber-400/50 shadow-lg shadow-amber-950/20'
     : card.isToken
       ? `border-violet-500 bg-stone-800 ring-1 ring-violet-500/30 ${interactive ? 'cursor-pointer hover:bg-stone-700' : 'cursor-default'}`
       : `border-stone-600 bg-stone-800 ${interactive ? 'cursor-pointer hover:bg-stone-700' : 'cursor-default'}`;
 
   return (
-    <div className={`relative shrink-0 ${w}`}>
+    <div
+      className={`group relative shrink-0 ${w}`}
+      onMouseEnter={() => onHoverCard?.(card)}
+      onMouseLeave={() => onHoverCard?.(null)}
+      onFocus={() => onHoverCard?.(card)}
+      onBlur={() => onHoverCard?.(null)}
+    >
       <button
         type="button"
         onClick={onClick}
         disabled={!playable && !onClick}
-        title={playable ? 'Use card' : inspectable ? 'Inspect card' : card.name}
+        title={targetable ? targetLabel || 'Choose as target' : playable ? 'Use card' : inspectable ? 'Inspect card' : card.name}
         className={`
           absolute inset-0 flex h-full w-full flex-col justify-between
           overflow-hidden rounded-lg border text-left transition-all
@@ -376,10 +516,22 @@ function CardTile({
           </div>
         )}
 
+        {targetable && (
+          <div className="absolute left-1 top-1 rounded bg-sky-400 px-1 py-px text-[7px] font-black uppercase leading-none text-neutral-950 shadow">
+            Target
+          </div>
+        )}
+
         {/* Stack count */}
         {stackCount > 1 && (
           <div className="absolute top-1 left-1 rounded bg-amber-500 px-1.5 py-0.5 text-[9px] font-black leading-none text-neutral-950 shadow">
             x{stackCount}
+          </div>
+        )}
+
+        {selected && (
+          <div className="absolute inset-x-1 top-1 rounded bg-amber-400 px-1 py-px text-center text-[7px] font-black uppercase leading-none text-neutral-950">
+            Bottom
           </div>
         )}
 
@@ -426,6 +578,7 @@ function CardTile({
           <Search className="h-2.5 w-2.5" />
         </button>
       )}
+
     </div>
   );
 }
@@ -448,19 +601,115 @@ function ManaCostText({ manaCost }: { manaCost: string }) {
   );
 }
 
+function CardHoverPreview({
+  card,
+  actionLabel,
+  actionPaymentPreview,
+  unavailableHint,
+}: {
+  card: SimpleCard;
+  actionLabel?: string;
+  actionPaymentPreview?: string;
+  unavailableHint?: string;
+}) {
+  const isCreature = card.cardTypes.includes('creature');
+  const counters = getCounterBadges(card.counters);
+
+  return (
+    <div className="pointer-events-none fixed right-4 top-20 z-[65] hidden max-h-[calc(100vh-7rem)] w-[min(24rem,32vw)] overflow-hidden rounded-lg border border-amber-500/35 bg-neutral-950 shadow-2xl shadow-black/45 lg:block">
+      <div className="grid grid-cols-[7.5rem_1fr] gap-3 p-3">
+        <CardImage
+          cardName={card.name}
+          size="normal"
+          showHoverZoom={false}
+          className="aspect-[5/7] w-full overflow-hidden rounded-md bg-stone-200"
+        />
+        <div className="min-w-0 space-y-2">
+          <div>
+            <div className="line-clamp-2 text-sm font-black leading-tight text-stone-100">{card.name}</div>
+            {card.manaCost && (
+              <div className="mt-1 scale-75 origin-left">
+                <ManaCostText manaCost={card.manaCost} />
+              </div>
+            )}
+          </div>
+          <div className="rounded border border-neutral-800 bg-neutral-900 px-2 py-1 text-[11px] font-semibold leading-snug text-stone-300">
+            {card.typeLine || 'Card'}
+          </div>
+          {isCreature && card.power != null && card.toughness != null && (
+            <div className="inline-flex rounded border border-stone-600 bg-neutral-900 px-2 py-1 text-sm font-black text-stone-100">
+              {card.power}/{card.toughness}
+            </div>
+          )}
+          <div className="flex flex-wrap gap-1 text-[10px] font-bold uppercase tracking-wide">
+            <span className="rounded bg-stone-800 px-1.5 py-0.5 text-stone-300">{card.zone}</span>
+            {card.tapped && <span className="rounded bg-orange-950 px-1.5 py-0.5 text-orange-200">Tapped</span>}
+            {card.isCommander && <span className="rounded bg-amber-950 px-1.5 py-0.5 text-amber-200">Commander</span>}
+            {card.isToken && <span className="rounded bg-violet-950 px-1.5 py-0.5 text-violet-200">Token</span>}
+            {counters.map(({ label, count }) => (
+              <span key={label} className="rounded bg-green-950 px-1.5 py-0.5 text-green-200">
+                {label}: {count}
+              </span>
+            ))}
+          </div>
+        </div>
+      </div>
+      <div className="max-h-40 overflow-hidden border-t border-neutral-800 px-3 py-2">
+        {card.oracleText ? (
+          <div className="whitespace-pre-line text-xs leading-relaxed text-stone-200">{card.oracleText}</div>
+        ) : (
+          <div className="text-xs text-stone-500">No rules text.</div>
+        )}
+      </div>
+      {(actionLabel || unavailableHint) && (
+        <div className="border-t border-neutral-800 bg-neutral-900/85 px-3 py-2">
+          {actionLabel ? (
+            <div className="text-xs font-black text-green-200">{actionLabel}</div>
+          ) : (
+            <div className="text-xs font-semibold leading-snug text-stone-400">{unavailableHint}</div>
+          )}
+          {actionPaymentPreview && (
+            <div className="mt-1 rounded border border-amber-500/25 bg-amber-950/35 px-2 py-1 text-[11px] font-semibold text-amber-100">
+              {actionPaymentPreview}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function CardInspectorModal({
   card,
   actionLabel,
+  actionPaymentPreview,
+  unavailableHint,
+  secondaryActionLabel,
   onPrimaryAction,
+  onSecondaryAction,
+  onAdjustCounter,
   onClose,
 }: {
   card: SimpleCard;
   actionLabel?: string;
+  actionPaymentPreview?: string;
+  unavailableHint?: string;
+  secondaryActionLabel?: string;
   onPrimaryAction?: () => void;
+  onSecondaryAction?: () => void;
+  onAdjustCounter?: (counterType: string, delta: number) => void;
   onClose: () => void;
 }) {
   const isCreature = card.cardTypes.includes('creature');
   const counters = getCounterBadges(card.counters);
+  const [customCounter, setCustomCounter] = useState('');
+  const canAdjustCounters = card.zone === 'battlefield' && !!onAdjustCounter;
+  const quickCounters = ['+1/+1', '-1/-1', 'loyalty', 'shield', 'stun'];
+  const submitCustomCounter = (delta: number) => {
+    const counter = customCounter.trim();
+    if (!counter || !onAdjustCounter) return;
+    onAdjustCounter(counter, delta);
+  };
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -559,17 +808,100 @@ function CardInspectorModal({
               ))}
             </div>
 
-            {onPrimaryAction && actionLabel && (
-              <button
-                type="button"
-                onClick={() => {
-                  onPrimaryAction();
-                  onClose();
-                }}
-                className="min-h-[44px] rounded bg-green-700 px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-green-600"
-              >
-                {actionLabel}
-              </button>
+            {(onPrimaryAction && actionLabel) || (onSecondaryAction && secondaryActionLabel) ? (
+              <div className="flex flex-wrap gap-2">
+                {onPrimaryAction && actionLabel && (
+                  <div className="max-w-full">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onPrimaryAction();
+                        onClose();
+                      }}
+                      className="min-h-[44px] rounded bg-green-700 px-4 py-2 text-left text-sm font-bold text-white transition-colors hover:bg-green-600"
+                    >
+                      {actionLabel}
+                    </button>
+                    {actionPaymentPreview && (
+                      <div className="mt-1 max-w-sm rounded border border-amber-500/25 bg-amber-950/35 px-2 py-1 text-[11px] font-semibold text-amber-100">
+                        {actionPaymentPreview}
+                      </div>
+                    )}
+                  </div>
+                )}
+                {onSecondaryAction && secondaryActionLabel && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onSecondaryAction();
+                      onClose();
+                    }}
+                    className="min-h-[44px] rounded border border-red-600/40 bg-red-950/70 px-4 py-2 text-sm font-bold text-red-100 transition-colors hover:bg-red-900"
+                  >
+                    {secondaryActionLabel}
+                  </button>
+                )}
+              </div>
+            ) : unavailableHint ? (
+              <div className="rounded border border-sky-500/25 bg-sky-950/30 p-3 text-xs leading-relaxed text-sky-100">
+                <div className="mb-1 font-black uppercase tracking-wider text-sky-300">No legal action now</div>
+                {unavailableHint}
+              </div>
+            ) : null}
+
+            {canAdjustCounters && (
+              <div className="rounded border border-neutral-800 bg-neutral-900 p-3">
+                <div className="mb-2 text-[10px] font-bold uppercase tracking-wider text-stone-400">
+                  Manual Counters
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {quickCounters.map(counter => (
+                    <div key={counter} className="flex overflow-hidden rounded border border-neutral-700">
+                      <button
+                        type="button"
+                        onClick={() => onAdjustCounter(counter, -1)}
+                        className="min-h-9 min-w-9 bg-neutral-950 px-2 text-sm font-black text-stone-300 transition-colors hover:bg-neutral-800"
+                        title={`Remove ${counter}`}
+                      >
+                        -
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onAdjustCounter(counter, 1)}
+                        className="min-h-9 bg-neutral-950 px-2 text-xs font-bold text-stone-100 transition-colors hover:bg-neutral-800"
+                        title={`Add ${counter}`}
+                      >
+                        {counter}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <input
+                    type="text"
+                    value={customCounter}
+                    onChange={event => setCustomCounter(event.target.value)}
+                    placeholder="counter type"
+                    className="min-h-10 min-w-0 flex-1 rounded border border-neutral-700 bg-neutral-950 px-3 text-sm text-stone-100 placeholder:text-stone-600 focus:border-amber-400 focus:outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => submitCustomCounter(-1)}
+                    disabled={!customCounter.trim()}
+                    className="min-h-10 rounded border border-neutral-700 bg-neutral-950 px-3 text-sm font-bold text-stone-200 transition-colors hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    Remove
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => submitCustomCounter(1)}
+                    disabled={!customCounter.trim()}
+                    className="min-h-10 rounded bg-amber-400 px-3 text-sm font-black text-neutral-950 transition-colors hover:bg-amber-300 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    Add
+                  </button>
+                </div>
+              </div>
             )}
           </div>
         </div>
@@ -578,8 +910,201 @@ function CardInspectorModal({
   );
 }
 
+function LibraryChoiceModal({
+  choice,
+  onResolve,
+}: {
+  choice: LibraryManipulationChoice;
+  onResolve: (topIds: string[], movedIds: string[]) => void;
+}) {
+  const [orderedIds, setOrderedIds] = useState<string[]>(() => choice.cards.map(card => card.instanceId));
+  const [movedIds, setMovedIds] = useState<Set<string>>(() => new Set());
+  const movedLabel = choice.mode === 'scry' ? 'Bottom' : 'Graveyard';
+  const keepLabel = choice.mode === 'scry' ? 'Top' : 'Keep top';
+  const movedDescription = choice.mode === 'scry'
+    ? 'Cards in this lane go to the bottom of your library in the shown order.'
+    : 'Cards in this lane go to your graveyard.';
+
+  useEffect(() => {
+    setOrderedIds(choice.cards.map(card => card.instanceId));
+    setMovedIds(new Set());
+  }, [choice.id, choice.cards]);
+
+  const cardMap = new Map(choice.cards.map(card => [card.instanceId, card]));
+  const topIds = orderedIds.filter(id => !movedIds.has(id));
+  const destinationIds = orderedIds.filter(id => movedIds.has(id));
+  const moveWithinLane = (cardId: string, delta: number) => {
+    setOrderedIds(prev => {
+      const moved = movedIds.has(cardId);
+      const lane = prev.filter(id => movedIds.has(id) === moved);
+      const index = lane.indexOf(cardId);
+      const target = index + delta;
+      if (index < 0 || target < 0 || target >= lane.length) return prev;
+      const nextLane = [...lane];
+      [nextLane[index], nextLane[target]] = [nextLane[target], nextLane[index]];
+      let laneIndex = 0;
+      return prev.map(id => (movedIds.has(id) === moved ? nextLane[laneIndex++] : id));
+    });
+  };
+  const toggleMoved = (cardId: string) => {
+    setMovedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(cardId)) next.delete(cardId);
+      else next.add(cardId);
+      return next;
+    });
+  };
+  const submit = () => {
+    onResolve(topIds, destinationIds);
+  };
+  const renderLaneCard = (cardId: string, index: number, laneIds: string[]) => {
+    const card = cardMap.get(cardId);
+    if (!card) return null;
+    const moved = movedIds.has(cardId);
+    return (
+      <div
+        key={cardId}
+        className={`grid grid-cols-[4.5rem_1fr] gap-3 rounded-lg border p-2 ${
+          moved ? 'border-red-500/45 bg-red-950/25' : 'border-emerald-500/35 bg-emerald-950/15'
+        }`}
+      >
+        <button
+          type="button"
+          onClick={() => toggleMoved(cardId)}
+          className="h-24 overflow-hidden rounded border border-stone-700 bg-stone-900 text-left"
+          title={moved ? `Move ${card.name} back to top` : `Move ${card.name} to ${movedLabel}`}
+        >
+          <CardImage cardName={card.name} size="small" showHoverZoom={false} className="h-full w-full" />
+        </button>
+        <div className="min-w-0">
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0">
+              <div className="truncate text-sm font-bold text-stone-100">{card.name}</div>
+              <div className="truncate text-[11px] text-stone-500">{card.typeLine}</div>
+            </div>
+            <span className={`shrink-0 rounded px-2 py-0.5 text-[10px] font-black uppercase ${
+              moved ? 'bg-red-500 text-white' : 'bg-emerald-500 text-neutral-950'
+            }`}>
+              {moved ? movedLabel : `Top ${index + 1}`}
+            </span>
+          </div>
+          {card.oracleText && (
+            <div className="mt-1 line-clamp-3 text-[11px] leading-snug text-stone-400">{card.oracleText}</div>
+          )}
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            <button
+              type="button"
+              onClick={() => moveWithinLane(cardId, -1)}
+              disabled={index === 0}
+              className="min-h-9 rounded border border-stone-700 px-2 text-xs font-bold text-stone-200 disabled:opacity-35"
+            >
+              Up
+            </button>
+            <button
+              type="button"
+              onClick={() => moveWithinLane(cardId, 1)}
+              disabled={index === laneIds.length - 1}
+              className="min-h-9 rounded border border-stone-700 px-2 text-xs font-bold text-stone-200 disabled:opacity-35"
+            >
+              Down
+            </button>
+            <button
+              type="button"
+              onClick={() => toggleMoved(cardId)}
+              className={`min-h-9 rounded px-3 text-xs font-black ${
+                moved ? 'bg-emerald-600 text-white hover:bg-emerald-500' : 'bg-red-700 text-white hover:bg-red-600'
+              }`}
+            >
+              {moved ? 'Keep on Top' : `Move to ${movedLabel}`}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="fixed inset-0 z-[85] flex items-center justify-center bg-black/80 p-3 backdrop-blur-sm">
+      <div className="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-lg border border-amber-500/40 bg-neutral-950 shadow-2xl">
+        <div className="border-b border-neutral-800 px-4 py-3">
+          <div className="text-sm font-black uppercase tracking-wider text-amber-300">{choice.title}</div>
+          <div className="mt-1 text-xs text-stone-400">
+            Set the order, then choose which cards go to {choice.mode === 'scry' ? 'the bottom of your library' : 'your graveyard'}.
+          </div>
+        </div>
+        <div className="grid min-h-0 gap-3 overflow-y-auto p-3 md:grid-cols-2">
+          <section className="min-h-0 rounded-lg border border-emerald-500/25 bg-emerald-950/10 p-2">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <div>
+                <div className="text-[10px] font-black uppercase tracking-wider text-emerald-300">{keepLabel}</div>
+                <div className="text-[11px] text-stone-400">Top 1 is your next draw.</div>
+              </div>
+              <span className="rounded bg-emerald-500/20 px-2 py-0.5 text-[10px] font-bold text-emerald-100">
+                {topIds.length}
+              </span>
+            </div>
+            <div className="space-y-2">
+              {topIds.length > 0 ? (
+                topIds.map((cardId, index) => renderLaneCard(cardId, index, topIds))
+              ) : (
+                <div className="rounded border border-dashed border-emerald-500/20 p-4 text-center text-xs text-stone-500">
+                  No cards kept on top.
+                </div>
+              )}
+            </div>
+          </section>
+          <section className="min-h-0 rounded-lg border border-red-500/25 bg-red-950/10 p-2">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <div>
+                <div className="text-[10px] font-black uppercase tracking-wider text-red-300">{movedLabel}</div>
+                <div className="text-[11px] text-stone-400">{movedDescription}</div>
+              </div>
+              <span className="rounded bg-red-500/20 px-2 py-0.5 text-[10px] font-bold text-red-100">
+                {destinationIds.length}
+              </span>
+            </div>
+            <div className="space-y-2">
+              {destinationIds.length > 0 ? (
+                destinationIds.map((cardId, index) => renderLaneCard(cardId, index, destinationIds))
+              ) : (
+                <div className="rounded border border-dashed border-red-500/20 p-4 text-center text-xs text-stone-500">
+                  No cards moved to {movedLabel.toLowerCase()}.
+                </div>
+              )}
+            </div>
+          </section>
+        </div>
+        <div className="flex flex-wrap justify-end gap-2 border-t border-neutral-800 px-4 py-3">
+          <button
+            type="button"
+            onClick={() => onResolve(orderedIds, [])}
+            className="min-h-11 rounded border border-stone-700 px-4 text-sm font-bold text-stone-200 hover:bg-stone-900"
+          >
+            Keep All Top
+          </button>
+          <button
+            type="button"
+            onClick={submit}
+            className="min-h-11 rounded bg-amber-500 px-5 text-sm font-black text-neutral-950 hover:bg-amber-400"
+          >
+            Confirm
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /** Expandable graveyard viewer */
-function GraveyardViewer({ cards, label }: { cards: SimpleCard[]; label: string }) {
+function GraveyardViewer({
+  cards,
+  label,
+  onInspect,
+}: {
+  cards: SimpleCard[];
+  label: string;
+  onInspect: (card: SimpleCard) => void;
+}) {
   const [expanded, setExpanded] = useState(false);
 
   if (cards.length === 0) return null;
@@ -598,17 +1123,22 @@ function GraveyardViewer({ cards, label }: { cards: SimpleCard[]; label: string 
       {expanded && (
         <div className="mt-1 bg-stone-800 border border-stone-700 rounded-lg p-2 max-h-32 overflow-y-auto z-10 relative">
           {cards.map((card, i) => (
-            <div
+            <button
+              type="button"
               key={card.instanceId}
-              className="text-stone-300 text-[10px] md:text-xs py-0.5 border-b border-stone-700/50 last:border-0 flex items-center justify-between gap-2"
+              onClick={() => onInspect(card)}
+              className="flex w-full items-center justify-between gap-2 border-b border-stone-700/50 py-1 text-left text-[10px] text-stone-300 transition-colors last:border-0 hover:text-amber-200 md:text-xs"
             >
               <span className="truncate">{i + 1}. {card.name}</span>
-              {card.typeLine && (
-                <span className="text-stone-500 text-[8px] md:text-[10px] shrink-0 truncate max-w-[80px]">
-                  {card.typeLine}
-                </span>
-              )}
-            </div>
+              <span className="flex shrink-0 items-center gap-1 text-stone-500">
+                {card.typeLine && (
+                  <span className="hidden max-w-[80px] truncate text-[8px] md:inline md:text-[10px]">
+                    {card.typeLine}
+                  </span>
+                )}
+                <Search className="h-3 w-3" />
+              </span>
+            </button>
           ))}
         </div>
       )}
@@ -624,8 +1154,11 @@ export function GameBoard({
   onAction,
   mulliganPhase,
   mulliganCount,
+  mulliganBottomCount,
+  selectedMulliganBottomIds = [],
   onKeepHand,
   onMulligan,
+  onToggleMulliganBottom,
   discardPhase,
   discardCount,
   onDiscardCard,
@@ -634,18 +1167,74 @@ export function GameBoard({
   tutorTitle,
   onTutorPick,
   onTutorCancel,
+  libraryChoice,
+  onResolveLibraryChoice,
   undosRemaining,
   onUndo,
   coachMode,
   onToggleCoach,
+  newPlayerMode,
+  onToggleNewPlayerMode,
+  holdPriority = false,
+  onToggleHoldPriority,
+  collapseModeControlsOnMobile = false,
   onUntapMana,
+  onAdjustCounters,
   untappableCardIds,
   lastPlayedCard,
+  authorityUpdates = [],
+  lastStateUpdate,
+  currentPrompt,
 }: GameBoardProps) {
   const [inspectedCard, setInspectedCard] = useState<SimpleCard | null>(null);
+  const [hoveredCard, setHoveredCard] = useState<SimpleCard | null>(null);
+  const [showLastPlayedToast, setShowLastPlayedToast] = useState(false);
+  const [showEngineUpdateToast, setShowEngineUpdateToast] = useState(false);
   const [stackLands, setStackLands] = useState(true);
   const [selectedOpponentId, setSelectedOpponentId] = useState<string | null>(null);
-  const [showOpponentHand, setShowOpponentHand] = useState(false);
+
+  const handleCardHover = (card: SimpleCard | null) => {
+    setHoveredCard(card);
+  };
+
+  useEffect(() => {
+    if (!lastPlayedCard) {
+      setShowLastPlayedToast(false);
+      return;
+    }
+    setShowLastPlayedToast(true);
+    const timeout = window.setTimeout(() => setShowLastPlayedToast(false), 4500);
+    return () => window.clearTimeout(timeout);
+  }, [lastPlayedCard?.card.instanceId, lastPlayedCard?.turnNumber]);
+
+  useEffect(() => {
+    if (!lastStateUpdate) {
+      setShowEngineUpdateToast(false);
+      return;
+    }
+    setShowEngineUpdateToast(true);
+    const timeout = window.setTimeout(() => setShowEngineUpdateToast(false), 3200);
+    return () => window.clearTimeout(timeout);
+  }, [lastStateUpdate?.newStateId, lastStateUpdate?.rulesEvents.length]);
+
+  useEffect(() => {
+    if (!inspectedCard) return;
+    const visibleCards = [
+      ...gameState.humanHand,
+      ...gameState.humanBattlefield,
+      ...gameState.humanGraveyard,
+      ...gameState.humanCommandZone,
+      ...Object.values(gameState.aiBattlefields).flat(),
+      ...Object.values(gameState.aiGraveyards).flat(),
+      ...Object.values(gameState.aiCommandZones).flat(),
+      ...gameState.stack.flatMap(item => item.card ? [item.card] : []),
+      ...(lastPlayedCard ? [lastPlayedCard.card] : []),
+    ];
+    const freshCard = visibleCards.find(card => card.instanceId === inspectedCard.instanceId);
+    if (freshCard && freshCard !== inspectedCard) {
+      setInspectedCard(freshCard);
+    }
+  }, [gameState, inspectedCard, lastPlayedCard]);
 
   // Build set of playable card instance IDs
   const playableIds = new Set(
@@ -653,8 +1242,30 @@ export function GameBoard({
       .filter(a => a.cardInstanceId)
       .map(a => a.cardInstanceId!)
   );
+  const targetActionById = new Map<string, SimpleLegalAction>();
+  for (const action of legalActions) {
+    const rawTargets = (action._engineAction as { targets?: unknown }).targets;
+    const targets = Array.isArray(rawTargets)
+      ? rawTargets.filter((target): target is string => typeof target === 'string')
+      : [];
+    const equipTarget = (action._engineAction as { targetCreatureId?: unknown }).targetCreatureId;
+    if (typeof equipTarget === 'string') targets.push(equipTarget);
+    for (const targetId of targets) {
+      if (!targetActionById.has(targetId)) {
+        targetActionById.set(targetId, action);
+      }
+    }
+  }
+  const getTargetAction = (card: SimpleCard): SimpleLegalAction | undefined =>
+    targetActionById.get(card.instanceId);
 
   const passAction = legalActions.find(a => a.kind === 'PassPriority');
+  const skipRestAction = legalActions.find(a => a.kind === 'SkipRestOfTurn');
+  const skipEmptyAction = legalActions.find(a => a.kind === 'SkipEmptyPhases');
+  const selectedMulliganBottomSet = new Set(selectedMulliganBottomIds);
+  const requiredMulliganBottoms = mulliganBottomCount ?? 0;
+  const needsMulliganBottomSelection = !!mulliganPhase && requiredMulliganBottoms > 0;
+  const mulliganBottomReady = !needsMulliganBottomSelection || selectedMulliganBottomSet.size === requiredMulliganBottoms;
 
   // Find non-card actions (declare attackers/blockers without a specific card)
   const combatActions = legalActions.filter(
@@ -665,17 +1276,29 @@ export function GameBoard({
   const castActions = legalActions.filter(a => a.kind === 'CastSpell');
   const playLandActions = legalActions.filter(a => a.kind === 'PlayLand');
   const manaActions = legalActions.filter(a => a.kind === 'ActivateManaAbility');
+  const showIndividualManaActions = manaActions.length > 0;
   const otherCardActions = legalActions.filter(
     a => a.cardInstanceId && !['CastSpell', 'PlayLand', 'ActivateManaAbility', 'PassPriority', 'DeclareAttackers', 'DeclareBlockers'].includes(a.kind)
   );
-  const hasAnyAction = isHumanTurn && !gameState.gameOver && !mulliganPhase && (
-    passAction || combatActions.length > 0 || castActions.length > 0 ||
-    playLandActions.length > 0 || manaActions.length > 0 || otherCardActions.length > 0
+  const hasPhaseMovement = isHumanTurn && !gameState.gameOver && !mulliganPhase && (
+    skipRestAction || skipEmptyAction || passAction || combatActions.length > 0
   );
+  const canUndo = !!onUndo && (undosRemaining ?? 0) > 0;
+  const hasTopActions = isHumanTurn && !gameState.gameOver && !mulliganPhase && (
+    currentPrompt || castActions.length > 0 || playLandActions.length > 0 ||
+    manaActions.length > 0 || otherCardActions.length > 0 || canUndo
+  );
+  const hasAnyAction = hasTopActions || hasPhaseMovement;
+  const guideSuggestion = newPlayerMode && hasAnyAction
+    ? getNewPlayerSuggestion(gameState, legalActions)
+    : null;
+  const modeToggleVisibility = collapseModeControlsOnMobile ? 'hidden md:flex' : 'flex';
+  const recentAuthorityUpdates = authorityUpdates.slice(-4).reverse();
 
   const handleCardClick = (card: SimpleCard) => {
     // Find the first matching action for this card
-    const action = legalActions.find(a => a.cardInstanceId === card.instanceId);
+    const action = legalActions.find(a => a.cardInstanceId === card.instanceId)
+      || getTargetAction(card);
     if (action) {
       onAction(action);
     }
@@ -697,19 +1320,64 @@ export function GameBoard({
     const action = legalActions.find(a => a.cardInstanceId === card.instanceId);
     if (!action) return null;
 
-    const label = action.kind === 'CastSpell'
-      ? `Cast ${card.name}`
-      : action.kind === 'PlayLand'
-      ? `Play ${card.name}`
-      : action.label;
-
     return {
-      label,
+      label: action.label,
+      paymentPreview: action.paymentPreview,
       run: () => onAction(action),
     };
   };
 
+  const getDiscardAction = (card: SimpleCard) => {
+    const isHumanHandCard = card.zone === 'hand' && card.ownerId === gameState.humanPlayer.id;
+    if (!isHumanHandCard || !onDiscardCard || mulliganPhase) return null;
+    const label = `Discard ${card.name}`;
+    return {
+      label,
+      run: () => onDiscardCard(card.instanceId),
+    };
+  };
+
   const inspectedAction = inspectedCard ? getInspectAction(inspectedCard) : null;
+  const inspectedDiscardAction = inspectedCard ? getDiscardAction(inspectedCard) : null;
+  const getCardUnavailableHint = (card: SimpleCard): string | undefined => {
+    if (discardPhase || mulliganPhase) return undefined;
+    if (gameState.gameOver) return 'The match is complete.';
+    if (card.ownerId !== gameState.humanPlayer.id) {
+      return 'Opponent cards are inspectable. You can interact with them only when the engine exposes a legal target or response action.';
+    }
+    if (!isHumanTurn) {
+      const priorityName = gameState.priorityPlayerId === gameState.humanPlayer.id ? 'you' : 'another player';
+      return `This is not currently a legal action because ${priorityName} has priority.`;
+    }
+    if (card.zone === 'hand') {
+      if (currentPrompt?.type === 'stack-response') {
+        return 'The stack is waiting. This card is not available as a legal response right now; it may need instant timing, mana, targets, or more rules coverage.';
+      }
+      if (currentPrompt?.type === 'declare-attackers' || currentPrompt?.type === 'declare-blockers') {
+        return 'Combat declaration is waiting. Finish attackers or blockers before casting normal spells.';
+      }
+      return 'The engine does not see a legal action for this card right now. Most often that means timing, mana, targets, summoning sickness, or current rules coverage.';
+    }
+    if (card.zone === 'battlefield') {
+      if (card.tapped) {
+        return 'This permanent is tapped. Tap abilities and combat actions usually need it to be untapped.';
+      }
+      return 'This permanent has no legal action in the current prompt. It may need a target, a payable cost, haste, or a supported activated/triggered ability.';
+    }
+    if (card.zone === 'command') {
+      return 'The commander is not currently castable. Check commander tax, available mana, timing, and commander-specific restrictions.';
+    }
+    return 'This card is visible for review, but the current engine prompt does not expose an action for it.';
+  };
+  const inspectedUnavailableHint =
+    inspectedCard && !inspectedAction ? getCardUnavailableHint(inspectedCard) : undefined;
+  const inspectedSecondaryAction =
+    inspectedDiscardAction && inspectedDiscardAction.label !== inspectedAction?.label
+      ? inspectedDiscardAction
+      : null;
+  const hoveredAction = hoveredCard ? getInspectAction(hoveredCard) : null;
+  const hoveredUnavailableHint =
+    hoveredCard && !hoveredAction ? getCardUnavailableHint(hoveredCard) : undefined;
 
   const renderBattlefieldRows = (
     cards: SimpleCard[],
@@ -747,21 +1415,30 @@ export function GameBoard({
                   const untappableCard = owner === 'human' && onUntapMana
                     ? group.cards.find(card => untappableCardIds?.includes(card.instanceId))
                     : undefined;
-                  const canUse = !!playableCard || !!untappableCard;
+                  const targetableCard = group.cards.find(card => getTargetAction(card));
+                  const targetAction = targetableCard ? getTargetAction(targetableCard) : undefined;
+                  const displayCard = playableCard || untappableCard || targetableCard || group.card;
                   return (
                     <CardTile
                       key={group.key}
-                      card={playableCard || untappableCard || group.card}
-                      playable={canUse}
+                      card={displayCard}
+                      playable={!!playableCard || !!untappableCard}
+                      targetable={!playableCard && !!targetAction}
+                      targetLabel={targetAction?.label}
                       compact={owner === 'ai'}
+                      inspectable
                       stackCount={group.cards.length}
+                      onHoverCard={handleCardHover}
                       onClick={
                         playableCard
                           ? () => handleCardClick(playableCard)
                           : untappableCard && onUntapMana
                           ? () => onUntapMana(untappableCard.instanceId)
-                          : undefined
+                          : targetAction
+                          ? () => onAction(targetAction)
+                          : () => setInspectedCard(displayCard)
                       }
+                      onInspect={() => setInspectedCard(displayCard)}
                     />
                   );
                 })}
@@ -785,13 +1462,14 @@ export function GameBoard({
   );
   const selectedOpponentCommander =
     gameState.aiCommanderNames[selectedOpponent.id] || selectedOpponent.name || gameState.aiCommander;
-  const selectedAiHand = gameState.aiHands[selectedOpponent.id] || gameState.aiHand;
   const selectedAiBattlefield = gameState.aiBattlefields[selectedOpponent.id] || gameState.aiBattlefield;
   const selectedAiGraveyard = gameState.aiGraveyards[selectedOpponent.id] || gameState.aiGraveyard;
   const selectedAiCommandZone = gameState.aiCommandZones[selectedOpponent.id] || gameState.aiCommandZone;
   const selectedOpponentLabel = opponentPlayers.length > 1
     ? `Opponent ${selectedOpponentIndex + 1}`
     : 'Opponent';
+  const selectedOpponentTargetAction = targetActionById.get(selectedOpponent.id);
+  const humanPlayerTargetAction = targetActionById.get(gameState.humanPlayer.id);
   const winnerName = gameState.winnerId && gameState.winnerId !== gameState.humanPlayer.id
     ? gameState.aiCommanderNames[gameState.winnerId] || gameState.aiCommander
     : gameState.aiCommander;
@@ -800,12 +1478,24 @@ export function GameBoard({
   const aiCommanderCard =
     selectedAiCommandZone[0] || selectedAiBattlefield.find(c => c.isCommander);
   const humanCommanderPlayable = !!humanCommanderCard && playableIds.has(humanCommanderCard.instanceId);
-  const humanNonCommanderCommandZone = gameState.humanCommandZone.filter(
-    c => c.instanceId !== humanCommanderCard?.instanceId,
-  );
-  const aiNonCommanderCommandZone = selectedAiCommandZone.filter(
-    c => c.instanceId !== aiCommanderCard?.instanceId,
-  );
+  const humanCommanderTargetAction = humanCommanderCard ? getTargetAction(humanCommanderCard) : undefined;
+  const aiCommanderTargetAction = aiCommanderCard ? getTargetAction(aiCommanderCard) : undefined;
+  const humanCommandZoneCards = gameState.humanCommandZone;
+  const aiCommandZoneCards = selectedAiCommandZone;
+  const playerNameForId = (playerId: string | undefined): string => {
+    if (!playerId) return 'Unknown';
+    if (playerId === gameState.humanPlayer.id) return 'You';
+    return gameState.aiCommanderNames[playerId]
+      || gameState.aiPlayers.find(player => player.id === playerId)?.name
+      || gameState.aiPlayer.name
+      || playerId;
+  };
+  const activeOwnerName = playerNameForId(gameState.activePlayerId);
+  const priorityOwnerName = playerNameForId(gameState.priorityPlayerId);
+  const prioritySnapshot = currentPrompt?.priority;
+  const passedPriorityNames = prioritySnapshot?.passedPriorityPlayerIds.map(playerNameForId) ?? [];
+  const stackTopId = prioritySnapshot?.stackTop?.id || gameState.stack[gameState.stack.length - 1]?.id;
+  const stackItemsTopFirst = [...gameState.stack].reverse();
 
   return (
     <div className="relative h-full min-h-0 overflow-hidden bg-neutral-950 text-stone-200">
@@ -816,14 +1506,38 @@ export function GameBoard({
           cards={tutorCards}
           onPick={onTutorPick}
           onCancel={onTutorCancel}
+          cancelLabel={tutorTitle?.toLowerCase().includes('decline') ? 'Decline sacrifice' : undefined}
+        />
+      )}
+      {libraryChoice && onResolveLibraryChoice && (
+        <LibraryChoiceModal
+          choice={libraryChoice}
+          onResolve={onResolveLibraryChoice}
         />
       )}
       {inspectedCard && (
         <CardInspectorModal
           card={inspectedCard}
           actionLabel={inspectedAction?.label}
+          actionPaymentPreview={inspectedAction?.paymentPreview}
+          unavailableHint={inspectedUnavailableHint}
+          secondaryActionLabel={inspectedSecondaryAction?.label}
           onPrimaryAction={inspectedAction?.run}
+          onSecondaryAction={inspectedSecondaryAction?.run}
+          onAdjustCounter={
+            onAdjustCounters
+              ? (counterType, delta) => onAdjustCounters(inspectedCard.instanceId, counterType, delta)
+              : undefined
+          }
           onClose={() => setInspectedCard(null)}
+        />
+      )}
+      {hoveredCard && !inspectedCard && (
+        <CardHoverPreview
+          card={hoveredCard}
+          actionLabel={hoveredAction?.label}
+          actionPaymentPreview={hoveredAction?.paymentPreview}
+          unavailableHint={hoveredUnavailableHint}
         />
       )}
       <div className={FLOATING_TABLE_LAYOUT.table}>
@@ -832,7 +1546,7 @@ export function GameBoard({
           <span className="text-3xl font-black text-red-500/60">M</span>
         </div>
       {/* Phase Bar */}
-      <div className="absolute left-3 right-24 top-3 z-40 flex items-center gap-1.5 overflow-x-auto rounded-lg border border-neutral-700/70 bg-neutral-950/90 px-2 py-1.5 shadow-xl shadow-black/30 backdrop-blur md:gap-3 md:px-3">
+      <div className="absolute left-2 right-16 top-2 z-40 flex min-h-10 items-center gap-1.5 overflow-x-auto rounded-lg border border-neutral-700/70 bg-neutral-950/90 px-2 py-1.5 shadow-xl shadow-black/30 backdrop-blur md:left-3 md:right-24 md:top-3 md:gap-3 md:px-3">
         <span className="text-amber-400 font-semibold text-xs md:text-sm whitespace-nowrap">
           T{gameState.turnNumber}
         </span>
@@ -844,10 +1558,15 @@ export function GameBoard({
               className={`px-1.5 md:px-2 py-0.5 rounded text-[10px] md:text-xs whitespace-nowrap ${
                 gameState.phase === key
                   ? 'bg-amber-600 text-white font-semibold'
-                  : 'bg-stone-700 text-stone-400'
+                  : 'hidden bg-stone-700 text-stone-400 sm:inline-flex'
               }`}
             >
-              {label}
+              {gameState.phase === key ? (
+                <>
+                  <span className="sm:hidden">{STEP_DISPLAY[gameState.step] || label}</span>
+                  <span className="hidden sm:inline">{label}</span>
+                </>
+              ) : label}
             </span>
           ))}
         </div>
@@ -866,34 +1585,116 @@ export function GameBoard({
             />
             <span className="whitespace-nowrap">Stack lands</span>
           </label>
-          <span className={`text-[10px] md:text-xs font-semibold px-1.5 md:px-2 py-0.5 rounded whitespace-nowrap ${
+          <span className="hidden max-w-[9rem] truncate rounded bg-neutral-800 px-1.5 py-0.5 text-[10px] font-semibold text-stone-300 sm:inline-block md:max-w-[12rem] md:px-2 md:text-xs">
+            Turn: {activeOwnerName}
+          </span>
+          <span className={`max-w-[9rem] truncate text-[10px] md:text-xs font-semibold px-1.5 md:px-2 py-0.5 rounded whitespace-nowrap md:max-w-[12rem] ${
             isHumanTurn
               ? 'bg-green-800 text-green-200'
               : 'bg-red-900 text-red-300'
           }`}>
-            {isHumanTurn ? 'Your Priority' : "AI's Turn"}
+            {isHumanTurn ? 'Your Priority' : `${priorityOwnerName} Priority`}
           </span>
+          {onToggleHoldPriority && (
+            <button
+              onClick={() => onToggleHoldPriority(!holdPriority)}
+              className={`flex min-h-7 items-center rounded px-1.5 py-0.5 text-[10px] font-semibold transition-colors md:px-2 md:text-xs ${
+                holdPriority
+                  ? 'bg-sky-500 text-neutral-950'
+                  : 'bg-stone-700 text-stone-500'
+              }`}
+              title="Hold priority after your own spells or abilities go on the stack"
+            >
+              <span className="hidden sm:inline">Hold {holdPriority ? 'ON' : 'OFF'}</span>
+              <span className="sm:hidden">Hold</span>
+            </button>
+          )}
           {onToggleCoach && (
             <button
               onClick={() => onToggleCoach(!coachMode)}
-              className={`text-[10px] md:text-xs font-semibold px-1.5 md:px-2 py-0.5 rounded whitespace-nowrap transition-colors ${
+              className={`${modeToggleVisibility} min-h-7 items-center text-[10px] md:text-xs font-semibold px-1.5 md:px-2 py-0.5 rounded whitespace-nowrap transition-colors ${
                 coachMode
                   ? 'bg-blue-800 text-blue-200'
                   : 'bg-stone-700 text-stone-500'
               }`}
               title="Coach mode: evaluates your plays and suggests better options"
             >
-              Coach {coachMode ? 'ON' : 'OFF'}
+              <span className="hidden sm:inline">Coach {coachMode ? 'ON' : 'OFF'}</span>
+              <span className="sm:hidden">Coach</span>
+            </button>
+          )}
+          {onToggleNewPlayerMode && (
+            <button
+              onClick={() => onToggleNewPlayerMode(!newPlayerMode)}
+              className={`${modeToggleVisibility} min-h-7 items-center gap-1 text-[10px] md:text-xs font-semibold px-1.5 md:px-2 py-0.5 rounded whitespace-nowrap transition-colors ${
+                newPlayerMode
+                  ? 'bg-amber-500 text-neutral-950'
+                  : 'bg-stone-700 text-stone-500'
+              }`}
+              title="Guide mode: suggests one available practice action"
+            >
+              <Lightbulb className="h-3 w-3" />
+              <span className="hidden sm:inline">Guide {newPlayerMode ? 'ON' : 'OFF'}</span>
+              <span className="sm:hidden">Guide</span>
             </button>
           )}
         </div>
       </div>
 
+      {recentAuthorityUpdates.length > 0 && (
+        <div
+          aria-label="Engine event feed"
+          className="absolute right-2 top-14 z-30 hidden w-[22rem] max-w-[calc(100%-1rem)] rounded-lg border border-sky-500/20 bg-neutral-950/82 p-2 shadow-xl shadow-black/25 backdrop-blur lg:block"
+        >
+          <div className="mb-1 flex items-center justify-between gap-2">
+            <div className="text-[9px] font-black uppercase tracking-wider text-sky-300/80">
+              Engine Feed
+            </div>
+            <div className="text-[9px] font-semibold text-stone-500">
+              {authorityUpdates.length} update{authorityUpdates.length === 1 ? '' : 's'}
+            </div>
+          </div>
+          <div className="space-y-1">
+            {recentAuthorityUpdates.map(update => (
+              <div
+                key={`${update.oldStateId}:${update.newStateId}:${update.rulesEvents.length}`}
+                className="rounded border border-neutral-800/90 bg-neutral-900/72 px-2 py-1"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="truncate text-[10px] font-bold text-stone-200">
+                    {stateUpdateActor(update, gameState)}
+                  </span>
+                  <span className="shrink-0 text-[9px] text-stone-500">
+                    T{update.turnNumber} {STEP_DISPLAY[update.step] || update.step}
+                  </span>
+                </div>
+                <div className="truncate text-[10px] text-stone-400">
+                  {summarizeStateUpdate(update, playerNameForId)}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* AI Side */}
       <div className={FLOATING_TABLE_LAYOUT.opponentStrip}>
-        <div className="mb-1 flex items-center gap-2 md:gap-3">
-          <div className="flex items-center gap-2">
-	            <div className="h-12 w-9 overflow-hidden rounded border border-red-700/50 bg-stone-200">
+        <div className="mb-1 flex min-w-0 items-center gap-2 md:gap-3">
+          <div className="flex min-w-0 items-center gap-2">
+	            <button
+              type="button"
+              onClick={
+                aiCommanderTargetAction
+                  ? () => onAction(aiCommanderTargetAction)
+                  : aiCommanderCard
+                  ? () => setInspectedCard(aiCommanderCard)
+                  : undefined
+              }
+              className={`h-12 w-9 overflow-hidden rounded border bg-stone-200 ${
+                aiCommanderTargetAction ? 'border-sky-400 ring-2 ring-sky-400/45' : 'border-red-700/50'
+              }`}
+              title={aiCommanderTargetAction?.label || (aiCommanderCard ? `Inspect ${aiCommanderCard.name}` : selectedOpponentCommander)}
+            >
               {aiCommanderCard ? (
                 <CardImage cardName={aiCommanderCard.name} size="small" showHoverZoom={false} className="h-full w-full" />
               ) : (
@@ -901,7 +1702,7 @@ export function GameBoard({
                   {selectedOpponentCommander.charAt(0)}
                 </div>
               )}
-            </div>
+            </button>
             <div className="min-w-0">
 	              <div className="max-w-[10rem] truncate text-xs font-semibold text-stone-200 md:max-w-[16rem]">
                 {selectedOpponentCommander}
@@ -913,12 +1714,22 @@ export function GameBoard({
               </div>
             </div>
           </div>
-	          <div className="ml-auto flex items-center gap-1.5 rounded-lg border border-red-800/50 bg-red-950/70 px-2 py-1">
+	          <button
+            type="button"
+            disabled={!selectedOpponentTargetAction}
+            onClick={selectedOpponentTargetAction ? () => onAction(selectedOpponentTargetAction) : undefined}
+            title={selectedOpponentTargetAction?.label || `${selectedOpponent.name} life total`}
+            className={`ml-auto flex shrink-0 items-center gap-1.5 rounded-lg border px-2 py-1 text-left transition-colors disabled:cursor-default ${
+              selectedOpponentTargetAction
+                ? 'border-sky-400/70 bg-sky-950/70 ring-2 ring-sky-400/35 hover:bg-sky-900/70'
+                : 'border-red-800/50 bg-red-950/70'
+            }`}
+          >
             <span className="text-red-400 text-xs font-semibold">LP</span>
 	            <span className="text-xl font-bold tabular-nums leading-none text-red-300 md:text-2xl">
               {selectedOpponent.life}
             </span>
-          </div>
+          </button>
         </div>
 
         {opponentPlayers.length > 1 && (
@@ -950,47 +1761,32 @@ export function GameBoard({
           </div>
         )}
 
-        {/* AI extra command zone cards, such as partners */}
-        {aiNonCommanderCommandZone.length > 0 && (
+        {/* AI command zone cards, including partners/backgrounds. */}
+        {aiCommandZoneCards.length > 0 && (
           <div className="flex gap-1.5 md:gap-2 mb-1 overflow-x-auto">
-            {aiNonCommanderCommandZone.map(card => (
-              <CardTile key={card.instanceId} card={card} playable={false} compact />
-            ))}
+            {aiCommandZoneCards.map(card => {
+              const targetAction = getTargetAction(card);
+              return (
+                <CardTile
+                  key={card.instanceId}
+                  card={card}
+                  playable={false}
+                  targetable={!!targetAction}
+                  targetLabel={targetAction?.label}
+                  compact
+                  inspectable
+                  onHoverCard={handleCardHover}
+                  onClick={targetAction ? () => onAction(targetAction) : () => setInspectedCard(card)}
+                  onInspect={() => setInspectedCard(card)}
+                />
+              );
+            })}
           </div>
         )}
 
-        {/* AI hand is collapsed by default to keep the table visible. */}
-        <div className="mb-1 flex flex-wrap items-center gap-2 text-[10px]">
-          <button
-            type="button"
-            onClick={() => setShowOpponentHand(prev => !prev)}
-            className="rounded border border-red-800/50 bg-red-950/40 px-2 py-1 font-bold uppercase tracking-wider text-red-200 hover:border-red-500/70"
-          >
-            {showOpponentHand ? 'Hide' : 'Show'} {selectedOpponentLabel} Hand ({selectedAiHand.length})
-          </button>
-          {!showOpponentHand && selectedAiHand.length > 0 && (
-            <div className="min-w-0 flex-1 truncate text-stone-500">
-              {selectedAiHand.map(card => card.name).join(' / ')}
-            </div>
-          )}
+        <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-stone-500">
+          {selectedOpponentLabel} hand hidden ({selectedOpponent.handCount})
         </div>
-        {showOpponentHand && (
-          <div className="mb-1 flex min-h-[4rem] gap-1.5 overflow-x-auto pb-1 md:gap-2">
-            {selectedAiHand.length === 0 ? (
-              <div className="flex items-center text-xs italic text-stone-600">No cards in hand</div>
-            ) : selectedAiHand.map(card => (
-              <CardTile
-                key={card.instanceId}
-                card={card}
-                playable={false}
-                compact
-                inspectable
-                onClick={() => setInspectedCard(card)}
-                onInspect={() => setInspectedCard(card)}
-              />
-            ))}
-          </div>
-        )}
 
         {/* AI Battlefield */}
 		        <div className="min-h-[4rem] py-0.5">
@@ -998,32 +1794,114 @@ export function GameBoard({
         </div>
 
         {/* AI Graveyard */}
-        <GraveyardViewer cards={selectedAiGraveyard} label={selectedOpponentLabel} />
+        <GraveyardViewer cards={selectedAiGraveyard} label={selectedOpponentLabel} onInspect={setInspectedCard} />
       </div>
 
       {/* Stack Area */}
       {gameState.stack.length > 0 && (
         <div className="relative z-10 px-2 md:px-4 py-1.5 md:py-2 bg-stone-800/50 border-b border-stone-700/50 shrink-0">
-          <div className="text-amber-400 text-[10px] md:text-xs font-semibold mb-1">Stack</div>
-          <div className="flex gap-1.5 md:gap-2 flex-wrap">
-            {gameState.stack.map(item => (
-              <div
-                key={item.id}
-                className="px-2 md:px-3 py-1 md:py-1.5 rounded bg-amber-900/40 border border-amber-600/30 text-amber-200 text-[10px] md:text-xs"
+          <div className="mb-1 flex flex-wrap items-center gap-1.5 md:gap-2">
+            <div className="text-amber-400 text-[10px] md:text-xs font-semibold">Stack</div>
+            <span className="rounded bg-neutral-900 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-stone-400">
+              {priorityOwnerName} priority
+            </span>
+            {prioritySnapshot?.canResolveTopOfStack && (
+              <span className="rounded bg-emerald-500 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider text-neutral-950">
+                Ready to resolve
+              </span>
+            )}
+            {passedPriorityNames.length > 0 && (
+              <span
+                className="max-w-full truncate rounded bg-sky-950/70 px-1.5 py-0.5 text-[9px] font-semibold text-sky-100"
+                title={`Passed priority: ${passedPriorityNames.join(', ')}`}
               >
-                {item.name}
-                <span className="text-amber-500 ml-1 text-[8px] md:text-[10px]">
-                  ({item.casterId === 'human' ? 'You' : gameState.aiCommanderNames[item.casterId] || 'AI'})
-                </span>
-              </div>
-            ))}
+                Passed: {passedPriorityNames.join(', ')}
+              </span>
+            )}
+          </div>
+          <div className="flex gap-1.5 md:gap-2 flex-wrap">
+            {stackItemsTopFirst.map(item => {
+              const targetAction = item.card ? getTargetAction(item.card) : undefined;
+              const isTop = item.id === stackTopId;
+              const targetText = item.targetNames.length > 0 ? item.targetNames.join(', ') : '';
+              const itemKindLabel =
+                item.kind === 'TriggeredAbility'
+                  ? 'Trigger'
+                  : item.kind === 'ActivatedAbility'
+                  ? 'Ability'
+                  : 'Spell';
+              const content = (
+                <>
+                  <span className="block">
+                    {isTop && (
+                      <span className="mr-1 rounded bg-amber-400 px-1 py-px text-[8px] font-black uppercase leading-none text-neutral-950">
+                        Top
+                      </span>
+                    )}
+                    <span className="mr-1 rounded bg-neutral-950/50 px-1 py-px text-[8px] font-black uppercase leading-none text-amber-100/75">
+                      {itemKindLabel}
+                    </span>
+                    {item.name}
+                    <span className="text-amber-500 ml-1 text-[8px] md:text-[10px]">
+                      ({playerNameForId(item.casterId)})
+                    </span>
+                  </span>
+                  {targetText && (
+                    <span className="mt-0.5 block max-w-72 truncate text-[9px] font-semibold text-amber-100/70 md:text-[10px]">
+                      -&gt; {targetText}
+                    </span>
+                  )}
+                </>
+              );
+              const className = `px-2 md:px-3 py-1 md:py-1.5 rounded border text-[10px] md:text-xs ${
+                isTop
+                  ? 'bg-amber-800/55 border-amber-300/60 text-amber-100 ring-1 ring-amber-300/30'
+                  : 'bg-amber-900/40 border-amber-600/30 text-amber-200'
+              }`;
+              return item.card ? (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={targetAction ? () => onAction(targetAction) : () => setInspectedCard(item.card!)}
+                  className={`${className} text-left ${
+                    targetAction
+                      ? 'border-sky-400/70 bg-sky-950/70 text-sky-100 ring-2 ring-sky-400/35 hover:border-sky-300 hover:bg-sky-900/70 focus:ring-sky-400/60'
+                      : 'hover:border-amber-300 hover:bg-amber-800/50 focus:ring-amber-400/50'
+                  } focus:outline-none focus:ring-2`}
+                  title={targetAction?.label || `Inspect ${item.name}`}
+                >
+                  {content}
+                </button>
+              ) : (
+                <div key={item.id} className={className}>
+                  {content}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
-      {gameState.stack.length === 0 && lastPlayedCard && (
-        <div className="pointer-events-none absolute right-3 top-16 z-30 hidden rounded border border-red-500/40 bg-neutral-950/85 px-3 py-2 shadow-xl shadow-black/40 backdrop-blur md:block">
-          <div className="text-[9px] font-bold uppercase tracking-wider text-red-300/80">Last Played</div>
-          <div className="max-w-64 truncate text-xs font-semibold text-stone-100">{lastPlayedCard.card.name}</div>
+      {gameState.stack.length === 0 && lastPlayedCard && showLastPlayedToast && (
+        <div className="relative z-10 flex shrink-0 justify-end border-b border-neutral-800/70 bg-neutral-950/45 px-2 py-1 md:px-4">
+          <button
+            type="button"
+            onClick={() => setInspectedCard(lastPlayedCard.card)}
+            className="max-w-full rounded border border-red-500/40 bg-neutral-950/85 px-3 py-1.5 text-left shadow-lg shadow-black/25 backdrop-blur transition-colors hover:border-red-300/80 hover:bg-neutral-900 focus:outline-none focus:ring-2 focus:ring-red-400/60 sm:max-w-64"
+            title={`Inspect ${lastPlayedCard.card.name}`}
+          >
+            <div className="text-[9px] font-bold uppercase tracking-wider text-red-300/80">Last Played</div>
+            <div className="max-w-64 truncate text-xs font-semibold text-stone-100">{lastPlayedCard.card.name}</div>
+          </button>
+        </div>
+      )}
+      {lastStateUpdate && showEngineUpdateToast && (
+        <div className="relative z-10 flex shrink-0 justify-end border-b border-neutral-800/70 bg-neutral-950/45 px-2 py-1 md:px-4">
+          <div className="max-w-full rounded border border-sky-500/30 bg-neutral-950/80 px-3 py-1.5 text-left shadow-lg shadow-black/20 backdrop-blur sm:max-w-md">
+            <div className="text-[9px] font-bold uppercase tracking-wider text-sky-300/80">Engine Update</div>
+            <div className="truncate text-xs font-semibold text-stone-100">
+              {summarizeStateUpdate(lastStateUpdate, playerNameForId)}
+            </div>
+          </div>
         </div>
       )}
 
@@ -1033,11 +1911,24 @@ export function GameBoard({
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={humanCommanderPlayable && humanCommanderCard ? () => handleCardClick(humanCommanderCard) : undefined}
-              disabled={!humanCommanderPlayable}
+              onClick={
+                humanCommanderPlayable && humanCommanderCard
+                  ? () => handleCardClick(humanCommanderCard)
+                  : humanCommanderTargetAction
+                  ? () => onAction(humanCommanderTargetAction)
+                  : humanCommanderCard
+                  ? () => setInspectedCard(humanCommanderCard)
+                  : undefined
+              }
               className={`h-12 w-9 overflow-hidden rounded border bg-stone-200 ${
-                humanCommanderPlayable ? 'border-green-400 ring-2 ring-green-400/40' : 'border-green-700/50'
+                humanCommanderPlayable
+                  ? 'border-green-400 ring-2 ring-green-400/40'
+                  : humanCommanderTargetAction
+                  ? 'border-sky-400 ring-2 ring-sky-400/45'
+                  : 'border-green-700/50'
               }`}
+              title={humanCommanderTargetAction?.label || (humanCommanderCard ? `Inspect ${humanCommanderCard.name}` : gameState.humanCommander)}
+              aria-label={humanCommanderTargetAction?.label || (humanCommanderCard ? `Inspect ${humanCommanderCard.name}` : gameState.humanCommander)}
             >
               {humanCommanderCard ? (
                 <CardImage cardName={humanCommanderCard.name} size="small" showHoverZoom={false} className="h-full w-full" />
@@ -1045,7 +1936,7 @@ export function GameBoard({
                 <div className="flex h-full items-center justify-center bg-green-950 text-green-300 text-xs font-bold">Y</div>
               )}
             </button>
-            <div>
+            <div className="min-w-0">
               <div className="text-xs md:text-sm font-semibold text-stone-200 truncate max-w-[150px] md:max-w-[250px]">You — {gameState.humanCommander}</div>
               <div className="text-[10px] md:text-xs text-stone-500">
                 Hand: {gameState.humanHand.length} / Lib: {gameState.humanPlayer.libraryCount}
@@ -1054,7 +1945,7 @@ export function GameBoard({
           </div>
 
           {/* Mana Pool — always visible */}
-          <div className={`flex items-center gap-0.5 rounded-lg border px-1.5 py-0.5 md:gap-1 md:px-2 ${
+          <div className={`flex shrink-0 items-center gap-0.5 rounded-lg border px-1.5 py-0.5 md:gap-1 md:px-2 ${
             totalMana > 0
               ? 'bg-amber-900/40 border-amber-700/50'
               : 'bg-stone-800/50 border-stone-700/30'
@@ -1075,29 +1966,50 @@ export function GameBoard({
             )}
           </div>
 
-          <div className="ml-auto flex items-center gap-1.5 rounded-lg border border-green-800/50 bg-green-950/70 px-2 py-1">
+          <button
+            type="button"
+            disabled={!humanPlayerTargetAction}
+            onClick={humanPlayerTargetAction ? () => onAction(humanPlayerTargetAction) : undefined}
+            title={humanPlayerTargetAction?.label || 'Your life total'}
+            className={`ml-auto flex shrink-0 items-center gap-1.5 rounded-lg border px-2 py-1 text-left transition-colors disabled:cursor-default ${
+              humanPlayerTargetAction
+                ? 'border-sky-400/70 bg-sky-950/70 ring-2 ring-sky-400/35 hover:bg-sky-900/70'
+                : 'border-green-800/50 bg-green-950/70'
+            }`}
+          >
             <span className="text-green-400 text-xs font-semibold">LP</span>
             <span className="text-xl font-bold tabular-nums leading-none text-green-300 md:text-2xl">
               {gameState.humanPlayer.life}
             </span>
-          </div>
+          </button>
         </div>
 
-        {/* Human extra command zone cards, such as partners */}
-        {humanNonCommanderCommandZone.length > 0 && (
+        {/* Human command zone cards, including partners/backgrounds. */}
+        {humanCommandZoneCards.length > 0 && (
           <div className="flex gap-1.5 md:gap-2 mb-2 overflow-x-auto">
-            {humanNonCommanderCommandZone.map(card => (
-              <CardTile
-                key={card.instanceId}
-                card={card}
-                playable={playableIds.has(card.instanceId)}
-                onClick={
-                  playableIds.has(card.instanceId)
-                    ? () => handleCardClick(card)
-                    : undefined
-                }
-              />
-            ))}
+            {humanCommandZoneCards.map(card => {
+              const targetAction = getTargetAction(card);
+              const playable = playableIds.has(card.instanceId);
+              return (
+                <CardTile
+                  key={card.instanceId}
+                  card={card}
+                  playable={playable}
+                  targetable={!playable && !!targetAction}
+                  targetLabel={targetAction?.label}
+                  inspectable
+                  onHoverCard={handleCardHover}
+                  onClick={
+                    playable
+                      ? () => handleCardClick(card)
+                      : targetAction
+                      ? () => onAction(targetAction)
+                      : () => setInspectedCard(card)
+                  }
+                  onInspect={() => setInspectedCard(card)}
+                />
+              );
+            })}
           </div>
         )}
 
@@ -1107,35 +2019,61 @@ export function GameBoard({
         </div>
 
         {/* Human Graveyard */}
-        <GraveyardViewer cards={gameState.humanGraveyard} label="Your" />
+        <GraveyardViewer cards={gameState.humanGraveyard} label="Your" onInspect={setInspectedCard} />
       </div>
 
-      {/* Unified Action Bar */}
-      {hasAnyAction && (
-        <div className={FLOATING_TABLE_LAYOUT.actionsDock}>
-          <div className="mb-0.5 text-[9px] font-semibold uppercase tracking-wider text-amber-400 md:text-[10px]">
-            Actions
-          </div>
+      {/* Top utility/action bar: card actions, mana, prompts, and Undo. */}
+      {hasTopActions && (
+        <div className={FLOATING_TABLE_LAYOUT.actionsDock} aria-label="Game actions">
+          {currentPrompt && (
+            <div className="mb-1 flex min-h-10 items-start gap-2 rounded border border-sky-500/25 bg-sky-950/30 px-2 py-1 text-xs text-stone-100">
+              <div className="shrink-0 rounded bg-sky-400/15 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-sky-200">
+                {PROMPT_TYPE_LABELS[currentPrompt.type] || 'Prompt'}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
+                  <div className="truncate font-semibold">{currentPrompt.title}</div>
+                  {promptChoiceSummaryText(currentPrompt) && (
+                    <div className="truncate text-[10px] font-semibold text-amber-100/80">
+                      {promptChoiceSummaryText(currentPrompt)}
+                    </div>
+                  )}
+                </div>
+                <div className="truncate text-[10px] text-sky-100/70">{promptMeta(currentPrompt)}</div>
+                {currentPrompt.guidance && (
+                  <div className="mt-0.5 hidden truncate text-[10px] leading-snug text-sky-100/85 sm:block">
+                    {currentPrompt.guidance}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
           <div className="flex min-h-10 items-center gap-1.5 overflow-x-auto py-0.5 md:gap-2">
-            {/* Pass / Don't Respond / End Phase */}
-            {passAction && (
-              <button
-                onClick={() => onAction(passAction)}
-	                className="min-h-8 shrink-0 whitespace-nowrap rounded bg-stone-600 px-3 py-1 text-xs font-semibold text-stone-200 transition-colors hover:bg-stone-500"
-              >
-                {passAction.label}
-              </button>
-            )}
-            {/* Combat: Skip Attacks / Declare Blockers */}
-            {combatActions.map((action, i) => (
-              <button
-                key={`combat-${i}`}
-                onClick={() => onAction(action)}
-	                className="min-h-8 shrink-0 whitespace-nowrap rounded border border-red-600/30 bg-red-900/60 px-3 py-1 text-xs font-semibold text-red-200 transition-colors hover:bg-red-800/70"
-              >
-                {action.label}
-              </button>
-            ))}
+          {guideSuggestion && (
+            <>
+              <div className="flex min-h-10 max-w-[17rem] shrink-0 items-center gap-1.5 rounded-md border border-amber-400/25 bg-amber-950/70 px-2 py-1 text-[10px] text-stone-100 shadow-lg shadow-black/20 sm:max-w-[26rem] md:text-xs">
+                <Lightbulb className="h-3.5 w-3.5 shrink-0 text-amber-300" />
+                <div className="min-w-0">
+                  <div className="truncate font-semibold text-stone-50">
+                    <span className="font-bold uppercase tracking-wider text-amber-300">Guide</span>
+                    <span className="mx-1 text-stone-500">/</span>
+                    {guideSuggestion.actionLabel}
+                  </div>
+                  <div className="hidden truncate leading-snug text-stone-300 sm:block">
+                    {guideSuggestion.reason}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onAction(guideSuggestion.action)}
+                  className="min-h-8 shrink-0 rounded bg-amber-400 px-3 py-1 text-xs font-black text-neutral-950 transition-colors hover:bg-amber-300"
+                >
+                  Do it
+                </button>
+              </div>
+              <div className="h-6 w-px shrink-0 bg-stone-600/80" />
+            </>
+          )}
             {/* Cast Spells */}
             {castActions.map((action, i) => {
               // Look up the card to compute CMC for counter probability
@@ -1150,17 +2088,23 @@ export function GameBoard({
                 <button
                   key={`cast-${i}`}
                   onClick={() => onAction(action)}
-	                  className="flex min-h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded border border-green-600/30 bg-green-900/60 px-3 py-1 text-xs font-semibold text-green-200 transition-colors hover:bg-green-800/70"
-                >
-                  <span>
-                    <span className="text-green-400 text-[10px] mr-1">Cast</span>
-                    {action.cardName || action.label}
-                  </span>
-                  {counter.prob > 0 && (
-                    <span className={`${counter.color} text-[10px] font-bold ml-1`}>
-                      {'\u26A1'} {counter.prob}%
+	                  className="flex min-h-10 shrink-0 items-center gap-1.5 whitespace-nowrap rounded border border-green-600/30 bg-green-900/60 px-3 py-1 text-left text-xs font-semibold text-green-200 transition-colors hover:bg-green-800/70 md:min-h-8"
+                  >
+                  <span className="min-w-0">
+                    <span className="flex items-center gap-1.5">
+                      <span>{action.label}</span>
+                      {counter.prob > 0 && (
+                        <span className={`${counter.color} text-[10px] font-bold`}>
+                          {'\u26A1'} {counter.prob}%
+                        </span>
+                      )}
                     </span>
-                  )}
+                    {action.paymentPreview && (
+                      <span className="block max-w-56 truncate text-[10px] font-semibold text-amber-100/80">
+                        {action.paymentPreview}
+                      </span>
+                    )}
+                  </span>
                 </button>
               );
             })}
@@ -1169,10 +2113,9 @@ export function GameBoard({
               <button
                 key={`land-${i}`}
                 onClick={() => onAction(action)}
-	                className="min-h-8 shrink-0 whitespace-nowrap rounded border border-green-600/30 bg-green-900/60 px-3 py-1 text-xs font-semibold text-green-200 transition-colors hover:bg-green-800/70"
+	                className="min-h-10 shrink-0 whitespace-nowrap rounded border border-green-600/30 bg-green-900/60 px-3 py-1 text-xs font-semibold text-green-200 transition-colors hover:bg-green-800/70 md:min-h-8"
               >
-                <span className="text-green-400 text-[10px] mr-1">Play</span>
-                {action.cardName || action.label}
+                {action.label}
               </button>
             ))}
             {/* Other card actions */}
@@ -1180,9 +2123,14 @@ export function GameBoard({
               <button
                 key={`other-${i}`}
                 onClick={() => onAction(action)}
-	                className="min-h-8 shrink-0 whitespace-nowrap rounded border border-green-600/30 bg-green-900/60 px-3 py-1 text-xs font-semibold text-green-200 transition-colors hover:bg-green-800/70"
+	                className="min-h-10 shrink-0 whitespace-nowrap rounded border border-green-600/30 bg-green-900/60 px-3 py-1 text-left text-xs font-semibold text-green-200 transition-colors hover:bg-green-800/70 md:min-h-8"
               >
-                {action.label}
+                <span className="block">{action.label}</span>
+                {action.paymentPreview && (
+                  <span className="block max-w-56 truncate text-[10px] font-semibold text-amber-100/80">
+                    {action.paymentPreview}
+                  </span>
+                )}
               </button>
             ))}
             {/* Mana Abilities */}
@@ -1196,7 +2144,7 @@ export function GameBoard({
                   const tapAllPlan = (() => {
                     // Group manaActions by card id; each card produces one tap.
                     const byCard = new Map<string, SimpleLegalAction[]>();
-                    for (const a of manaActions) {
+                    for (const a of manaActions.filter(action => action.label?.startsWith('Tap '))) {
                       const cardId = a.cardInstanceId;
                       if (!cardId) continue;
                       const arr = byCard.get(cardId) ?? [];
@@ -1227,37 +2175,82 @@ export function GameBoard({
                   return (
                     <button
                       onClick={() => { for (const a of tapAllPlan) onAction(a); }}
-	                      className="min-h-8 shrink-0 whitespace-nowrap rounded border border-amber-500/40 bg-amber-700/70 px-3 py-1 text-xs font-bold text-amber-100 transition-colors hover:bg-amber-600/80"
+                      className="min-h-10 shrink-0 whitespace-nowrap rounded border border-amber-500/40 bg-amber-700/70 px-3 py-1 text-xs font-bold text-amber-100 transition-colors hover:bg-amber-600/80 md:min-h-8"
                     >
                       Tap All ({tapAllPlan.length})
                     </button>
                   );
                 })()}
                 {/* Individual taps — only show when 3 or fewer, otherwise too long */}
-                {manaActions.length <= 3 && manaActions.map((action, i) => (
+                {showIndividualManaActions && manaActions.map((action, i) => (
                   <button
                     key={`mana-${i}`}
                     onClick={() => onAction(action)}
-	                    className="min-h-8 shrink-0 whitespace-nowrap rounded border border-amber-600/30 bg-amber-900/50 px-2 py-1 text-[10px] font-semibold text-amber-200 transition-colors hover:bg-amber-800/60 md:text-xs"
+	                    className="min-h-10 shrink-0 whitespace-nowrap rounded border border-amber-600/30 bg-amber-900/50 px-2 py-1 text-[10px] font-semibold text-amber-200 transition-colors hover:bg-amber-800/60 md:min-h-8 md:text-xs"
                   >
-                    <span className="text-amber-400 text-[9px] mr-0.5">Tap</span>
-                    {action.cardName || action.label}
+                    {action.label || action.cardName}
                   </button>
                 ))}
               </>
             )}
             {/* Undo button */}
-            {onUndo && (undosRemaining ?? 0) > 0 && (
+            {canUndo && (
               <>
                 <div className="w-px h-6 bg-stone-600 shrink-0 mx-0.5" />
                 <button
                   onClick={onUndo}
-	                  className="min-h-8 shrink-0 whitespace-nowrap rounded border border-red-600/30 bg-red-900/50 px-3 py-1 text-xs font-semibold text-red-300 transition-colors hover:bg-red-800/60"
+	                  className="min-h-10 shrink-0 whitespace-nowrap rounded border border-red-600/30 bg-red-900/50 px-3 py-1 text-xs font-semibold text-red-300 transition-colors hover:bg-red-800/60 md:min-h-8"
                 >
                   Undo ({undosRemaining})
                 </button>
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Bottom phase controls: turn movement stays near the hand and play decisions. */}
+      {hasPhaseMovement && (
+        <div className={FLOATING_TABLE_LAYOUT.phaseDock} aria-label="Phase controls">
+          <div className="flex min-h-10 items-center gap-1.5 overflow-x-auto py-0.5 md:gap-2">
+            <div className="flex min-h-9 shrink-0 items-center rounded border border-neutral-700 bg-neutral-900 px-2 text-[10px] font-bold uppercase tracking-wider text-amber-300">
+              {STEP_DISPLAY[gameState.step] || PHASE_DISPLAY[gameState.phase] || gameState.phase}
+            </div>
+            {skipRestAction && (
+              <button
+                onClick={() => onAction(skipRestAction)}
+                className="flex min-h-10 shrink-0 items-center gap-1 whitespace-nowrap rounded bg-amber-500 px-3 py-1 text-xs font-black text-neutral-950 transition-colors hover:bg-amber-400 md:min-h-8"
+              >
+                <ChevronRight className="h-3.5 w-3.5" />
+                {skipRestAction.label}
+              </button>
+            )}
+            {skipEmptyAction && (
+              <button
+                onClick={() => onAction(skipEmptyAction)}
+                className="flex min-h-10 shrink-0 items-center gap-1 whitespace-nowrap rounded bg-emerald-700 px-3 py-1 text-xs font-semibold text-white transition-colors hover:bg-emerald-600 md:min-h-8"
+              >
+                <ChevronRight className="h-3.5 w-3.5" />
+                {skipEmptyAction.label}
+              </button>
+            )}
+            {passAction && (
+              <button
+                onClick={() => onAction(passAction)}
+                className="min-h-10 shrink-0 whitespace-nowrap rounded bg-stone-600 px-3 py-1 text-xs font-semibold text-stone-200 transition-colors hover:bg-stone-500 md:min-h-8"
+              >
+                {passAction.label}
+              </button>
+            )}
+            {combatActions.map((action, i) => (
+              <button
+                key={`combat-phase-${i}`}
+                onClick={() => onAction(action)}
+                className="min-h-10 shrink-0 whitespace-nowrap rounded border border-red-600/30 bg-red-900/60 px-3 py-1 text-xs font-semibold text-red-200 transition-colors hover:bg-red-800/70 md:min-h-8"
+              >
+                {action.label}
+              </button>
+            ))}
           </div>
         </div>
       )}
@@ -1269,16 +2262,19 @@ export function GameBoard({
             {discardPhase
               ? `Hand (${gameState.humanHand.length}) — Discard ${discardCount} card${(discardCount ?? 0) > 1 ? 's' : ''}`
               : mulliganPhase
-              ? `Hand (${gameState.humanHand.length})${mulliganCount ? ` - Mull #${mulliganCount}` : ''}`
+              ? needsMulliganBottomSelection
+                ? `Choose ${requiredMulliganBottoms} to bottom (${selectedMulliganBottomSet.size}/${requiredMulliganBottoms})`
+                : `Hand (${gameState.humanHand.length})${mulliganCount ? ` - Mull #${mulliganCount}` : ''}`
               : `Hand (${gameState.humanHand.length})`}
           </div>
           {mulliganPhase && (
             <div className="flex gap-2">
               <button
                 onClick={onKeepHand}
-                className="px-3 md:px-4 py-1.5 rounded bg-green-700 hover:bg-green-600 text-white text-xs font-semibold transition-colors min-h-[44px]"
+                disabled={!mulliganBottomReady}
+                className="px-3 md:px-4 py-1.5 rounded bg-green-700 hover:bg-green-600 text-white text-xs font-semibold transition-colors min-h-[44px] disabled:cursor-not-allowed disabled:opacity-45"
               >
-                Keep
+                {needsMulliganBottomSelection ? 'Keep Selected' : 'Keep'}
               </button>
               <button
                 onClick={onMulligan}
@@ -1298,14 +2294,23 @@ export function GameBoard({
           ) : (
             gameState.humanHand.map(card => {
               const cardAction = getInspectAction(card);
+              const selectedForBottom = selectedMulliganBottomSet.has(card.instanceId);
               return (
                   <CardTile
                     key={card.instanceId}
                     card={card}
                     playable={discardPhase || (!mulliganPhase && playableIds.has(card.instanceId))}
+                    selected={selectedForBottom}
                     compact
                     inspectable
-                  onClick={cardAction ? cardAction.run : () => setInspectedCard(card)}
+                    onHoverCard={handleCardHover}
+                  onClick={
+                    needsMulliganBottomSelection && onToggleMulliganBottom
+                      ? () => onToggleMulliganBottom(card.instanceId)
+                      : cardAction
+                      ? cardAction.run
+                      : () => setInspectedCard(card)
+                  }
                   onInspect={() => setInspectedCard(card)}
                 />
               );

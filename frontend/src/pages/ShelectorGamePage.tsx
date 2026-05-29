@@ -16,6 +16,7 @@ import { GameChat } from '../components/GameChat';
 import { GameReview } from '../components/GameReview';
 import { EndGameModal } from '../components/shelector/EndGameModal';
 import { cacheSet, cacheGet } from '../lib/cache';
+import { shelectorApiUrl } from '../lib/api';
 
 // Types for deck import response
 interface DeckImportResult {
@@ -68,24 +69,39 @@ export function ShelectorGamePage() {
     error,
     mulliganPhase,
     mulliganCount,
+    mulliganBottomCount,
+    selectedMulliganBottomIds,
     discardPhase,
     discardCount,
     tutorPhase,
     tutorCards,
     tutorTitle,
+    libraryChoice,
     gameLog,
+    authorityUpdates,
+    lastStateUpdate,
+    currentPrompt,
+    lastPlayedCard,
     spawnOpponent,
     startGame,
     submitAction,
     keepHand,
     mulligan,
+    toggleMulliganBottomCard,
     discardCard,
     resolveTutor,
+    cancelTutor,
+    resolveLibraryChoice,
     undosRemaining,
     undoAction,
     coachMode,
     setCoachMode,
+    newPlayerMode,
+    setNewPlayerMode,
+    holdPriority,
+    setHoldPriority,
     untapManaSource,
+    adjustCounters,
     untappableCardIds,
     endGame,
     closeEndGame,
@@ -132,6 +148,15 @@ export function ShelectorGamePage() {
     if (savedHistory) setDeckHistory(savedHistory);
   }, []);
 
+  useEffect(() => {
+    document.body.dataset.deckrepsPlaySurface = gameState ? 'active' : 'setup';
+    window.dispatchEvent(new CustomEvent('deckreps-play-surface-change'));
+    return () => {
+      delete document.body.dataset.deckrepsPlaySurface;
+      window.dispatchEvent(new CustomEvent('deckreps-play-surface-change'));
+    };
+  }, [gameState]);
+
   // Helper to add a deck to history
   const addToDeckHistory = (commander: string, text: string) => {
     setDeckHistory(prev => {
@@ -168,7 +193,7 @@ export function ShelectorGamePage() {
     setImportError(null);
     setImportResult(null);
     try {
-      const res = await fetch('http://localhost:8100/import-deck', {
+      const res = await fetch(shelectorApiUrl('/import-deck'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -230,7 +255,7 @@ export function ShelectorGamePage() {
                     Challenge the Shelector
                   </h2>
                   <p className="text-sm text-stone-400">
-                    Paste your decklist below, then spawn an AI opponent.
+                    Paste your decklist below, then start an experimental AI practice match.
                   </p>
                 </div>
 
@@ -629,7 +654,7 @@ export function ShelectorGamePage() {
                       setIsGeneratingAIDeck(true);
                       try {
                         // Fetch AI deck from the backend
-                        const aiRes = await fetch('http://localhost:8100/generate-ai-deck', {
+                        const aiRes = await fetch(shelectorApiUrl('/generate-ai-deck'), {
                           method: 'POST',
                           headers: { 'Content-Type': 'application/json' },
                           body: JSON.stringify({
@@ -721,8 +746,11 @@ export function ShelectorGamePage() {
           onAction={submitAction}
           mulliganPhase={mulliganPhase}
           mulliganCount={mulliganCount}
+          mulliganBottomCount={mulliganBottomCount}
+          selectedMulliganBottomIds={selectedMulliganBottomIds}
           onKeepHand={keepHand}
           onMulligan={mulligan}
+          onToggleMulliganBottom={toggleMulliganBottomCard}
           discardPhase={discardPhase}
           discardCount={discardCount}
           onDiscardCard={discardCard}
@@ -730,12 +758,24 @@ export function ShelectorGamePage() {
           tutorCards={tutorCards}
           tutorTitle={tutorTitle}
           onTutorPick={resolveTutor}
+          onTutorCancel={cancelTutor}
+          libraryChoice={libraryChoice}
+          onResolveLibraryChoice={resolveLibraryChoice}
           undosRemaining={undosRemaining}
           onUndo={undoAction}
           coachMode={coachMode}
           onToggleCoach={setCoachMode}
+          newPlayerMode={newPlayerMode}
+          onToggleNewPlayerMode={setNewPlayerMode}
+          holdPriority={holdPriority}
+          onToggleHoldPriority={setHoldPriority}
           onUntapMana={untapManaSource}
+          onAdjustCounters={adjustCounters}
           untappableCardIds={untappableCardIds}
+          lastPlayedCard={lastPlayedCard}
+          authorityUpdates={authorityUpdates}
+          lastStateUpdate={lastStateUpdate}
+          currentPrompt={currentPrompt}
         />
       </div>
 
@@ -803,12 +843,12 @@ export function ShelectorGamePage() {
       {/* Mobile chat toggle FAB */}
       <button
         onClick={() => setShowMobileChat(prev => !prev)}
-        className="md:hidden fixed bottom-4 right-4 z-30 w-14 h-14 rounded-full bg-amber-600 hover:bg-amber-500
+        className="md:hidden fixed right-3 top-[calc(env(safe-area-inset-top)+4.25rem)] z-50 h-11 w-11 rounded-full bg-amber-600 hover:bg-amber-500
                    text-white shadow-lg shadow-black/40 flex items-center justify-center
                    active:scale-95 transition-transform"
         aria-label="Toggle game chat"
       >
-        <MessageSquare className="w-6 h-6" />
+        <MessageSquare className="w-5 h-5" />
         {chatMessages.length > 0 && (
           <span className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">
             {chatMessages.length > 99 ? '99' : chatMessages.length}
@@ -820,16 +860,16 @@ export function ShelectorGamePage() {
       {gameLog.length > 0 && (
         <button
           onClick={() => setShowReview(true)}
-          className={`md:hidden fixed ${isGameOver ? 'bottom-4 left-4' : 'bottom-20 right-4'} z-30
+          className={`md:hidden fixed ${isGameOver ? 'left-3 top-[calc(env(safe-area-inset-top)+4.25rem)]' : 'right-3 top-[calc(env(safe-area-inset-top)+7.25rem)]'} z-50
                      ${isGameOver
-                       ? 'w-14 h-14 rounded-full bg-purple-700 hover:bg-purple-600'
-                       : 'w-11 h-11 rounded-full bg-stone-700 hover:bg-stone-600'
+                       ? 'h-11 w-11 rounded-full bg-purple-700 hover:bg-purple-600'
+                       : 'h-11 w-11 rounded-full bg-stone-700 hover:bg-stone-600'
                      }
                      text-white shadow-lg shadow-black/40 flex items-center justify-center
                      active:scale-95 transition-transform`}
           aria-label="Review game"
         >
-          <BarChart3 className={isGameOver ? 'w-6 h-6' : 'w-4 h-4'} />
+          <BarChart3 className={isGameOver ? 'w-5 h-5' : 'w-4 h-4'} />
         </button>
       )}
 

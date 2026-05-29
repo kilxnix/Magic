@@ -4,7 +4,6 @@ import { Deck } from '../types';
 import { DeckDisplay } from '../components/DeckDisplay';
 import { DeckVisualView } from '../components/DeckVisualView';
 import { LiveRibbon } from '../components/LiveRibbon';
-import { AdPlaceholder } from '../components/AdPlaceholder';
 import { Grid3X3, List, Swords, RefreshCw, Lock } from 'lucide-react';
 
 async function fetchDeck(id: string): Promise<Deck> {
@@ -314,20 +313,7 @@ export function DeckViewerPage() {
             </div>
           </div>
 
-          {/* Bottom Ad */}
-          <div className="flex justify-center p-4 border-t border-stone-200 bg-stone-100">
-            <AdPlaceholder size="leaderboard" className="hidden md:flex" />
-            <AdPlaceholder size="sidebar" className="md:hidden" />
-          </div>
         </main>
-
-        {/* Right Sidebar - Ad (Desktop only) */}
-        <aside className="hidden lg:flex flex-col items-center gap-4 p-4 w-[332px] flex-shrink-0 border-l border-stone-200 bg-stone-50">
-          <AdPlaceholder size="sidebar" />
-          <div className="text-xs text-stone-400 text-center mt-2">
-            Support the site
-          </div>
-        </aside>
       </div>
 
     </div>

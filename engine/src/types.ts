@@ -1,4 +1,4 @@
-import type { EquipCostInfo, EquipmentBonusInfo, ManaProductionInfo, SearchAbilityInfo, UnlessTaxInfo } from './effects/ast';
+import type { CardFilter, EquipCostInfo, EquipmentBonusInfo, ManaProductionInfo, SearchAbilityInfo, UnlessTaxInfo } from './effects/ast';
 
 export type ManaColor = 'W' | 'U' | 'B' | 'R' | 'G' | 'C';
 
@@ -22,6 +22,7 @@ export interface ManaCost {
   G: number;
   C: number;
   generic: number;
+  hybrid?: ManaColor[][];
 }
 
 export interface CardDefinition {
@@ -57,12 +58,18 @@ export interface CardInstance {
   counters: Record<string, number>;
   attachedTo?: string;
   damage: number;
+  deathtouchDamage?: boolean;
   isCommander: boolean;
   phasedOut?: boolean; // Phase 16: true when phased out (treated as not existing)
   grantedKeywords?: string[]; // Phase 16: temporarily granted keywords (e.g. "until end of turn")
   isToken?: boolean; // Phase 16: true for token copies / token creatures
   copiedFromDefinitionId?: string; // Phase 16: original definition for copy tokens
   fromSideboard?: boolean; // True when an outside-the-game effect brought this card in.
+  choices?: {
+    chosenCreatureType?: string;
+    imprintedCardIds?: string[];
+    discardedCardIds?: string[];
+  };
 }
 
 // Import TriggeredAbility from effects/ast (forward declaration for type safety)
@@ -73,17 +80,31 @@ export interface TriggeredAbilityRef {
     | { kind: 'Dies'; who: 'self' | 'any' }
     | { kind: 'Attacks'; who: 'self' }
     | { kind: 'Upkeep'; whose: 'yours' | 'each' }
-    | { kind: 'EndStep'; whose: 'yours' }
-    | { kind: 'AnotherCreatureETB'; controller: 'yours' }
+    | { kind: 'BeginningCombat'; whose: 'yours' | 'each' }
+    | { kind: 'EndStep'; whose: 'yours' | 'opponents' }
+    | { kind: 'AnotherCreatureETB'; controller: 'yours'; nontoken?: boolean; tokenOnly?: boolean }
     | { kind: 'CreatureYouControlDies' }
+    | { kind: 'CreatureYouControlAttacks' }
     | { kind: 'YouCastSpell' }
+    | { kind: 'CastNoncreatureSpell' }
     | { kind: 'LifeGain' }
     | { kind: 'CardDrawn' }
     | { kind: 'OpponentCastSpell' }
-    | { kind: 'AnyCreatureETB' }
+    | { kind: 'AnyCreatureETB'; controller?: 'yours' | 'any'; nontoken?: boolean; tokenOnly?: boolean }
+    | { kind: 'CombatDamageToPlayer'; who: 'self' | 'creatureYouControl' }
     | { kind: 'CastInstantOrSorcery' }
+    | { kind: 'CastOrCopyInstantOrSorcery' }
     | { kind: 'Landfall' };
   effects: unknown[]; // Effect[] from ast.ts
+}
+
+export interface DelayedTriggeredAbilityRef {
+  id: string;
+  sourceInstanceId?: string;
+  controllerId: string;
+  trigger: { kind: 'EndStep'; whose: 'yours' | 'opponents' };
+  effects: unknown[];
+  oneShot: boolean;
 }
 
 export type StackItemKind = 'Spell' | 'TriggeredAbility' | 'ActivatedAbility';
@@ -94,7 +115,13 @@ export interface SpellStackItem {
   cardInstanceId: string;
   casterId: string;
   targets: string[];
+  castFromZone?: Zone;
   chosenModes?: number[];
+  namedCardChoices?: Record<string, string>;
+  cardChoices?: CardInstance['choices'];
+  cantBeCountered?: boolean;
+  isCopy?: boolean;
+  copyOfCardInstanceId?: string;
 }
 
 export interface TriggeredAbilityStackItem {
@@ -104,6 +131,8 @@ export interface TriggeredAbilityStackItem {
   controllerId: string;
   ability: TriggeredAbilityRef;
   targets: string[];
+  targetSpecs?: unknown[]; // TargetSpec[] from targets.ts
+  namedCardChoices?: Record<string, string>;
   eventContext?: {
     casterId?: string;
     cardInstanceId?: string;
@@ -120,6 +149,7 @@ export interface ActivatedAbilityStackItem {
     targets: { id: string; type: string }[];
   };
   targets: string[];
+  namedCardChoices?: Record<string, string>;
 }
 
 export type StackItem = SpellStackItem | TriggeredAbilityStackItem | ActivatedAbilityStackItem;
@@ -162,6 +192,8 @@ export interface BlockerDeclaration {
 export interface CombatState {
   attackers: AttackerDeclaration[];
   blockers: BlockerDeclaration[];
+  blockersDeclared?: boolean;
+  blockersDeclaredBy?: string[];
   damageAssignment: Map<string, number>; // attackerInstanceId -> damage to assign to player
 }
 
@@ -174,6 +206,25 @@ export interface ManaPool {
   C: number;
 }
 
+export type ManaRestrictionKind = 'creatureSpell' | 'creatureTypeSpell' | 'legendarySpell' | 'commanderSpell';
+
+export interface RestrictedMana {
+  color: ManaColor;
+  amount: number;
+  restriction: ManaRestrictionKind;
+  creatureType?: string;
+  sourceInstanceId?: string;
+}
+
+export type ConditionalManaEffectKind = 'copyRedInstantOrSorcery';
+
+export interface ConditionalMana {
+  color: ManaColor;
+  amount: number;
+  effect: ConditionalManaEffectKind;
+  sourceInstanceId?: string;
+}
+
 export interface Player {
   id: string;
   name: string;
@@ -182,8 +233,12 @@ export interface Player {
   commanderDamage: Record<string, number>; // commanderInstanceId -> damage taken
   commanderTax: number;
   commanderInstanceId: string | null; // player's commander card instance
+  commanderInstanceIds?: string[]; // partner/background commanders in the command zone
   commanderCastCount: number; // times commander has been cast from command zone
+  commanderCastCounts?: Record<string, number>; // per commander instance for partner tax
   manaPool: ManaPool;
+  restrictedMana?: RestrictedMana[];
+  conditionalMana?: ConditionalMana[];
   hasPlayedLand: boolean;
   /** Count of lands played this turn. Independent of hasPlayedLand so that
    * Exploration / Mina and Denn / Oracle of Mul Daya can grant additional
@@ -203,7 +258,7 @@ export interface ContinuousEffectRef {
     modifier: { kind: 'ModifyPT'; power: number; toughness: number }
       | { kind: 'GrantKeyword'; keyword: string }
       | { kind: 'ReduceCost'; amount: number };
-    filter: { types?: string[]; subtypes?: string[]; supertypes?: string[]; colors?: Array<'W' | 'U' | 'B' | 'R' | 'G'>; cmc?: { op: 'eq' | 'lte' | 'gte'; value: number } };
+    filter: CardFilter;
     controller: 'you' | 'opponent' | 'any';
     excludeSelf: boolean;
   };
@@ -223,6 +278,7 @@ export interface GameState {
   phase: Phase;
   step: Step;
   turnNumber: number;
+  spellsCastThisTurn?: number;
   hasPriorityPassed: boolean[];
   stack: StackItem[];
   combat: CombatState | null;
@@ -230,6 +286,7 @@ export interface GameState {
   // Phase 6: Triggers
   battlefieldAbilities: Map<string, TriggeredAbilityRef[]>; // instanceId → abilities
   pendingTriggers: PendingTrigger[];
+  delayedTriggers?: DelayedTriggeredAbilityRef[];
 
   // Phase 15: Continuous effects from static abilities
   continuousEffects?: ContinuousEffectRef[];
@@ -248,8 +305,12 @@ export function createPlayer(id: string, name: string, life: number = 40): Playe
     commanderDamage: {},
     commanderTax: 0,
     commanderInstanceId: null,
+    commanderInstanceIds: [],
     commanderCastCount: 0,
+    commanderCastCounts: {},
     manaPool: emptyManaPool(),
+    restrictedMana: [],
+    conditionalMana: [],
     hasPlayedLand: false,
     landsPlayedThisTurn: 0,
     hasPriority: false,

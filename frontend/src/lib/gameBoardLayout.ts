@@ -1,17 +1,18 @@
 export const FLOATING_TABLE_LAYOUT = {
-  shell: 'h-screen bg-stone-950 text-stone-100 flex flex-col overflow-hidden',
-  board: 'flex-1 min-h-0 min-w-0',
-  reviewButton: 'fixed right-4 top-4 z-40',
+  shell: 'h-[100svh] max-h-[100svh] bg-stone-950 text-stone-100 flex flex-col overflow-hidden overscroll-none',
+  board: 'isolate flex-1 min-h-0 min-w-0',
+  reviewButton: 'fixed right-2 top-2 z-50 md:right-4 md:top-4',
   reviewRail: 'hidden',
-  table: 'relative flex h-full min-w-0 flex-1 flex-col overflow-hidden bg-neutral-900 pt-12 pb-32',
-  opponentStrip: 'relative z-10 shrink-0 border-b border-neutral-800/70 bg-neutral-950/40 px-3 pb-1 pt-1 backdrop-blur-sm md:px-4',
-  actionsDock: 'absolute inset-x-3 bottom-[7.75rem] z-30 rounded-lg border border-stone-700/60 bg-neutral-950/90 px-2 py-1 shadow-xl shadow-black/35 backdrop-blur md:px-3',
-  handDock: 'absolute inset-x-3 bottom-3 z-30 rounded-lg border border-neutral-700/70 bg-neutral-950/95 px-2 py-1.5 shadow-2xl shadow-black/45 backdrop-blur md:px-3',
+  table: 'relative flex h-full min-w-0 flex-1 flex-col overflow-hidden bg-neutral-900 pt-[7.35rem] pb-[calc(env(safe-area-inset-bottom)+12.75rem)] md:pt-[6.75rem] md:pb-36',
+  opponentStrip: 'relative z-10 max-h-[29svh] shrink-0 overflow-y-auto overscroll-contain border-b border-neutral-800/70 bg-neutral-950/50 px-2 pb-1 pt-1 backdrop-blur-sm md:max-h-none md:px-4',
+  actionsDock: 'absolute inset-x-2 top-[3.35rem] z-40 max-h-[3.6rem] overflow-y-auto overscroll-contain rounded-lg border border-amber-500/35 bg-neutral-950/95 px-2 py-1 shadow-xl shadow-black/35 backdrop-blur md:inset-x-3 md:top-[3.75rem] md:max-h-[3.9rem] md:px-3',
+  phaseDock: 'absolute inset-x-2 bottom-[calc(env(safe-area-inset-bottom)+9.05rem)] z-40 max-h-[3.35rem] overflow-y-auto overscroll-contain rounded-lg border border-neutral-700/75 bg-neutral-950/95 px-2 py-1 shadow-xl shadow-black/35 backdrop-blur md:inset-x-3 md:bottom-[9.2rem] md:max-h-[3.4rem] md:px-3',
+  handDock: 'absolute inset-x-2 bottom-[calc(env(safe-area-inset-bottom)+0.5rem)] z-30 max-h-[8.25rem] overflow-hidden rounded-lg border border-neutral-700/70 bg-neutral-950/95 px-2 py-1.5 shadow-2xl shadow-black/40 backdrop-blur md:inset-x-3 md:bottom-3 md:max-h-none md:px-3',
 } as const;
 
 export const CARD_TILE_LAYOUT = {
-  compactSize: 'w-[4.75rem] h-20 md:w-[5.4rem] md:h-20',
-  defaultSize: 'w-[4.5rem] h-[6.5rem] md:w-24 md:h-36',
+  compactSize: 'w-[4.25rem] h-[4.9rem] sm:w-[4.75rem] sm:h-20 md:w-[5.4rem] md:h-20',
+  defaultSize: 'w-[4.25rem] h-[5.85rem] sm:w-[4.5rem] sm:h-[6.5rem] md:w-24 md:h-36',
   compactButton: 'p-1 text-[10px]',
   defaultButton: 'p-1.5 md:p-2 text-[10px] md:text-xs',
   compactTitle: 'font-semibold text-stone-100 leading-tight line-clamp-2 break-words text-[10px] md:text-[11px]',

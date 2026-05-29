@@ -3,13 +3,17 @@
 // Phase 14: Extended with ExileFromLibrary, GainControl, ForEach, EachPlayer, AllOfType
 // Phase 17: Conditional, Blink, Copy, GrantKeyword, PhaseOut, loyalty ability execution
 
-import type { GameState, CardInstance, CardDefinition } from '../types';
+import type { GameState, CardInstance, CardDefinition, PendingTrigger, Zone } from '../types';
+import { isSpellStackItem } from '../types';
 import type { Effect, TargetRef, AmountRef, TokenDefinition, CardFilter, SurveilEffect, ForEachAmount, Condition, LoyaltyAbility } from './ast';
+import { pruneDetachedEffects } from '../game-state';
 import { checkStateBasedActions, markPlayerLostFromEmptyLibrary } from '../state-based';
-import { isIndestructible } from '../keywords';
+import { instanceHasKeyword, isIndestructible } from '../keywords';
 import { getCommanderDestinationZone } from '../commander';
 import { applyReplacements } from './replacement';
 import type { ReplacementEvent } from './replacement';
+import { getEffectivePower } from './continuous';
+import { isEffectiveCreature } from '../effective-types';
 
 /**
  * Context for effect execution, includes X value from spell casting.
@@ -18,13 +22,33 @@ export interface ExecutionContext {
   casterId: string;
   chosenTargets: Map<string, string>;
   xValue: number;
+  namedCardChoices: Map<string, string>;
+  sourceInstanceId?: string;
+  eventContext?: {
+    casterId?: string;
+    cardInstanceId?: string;
+  };
+}
+
+export interface EffectExecutionOptions {
+  namedCardChoices?: Record<string, string>;
+  sourceInstanceId?: string;
+  eventContext?: ExecutionContext['eventContext'];
 }
 
 /**
  * Resolve an AmountRef to a concrete number.
  * For ForEach amounts, we need the full game state and caster.
  */
-function resolveAmount(amount: AmountRef, xValue: number, state?: GameState, casterId?: string): number {
+function resolveAmount(
+  amount: AmountRef,
+  xValue: number,
+  state?: GameState,
+  casterId?: string,
+  chosenTargets: Map<string, string> = new Map(),
+  targetId?: string,
+  eventCardInstanceId?: string,
+): number {
   if (typeof amount === 'number') {
     return amount;
   }
@@ -34,12 +58,38 @@ function resolveAmount(amount: AmountRef, xValue: number, state?: GameState, cas
   if (amount.kind === 'XMultiplied') {
     return xValue * amount.multiplier;
   }
+  if (amount.kind === 'EventSpellManaValue') {
+    if (!state || !eventCardInstanceId) return 0;
+    const eventCard = state.cards.get(eventCardInstanceId);
+    const eventDef = eventCard ? state.cardDefinitions.get(eventCard.definitionId) : undefined;
+    return eventDef?.cmc ?? 0;
+  }
   if (amount.kind === 'ForEach') {
     return resolveForEachCount(amount, state, casterId);
+  }
+  if (amount.kind === 'GreatestPower') {
+    return resolveGreatestPower(amount, state, casterId);
+  }
+  if (amount.kind === 'TargetPower') {
+    if (!state || !casterId) return 0;
+    const resolvedTargetId = targetId ?? resolveTargetRef(amount.target, casterId, chosenTargets, state);
+    return getEffectivePower(state, resolvedTargetId);
   }
   // Exhaustiveness
   const _never: never = amount;
   throw new Error(`Unknown AmountRef kind`);
+}
+
+function resolveControllerIds(
+  state: GameState,
+  casterId: string,
+  controller: 'you' | 'opponent' | 'each',
+): string[] {
+  if (controller === 'you') return [casterId];
+  if (controller === 'opponent') {
+    return state.players.filter(p => p.id !== casterId && !p.hasLost).map(p => p.id);
+  }
+  return state.players.filter(p => !p.hasLost).map(p => p.id);
 }
 
 /**
@@ -55,23 +105,7 @@ function resolveForEachCount(
   let count = 0;
   const { zone, filter, controller } = forEach;
 
-  // Determine which player(s) we're counting for
-  const playerIds: string[] = [];
-  if (controller === 'you') {
-    playerIds.push(casterId);
-  } else if (controller === 'opponent') {
-    for (const p of state.players) {
-      if (p.id !== casterId && !p.hasLost) {
-        playerIds.push(p.id);
-      }
-    }
-  } else if (controller === 'each') {
-    for (const p of state.players) {
-      if (!p.hasLost) {
-        playerIds.push(p.id);
-      }
-    }
-  }
+  const playerIds = resolveControllerIds(state, casterId, controller);
 
   for (const [, card] of state.cards) {
     if (card.zone !== zone) continue;
@@ -80,13 +114,42 @@ function resolveForEachCount(
     if (filter) {
       const def = state.cardDefinitions.get(card.definitionId);
       if (!def) continue;
-      if (!matchesCardFilter(def, filter)) continue;
+      const filterWithoutPower = { ...filter };
+      delete filterWithoutPower.power;
+      if (!matchesCardFilter(def, filterWithoutPower)) continue;
+      if (filter.power) {
+        const effectivePower = (def.power ?? 0)
+          + (card.counters['+1/+1'] || 0)
+          - (card.counters['-1/-1'] || 0)
+          + (card.counters['_powerMod'] || 0);
+        if (!matchesNumericFilter(effectivePower, filter.power)) continue;
+      }
     }
 
     count++;
   }
 
   return count;
+}
+
+function resolveGreatestPower(
+  amount: Extract<AmountRef, { kind: 'GreatestPower' }>,
+  state?: GameState,
+  casterId?: string,
+): number {
+  if (!state || !casterId) return 0;
+
+  let greatest = 0;
+  const playerIds = resolveControllerIds(state, casterId, amount.controller);
+  for (const [, card] of state.cards) {
+    if (card.zone !== amount.zone) continue;
+    if (!playerIds.includes(card.ownerId)) continue;
+    const def = state.cardDefinitions.get(card.definitionId);
+    if (!def) continue;
+    if (amount.filter && !matchesCardFilter(def, amount.filter)) continue;
+    greatest = Math.max(greatest, getEffectivePower(state, card.instanceId));
+  }
+  return greatest;
 }
 
 /**
@@ -97,6 +160,8 @@ function resolveTargetRef(
   ref: TargetRef,
   casterId: string,
   chosenTargets: Map<string, string>,
+  state?: GameState,
+  eventContext?: ExecutionContext['eventContext'],
 ): string {
   switch (ref.kind) {
     case 'Chosen':
@@ -105,8 +170,34 @@ function resolveTargetRef(
         throw new Error(`Missing chosen target for ${ref.targetId}`);
       }
       return chosen;
+    case 'TargetController': {
+      const chosenTarget = chosenTargets.get(ref.targetId);
+      if (!chosenTarget) {
+        throw new Error(`Missing chosen target for ${ref.targetId}`);
+      }
+      if (!state) {
+        throw new Error('TargetController target requires game state');
+      }
+      const stackItem = state.stack.find(item => {
+        if (item.id === chosenTarget) return true;
+        return isSpellStackItem(item) && item.cardInstanceId === chosenTarget;
+      });
+      if (stackItem) {
+        return isSpellStackItem(stackItem) ? stackItem.casterId : stackItem.controllerId;
+      }
+      const targetCard = state.cards.get(chosenTarget);
+      if (targetCard) return targetCard.ownerId;
+      throw new Error(`Cannot find controller for target ${chosenTarget}`);
+    }
     case 'Controller':
       return casterId;
+    case 'ActivePlayer': {
+      const activePlayer = state?.players[state.activePlayerIndex];
+      if (!activePlayer) {
+        throw new Error('ActivePlayer target requires game state');
+      }
+      return activePlayer.id;
+    }
     case 'Player':
       return ref.playerId;
     case 'EachOpponent':
@@ -115,15 +206,50 @@ function resolveTargetRef(
       throw new Error('EachPlayer must be handled before calling resolveTargetRef');
     case 'AllCreatures':
       throw new Error('AllCreatures must be handled before calling resolveTargetRef');
+    case 'AllAttackingCreatures':
+      throw new Error('AllAttackingCreatures must be handled before calling resolveTargetRef');
     case 'AllCreaturesYouControl':
       throw new Error('AllCreaturesYouControl must be handled before calling resolveTargetRef');
     case 'AllOfType':
       throw new Error('AllOfType must be handled before calling resolveTargetRef');
+    case 'Source':
+      throw new Error('Source target must be handled with effect execution context');
+    case 'EventCaster':
+      if (!eventContext?.casterId) {
+        throw new Error('EventCaster target requires trigger event context');
+      }
+      return eventContext.casterId;
+    case 'EventSpell':
+      if (!eventContext?.cardInstanceId) {
+        throw new Error('EventSpell target requires trigger event context');
+      }
+      return eventContext.cardInstanceId;
     default:
       // Exhaustiveness check
       const _never: never = ref;
       throw new Error(`Unknown TargetRef kind`);
   }
+}
+
+function matchesNumericFilter(value: number, filter: { op: 'eq' | 'lte' | 'gte'; value: number }): boolean {
+  switch (filter.op) {
+    case 'eq': return value === filter.value;
+    case 'lte': return value <= filter.value;
+    case 'gte': return value >= filter.value;
+  }
+}
+
+function resolveNamedCardChoice(
+  effect: { namedCard?: string; namedCardChoiceId?: string },
+  choices: Map<string, string>,
+): string {
+  const choiceId = effect.namedCardChoiceId ?? 'namedCard';
+  const chosen = choices.get(choiceId) || choices.get('namedCard') || choices.get('cardName');
+  const namedCard = chosen || effect.namedCard;
+  if (!namedCard?.trim()) {
+    throw new Error(`Missing named card choice for ${choiceId}`);
+  }
+  return namedCard.trim();
 }
 
 /**
@@ -156,8 +282,11 @@ function executeDraw(state: GameState, playerId: string, count: number): GameSta
   // Draw each card one at a time
   for (let i = 0; i < finalCount; i++) {
     if (i >= libraryCards.length) {
-      // Attempting to draw from empty library - player loses
-      currentState = markPlayerLostFromEmptyLibrary(currentState, playerId);
+      // Attempting to draw from an empty library normally loses, but cards
+      // such as Laboratory Maniac and Jace replace that draw with a win.
+      currentState = hasEmptyLibraryDrawWinReplacement(currentState, playerId)
+        ? markPlayerWonGame(currentState, playerId)
+        : markPlayerLostFromEmptyLibrary(currentState, playerId);
       break;
     }
     const card = libraryCards[i];
@@ -187,17 +316,33 @@ function executeDestroy(state: GameState, targetId: string): GameState {
     return state;
   }
 
-  const destZone = getCommanderDestinationZone(state, targetId, 'graveyard');
+  const destZone = getDeathDestination(state, targetId, card);
+  if (!destZone) return state;
   const newCards = new Map(state.cards);
-  newCards.set(targetId, { ...card, zone: destZone });
+  newCards.set(targetId, { ...card, zone: destZone, damage: 0, deathtouchDamage: undefined, tapped: false });
 
-  return { ...state, cards: newCards };
+  return pruneDetachedEffects({ ...state, cards: newCards });
+}
+
+function getDeathDestination(state: GameState, cardInstanceId: string, card: CardInstance): Zone | null {
+  const commanderDestination = getCommanderDestinationZone(state, cardInstanceId, 'graveyard');
+  if (commanderDestination !== 'graveyard') return commanderDestination;
+  if (!isEffectiveCreature(state, cardInstanceId)) return 'graveyard';
+
+  const { event } = applyReplacements(state, {
+    type: 'CreatureDies',
+    cardInstanceId,
+    targetId: card.ownerId,
+    destinationZone: 'graveyard',
+  });
+  if (!event) return null;
+  return event.destinationZone || 'graveyard';
 }
 
 /**
  * Execute a DealDamage effect.
  */
-function executeDealDamage(state: GameState, targetId: string, amount: number): GameState {
+function executeDealDamage(state: GameState, targetId: string, amount: number, sourceInstanceId?: string): GameState {
   // Check for replacement effects (e.g., damage prevention)
   const event: ReplacementEvent = { type: 'DamageDealt', targetId, amount };
   const { event: replaced } = applyReplacements(state, event);
@@ -227,9 +372,35 @@ function executeDealDamage(state: GameState, targetId: string, amount: number): 
   }
 
   const newCards = new Map(state.cards);
-  newCards.set(targetId, { ...card, damage: card.damage + finalAmount });
+  const sourceHasDeathtouch = sourceInstanceId ? instanceHasKeyword(state, sourceInstanceId, 'Deathtouch') : false;
+  newCards.set(targetId, {
+    ...card,
+    damage: card.damage + finalAmount,
+    deathtouchDamage: card.deathtouchDamage || sourceHasDeathtouch,
+  });
 
-  return { ...state, cards: newCards };
+  return pruneDetachedEffects({ ...state, cards: newCards });
+}
+
+function hasEmptyLibraryDrawWinReplacement(state: GameState, playerId: string): boolean {
+  for (const card of state.cards.values()) {
+    if (card.zone !== 'battlefield' || card.ownerId !== playerId) continue;
+    const def = state.cardDefinitions.get(card.definitionId);
+    if (!def) continue;
+    if (/if you would draw a card while your library has no cards in it,\s*you win the game instead/i.test(def.oracle_text)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function markPlayerWonGame(state: GameState, winnerId: string): GameState {
+  return {
+    ...state,
+    players: state.players.map(player =>
+      player.id === winnerId ? player : { ...player, hasLost: true }
+    ),
+  };
 }
 
 /**
@@ -282,7 +453,56 @@ function executeExile(state: GameState, targetId: string): GameState {
   const newCards = new Map(state.cards);
   newCards.set(targetId, { ...card, zone: destZone });
 
-  return { ...state, cards: newCards };
+  return pruneDetachedEffects({ ...state, cards: newCards });
+}
+
+function executePutIntoLibrary(
+  state: GameState,
+  targetId: string,
+  position: 'top' | 'bottom' | 'shuffle',
+): GameState {
+  const card = state.cards.get(targetId);
+  if (!card) return state;
+
+  const ownerId = card.ownerId;
+  const libraryCards: CardInstance[] = [];
+  const otherEntries: [string, CardInstance][] = [];
+
+  for (const [id, existing] of state.cards) {
+    if (id === targetId) continue;
+    if (existing.ownerId === ownerId && existing.zone === 'library') {
+      libraryCards.push(existing);
+    } else {
+      otherEntries.push([id, existing]);
+    }
+  }
+
+  const libraryCard: CardInstance = {
+    ...card,
+    zone: 'library',
+    tapped: false,
+    damage: 0,
+    counters: {},
+    summoningSick: true,
+    attachedTo: undefined,
+  };
+
+  let nextLibrary = position === 'bottom'
+    ? [...libraryCards, libraryCard]
+    : [libraryCard, ...libraryCards];
+
+  if (position === 'shuffle') {
+    for (let i = nextLibrary.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [nextLibrary[i], nextLibrary[j]] = [nextLibrary[j], nextLibrary[i]];
+    }
+  }
+
+  const newCards = new Map<string, CardInstance>();
+  for (const [id, existing] of otherEntries) newCards.set(id, existing);
+  for (const libraryEntry of nextLibrary) newCards.set(libraryEntry.instanceId, libraryEntry);
+
+  return pruneDetachedEffects({ ...state, cards: newCards });
 }
 
 /**
@@ -305,7 +525,7 @@ function executeReturnToHand(state: GameState, targetId: string): GameState {
     summoningSick: true,
   });
 
-  return { ...state, cards: newCards };
+  return pruneDetachedEffects({ ...state, cards: newCards });
 }
 
 /**
@@ -464,11 +684,67 @@ function executeDiscard(state: GameState, playerId: string, count: number, rando
   return { ...state, cards: newCards };
 }
 
+function splitChoiceIds(value: string | undefined): string[] {
+  return (value || '')
+    .split(',')
+    .map(id => id.trim())
+    .filter(Boolean);
+}
+
+function rebuildLibraryOrder(
+  state: GameState,
+  playerId: string,
+  newLibrary: CardInstance[],
+  movedCards: CardInstance[] = [],
+): GameState {
+  const nonLibraryEntries: [string, CardInstance][] = [];
+  const movedIds = new Set(movedCards.map(card => card.instanceId));
+
+  for (const [id, card] of state.cards) {
+    if (movedIds.has(id)) continue;
+    if (card.ownerId !== playerId || card.zone !== 'library') {
+      nonLibraryEntries.push([id, card]);
+    }
+  }
+
+  const newCards = new Map<string, CardInstance>();
+  for (const [id, card] of nonLibraryEntries) {
+    newCards.set(id, card);
+  }
+  for (const card of newLibrary) {
+    newCards.set(card.instanceId, { ...card, zone: 'library' });
+  }
+  for (const card of movedCards) {
+    newCards.set(card.instanceId, card);
+  }
+
+  return { ...state, cards: newCards };
+}
+
+function orderChosenCards(sourceCards: CardInstance[], chosenIds: string[]): CardInstance[] {
+  const byId = new Map(sourceCards.map(card => [card.instanceId, card]));
+  const seen = new Set<string>();
+  const ordered: CardInstance[] = [];
+  for (const id of chosenIds) {
+    const card = byId.get(id);
+    if (!card || seen.has(id)) continue;
+    seen.add(id);
+    ordered.push(card);
+  }
+  return ordered;
+}
+
 /**
- * Execute a Scry effect.
- * Uses AI heuristic: keeps lands and low-CMC spells on top, sends expensive spells to bottom.
+ * Execute a Scry effect. If explicit choices are provided, those choices are
+ * authoritative; otherwise the AI/fallback heuristic keeps lands and cheap
+ * spells on top.
  */
-function executeScry(state: GameState, playerId: string, count: number): GameState {
+function executeScry(
+  state: GameState,
+  playerId: string,
+  count: number,
+  namedCardChoices: Map<string, string> = new Map(),
+): GameState {
   // Get library cards (Map iteration order = library order)
   const libraryCards: CardInstance[] = [];
   for (const [, card] of state.cards) {
@@ -483,6 +759,15 @@ function executeScry(state: GameState, playerId: string, count: number): GameSta
   // Get the top N cards to scry
   const scryCards = libraryCards.slice(0, toScry);
   const restLibrary = libraryCards.slice(toScry);
+
+  const hasExplicitChoices = namedCardChoices.has('scryTopIds') || namedCardChoices.has('scryBottomIds');
+  if (hasExplicitChoices) {
+    const topCards = orderChosenCards(scryCards, splitChoiceIds(namedCardChoices.get('scryTopIds')));
+    const bottomCards = orderChosenCards(scryCards, splitChoiceIds(namedCardChoices.get('scryBottomIds')));
+    const assigned = new Set([...topCards, ...bottomCards].map(card => card.instanceId));
+    const unassignedTop = scryCards.filter(card => !assigned.has(card.instanceId));
+    return rebuildLibraryOrder(state, playerId, [...topCards, ...unassignedTop, ...restLibrary, ...bottomCards]);
+  }
 
   // AI heuristic: evaluate each card by CMC relative to current game state.
   // Keep lands and low-CMC spells on top early, expensive spells on bottom.
@@ -508,23 +793,7 @@ function executeScry(state: GameState, playerId: string, count: number): GameSta
   // Rebuild library: top cards first, then rest, then bottom cards
   const newLibrary = [...keepOnTop, ...restLibrary, ...sendToBottom];
 
-  // Rebuild cards map preserving non-library entries, then re-add library in new order
-  const nonLibraryEntries: [string, CardInstance][] = [];
-  for (const [id, card] of state.cards) {
-    if (card.ownerId !== playerId || card.zone !== 'library') {
-      nonLibraryEntries.push([id, card]);
-    }
-  }
-
-  const newCards = new Map<string, CardInstance>();
-  for (const [id, card] of nonLibraryEntries) {
-    newCards.set(id, card);
-  }
-  for (const card of newLibrary) {
-    newCards.set(card.instanceId, card);
-  }
-
-  return { ...state, cards: newCards };
+  return rebuildLibraryOrder(state, playerId, newLibrary);
 }
 
 /**
@@ -533,7 +802,12 @@ function executeScry(state: GameState, playerId: string, count: number): GameSta
  * keeps lands and low-CMC spells on top (similar to Scry but cards go to graveyard
  * instead of bottom of library).
  */
-function executeSurveil(state: GameState, playerId: string, count: number): GameState {
+function executeSurveil(
+  state: GameState,
+  playerId: string,
+  count: number,
+  namedCardChoices: Map<string, string> = new Map(),
+): GameState {
   // Get library cards (Map iteration order = library order)
   const libraryCards: CardInstance[] = [];
   for (const [, card] of state.cards) {
@@ -548,6 +822,16 @@ function executeSurveil(state: GameState, playerId: string, count: number): Game
   // Get the top N cards to surveil
   const surveilCards = libraryCards.slice(0, toSurveil);
   const restLibrary = libraryCards.slice(toSurveil);
+
+  const hasExplicitChoices = namedCardChoices.has('surveilTopIds') || namedCardChoices.has('surveilGraveyardIds');
+  if (hasExplicitChoices) {
+    const topCards = orderChosenCards(surveilCards, splitChoiceIds(namedCardChoices.get('surveilTopIds')));
+    const graveyardCards = orderChosenCards(surveilCards, splitChoiceIds(namedCardChoices.get('surveilGraveyardIds')))
+      .map(card => ({ ...card, zone: 'graveyard' as Zone }));
+    const assigned = new Set([...topCards, ...graveyardCards].map(card => card.instanceId));
+    const unassignedTop = surveilCards.filter(card => !assigned.has(card.instanceId));
+    return rebuildLibraryOrder(state, playerId, [...topCards, ...unassignedTop, ...restLibrary], graveyardCards);
+  }
 
   // AI heuristic: lands and low-CMC spells stay on top, others go to graveyard.
   const keepOnTop: CardInstance[] = [];
@@ -571,27 +855,12 @@ function executeSurveil(state: GameState, playerId: string, count: number): Game
   // Rebuild library: top cards first, then rest (no bottom — graveyard cards are removed)
   const newLibrary = [...keepOnTop, ...restLibrary];
 
-  // Rebuild cards map
-  const nonLibraryEntries: [string, CardInstance][] = [];
-  for (const [id, card] of state.cards) {
-    if (card.ownerId !== playerId || card.zone !== 'library') {
-      nonLibraryEntries.push([id, card]);
-    }
-  }
-
-  const newCards = new Map<string, CardInstance>();
-  for (const [id, card] of nonLibraryEntries) {
-    newCards.set(id, card);
-  }
-  for (const card of newLibrary) {
-    newCards.set(card.instanceId, card);
-  }
-  // Move surveiled cards to graveyard
-  for (const card of sendToGraveyard) {
-    newCards.set(card.instanceId, { ...card, zone: 'graveyard' });
-  }
-
-  return { ...state, cards: newCards };
+  return rebuildLibraryOrder(
+    state,
+    playerId,
+    newLibrary,
+    sendToGraveyard.map(card => ({ ...card, zone: 'graveyard' as Zone })),
+  );
 }
 
 /**
@@ -611,6 +880,12 @@ export function matchesCardFilter(def: CardDefinition, filter: CardFilter): bool
     const typeLine = def.type_line.toLowerCase();
     const hasMatchingSubtype = filter.subtypes.some(st => typeLine.includes(st.toLowerCase()));
     if (!hasMatchingSubtype) return false;
+  }
+
+  if (filter.excludeSubtypes) {
+    const typeLine = def.type_line.toLowerCase();
+    const hasExcludedSubtype = filter.excludeSubtypes.some(st => typeLine.includes(st.toLowerCase()));
+    if (hasExcludedSubtype) return false;
   }
 
   // Check supertypes (e.g., "basic")
@@ -635,6 +910,11 @@ export function matchesCardFilter(def: CardDefinition, filter: CardFilter): bool
     }
   }
 
+  // Check printed power when no card instance is available.
+  if (filter.power && !matchesNumericFilter(def.power ?? 0, filter.power)) {
+    return false;
+  }
+
   return true;
 }
 
@@ -646,7 +926,8 @@ export function executeSacrificeSpecific(state: GameState, cardInstanceId: strin
   const card = state.cards.get(cardInstanceId);
   if (!card || card.zone !== 'battlefield') return state;
 
-  const destZone = getCommanderDestinationZone(state, cardInstanceId, 'graveyard');
+  const destZone = getDeathDestination(state, cardInstanceId, card);
+  if (!destZone) return state;
   const newCards = new Map(state.cards);
   newCards.set(cardInstanceId, {
     ...card,
@@ -691,23 +972,72 @@ export function executeSearchLibrary(
   state: GameState,
   playerId: string,
   filter: CardFilter,
-  destination: 'battlefield' | 'hand' | 'graveyard',
+  destination: 'battlefield' | 'hand' | 'top' | 'graveyard',
   tapped?: boolean,
+  shuffleRest: boolean = false,
+  choices: { namedCard?: string; selectedCardInstanceId?: string } = {},
 ): GameState {
-  // Find first matching card in library
-  let matchedCard: CardInstance | null = null;
+  const candidates: CardInstance[] = [];
 
   for (const [, card] of state.cards) {
     if (card.ownerId !== playerId || card.zone !== 'library') continue;
     const def = state.cardDefinitions.get(card.definitionId);
     if (!def) continue;
     if (matchesCardFilter(def, filter)) {
-      matchedCard = card;
-      break;
+      candidates.push(card);
     }
   }
 
+  let matchedCard: CardInstance | null = null;
+  if (choices.selectedCardInstanceId) {
+    matchedCard = candidates.find(card => card.instanceId === choices.selectedCardInstanceId) ?? null;
+  }
+  if (!matchedCard && choices.namedCard) {
+    const wanted = choices.namedCard.trim().toLowerCase();
+    matchedCard = candidates.find(card => {
+      const def = state.cardDefinitions.get(card.definitionId);
+      return def?.name.toLowerCase() === wanted;
+    }) ?? null;
+  }
+  if (!matchedCard) {
+    matchedCard = candidates[0] ?? null;
+  }
+
   if (!matchedCard) return state; // No match found
+
+  if (destination === 'top') {
+    const libraryEntries: [string, CardInstance][] = [];
+    const otherEntries: [string, CardInstance][] = [];
+
+    for (const [id, card] of state.cards) {
+      if (id === matchedCard.instanceId) continue;
+      if (card.ownerId === playerId && card.zone === 'library') {
+        libraryEntries.push([id, card]);
+      } else {
+        otherEntries.push([id, card]);
+      }
+    }
+
+    const newMap = new Map<string, CardInstance>();
+    for (const [id, card] of otherEntries) newMap.set(id, card);
+    newMap.set(matchedCard.instanceId, {
+      ...matchedCard,
+      zone: 'library',
+      tapped: false,
+      damage: 0,
+      summoningSick: true,
+    });
+
+    const remainingLibrary = [...libraryEntries];
+    if (shuffleRest) {
+      for (let i = remainingLibrary.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [remainingLibrary[i], remainingLibrary[j]] = [remainingLibrary[j], remainingLibrary[i]];
+      }
+    }
+    for (const [id, card] of remainingLibrary) newMap.set(id, card);
+    return { ...state, cards: newMap };
+  }
 
   const newCards = new Map(state.cards);
   newCards.set(matchedCard.instanceId, {
@@ -756,6 +1086,33 @@ export function executeShuffleLibrary(state: GameState, playerId: string): GameS
   return { ...state, cards: newCards };
 }
 
+function executePutLandFromHandOntoBattlefield(
+  state: GameState,
+  playerId: string,
+  tapped: boolean,
+  selectedCardInstanceId?: string,
+): GameState {
+  const chosen = selectedCardInstanceId ? state.cards.get(selectedCardInstanceId) : undefined;
+  const chosenDef = chosen ? state.cardDefinitions.get(chosen.definitionId) : undefined;
+  const land = chosen && chosen.ownerId === playerId && chosen.zone === 'hand' && chosenDef?.card_types.includes('land')
+    ? chosen
+    : [...state.cards.values()].find(card => {
+        if (card.ownerId !== playerId || card.zone !== 'hand') return false;
+        const def = state.cardDefinitions.get(card.definitionId);
+        return def?.card_types.includes('land') === true;
+      });
+  if (!land) return state;
+
+  const newCards = new Map(state.cards);
+  newCards.set(land.instanceId, {
+    ...land,
+    zone: 'battlefield',
+    tapped,
+    summoningSick: false,
+  });
+  return { ...state, cards: newCards };
+}
+
 // Token instance counter
 let tokenInstanceCounter = 0;
 
@@ -767,6 +1124,8 @@ function executeCreateToken(
   controllerId: string,
   tokenDef: TokenDefinition,
   count: number,
+  attachSourceToCreated?: string,
+  eventCardInstanceId?: string,
 ): GameState {
   // Check for replacement effects (e.g., token doubling)
   const event: ReplacementEvent = { type: 'TokenCreated', targetId: controllerId, amount: count };
@@ -777,9 +1136,19 @@ function executeCreateToken(
 
   const newCards = new Map(state.cards);
   const newCardDefinitions = new Map(state.cardDefinitions);
+  const createdTokenIds: string[] = [];
+  const power = tokenDef.powerAmount
+    ? resolveAmount(tokenDef.powerAmount, 0, state, controllerId, new Map(), undefined, eventCardInstanceId)
+    : tokenDef.power;
+  const toughness = tokenDef.toughnessAmount
+    ? resolveAmount(tokenDef.toughnessAmount, 0, state, controllerId, new Map(), undefined, eventCardInstanceId)
+    : tokenDef.toughness;
 
   // Create a card definition for the token if it doesn't exist
-  const defId = `token_${tokenDef.name.toLowerCase().replace(/\s+/g, '_')}`;
+  const baseDefId = `token_${tokenDef.name.toLowerCase().replace(/\s+/g, '_')}`;
+  const defId = tokenDef.powerAmount || tokenDef.toughnessAmount
+    ? `${baseDefId}_${power}_${toughness}`
+    : baseDefId;
   if (!newCardDefinitions.has(defId)) {
     const def: CardDefinition = {
       id: defId,
@@ -791,8 +1160,8 @@ function executeCreateToken(
       colors: tokenDef.colors,
       color_identity: tokenDef.colors,
       keywords: tokenDef.keywords || [],
-      power: tokenDef.power,
-      toughness: tokenDef.toughness,
+      power,
+      toughness,
       card_types: tokenDef.types as any[],
     };
     newCardDefinitions.set(defId, def);
@@ -808,15 +1177,107 @@ function executeCreateToken(
       zone: 'battlefield',
       tapped: false,
       summoningSick: true,
-      counters: {},
+      counters: Object.fromEntries(Object.entries(tokenDef.counters || {}).map(([counterType, amount]) => [
+        counterType,
+        resolveAmount(amount, 0, state, controllerId, new Map(), undefined, eventCardInstanceId),
+      ])),
       damage: 0,
       isCommander: false,
       isToken: true,
     };
     newCards.set(instanceId, instance);
+    createdTokenIds.push(instanceId);
   }
 
-  return { ...state, cards: newCards, cardDefinitions: newCardDefinitions };
+  let nextState: GameState = { ...state, cards: newCards, cardDefinitions: newCardDefinitions };
+
+  if (attachSourceToCreated && createdTokenIds.length > 0) {
+    const source = nextState.cards.get(attachSourceToCreated);
+    if (source?.zone === 'battlefield') {
+      const attachedCards = new Map(nextState.cards);
+      attachedCards.set(attachSourceToCreated, { ...source, attachedTo: createdTokenIds[0] });
+      nextState = { ...nextState, cards: attachedCards };
+    }
+  }
+
+  if (tokenDef.types.some(type => type.toLowerCase() === 'creature')) {
+    nextState = queueCreatureTokenETBTriggers(nextState, createdTokenIds, controllerId);
+  }
+
+  return nextState;
+}
+
+function executeRollD20(state: GameState, effect: Extract<Effect, { kind: 'RollD20' }>, ctx: ExecutionContext): GameState {
+  const roll = Math.max(
+    1,
+    Math.min(20, effect.rollOverride ?? Math.floor(Math.random() * 20) + 1),
+  );
+  const outcome = effect.outcomes.find(o => roll >= o.min && roll <= o.max);
+  if (!outcome) return state;
+
+  let nextState = state;
+  for (const nestedEffect of outcome.effects) {
+    nextState = executeEffect(nextState, nestedEffect, ctx);
+  }
+  return nextState;
+}
+
+function queueCreatureTokenETBTriggers(
+  state: GameState,
+  tokenIds: string[],
+  tokenControllerId: string,
+): GameState {
+  if (tokenIds.length === 0) return state;
+
+  const pendingTriggers: PendingTrigger[] = [...(state.pendingTriggers || [])];
+  const battlefieldAbilities = state.battlefieldAbilities || new Map();
+
+  for (const tokenId of tokenIds) {
+    for (const [sourceInstanceId, abilities] of battlefieldAbilities) {
+      const sourceCard = state.cards.get(sourceInstanceId);
+      if (!sourceCard || sourceCard.zone !== 'battlefield') continue;
+      const sourceControllerId = sourceCard.ownerId;
+
+      for (const ability of abilities) {
+        const trigger = ability.trigger;
+        let shouldFire = false;
+
+        if (
+          trigger.kind === 'AnotherCreatureETB' &&
+          trigger.controller === 'yours' &&
+          tokenControllerId === sourceControllerId &&
+          tokenId !== sourceInstanceId &&
+          !trigger.nontoken &&
+          (trigger.tokenOnly !== false)
+        ) {
+          shouldFire = true;
+        }
+
+        if (trigger.kind === 'AnyCreatureETB' && tokenId !== sourceInstanceId) {
+          const controllerRestriction = trigger.controller ?? 'any';
+          if (
+            !trigger.nontoken &&
+            trigger.tokenOnly !== false &&
+            (controllerRestriction === 'any' || tokenControllerId === sourceControllerId)
+          ) {
+            shouldFire = true;
+          }
+        }
+
+        if (shouldFire) {
+          pendingTriggers.push({
+            id: `trigger_token_etb_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+            sourceInstanceId,
+            controllerId: sourceControllerId,
+            ability,
+            requiredTargets: [],
+          });
+        }
+      }
+    }
+  }
+
+  return { ...state, pendingTriggers };
 }
 
 /**
@@ -824,18 +1285,34 @@ function executeCreateToken(
  * Moves the target spell from the stack to the graveyard.
  * V0: We move the card to the graveyard if it exists on the stack.
  */
-function executeCounterSpell(state: GameState, targetId: string): GameState {
-  // In the real engine, countering removes from the stack.
-  // Here we move the card instance to graveyard if it exists.
-  const card = state.cards.get(targetId);
+function executeCounterSpell(state: GameState, targetId: string, filter?: 'noncreature' | 'creature'): GameState {
+  let targetCardInstanceId: string | undefined;
+  const targetStackItem = state.stack.find(item => {
+    if (!isSpellStackItem(item)) return false;
+    const matches = item.cardInstanceId === targetId || item.id === targetId;
+    if (matches) targetCardInstanceId = item.cardInstanceId;
+    return matches;
+  });
+  const cardInstanceId = targetCardInstanceId ?? targetId;
+  const card = state.cards.get(cardInstanceId);
   if (!card) return state;
+  if (targetStackItem && isSpellStackItem(targetStackItem) && targetStackItem.cantBeCountered) return state;
 
-  // The card should be on the stack, but we handle any zone gracefully
-  const destZone = getCommanderDestinationZone(state, targetId, 'graveyard');
+  const def = state.cardDefinitions.get(card.definitionId);
+  if (filter === 'creature' && !def?.card_types.includes('creature')) return state;
+  if (filter === 'noncreature' && def?.card_types.includes('creature')) return state;
+  if (def && /\b(?:can'?t|cannot)\s+be\s+countered\b/i.test(def.oracle_text)) {
+    return state;
+  }
+
+  const destZone = getCommanderDestinationZone(state, cardInstanceId, 'graveyard');
   const newCards = new Map(state.cards);
-  newCards.set(targetId, { ...card, zone: destZone });
+  newCards.set(cardInstanceId, { ...card, zone: destZone });
+  const newStack = targetStackItem
+    ? state.stack.filter(item => item !== targetStackItem)
+    : state.stack;
 
-  return { ...state, cards: newCards };
+  return { ...state, cards: newCards, stack: newStack };
 }
 
 /**
@@ -901,7 +1378,12 @@ function executeModifyPT(
  * Execute an ExileFromLibrary effect.
  * Moves the top N cards from library to exile.
  */
-function executeExileFromLibrary(state: GameState, playerId: string, count: number): GameState {
+function executeExileFromLibrary(
+  state: GameState,
+  playerId: string,
+  count: number,
+  options: { sourceInstanceId?: string; delayedDamageEachOpponentPerCard?: number } = {},
+): GameState {
   const newCards = new Map(state.cards);
 
   // Find cards in library
@@ -913,9 +1395,69 @@ function executeExileFromLibrary(state: GameState, playerId: string, count: numb
   }
 
   const toExile = Math.min(count, libraryCards.length);
+  const exiledCardIds: string[] = [];
   for (let i = 0; i < toExile; i++) {
     const card = libraryCards[i];
+    exiledCardIds.push(card.instanceId);
     newCards.set(card.instanceId, { ...card, zone: 'exile' });
+  }
+
+  let nextState: GameState = { ...state, cards: newCards };
+  if (options.delayedDamageEachOpponentPerCard && exiledCardIds.length > 0) {
+    nextState = {
+      ...nextState,
+      delayedTriggers: [
+        ...(nextState.delayedTriggers || []),
+        {
+          id: `delayed_dragonhawk_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+          sourceInstanceId: options.sourceInstanceId,
+          controllerId: playerId,
+          trigger: { kind: 'EndStep', whose: 'yours' },
+          effects: [
+            {
+              kind: 'DealDamageForExiledCards',
+              target: { kind: 'EachOpponent' },
+              exiledCardIds,
+              amountPerCard: options.delayedDamageEachOpponentPerCard,
+            },
+          ],
+          oneShot: true,
+        },
+      ],
+    };
+  }
+
+  return pruneDetachedEffects(nextState);
+}
+
+function executeExileUntilNamed(
+  state: GameState,
+  playerId: string,
+  namedCard: string,
+  foundDestination: 'hand' | 'exile',
+  exileBeforeSearch: number = 0,
+): GameState {
+  const newCards = new Map(state.cards);
+  const libraryCards = [...state.cards.values()].filter(card =>
+    card.ownerId === playerId && card.zone === 'library'
+  );
+  const targetName = namedCard.toLowerCase();
+
+  let index = 0;
+  for (; index < Math.min(exileBeforeSearch, libraryCards.length); index++) {
+    const card = libraryCards[index];
+    newCards.set(card.instanceId, { ...card, zone: 'exile' });
+  }
+
+  for (; index < libraryCards.length; index++) {
+    const card = libraryCards[index];
+    const def = state.cardDefinitions.get(card.definitionId);
+    const isNamed = def?.name.toLowerCase() === targetName;
+    newCards.set(card.instanceId, {
+      ...card,
+      zone: isNamed ? foundDestination : 'exile',
+    });
+    if (isNamed) break;
   }
 
   return { ...state, cards: newCards };
@@ -1148,7 +1690,7 @@ function executeEffect(
   effect: Effect,
   ctx: ExecutionContext,
 ): GameState {
-  const { casterId, chosenTargets, xValue } = ctx;
+  const { casterId, chosenTargets, xValue, namedCardChoices, sourceInstanceId, eventContext } = ctx;
 
   switch (effect.kind) {
     case 'Draw': {
@@ -1173,8 +1715,8 @@ function executeEffect(
         }
         return s;
       }
-      const drawPlayerId = resolveTargetRef(effect.player, casterId, chosenTargets);
-      const drawCount = resolveAmount(effect.count, xValue, state, casterId);
+      const drawPlayerId = resolveTargetRef(effect.player, casterId, chosenTargets, state, eventContext);
+      const drawCount = resolveAmount(effect.count, xValue, state, casterId, chosenTargets, undefined, eventContext?.cardInstanceId);
       return executeDraw(state, drawPlayerId, drawCount);
     }
     case 'Destroy': {
@@ -1183,7 +1725,7 @@ function executeEffect(
         for (const [, card] of state.cards) {
           if (card.zone === 'battlefield') {
             const def = state.cardDefinitions.get(card.definitionId);
-            if (def && def.card_types.includes('creature')) {
+            if (def && isEffectiveCreature(s, card.instanceId)) {
               s = executeDestroy(s, card.instanceId);
             }
           }
@@ -1207,9 +1749,35 @@ function executeEffect(
       return executeDestroy(state, destroyTargetId);
     }
     case 'DealDamage': {
+      if (effect.target.kind === 'EachOpponent') {
+        const dmgAmount = resolveAmount(effect.amount, xValue, state, casterId);
+        let s = state;
+        for (const p of state.players) {
+          if (p.id !== casterId && !p.hasLost) {
+            s = executeDealDamage(s, p.id, dmgAmount, sourceInstanceId);
+          }
+        }
+        return s;
+      }
       const dmgTargetId = resolveTargetRef(effect.target, casterId, chosenTargets);
       const dmgAmount = resolveAmount(effect.amount, xValue, state, casterId);
-      return executeDealDamage(state, dmgTargetId, dmgAmount);
+      return executeDealDamage(state, dmgTargetId, dmgAmount, sourceInstanceId);
+    }
+    case 'DealDamageForExiledCards': {
+      const stillExiled = effect.exiledCardIds.filter(cardId => state.cards.get(cardId)?.zone === 'exile').length;
+      const amount = stillExiled * effect.amountPerCard;
+      if (amount <= 0) return state;
+      if (effect.target.kind === 'EachOpponent') {
+        let s = state;
+        for (const p of state.players) {
+          if (p.id !== casterId && !p.hasLost) {
+            s = executeDealDamage(s, p.id, amount, sourceInstanceId);
+          }
+        }
+        return s;
+      }
+      const targetId = resolveTargetRef(effect.target, casterId, chosenTargets);
+      return executeDealDamage(state, targetId, amount, sourceInstanceId);
     }
     case 'GainLife': {
       if (effect.player.kind === 'EachPlayer') {
@@ -1268,7 +1836,18 @@ function executeEffect(
       const exileTargetId = resolveTargetRef(effect.target, casterId, chosenTargets);
       return executeExile(state, exileTargetId);
     }
+    case 'PutIntoLibrary': {
+      const libraryTargetId = resolveTargetRef(effect.target, casterId, chosenTargets);
+      return executePutIntoLibrary(state, libraryTargetId, effect.position);
+    }
     case 'ReturnToHand': {
+      if (effect.target.kind === 'AllAttackingCreatures') {
+        let s = state;
+        for (const attacker of state.combat?.attackers || []) {
+          s = executeReturnToHand(s, attacker.cardInstanceId);
+        }
+        return s;
+      }
       // AllOfType: return all matching permanents
       if (effect.target.kind === 'AllOfType') {
         let s = state;
@@ -1317,7 +1896,10 @@ function executeEffect(
       return executeMill(state, millPlayerId, millCount);
     }
     case 'AddCounters': {
-      const acTargetId = resolveTargetRef(effect.target, casterId, chosenTargets);
+      const acTargetId = effect.target.kind === 'Source'
+        ? sourceInstanceId
+        : resolveTargetRef(effect.target, casterId, chosenTargets);
+      if (!acTargetId) return state;
       const acCount = resolveAmount(effect.count, xValue, state, casterId);
       return executeAddCounters(state, acTargetId, effect.counterType, acCount);
     }
@@ -1335,9 +1917,19 @@ function executeEffect(
       return executeUntap(state, untapTargetId);
     }
     case 'CreateToken': {
-      const ctControllerId = resolveTargetRef(effect.controller, casterId, chosenTargets);
-      const ctCount = resolveAmount(effect.count, xValue, state, casterId);
-      return executeCreateToken(state, ctControllerId, effect.token, ctCount);
+      const ctControllerId = resolveTargetRef(effect.controller, casterId, chosenTargets, state, eventContext);
+      const ctCount = resolveAmount(effect.count, xValue, state, casterId, chosenTargets, undefined, eventContext?.cardInstanceId);
+      return executeCreateToken(
+        state,
+        ctControllerId,
+        effect.token,
+        ctCount,
+        effect.attachSourceToCreated ? sourceInstanceId : undefined,
+        eventContext?.cardInstanceId,
+      );
+    }
+    case 'RollD20': {
+      return executeRollD20(state, effect, ctx);
     }
     case 'Discard': {
       if (effect.player.kind === 'EachOpponent') {
@@ -1367,16 +1959,29 @@ function executeEffect(
     case 'Scry': {
       const scryPlayerId = resolveTargetRef(effect.player, casterId, chosenTargets);
       const scryCount = resolveAmount(effect.count, xValue, state, casterId);
-      return executeScry(state, scryPlayerId, scryCount);
+      return executeScry(state, scryPlayerId, scryCount, namedCardChoices);
     }
     case 'Surveil': {
       const surveilPlayerId = resolveTargetRef(effect.player, casterId, chosenTargets);
       const surveilCount = resolveAmount(effect.count, xValue, state, casterId);
-      return executeSurveil(state, surveilPlayerId, surveilCount);
+      return executeSurveil(state, surveilPlayerId, surveilCount, namedCardChoices);
     }
+    case 'LookAtHand':
+      resolveTargetRef(effect.player, casterId, chosenTargets);
+      return state;
     case 'SearchLibrary': {
       const slPlayerId = resolveTargetRef(effect.player, casterId, chosenTargets);
-      return executeSearchLibrary(state, slPlayerId, effect.filter, effect.destination, effect.tapped);
+      const namedCardChoiceId = effect.namedCardChoiceId ?? 'tutorCard';
+      const selectedCardChoiceId = effect.selectedCardChoiceId ?? 'tutorCardId';
+      return executeSearchLibrary(state, slPlayerId, effect.filter, effect.destination, effect.tapped, effect.shuffle, {
+        namedCard: namedCardChoices.get(namedCardChoiceId)
+          || namedCardChoices.get('tutorCard')
+          || namedCardChoices.get('namedCard')
+          || namedCardChoices.get('cardName'),
+        selectedCardInstanceId: namedCardChoices.get(selectedCardChoiceId)
+          || namedCardChoices.get('tutorCardId')
+          || namedCardChoices.get('selectedCardId'),
+      });
     }
     case 'ShuffleLibrary': {
       const shPlayerId = resolveTargetRef(effect.player, casterId, chosenTargets);
@@ -1384,7 +1989,7 @@ function executeEffect(
     }
     case 'CounterSpell': {
       const csTargetId = resolveTargetRef(effect.target, casterId, chosenTargets);
-      return executeCounterSpell(state, csTargetId);
+      return executeCounterSpell(state, csTargetId, effect.filter);
     }
     case 'ReturnFromGraveyard': {
       const rfgTargetId = resolveTargetRef(effect.target, casterId, chosenTargets);
@@ -1396,20 +2001,44 @@ function executeEffect(
         for (const [, card] of state.cards) {
           if (card.zone === 'battlefield' && card.ownerId === casterId) {
             const def = state.cardDefinitions.get(card.definitionId);
-            if (def && def.card_types.includes('creature')) {
-              s = executeModifyPT(s, card.instanceId, effect.power, effect.toughness);
+            if (def && isEffectiveCreature(s, card.instanceId)) {
+              const power = resolveAmount(effect.power, xValue, s, casterId, chosenTargets, card.instanceId);
+              const toughness = resolveAmount(effect.toughness, xValue, s, casterId, chosenTargets, card.instanceId);
+              s = executeModifyPT(s, card.instanceId, power, toughness);
             }
           }
         }
         return s;
       }
+      if (effect.target.kind === 'Source') {
+        if (!sourceInstanceId) return state;
+        const power = resolveAmount(effect.power, xValue, state, casterId, chosenTargets, sourceInstanceId);
+        const toughness = resolveAmount(effect.toughness, xValue, state, casterId, chosenTargets, sourceInstanceId);
+        return executeModifyPT(state, sourceInstanceId, power, toughness);
+      }
       const mptTargetId = resolveTargetRef(effect.target, casterId, chosenTargets);
-      return executeModifyPT(state, mptTargetId, effect.power, effect.toughness);
+      const power = resolveAmount(effect.power, xValue, state, casterId, chosenTargets, mptTargetId);
+      const toughness = resolveAmount(effect.toughness, xValue, state, casterId, chosenTargets, mptTargetId);
+      return executeModifyPT(state, mptTargetId, power, toughness);
     }
     case 'ExileFromLibrary': {
       const eflPlayerId = resolveTargetRef(effect.player, casterId, chosenTargets);
       const eflCount = resolveAmount(effect.count, xValue, state, casterId);
-      return executeExileFromLibrary(state, eflPlayerId, eflCount);
+      return executeExileFromLibrary(state, eflPlayerId, eflCount, {
+        sourceInstanceId,
+        delayedDamageEachOpponentPerCard: effect.delayedDamageEachOpponentPerCard,
+      });
+    }
+    case 'ExileUntilNamed': {
+      const eunPlayerId = resolveTargetRef(effect.player, casterId, chosenTargets);
+      const namedCard = resolveNamedCardChoice(effect, namedCardChoices);
+      return executeExileUntilNamed(
+        state,
+        eunPlayerId,
+        namedCard,
+        effect.foundDestination,
+        effect.exileBeforeSearch,
+      );
     }
     case 'GainControl': {
       const gcTargetId = resolveTargetRef(effect.target, casterId, chosenTargets);
@@ -1434,6 +2063,10 @@ function executeEffect(
       const copyTargetId = resolveTargetRef(effect.target, casterId, chosenTargets);
       return executeCopy(state, copyTargetId, casterId);
     }
+    case 'CopySpell':
+      // Spell-copy stack manipulation is handled by stack resolution so the
+      // copied spell can keep its own targets and trigger magecraft correctly.
+      return state;
     // Phase 16: GrantKeyword — give keyword to creature
     case 'GrantKeyword': {
       const gkTargetId = resolveTargetRef(effect.target, casterId, chosenTargets);
@@ -1462,7 +2095,7 @@ function executeEffect(
     }
     // AddMana: add mana to a player's pool
     case 'AddMana': {
-      const playerId = resolveTargetRef(effect.player, casterId, chosenTargets);
+      const playerId = resolveTargetRef(effect.player, casterId, chosenTargets, state, eventContext);
       const playerIdx = state.players.findIndex(p => p.id === playerId);
       if (playerIdx === -1) return state;
       const player = state.players[playerIdx];
@@ -1476,6 +2109,12 @@ function executeEffect(
         i === playerIdx ? { ...p, manaPool: newPool } : p
       );
       return { ...state, players: newPlayers };
+    }
+    case 'PutLandFromHandOntoBattlefield': {
+      const playerId = resolveTargetRef(effect.player, casterId, chosenTargets, state, eventContext);
+      const selectedId = namedCardChoices.get(effect.selectedCardChoiceId ?? 'putLandCardId')
+        || namedCardChoices.get('selectedCardId');
+      return executePutLandFromHandOntoBattlefield(state, playerId, effect.tapped ?? false, selectedId);
     }
     default:
       // Exhaustiveness
@@ -1495,6 +2134,7 @@ export function executeEffects(
   chosenTargetIds: string[],
   targetSpecs: { id: string }[],
   xValue: number = 0,
+  options: EffectExecutionOptions = {},
 ): GameState {
   // Build a map from spec ID to chosen target ID
   const chosenTargets = new Map<string, string>();
@@ -1506,6 +2146,9 @@ export function executeEffects(
     casterId,
     chosenTargets,
     xValue,
+    namedCardChoices: new Map(Object.entries(options.namedCardChoices || {})),
+    sourceInstanceId: options.sourceInstanceId,
+    eventContext: options.eventContext,
   };
 
   let newState = state;
@@ -1527,8 +2170,9 @@ export function executeEffectsWithSBA(
   chosenTargetIds: string[],
   targetSpecs: { id: string }[],
   xValue: number = 0,
+  options: EffectExecutionOptions = {},
 ): GameState {
-  let newState = executeEffects(state, effects, casterId, chosenTargetIds, targetSpecs, xValue);
+  let newState = executeEffects(state, effects, casterId, chosenTargetIds, targetSpecs, xValue, options);
   newState = checkStateBasedActions(newState);
   return newState;
 }

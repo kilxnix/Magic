@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, ClipboardPaste, Loader2, Swords, Link as LinkIcon, History, Trash2, Shield, Trophy, Users } from 'lucide-react';
-import { useShelectorGame, type ImportedCards } from '../hooks/useShelectorGame';
+import { ArrowLeft, BarChart3, ClipboardPaste, Loader2, Swords, Link as LinkIcon, History, Trash2, Shield, Trophy, Users, Lightbulb, Menu, X, Save, FolderOpen, Database } from 'lucide-react';
+import { useShelectorGame, type ImportedCards, type ShelectorGameSaveSnapshot } from '../hooks/useShelectorGame';
 import { GameBoard } from '../components/GameBoard';
 import { GameReview } from '../components/GameReview';
 import { EndGameModal } from '../components/shelector/EndGameModal';
@@ -10,6 +10,14 @@ import { StandardTournament } from '../components/StandardTournament';
 import { cacheSet, cacheGet } from '../lib/cache';
 import { importDeckUrlLocally } from '../lib/deckUrlImport';
 import { FLOATING_TABLE_LAYOUT } from '../lib/gameBoardLayout';
+import { shelectorApiUrl } from '../lib/api';
+import { BEGINNER_DECKS, type BeginnerDeck } from '../lib/beginnerDecks';
+import {
+  deletePlaySaveSlot,
+  getPlaySaveSlots,
+  putPlaySaveSlot,
+  type PlaySaveSlotRecord,
+} from '../lib/playSaveStorage';
 
 interface DeckImportResult {
   commander: string | null;
@@ -47,6 +55,10 @@ interface AIDeckResponse {
 }
 
 const DECK_HISTORY_MAX = 5;
+const GUIDED_PROMPT_CACHE_KEY = 'guided_first_game_prompt_seen';
+const SAVE_SLOT_COUNT = 4;
+const AUTOSAVE_DELAY_MS = 6000;
+const AUTOSAVE_INTERVAL_MS = 30000;
 
 const COLOR_BADGES: Record<string, string> = {
   W: 'bg-amber-100 text-amber-800',
@@ -77,25 +89,40 @@ export function PlayPage() {
     error,
     mulliganPhase,
     mulliganCount,
+    mulliganBottomCount,
+    selectedMulliganBottomIds,
     discardPhase,
     discardCount,
     tutorPhase,
     tutorCards,
     tutorTitle,
+    libraryChoice,
     gameLog,
+    authorityUpdates,
+    lastStateUpdate,
+    currentPrompt,
     lastPlayedCard,
     startGame,
+    exportGameSave,
+    restoreGameSave,
     submitAction,
     keepHand,
     mulligan,
+    toggleMulliganBottomCard,
     discardCard,
     resolveTutor,
     cancelTutor,
+    resolveLibraryChoice,
     undosRemaining,
     undoAction,
     coachMode,
     setCoachMode,
+    newPlayerMode,
+    setNewPlayerMode,
+    holdPriority,
+    setHoldPriority,
     untapManaSource,
+    adjustCounters,
     untappableCardIds,
     endGame,
     closeEndGame,
@@ -115,6 +142,10 @@ export function PlayPage() {
   const [isImporting, setIsImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
   const [standardDeckText, setStandardDeckText] = useState('');
+  const [starterDeckLoadingId, setStarterDeckLoadingId] = useState<string | null>(null);
+  const [showGuidedPrompt, setShowGuidedPrompt] = useState(false);
+  const [starterDeckSpotlight, setStarterDeckSpotlight] = useState(false);
+  const starterDecksRef = useRef<HTMLDivElement | null>(null);
 
   // Opponent config
   const [opponentCount, setOpponentCount] = useState<OpponentCount>(1);
@@ -135,6 +166,12 @@ export function PlayPage() {
 
   // Review modal
   const [showReview, setShowReview] = useState(false);
+  const [mobileGameMenuOpen, setMobileGameMenuOpen] = useState(false);
+  const [saveSlots, setSaveSlots] = useState<(PlaySaveSlotRecord | null)[]>(() => Array.from({ length: SAVE_SLOT_COUNT }, () => null));
+  const [activeSaveSlot, setActiveSaveSlot] = useState(1);
+  const [savePanelOpen, setSavePanelOpen] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   // Load saved deck data
   useEffect(() => {
@@ -144,12 +181,231 @@ export function PlayPage() {
     if (savedResult) setImportResult(savedResult);
     const savedHistory = cacheGet<DeckHistoryEntry[]>('deck_history');
     if (savedHistory) setDeckHistory(savedHistory);
+    if (!cacheGet<boolean>(GUIDED_PROMPT_CACHE_KEY)) {
+      setShowGuidedPrompt(true);
+    }
   }, []);
 
   // Show review when game ends
   useEffect(() => {
     if (isGameOver) setShowReview(true);
   }, [isGameOver]);
+
+  useEffect(() => {
+    document.body.dataset.deckrepsPlaySurface = step === 'game' ? 'active' : 'setup';
+    window.dispatchEvent(new CustomEvent('deckreps-play-surface-change'));
+    return () => {
+      delete document.body.dataset.deckrepsPlaySurface;
+      window.dispatchEvent(new CustomEvent('deckreps-play-surface-change'));
+    };
+  }, [step]);
+
+  const refreshSaveSlots = async () => {
+    const slots = await getPlaySaveSlots();
+    setSaveSlots(slots);
+  };
+
+  useEffect(() => {
+    refreshSaveSlots().catch(() => {
+      setSaveError('Could not load browser save slots.');
+    });
+  }, []);
+
+  const buildSaveRecord = (slot: number, snapshot: ShelectorGameSaveSnapshot, autosaved: boolean): PlaySaveSlotRecord => ({
+    slot,
+    name: `Slot ${slot}`,
+    commander: gameState?.humanCommander || importResult?.commander || snapshot.humanCommander || 'Practice Game',
+    turnNumber: gameState?.turnNumber || 1,
+    phase: gameState?.phase || 'setup',
+    savedAt: Date.now(),
+    autosaved,
+    snapshot,
+    ui: {
+      step,
+      importTab,
+      deckUrl,
+      deckText,
+      importResult,
+      standardDeckText,
+      opponentCount,
+      spawnMode,
+      spawnBracket,
+      colorFilter,
+      personality,
+      spawnedOpponents,
+    },
+  });
+
+  const saveCurrentGame = async (slot = activeSaveSlot, autosaved = false) => {
+    const snapshot = exportGameSave();
+    if (!snapshot) {
+      setSaveError('No active game to save yet.');
+      return false;
+    }
+    try {
+      const record = buildSaveRecord(slot, snapshot, autosaved);
+      await putPlaySaveSlot(record);
+      await refreshSaveSlots();
+      setSaveError(null);
+      setSaveStatus(`${autosaved ? 'Autosaved' : 'Saved'} slot ${slot} at ${new Date(record.savedAt).toLocaleTimeString()}`);
+      return true;
+    } catch (err: any) {
+      setSaveError(err.message || 'Could not save this game.');
+      return false;
+    }
+  };
+
+  const loadSaveSlot = async (record: PlaySaveSlotRecord) => {
+    setSaveError(null);
+    const restored = restoreGameSave(record.snapshot as ShelectorGameSaveSnapshot);
+    if (!restored) {
+      setSaveError('That save could not be restored.');
+      return;
+    }
+    setActiveSaveSlot(record.slot);
+    setImportTab(record.ui.importTab);
+    setDeckUrl(record.ui.deckUrl);
+    setDeckText(record.ui.deckText);
+    setImportResult(record.ui.importResult as DeckImportResult | null);
+    setStandardDeckText(record.ui.standardDeckText);
+    setOpponentCount(record.ui.opponentCount);
+    setSpawnMode(record.ui.spawnMode);
+    setSpawnBracket(record.ui.spawnBracket);
+    setColorFilter(record.ui.colorFilter);
+    setPersonality(record.ui.personality);
+    setSpawnedOpponents(record.ui.spawnedOpponents as SpawnedOpponent[]);
+    setStep('game');
+    setShowReview(false);
+    setSavePanelOpen(false);
+    setSaveStatus(`Loaded slot ${record.slot}.`);
+  };
+
+  const deleteSave = async (slot: number) => {
+    try {
+      await deletePlaySaveSlot(slot);
+      await refreshSaveSlots();
+      setSaveError(null);
+      setSaveStatus(`Deleted slot ${slot}.`);
+      if (activeSaveSlot === slot) setActiveSaveSlot(1);
+    } catch (err: any) {
+      setSaveError(err.message || 'Could not delete save slot.');
+    }
+  };
+
+  useEffect(() => {
+    if (step !== 'game' || !gameState) return;
+    const timeout = window.setTimeout(() => {
+      saveCurrentGame(activeSaveSlot, true);
+    }, AUTOSAVE_DELAY_MS);
+    return () => window.clearTimeout(timeout);
+  }, [step, gameState, activeSaveSlot]);
+
+  useEffect(() => {
+    if (step !== 'game' || !gameState) return;
+    const interval = window.setInterval(() => {
+      saveCurrentGame(activeSaveSlot, true);
+    }, AUTOSAVE_INTERVAL_MS);
+    return () => window.clearInterval(interval);
+  }, [step, gameState, activeSaveSlot]);
+
+  const renderSaveSlots = (compact = false) => (
+    <div className={`rounded-xl border border-stone-700 bg-stone-900/95 ${compact ? 'p-3' : 'p-4'} shadow-xl shadow-black/20`}>
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <Database className="h-4 w-4 text-amber-300" />
+          <h2 className="text-sm font-black uppercase tracking-wider text-stone-200">Game Saves</h2>
+        </div>
+        {step === 'game' && (
+          <button
+            type="button"
+            onClick={() => saveCurrentGame(activeSaveSlot, false)}
+            className="flex min-h-9 items-center gap-1.5 rounded bg-amber-500 px-3 text-xs font-black text-stone-950 hover:bg-amber-400"
+          >
+            <Save className="h-3.5 w-3.5" />
+            Save
+          </button>
+        )}
+      </div>
+      {(saveStatus || saveError) && (
+        <div className={`mb-3 rounded border px-3 py-2 text-xs ${
+          saveError ? 'border-red-500/40 bg-red-950/40 text-red-100' : 'border-emerald-500/40 bg-emerald-950/40 text-emerald-100'
+        }`}>
+          {saveError || saveStatus}
+        </div>
+      )}
+      <div className="grid gap-2">
+        {saveSlots.map((record, index) => {
+          const slot = index + 1;
+          const active = activeSaveSlot === slot;
+          return (
+            <div
+              key={slot}
+              className={`rounded-lg border p-3 ${
+                active ? 'border-amber-400 bg-amber-950/20' : 'border-stone-700 bg-stone-950/80'
+              }`}
+            >
+              <div className="mb-2 flex items-start justify-between gap-3">
+                <button
+                  type="button"
+                  onClick={() => setActiveSaveSlot(slot)}
+                  className="min-w-0 text-left"
+                >
+                  <span className="block text-xs font-black uppercase tracking-wider text-stone-500">Slot {slot}{active ? ' · Autosave Target' : ''}</span>
+                  <span className="block truncate text-sm font-bold text-stone-100">
+                    {record?.commander || 'Empty Slot'}
+                  </span>
+                  {record && (
+                    <span className="block text-xs text-stone-400">
+                      Turn {record.turnNumber} · {record.phase} · {new Date(record.savedAt).toLocaleString()}
+                    </span>
+                  )}
+                </button>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => setActiveSaveSlot(slot)}
+                  className="min-h-8 rounded border border-stone-700 px-2 text-xs font-bold text-stone-200 hover:bg-stone-800"
+                >
+                  Use Slot
+                </button>
+                {record && (
+                  <button
+                    type="button"
+                    onClick={() => loadSaveSlot(record)}
+                    className="flex min-h-8 items-center gap-1 rounded border border-blue-500/40 px-2 text-xs font-bold text-blue-100 hover:bg-blue-950/40"
+                  >
+                    <FolderOpen className="h-3.5 w-3.5" />
+                    Load
+                  </button>
+                )}
+                {step === 'game' && (
+                  <button
+                    type="button"
+                    onClick={() => saveCurrentGame(slot, false)}
+                    className="flex min-h-8 items-center gap-1 rounded border border-amber-500/40 px-2 text-xs font-bold text-amber-100 hover:bg-amber-950/40"
+                  >
+                    <Save className="h-3.5 w-3.5" />
+                    Save Here
+                  </button>
+                )}
+                {record && (
+                  <button
+                    type="button"
+                    onClick={() => deleteSave(slot)}
+                    className="flex min-h-8 items-center gap-1 rounded border border-red-500/40 px-2 text-xs font-bold text-red-100 hover:bg-red-950/40"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Delete
+                  </button>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
 
   const addToDeckHistory = (commander: string, text: string) => {
     setDeckHistory(prev => {
@@ -196,7 +452,7 @@ export function PlayPage() {
       for (const card of parsed.cards) lines.push(`1 ${card}`);
       const listText = lines.join('\n');
 
-      const importRes = await fetch('/shelector-api/import-deck', {
+      const importRes = await fetch(shelectorApiUrl('/import-deck'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -229,7 +485,7 @@ export function PlayPage() {
     setImportError(null);
     setImportResult(null);
     try {
-      const res = await fetch('/shelector-api/import-deck', {
+      const res = await fetch(shelectorApiUrl('/import-deck'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -253,6 +509,74 @@ export function PlayPage() {
       setImportError(err.message || 'Failed to import deck');
     } finally {
       setIsImporting(false);
+    }
+  };
+
+  const closeGuidedPrompt = () => {
+    cacheSet(GUIDED_PROMPT_CACHE_KEY, true, 365 * 24 * 60 * 60 * 1000);
+    setShowGuidedPrompt(false);
+  };
+
+  const startGuidedFirstGame = () => {
+    cacheSet(GUIDED_PROMPT_CACHE_KEY, true, 365 * 24 * 60 * 60 * 1000);
+    setNewPlayerMode(true);
+    setCoachMode(true);
+    setSpawnBracket(2);
+    setOpponentCount(1);
+    setSpawnMode('pool');
+    setShowGuidedPrompt(false);
+    setStarterDeckSpotlight(true);
+    setStep('import');
+    window.setTimeout(() => {
+      starterDecksRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }, 50);
+  };
+
+  const handleSelectBeginnerDeck = async (deck: BeginnerDeck) => {
+    setStarterDeckLoadingId(deck.id);
+    setIsImporting(true);
+    setImportError(null);
+    setImportResult(null);
+    setSpawnedOpponents([]);
+    setSpawnProgress('');
+    setSpawnBracket(deck.bracket);
+    setDeckText(deck.decklist);
+    setImportTab('text');
+    setNewPlayerMode(true);
+    setCoachMode(true);
+
+    try {
+      const res = await fetch(shelectorApiUrl('/import-deck'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          decklist_text: deck.decklist,
+          bracket: deck.bracket,
+          fill_missing: true,
+        }),
+      });
+      if (!res.ok) throw new Error(`Starter deck import failed (${res.status})`);
+      const data: DeckImportResult = await res.json();
+      setImportResult(data);
+
+      if (data.commander) {
+        addToDeckHistory(data.commander, deck.decklist);
+        cacheSet('last_deck_text', deck.decklist, 30 * 24 * 60 * 60 * 1000);
+        cacheSet('last_deck_result', data, 30 * 24 * 60 * 60 * 1000);
+      }
+
+      if (data.valid) {
+        setStep('opponent');
+        setStarterDeckSpotlight(false);
+      } else {
+        setStep('import');
+      }
+    } catch (err: any) {
+      setImportError(err.message || 'Failed to load starter deck');
+      setStep('import');
+    } finally {
+      setIsImporting(false);
+      setStarterDeckLoadingId(null);
     }
   };
 
@@ -282,7 +606,7 @@ export function PlayPage() {
 
         for (let attempt = 0; attempt < 6; attempt++) {
           setSpawnProgress(`Picking opponent ${i + 1}/${opponentCount}...`);
-          const spawnRes = await fetch('/shelector-api/spawn-opponent', {
+          const spawnRes = await fetch(shelectorApiUrl('/spawn-opponent'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -302,7 +626,7 @@ export function PlayPage() {
 
           setIsGeneratingAIDeck(true);
           setSpawnProgress(`Building ${candidate.commander} (${i + 1}/${opponentCount})...`);
-          const aiRes = await fetch('/shelector-api/generate-ai-deck', {
+          const aiRes = await fetch(shelectorApiUrl('/generate-ai-deck'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -335,7 +659,7 @@ export function PlayPage() {
         });
       }
 
-      startGame(
+      const started = startGame(
         {
           commander: humanCommander,
           cards: importResult.cards,
@@ -345,7 +669,11 @@ export function PlayPage() {
         },
         aiDecks
       );
-      setStep('game');
+      if (started) {
+        setStep('game');
+      } else {
+        setImportError('Failed to initialize game. Re-import the deck so commander card data is included.');
+      }
     } catch (err: any) {
       setImportError(err.message || 'Failed to start game');
     } finally {
@@ -356,23 +684,23 @@ export function PlayPage() {
   };
 
   const handleStartDraftMatch = (humanDeck: ImportedCards, aiDecks: ImportedCards[]) => {
-    startGame(humanDeck, aiDecks, {
+    const started = startGame(humanDeck, aiDecks, {
       format: 'limited',
       startingLife: 20,
       startingHandSize: 7,
       aiDifficulty: 2,
     });
-    setStep('game');
+    if (started) setStep('game');
   };
 
   const handleStartStandardMatch = (humanDeck: ImportedCards, aiDecks: ImportedCards[]) => {
-    startGame(humanDeck, aiDecks, {
+    const started = startGame(humanDeck, aiDecks, {
       format: 'limited',
       startingLife: 20,
       startingHandSize: 7,
       aiDifficulty: 2,
     });
-    setStep('game');
+    if (started) setStep('game');
   };
 
   // ----- RENDER -----
@@ -381,14 +709,125 @@ export function PlayPage() {
   if (step === 'game' && gameState) {
     return (
       <div className={FLOATING_TABLE_LAYOUT.shell}>
+        <button
+          type="button"
+          onClick={() => setMobileGameMenuOpen(prev => !prev)}
+          className="fixed right-2 top-2 z-[70] flex h-10 w-10 items-center justify-center rounded border border-amber-500/40 bg-neutral-950/95 text-amber-200 shadow-xl shadow-black/40 backdrop-blur active:scale-95 md:hidden"
+          aria-label={mobileGameMenuOpen ? 'Close game menu' : 'Open game menu'}
+          aria-expanded={mobileGameMenuOpen}
+        >
+          {mobileGameMenuOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
+        </button>
+
+        {mobileGameMenuOpen && (
+          <>
+            <button
+              type="button"
+              className="fixed inset-0 z-[55] cursor-default bg-black/20 md:hidden"
+              aria-label="Close game menu"
+              onClick={() => setMobileGameMenuOpen(false)}
+            />
+            <div className="fixed right-2 top-14 z-[70] w-[min(15rem,calc(100vw-1rem))] overflow-hidden rounded-lg border border-neutral-700 bg-neutral-950/98 shadow-2xl shadow-black/50 backdrop-blur md:hidden">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowReview(true);
+                  setMobileGameMenuOpen(false);
+                }}
+                className="flex min-h-11 w-full items-center gap-3 border-b border-neutral-800 px-3 text-left text-sm font-bold text-stone-100 transition-colors hover:bg-neutral-900"
+              >
+                <BarChart3 className="h-4 w-4 text-amber-300" />
+                <span className="flex-1">Review</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSavePanelOpen(prev => !prev);
+                  setMobileGameMenuOpen(false);
+                }}
+                className="flex min-h-11 w-full items-center gap-3 border-b border-neutral-800 px-3 text-left text-sm font-bold text-stone-100 transition-colors hover:bg-neutral-900"
+              >
+                <Save className="h-4 w-4 text-emerald-300" />
+                <span className="flex-1">Saves</span>
+                <span className="rounded bg-neutral-800 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-stone-400">
+                  Slot {activeSaveSlot}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setCoachMode(!coachMode)}
+                className="flex min-h-11 w-full items-center gap-3 border-b border-neutral-800 px-3 text-left text-sm font-bold text-stone-100 transition-colors hover:bg-neutral-900"
+              >
+                <Shield className="h-4 w-4 text-blue-300" />
+                <span className="flex-1">Coach</span>
+                <span className={`rounded px-2 py-0.5 text-[10px] font-black uppercase tracking-wider ${
+                  coachMode ? 'bg-blue-800 text-blue-100' : 'bg-neutral-800 text-stone-400'
+                }`}>
+                  {coachMode ? 'On' : 'Off'}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setHoldPriority(!holdPriority)}
+                className="flex min-h-11 w-full items-center gap-3 border-b border-neutral-800 px-3 text-left text-sm font-bold text-stone-100 transition-colors hover:bg-neutral-900"
+              >
+                <Shield className="h-4 w-4 text-sky-300" />
+                <span className="flex-1">Hold Priority</span>
+                <span className={`rounded px-2 py-0.5 text-[10px] font-black uppercase tracking-wider ${
+                  holdPriority ? 'bg-sky-500 text-neutral-950' : 'bg-neutral-800 text-stone-400'
+                }`}>
+                  {holdPriority ? 'On' : 'Off'}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setNewPlayerMode(!newPlayerMode)}
+                className="flex min-h-11 w-full items-center gap-3 px-3 text-left text-sm font-bold text-stone-100 transition-colors hover:bg-neutral-900"
+              >
+                <Lightbulb className="h-4 w-4 text-amber-300" />
+                <span className="flex-1">Guide</span>
+                <span className={`rounded px-2 py-0.5 text-[10px] font-black uppercase tracking-wider ${
+                  newPlayerMode ? 'bg-amber-500 text-neutral-950' : 'bg-neutral-800 text-stone-400'
+                }`}>
+                  {newPlayerMode ? 'On' : 'Off'}
+                </span>
+              </button>
+            </div>
+          </>
+        )}
+
         <div className={FLOATING_TABLE_LAYOUT.reviewButton}>
-          <button
-            onClick={() => setShowReview(true)}
-            className="rounded border border-amber-500/40 bg-neutral-950/90 px-3 py-2 text-xs font-bold uppercase tracking-wider text-amber-200 shadow-xl shadow-black/40 backdrop-blur hover:border-amber-300 hover:text-amber-100"
-          >
-            Review
-          </button>
+          <div className="hidden items-center gap-2 md:flex">
+            <button
+              onClick={() => setSavePanelOpen(prev => !prev)}
+              className="h-10 min-w-10 rounded border border-emerald-500/40 bg-neutral-950/90 px-2 text-[10px] font-bold uppercase tracking-wider text-emerald-100 shadow-xl shadow-black/40 backdrop-blur hover:border-emerald-300 md:px-3 md:text-xs"
+              aria-label="Open game saves"
+            >
+              Saves
+            </button>
+            <button
+              onClick={() => setShowReview(true)}
+              className="h-10 min-w-10 rounded border border-amber-500/40 bg-neutral-950/90 px-2 text-[10px] font-bold uppercase tracking-wider text-amber-200 shadow-xl shadow-black/40 backdrop-blur hover:border-amber-300 hover:text-amber-100 md:px-3 md:text-xs"
+              aria-label="Open game review"
+            >
+              Review
+            </button>
+          </div>
         </div>
+
+        {savePanelOpen && (
+          <>
+            <button
+              type="button"
+              className="fixed inset-0 z-[60] cursor-default bg-black/30"
+              aria-label="Close save slots"
+              onClick={() => setSavePanelOpen(false)}
+            />
+            <div className="fixed left-2 right-2 top-14 z-[75] max-h-[calc(100vh-4rem)] overflow-y-auto md:left-auto md:right-4 md:top-16 md:w-[24rem]">
+              {renderSaveSlots(true)}
+            </div>
+          </>
+        )}
 
         <div className={FLOATING_TABLE_LAYOUT.board}>
           <GameBoard
@@ -399,8 +838,11 @@ export function PlayPage() {
             onAction={submitAction}
             mulliganPhase={mulliganPhase}
             mulliganCount={mulliganCount}
+            mulliganBottomCount={mulliganBottomCount}
+            selectedMulliganBottomIds={selectedMulliganBottomIds}
             onKeepHand={keepHand}
             onMulligan={mulligan}
+            onToggleMulliganBottom={toggleMulliganBottomCard}
             discardPhase={discardPhase}
             discardCount={discardCount}
             onDiscardCard={discardCard}
@@ -409,13 +851,24 @@ export function PlayPage() {
             tutorTitle={tutorTitle}
             onTutorPick={resolveTutor}
             onTutorCancel={cancelTutor}
+            libraryChoice={libraryChoice}
+            onResolveLibraryChoice={resolveLibraryChoice}
             undosRemaining={undosRemaining}
             onUndo={undoAction}
             coachMode={coachMode}
             onToggleCoach={setCoachMode}
+            newPlayerMode={newPlayerMode}
+            onToggleNewPlayerMode={setNewPlayerMode}
+            holdPriority={holdPriority}
+            onToggleHoldPriority={setHoldPriority}
+            collapseModeControlsOnMobile
             onUntapMana={untapManaSource}
+            onAdjustCounters={adjustCounters}
             untappableCardIds={untappableCardIds}
             lastPlayedCard={lastPlayedCard}
+            authorityUpdates={authorityUpdates}
+            lastStateUpdate={lastStateUpdate}
+            currentPrompt={currentPrompt}
           />
         </div>
 
@@ -454,7 +907,7 @@ export function PlayPage() {
             <Link to="/" className="text-stone-400 hover:text-stone-200">
               <ArrowLeft className="h-5 w-5" />
             </Link>
-            <h1 className="text-2xl font-bold">Play a Game</h1>
+            <h1 className="text-2xl font-bold">Play Practice Game</h1>
           </div>
           <DraftTournament
             onBack={() => setStep(importResult?.valid ? 'opponent' : 'import')}
@@ -488,13 +941,58 @@ export function PlayPage() {
   // Pre-game view
   return (
     <div className="min-h-screen bg-stone-900 text-stone-100 p-4">
+      {showGuidedPrompt && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm">
+          <div
+            className="relative mx-auto overflow-hidden rounded-xl border border-amber-500/35 bg-stone-950 p-5 shadow-2xl shadow-black/50"
+            style={{ width: 'min(24rem, calc(100vw - 2rem))' }}
+          >
+            <button
+              type="button"
+              onClick={closeGuidedPrompt}
+              className="absolute right-3 top-3 rounded p-1 text-stone-500 transition-colors hover:bg-stone-800 hover:text-stone-200"
+              aria-label="Close guided practice prompt"
+            >
+              <X className="h-4 w-4" />
+            </button>
+            <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-amber-500 text-stone-950">
+              <Lightbulb className="h-5 w-5" />
+            </div>
+            <h2 className="mb-2 text-xl font-black text-stone-50">Want a guided practice game?</h2>
+            <p className="mb-4 text-sm leading-6 text-stone-300">
+              Guide mode suggests one available practice action at a time. Starter decks keep the first match simple.
+            </p>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={startGuidedFirstGame}
+                className="min-h-[44px] rounded-lg bg-amber-500 px-4 py-2 text-sm font-black text-stone-950 transition-colors hover:bg-amber-400"
+              >
+                Use Guide
+              </button>
+              <button
+                type="button"
+                onClick={closeGuidedPrompt}
+                className="min-h-[44px] rounded-lg border border-stone-700 bg-stone-900 px-4 py-2 text-sm font-bold text-stone-200 transition-colors hover:bg-stone-800"
+              >
+                Bring My Deck
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="max-w-2xl mx-auto">
         {/* Header */}
         <div className="flex items-center gap-3 mb-8">
           <Link to="/" className="text-stone-400 hover:text-stone-200">
             <ArrowLeft className="w-5 h-5" />
           </Link>
-          <h1 className="text-2xl font-bold">Play a Game</h1>
+          <h1 className="text-2xl font-bold">Play Practice Game</h1>
+        </div>
+
+        <div className="mb-6">
+          {renderSaveSlots(false)}
         </div>
 
         {/* Step 1: Import */}
@@ -558,6 +1056,65 @@ export function PlayPage() {
               <Users className="h-4 w-4" />
               Draft Tournament
             </button>
+          </div>
+
+          <div
+            ref={starterDecksRef}
+            className={`mb-4 rounded-lg border bg-stone-900/50 transition-colors ${
+              starterDeckSpotlight
+                ? 'border-amber-400 shadow-lg shadow-amber-950/40'
+                : 'border-stone-700'
+            }`}
+          >
+            <div className="flex items-center justify-between gap-3 border-b border-stone-700 px-3 py-2">
+              <div className="flex items-center gap-2 text-sm font-bold text-amber-200">
+                <Lightbulb className="h-4 w-4" />
+                Beginner Starter Decks
+              </div>
+              {newPlayerMode && (
+                <span className="rounded bg-amber-500 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-stone-950">
+                  Guide On
+                </span>
+              )}
+            </div>
+            <div className="divide-y divide-stone-800">
+              {BEGINNER_DECKS.map(deck => (
+                <button
+                  key={deck.id}
+                  type="button"
+                  onClick={() => handleSelectBeginnerDeck(deck)}
+                  disabled={isImporting}
+                  className="flex w-full flex-col gap-2 px-3 py-3 text-left transition-colors hover:bg-stone-800/70 disabled:cursor-not-allowed disabled:opacity-60 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <span className="min-w-0">
+                    <span className="mb-1 flex flex-wrap items-center gap-1.5">
+                      <span className="font-bold text-stone-100">{deck.name}</span>
+                      {deck.colors.map(color => (
+                        <span
+                          key={color}
+                          className={`rounded-full px-2 py-0.5 text-[10px] font-black ${COLOR_BADGES[color]}`}
+                        >
+                          {color}
+                        </span>
+                      ))}
+                    </span>
+                    <span className="block truncate text-xs font-semibold text-stone-400">
+                      {deck.commander}
+                    </span>
+                    <span className="block text-xs leading-5 text-stone-500">
+                      {deck.plan}
+                    </span>
+                  </span>
+                  <span className="flex min-h-8 shrink-0 items-center justify-center rounded bg-stone-700 px-3 py-1 text-xs font-black text-stone-100">
+                    {starterDeckLoadingId === deck.id ? (
+                      <><Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />Loading</>
+                    ) : (
+                      'Use Deck'
+                    )}
+                  </span>
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* History dropdown */}

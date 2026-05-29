@@ -39,7 +39,19 @@ from backend.rules import (
     PRICE_TIERS,
 )
 
-CONSTRUCTED_BASIC_LANDS = {"Plains", "Island", "Swamp", "Mountain", "Forest", "Wastes"}
+CONSTRUCTED_BASIC_LANDS = {
+    "Plains",
+    "Island",
+    "Swamp",
+    "Mountain",
+    "Forest",
+    "Wastes",
+    "Snow-Covered Plains",
+    "Snow-Covered Island",
+    "Snow-Covered Swamp",
+    "Snow-Covered Mountain",
+    "Snow-Covered Forest",
+}
 
 STANDARD_ARCHETYPE_QUERIES = {
     "aggro": "cheap aggressive creatures haste burn combat damage",
@@ -173,6 +185,21 @@ class DeckGenerator:
                     commanders.append(card)
         return commanders
 
+    @staticmethod
+    def _is_commander_card(card: Dict) -> bool:
+        type_line = (card.get('type_line') or '').lower()
+        oracle_text = (card.get('oracle_text') or '').lower()
+        return 'legendary' in type_line and ('creature' in type_line or 'can be your commander' in oracle_text)
+
+    def _find_exact_commander(self, name: str) -> Optional[Dict]:
+        wanted = name.strip().lower()
+        if not wanted:
+            return None
+        for card in self.cards:
+            if (card.get('name') or '').lower() == wanted and self._is_commander_card(card):
+                return card
+        return None
+
     def find_commander(self, name: str) -> Optional[Dict]:
         """Find a commander by name (case-insensitive partial match).
 
@@ -183,13 +210,23 @@ class DeckGenerator:
             self.load()
 
         names = [n.strip() for n in name.split(" // ")] if " // " in name else [name]
+
+        # Prefer exact card names before partial matching. This keeps modal and
+        # transforming commanders such as "Dennick // Dennick" as one card
+        # instead of treating each face as a separate partner commander.
+        exact = self._find_exact_commander(name)
+        if exact:
+            return exact
+        for part in names:
+            exact = self._find_exact_commander(part)
+            if exact:
+                return exact
+
         for part in names:
             part_lower = part.lower()
             for card in self.cards:
                 if part_lower in (card.get('name') or '').lower():
-                    type_line = (card.get('type_line') or '').lower()
-                    oracle_text = (card.get('oracle_text') or '').lower()
-                    if 'legendary' in type_line and ('creature' in type_line or 'can be your commander' in oracle_text):
+                    if self._is_commander_card(card):
                         return card
         return None
 
@@ -201,11 +238,20 @@ class DeckGenerator:
         if not self._loaded:
             self.load()
 
+        exact = self._find_exact_commander(name)
+        if exact:
+            return [exact]
+
         names = [n.strip() for n in name.split(" // ")] if " // " in name else [name]
         results = []
+        seen: set[str] = set()
         for part in names:
             card = self.find_commander(part)
             if card:
+                key = card.get('id') or card.get('name') or part
+                if key in seen:
+                    continue
+                seen.add(key)
                 results.append(card)
         return results
 

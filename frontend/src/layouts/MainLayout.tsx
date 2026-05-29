@@ -2,7 +2,7 @@ import { ReactNode, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { LiveRibbon } from '../components/LiveRibbon';
 import { DeckHistory } from '../components/DeckHistory';
-import { AdPlaceholder } from '../components/AdPlaceholder';
+import { AdSlot } from '../components/AdSlot';
 import { Deck } from '../types';
 import { Menu, X } from 'lucide-react';
 
@@ -11,6 +11,7 @@ interface MainLayoutProps {
   history: Deck[];
   selectedDeckId: string | null;
   onSelectDeck: (deck: Deck) => void;
+  showSideAd?: boolean;
   showBottomAd?: boolean;
 }
 
@@ -19,6 +20,7 @@ export function MainLayout({
   history,
   selectedDeckId,
   onSelectDeck,
+  showSideAd = false,
   showBottomAd = false,
 }: MainLayoutProps) {
   const navigate = useNavigate();
@@ -95,24 +97,23 @@ export function MainLayout({
           {/* Bottom Ad (shown only when specified) */}
           {showBottomAd && (
             <div className="flex justify-center p-4 border-t border-stone-200 bg-stone-100">
-              <AdPlaceholder size="leaderboard" />
+              <AdSlot size="leaderboard" className="hidden md:flex" />
+              <AdSlot size="mobileBanner" className="md:hidden" />
             </div>
           )}
         </main>
 
         {/* Right Sidebar - Ad (Desktop only) */}
-        <aside className="hidden lg:flex flex-col items-center gap-4 p-4 w-[332px] flex-shrink-0 border-l border-stone-200 bg-stone-50">
-          <AdPlaceholder size="sidebar" />
-          <div className="text-xs text-stone-400 text-center mt-2">
-            Support the site by viewing ads
-          </div>
-        </aside>
+        {showSideAd && (
+          <aside className="hidden lg:flex flex-col items-center gap-4 p-4 w-[332px] flex-shrink-0 border-l border-stone-200 bg-stone-50">
+            <AdSlot size="sidebar" />
+            <div className="text-xs text-stone-400 text-center mt-2">
+              Support the site by viewing ads
+            </div>
+          </aside>
+        )}
       </div>
 
-      {/* Mobile Bottom Ad */}
-      <div className="md:hidden flex justify-center p-4 border-t border-stone-200 bg-stone-100">
-        <AdPlaceholder size="sidebar" />
-      </div>
     </div>
   );
 }

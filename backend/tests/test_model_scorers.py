@@ -238,10 +238,12 @@ class TestModelPaths:
         assert "GPT2" in str(GPT2_MODEL_PATH)
         assert "QWEN" in str(QWEN_MODEL_PATH)
 
+    @requires_gpt2
     def test_gpt2_model_exists(self):
         """Test that GPT2 model directory exists."""
         assert GPT2_MODEL_PATH.exists(), f"GPT2 model not found at {GPT2_MODEL_PATH}"
 
+    @requires_qwen
     def test_qwen_model_exists(self):
         """Test that Qwen model file exists."""
         assert QWEN_MODEL_PATH.exists(), f"Qwen model not found at {QWEN_MODEL_PATH}"

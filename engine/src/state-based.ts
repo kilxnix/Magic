@@ -1,16 +1,10 @@
-import { GameState, CardInstance, TriggeredAbilityRef } from './types';
+import { GameState, CardInstance, TriggeredAbilityRef, Zone } from './types';
 import { isIndestructible } from './keywords';
 import { getCommanderDestinationZone } from './commander';
-
-/**
- * Get effective toughness considering +1/+1 and -1/-1 counters.
- */
-function getEffectiveToughness(def: { toughness?: number }, card: CardInstance): number {
-  const baseToughness = def.toughness ?? 0;
-  const plusCounters = card.counters['+1/+1'] ?? 0;
-  const minusCounters = card.counters['-1/-1'] ?? 0;
-  return baseToughness + plusCounters - minusCounters;
-}
+import { pruneDetachedEffects } from './game-state';
+import { isEffectiveCreature } from './effective-types';
+import { applyReplacements } from './effects/replacement';
+import { getEffectiveToughness as getLayeredEffectiveToughness } from './effects/continuous';
 
 /**
  * Cancel +1/+1 and -1/-1 counters on a creature.
@@ -63,19 +57,34 @@ export function checkStateBasedActions(state: GameState): GameState {
     const tempState = { ...state, cards: newCards, players: newPlayers };
     const graveyardDest = (cardId: string) =>
       getCommanderDestinationZone(tempState, cardId, 'graveyard');
+    const creatureDeathDest = (cardId: string, card: CardInstance): Zone | null => {
+      const commanderDest = graveyardDest(cardId);
+      if (commanderDest !== 'graveyard') return commanderDest;
+      const { event } = applyReplacements(tempState, {
+        type: 'CreatureDies',
+        cardInstanceId: cardId,
+        targetId: card.ownerId,
+        destinationZone: 'graveyard',
+      });
+      if (!event) return null;
+      return event.destinationZone || 'graveyard';
+    };
 
     // 2. Creatures with 0 or less toughness die (even if indestructible)
     for (const [id, card] of newCards) {
       if (card.zone !== 'battlefield') continue;
 
       const def = state.cardDefinitions.get(card.definitionId);
-      if (!def || !def.card_types.includes('creature')) continue;
+      if (!def || !isEffectiveCreature(tempState, id)) continue;
 
-      const effectiveToughness = getEffectiveToughness(def, card);
+      const effectiveToughness = getLayeredEffectiveToughness(tempState, id);
       if (effectiveToughness <= 0) {
-        newCards.set(id, { ...card, zone: graveyardDest(id), damage: 0, tapped: false });
-        creaturesDied.push({ instanceId: id, ownerId: card.ownerId });
-        stateChanged = true;
+        const destination = creatureDeathDest(id, card);
+        if (destination) {
+          newCards.set(id, { ...card, zone: destination, damage: 0, deathtouchDamage: undefined, tapped: false });
+          creaturesDied.push({ instanceId: id, ownerId: card.ownerId });
+          stateChanged = true;
+        }
       }
     }
 
@@ -96,15 +105,19 @@ export function checkStateBasedActions(state: GameState): GameState {
       if (card.zone !== 'battlefield') continue;
 
       const def = state.cardDefinitions.get(card.definitionId);
-      if (!def || !def.card_types.includes('creature')) continue;
+      if (!def || !isEffectiveCreature(tempState, id)) continue;
 
-      const effectiveToughness = getEffectiveToughness(def, card);
+      const effectiveToughness = getLayeredEffectiveToughness(tempState, id);
+      const hasLethalDeathtouchDamage = card.damage > 0 && Boolean(card.deathtouchDamage);
 
-      if (card.damage >= effectiveToughness && effectiveToughness > 0) {
+      if ((card.damage >= effectiveToughness || hasLethalDeathtouchDamage) && effectiveToughness > 0) {
         if (!isIndestructible(state, id)) {
-          newCards.set(id, { ...card, zone: graveyardDest(id), damage: 0, tapped: false });
-          creaturesDied.push({ instanceId: id, ownerId: card.ownerId });
-          stateChanged = true;
+          const destination = creatureDeathDest(id, card);
+          if (destination) {
+            newCards.set(id, { ...card, zone: destination, damage: 0, deathtouchDamage: undefined, tapped: false });
+            creaturesDied.push({ instanceId: id, ownerId: card.ownerId });
+            stateChanged = true;
+          }
         }
       }
     }
@@ -135,8 +148,13 @@ export function checkStateBasedActions(state: GameState): GameState {
           // Keep the first, move others to graveyard (or command zone for commanders)
           for (let i = 1; i < cards.length; i++) {
             const card = cards[i];
-            newCards.set(card.instanceId, { ...card, zone: graveyardDest(card.instanceId), damage: 0, tapped: false });
-            stateChanged = true;
+            const destination = isEffectiveCreature(tempState, card.instanceId)
+              ? creatureDeathDest(card.instanceId, card)
+              : graveyardDest(card.instanceId);
+            if (destination) {
+              newCards.set(card.instanceId, { ...card, zone: destination, damage: 0, deathtouchDamage: undefined, tapped: false });
+              stateChanged = true;
+            }
           }
         }
       }
@@ -226,7 +244,7 @@ export function checkStateBasedActions(state: GameState): GameState {
     }
   }
 
-  return { ...state, cards: newCards, players: newPlayers, pendingTriggers: newPendingTriggers, battlefieldAbilities: newBattlefieldAbilities };
+  return pruneDetachedEffects({ ...state, cards: newCards, players: newPlayers, pendingTriggers: newPendingTriggers, battlefieldAbilities: newBattlefieldAbilities });
 }
 
 /**
@@ -251,8 +269,18 @@ export function cleanupDamage(state: GameState): GameState {
   const newCards = new Map(state.cards);
 
   for (const [id, card] of newCards) {
-    if (card.zone === 'battlefield' && card.damage > 0) {
-      newCards.set(id, { ...card, damage: 0 });
+    if (card.zone === 'battlefield') {
+      const counters = { ...card.counters };
+      delete counters['_powerMod'];
+      delete counters['_toughnessMod'];
+
+      newCards.set(id, {
+        ...card,
+        damage: 0,
+        deathtouchDamage: undefined,
+        counters,
+        grantedKeywords: undefined,
+      });
     }
   }
 

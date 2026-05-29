@@ -1,0 +1,53 @@
+# DeckReps Magic Coverage Audit
+
+Total areas: 28
+
+By status:
+- certified: 0
+- partial: 25
+- gap: 3
+- blocked: 0
+
+By priority:
+- P0: 19
+- P1: 9
+
+Open P0/P1 gaps:
+- [P1] keywords-non-evergreen: Create mechanic-by-mechanic implementation list and begin with mechanics appearing in popular Commander decks.
+- [P0] modal-choice-ui: Add generic choice request/resolution layer instead of deterministic shortcuts.
+- [P1] post-game-review: Attach review records to authoritative action events and compare against legal alternatives.
+
+Missing evidence references:
+- none
+
+Area table:
+| Priority | Status | Area | Next |
+| --- | --- | --- | --- |
+| P0 | gap | modal-choice-ui | Add generic choice request/resolution layer instead of deterministic shortcuts. |
+| P0 | partial | casting-costs | Expand alternative costs, additional costs, cost increasers/reducers, X choices, and free-spell casting prompts. |
+| P0 | partial | combat | Add browser combat certification for all starter decks plus multiplayer attack/block assignment. |
+| P0 | partial | commander-rules | Add partner/background/doctor companion import and cast certification plus Drannith-style restrictions. |
+| P0 | partial | continuous-effects-layers | Expand layer engine to full CR-style dependency/timestamp model beyond current practical layer 6/7 and devotion coverage. |
+| P0 | partial | deck-import | Add importer golden corpus for real exported lists and bad-data cases. |
+| P0 | partial | equipment-auras | Add UI certification for equip and illegal attachment SBAs. |
+| P0 | partial | high-power-chaos-regression | Run long-mode chaos regularly and promote every found failure into a targeted regression. |
+| P0 | partial | library-search-tutors | Replace deterministic tutor shortcuts with choice UI that supports named card, top-library, graveyard, exile, and battlefield destinations. |
+| P0 | partial | mana-system | Add complete coverage for conditional lands, color choice UI, delayed/restricted mana, and mana replacement/multipliers. |
+| P0 | partial | oracle-parser-coverage | Run parser coverage against full card database and classify unsupported syntax clusters. |
+| P0 | partial | replacement-prevention | Add affected-player ordering choices when multiple replacements apply and expand cannot-lose/win replacement fixtures. |
+| P0 | partial | stack-responses | Certify responding to stack items in UI and add APNAP trigger ordering fixtures. |
+| P0 | partial | state-based-actions | Add simultaneous win/loss ordering tests and expand SBA coverage for layer/removal dependencies. |
+| P0 | partial | targeting | Add target revalidation on resolution, illegal target fizzles, target-changing effects, and multiplayer target selection UI. |
+| P0 | partial | tokens | Add a token factory certification table and browser proof for Krenko, Talrand, Goblin Spymaster, Dockside-style counting, and token sacrifice. |
+| P0 | partial | triggers-etb | Create a trigger matrix by event kind and add missing beginning/end step token triggers. |
+| P0 | partial | turn-structure-priority | Add multiplayer APNAP priority fixtures and browser proof for skip rest of turn after stack/combat windows. |
+| P0 | partial | ui-gameplay | Add browser automation certification for each starter deck and all action categories. |
+| P1 | gap | keywords-non-evergreen | Create mechanic-by-mechanic implementation list and begin with mechanics appearing in popular Commander decks. |
+| P1 | gap | post-game-review | Attach review records to authoritative action events and compare against legal alternatives. |
+| P1 | partial | ai-shelector | Add speed and legality benchmark across archetypes and stack-heavy high-power states. |
+| P1 | partial | graveyard-exile | Add zone permission engine for casting/activating from non-hand zones. |
+| P1 | partial | keywords-evergreen | Audit every evergreen keyword and bind each to at least one fixture card. |
+| P1 | partial | manual-correction-tools | Extend repair tools beyond permanent counters to player counters, token fixes, attachments, damage marked, and zone corrections. |
+| P1 | partial | manual-overrides | Add override registry metadata with reason, owner, and fixture card. |
+| P1 | partial | multiplayer | Bridge rooms to authoritative engine sessions and add four-player combat/priority browser proof. |
+| P1 | partial | rules-update-process | Wire edge-case generation and coverage audit into a scheduled certification run after every card-data refresh. |
