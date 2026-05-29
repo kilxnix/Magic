@@ -252,6 +252,10 @@ export interface GameLogEntry {
   timestamp: number;
   playByPlay?: string;
   decision?: DecisionReview;
+  rulesAudit?: {
+    severity: 'info' | 'warning' | 'error';
+    reason: string;
+  };
 }
 
 export interface ChatMessage {
@@ -3700,6 +3704,22 @@ export function useShelectorGame() {
     if (!isLegalLibraryChoice) {
       const sourceName = tutorSourceNameRef.current || 'this search';
       addMessage('system', `${cardName} is not a legal choice for ${sourceName}. Choose a legal card.`);
+      appendLog({
+        ...captureLogEntry(
+          engine,
+          humanIdRef.current,
+          aiIdsRef.current,
+          'human',
+          `Rejected illegal search choice: ${cardName}`,
+          0,
+          humanIdRef.current,
+        ),
+        playByPlay: `${cardName} was rejected by the rules validator. State was not changed.`,
+        rulesAudit: {
+          severity: 'error',
+          reason: `${cardName} did not match ${filter || 'the current search predicate'} for ${sourceName}.`,
+        },
+      });
       syncState();
       return;
     }
@@ -3805,6 +3825,25 @@ export function useShelectorGame() {
       addMessage('player', `Found ${cardName} and put it into hand. Library shuffled.`);
     }
 
+    appendLog({
+      ...captureLogEntry(
+        engineRef.current || engine,
+        humanIdRef.current,
+        aiIdsRef.current,
+        'human',
+        `Search choice: ${tutorSourceNameRef.current} found ${cardName}`,
+        0,
+        humanIdRef.current,
+      ),
+      playByPlay: `${tutorSourceNameRef.current} found ${cardName} and put it ${
+        dest === 'top' ? 'on top of the library' : `into ${dest}`
+      }.`,
+      rulesAudit: {
+        severity: 'info',
+        reason: `Search choice validated against ${filter || 'the current engine predicate'} before moving the card.`,
+      },
+    });
+
     // For "up to N" searches: re-open the picker if more picks remain.
     if (tutorRemainingRef.current > 0) {
       tutorRemainingRef.current -= 1;
@@ -3864,7 +3903,7 @@ export function useShelectorGame() {
     if (loopLogEntries.length > 0) setGameLog(prev => [...prev, ...loopLogEntries]);
 
     syncState();
-  }, [addMessage, syncState, advanceGameLoop]);
+  }, [addMessage, appendLog, syncState, advanceGameLoop]);
 
   /** Cancel the active tutor — useful for "up to N" searches when the user wants
    * fewer than N picks, or to skip the search entirely. */

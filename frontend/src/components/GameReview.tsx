@@ -36,6 +36,16 @@ function rateMove(entry: GameLogEntry, allEntries: GameLogEntry[], index: number
   const action = entry.action.toLowerCase();
   const { player, manaAvailable, manaSpent, boardCreatureCount, lifeTotals, cardsInHand } = entry;
 
+  if (entry.rulesAudit) {
+    if (entry.rulesAudit.severity === 'error') {
+      return { rating: 'blunder', reasoning: `Rules audit failed: ${entry.rulesAudit.reason}` };
+    }
+    if (entry.rulesAudit.severity === 'warning') {
+      return { rating: 'bad', reasoning: `Rules audit warning: ${entry.rulesAudit.reason}` };
+    }
+    return { rating: 'okay', reasoning: `Rules audit: ${entry.rulesAudit.reason}` };
+  }
+
   // Only rate human moves
   if (player !== 'human') {
     return { rating: 'okay', reasoning: 'AI action.' };
@@ -447,6 +457,17 @@ export function GameReview({ gameLog, finalState, winner, onClose, embedded = fa
                                 }`}>
                                   {entry.player === 'human' ? 'You' : 'AI'}
                                 </span>
+                                {entry.rulesAudit && (
+                                  <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase ${
+                                    entry.rulesAudit.severity === 'error'
+                                      ? 'bg-red-900/50 text-red-200'
+                                      : entry.rulesAudit.severity === 'warning'
+                                        ? 'bg-amber-900/50 text-amber-200'
+                                        : 'bg-sky-900/40 text-sky-200'
+                                  }`}>
+                                    Rules
+                                  </span>
+                                )}
                                 <span className="text-xs sm:text-sm text-stone-200 truncate">
                                   {entry.action}
                                 </span>
@@ -481,6 +502,17 @@ export function GameReview({ gameLog, finalState, winner, onClose, embedded = fa
                                   {selectedEntry.reasoning}
                                 </p>
                               </div>
+
+                              {selectedEntry.rulesAudit && (
+                                <div className="rounded-lg border border-sky-700/50 bg-sky-950/20 px-3 py-2">
+                                  <div className="text-[10px] font-semibold text-sky-300 uppercase tracking-wider mb-1">
+                                    Rules Audit
+                                  </div>
+                                  <p className="text-xs text-stone-200 leading-relaxed">
+                                    {selectedEntry.rulesAudit.reason}
+                                  </p>
+                                </div>
+                              )}
 
                               {selectedEntry.decision && (
                                 <div className="rounded-lg border border-emerald-700/50 bg-emerald-950/20 px-3 py-2">
@@ -581,6 +613,17 @@ export function GameReview({ gameLog, finalState, winner, onClose, embedded = fa
                     {selectedEntry.reasoning}
                   </p>
                 </div>
+
+                {selectedEntry.rulesAudit && (
+                  <div className="rounded-lg border border-sky-700/50 bg-sky-950/20 px-4 py-3">
+                    <div className="mb-1 text-xs font-semibold uppercase tracking-wider text-sky-300">
+                      Rules Audit
+                    </div>
+                    <p className="text-sm leading-relaxed text-stone-200">
+                      {selectedEntry.rulesAudit.reason}
+                    </p>
+                  </div>
+                )}
 
                 {selectedEntry.decision && (
                   <div className="rounded-lg border border-emerald-700/50 bg-emerald-950/20 px-4 py-3">
