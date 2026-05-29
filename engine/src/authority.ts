@@ -32,6 +32,8 @@ export interface ClientActionResponse {
   ok: boolean;
   reason?: ClientActionFailure;
   message?: string;
+  state?: GameState;
+  events?: ActionGameEvent[];
   update?: EngineStateUpdate;
 }
 
@@ -1079,6 +1081,8 @@ export function applyClientActionRequest(
   return {
     requestId: request.id,
     ok: true,
+    state: result.state,
+    events: result.events,
     update: buildStateUpdate(
       state,
       result.state,

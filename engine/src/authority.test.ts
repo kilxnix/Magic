@@ -108,6 +108,11 @@ describe('authority action boundary', () => {
     const response = applyClientActionRequest(state, request);
 
     expect(response.ok).toBe(true);
+    expect(response.state?.cards.get((playLand as Extract<AIAction, { kind: 'PlayLand' }>).cardInstanceId)?.zone)
+      .toBe('battlefield');
+    expect(response.events).toEqual(expect.arrayContaining([
+      { kind: 'LandPlayed', playerId: 'p1', cardId: (playLand as Extract<AIAction, { kind: 'PlayLand' }>).cardInstanceId },
+    ]));
     expect(response.update?.oldStateId).toBe(stateFingerprint(state));
     expect(response.update?.rulesEvents).toContainEqual({
       kind: 'ActionAccepted',
@@ -142,6 +147,8 @@ describe('authority action boundary', () => {
     });
     expect(stale.ok).toBe(false);
     expect(stale.reason).toBe('stale_state');
+    expect(stale.state).toBeUndefined();
+    expect(stale.events).toBeUndefined();
     expect(stale.update?.visibleDiffs).toEqual([]);
 
     const illegal = applyClientActionRequest(
@@ -150,6 +157,8 @@ describe('authority action boundary', () => {
     );
     expect(illegal.ok).toBe(false);
     expect(illegal.reason).toBe('illegal_action');
+    expect(illegal.state).toBeUndefined();
+    expect(illegal.events).toBeUndefined();
     expect(illegal.update?.rulesEvents).toEqual([
       {
         kind: 'ActionRejected',

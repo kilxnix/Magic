@@ -46,14 +46,8 @@ import {
   type ManaCost,
   type ManaPool,
   type TriggeredAbilityStackItem,
-  tryPlayLand,
   tryTapLandForMana,
-  tryCastSpell,
-  tryActivateAbility,
   tryPassPriority,
-  tryDeclareAttackers,
-  tryDeclareBlockers,
-  tryEquip,
   tryAdjustCounters,
   getCostReduction,
   getOverride,
@@ -63,10 +57,12 @@ import {
   type StackItem,
   type ActionGameEvent,
   createClientActionRequest,
+  applyClientActionRequest,
   actionKey,
   buildActionPrompt,
   buildStateUpdate,
   type ActionPromptChoice,
+  type ClientActionResponse,
   type EnginePrompt,
   type EngineStateUpdate,
   summarizeActionPromptChoices,
@@ -1860,6 +1856,12 @@ export function useShelectorGame() {
     setGameLog(prev => [...prev, entry]);
   }, []);
 
+  const recordAuthorityUpdate = useCallback((update?: EngineStateUpdate) => {
+    if (!update) return;
+    setLastStateUpdate(update);
+    setAuthorityUpdates(prev => [...prev.slice(-199), update]);
+  }, []);
+
   const recordStateUpdate = useCallback((
     before: GameState,
     after: GameState,
@@ -1881,11 +1883,10 @@ export function useShelectorGame() {
         actionKind: request.action.kind,
         label: request.label,
       },
-      events,
-    );
-    setLastStateUpdate(update);
-    setAuthorityUpdates(prev => [...prev.slice(-199), update]);
-  }, []);
+        events,
+      );
+    recordAuthorityUpdate(update);
+  }, [recordAuthorityUpdate]);
 
   const rememberLastPlayedCard = useCallback((
     state: GameState,
@@ -4506,6 +4507,45 @@ export function useShelectorGame() {
 
         let newState: GameState;
         const collectedEvents: ActionGameEvent[] = [];
+        let authorityUpdateRecorded = false;
+
+        const recordRejectedResponse = (response: ClientActionResponse, prefix: string) => {
+          if (response.update) {
+            recordAuthorityUpdate(response.update);
+            authorityUpdateRecorded = true;
+          }
+          setActionError({
+            reason: response.reason || 'illegal_action',
+            message: response.message || 'That action is not legal in the current game state.',
+          });
+          addMessage('system', `${prefix}: ${response.message || 'That action is not legal in the current game state.'}`);
+          syncState();
+        };
+
+        const applyAuthoritativeAction = (
+          state: GameState,
+          playerId: string,
+          uiAction: SimpleLegalAction,
+          options: { recordAcceptedUpdate?: boolean; rejectionPrefix?: string } = {},
+        ): GameState | null => {
+          const request = createClientActionRequest(state, playerId, uiAction._engineAction, {
+            source: 'ui',
+            label: uiAction.label,
+          });
+          const response = applyClientActionRequest(state, request);
+          if (!response.ok || !response.state) {
+            recordRejectedResponse(response, options.rejectionPrefix || 'Cannot apply action');
+            return null;
+          }
+          if (options.recordAcceptedUpdate !== false && response.update) {
+            recordAuthorityUpdate(response.update);
+            authorityUpdateRecorded = true;
+          }
+          if (response.events) {
+            collectedEvents.push(...response.events);
+          }
+          return response.state;
+        };
 
         // For DeclareAttackers with no actual attacks, skip combat via passPriority
         if (engineAction.kind === 'DeclareAttackers' && engineAction.attacks.length === 0) {
@@ -4585,100 +4625,82 @@ export function useShelectorGame() {
             }
           }
 
-          // Cast the spell via tryCastSpell (manaPayment=empty; pool-check is done internally)
-          const emptyPayment: ManaCost = { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0, generic: 0 };
-          const castOptions = {
-            ...('chosenModes' in engineAction && engineAction.chosenModes ? { chosenModes: engineAction.chosenModes } : {}),
-            ...('namedCardChoices' in engineAction && engineAction.namedCardChoices ? { namedCardChoices: engineAction.namedCardChoices } : {}),
-            ...('cardChoices' in engineAction && engineAction.cardChoices ? { cardChoices: engineAction.cardChoices } : {}),
-          };
-          const castResult = tryCastSpell(
+          const castState = applyAuthoritativeAction(
             precastState,
             humanIdRef.current,
-            engineAction.cardInstanceId,
-            engineAction.targets,
-            emptyPayment,
-            castOptions,
+            action,
+            { recordAcceptedUpdate: false, rejectionPrefix: 'Cannot cast' },
           );
-          if (!castResult.ok) {
-            setActionError({ reason: castResult.reason, message: castResult.message });
-            addMessage('system', `Cannot cast: ${castResult.message}`);
-            syncState();
+          if (!castState) {
             return;
           }
-          newState = castResult.state;
-          collectedEvents.push(...castResult.events);
+          newState = castState;
         } else if (engineAction.kind === 'PlayLand') {
-          const playLandOptions = {
-            ...(engineAction.chosenCreatureType ? { chosenCreatureType: engineAction.chosenCreatureType } : {}),
-            ...(engineAction.payLifeToEnterUntapped !== undefined
-              ? { payLifeToEnterUntapped: engineAction.payLifeToEnterUntapped }
-              : {}),
-          };
-          const result = tryPlayLand(
+          const playedState = applyAuthoritativeAction(
             engine as GameState,
             humanIdRef.current,
-            engineAction.cardInstanceId,
-            playLandOptions,
+            action,
+            { rejectionPrefix: 'Cannot play land' },
           );
-          if (!result.ok) {
-            setActionError({ reason: result.reason, message: result.message });
-            addMessage('system', `Cannot play land: ${result.message}`);
-            syncState();
+          if (!playedState) {
             return;
           }
-          newState = result.state;
-          collectedEvents.push(...result.events);
+          newState = playedState;
         } else if (engineAction.kind === 'ActivateManaAbility') {
-          const result = tryTapLandForMana(engine as GameState, humanIdRef.current, engineAction.cardInstanceId, engineAction.color);
-          if (!result.ok) {
-            setActionError({ reason: result.reason, message: result.message });
-            addMessage('system', `Cannot tap for mana: ${result.message}`);
-            syncState();
+          const manaState = applyAuthoritativeAction(
+            engine as GameState,
+            humanIdRef.current,
+            action,
+            { rejectionPrefix: 'Cannot tap for mana' },
+          );
+          if (!manaState) {
             return;
           }
-          newState = result.state;
-          collectedEvents.push(...result.events);
+          newState = manaState;
         } else if (engineAction.kind === 'ActivateAbility') {
-          const result = tryActivateAbility(engine as GameState, humanIdRef.current, engineAction.cardInstanceId, engineAction.abilityIndex, engineAction.targets);
-          if (!result.ok) {
-            setActionError({ reason: result.reason, message: result.message });
-            addMessage('system', `Cannot activate ability: ${result.message}`);
-            syncState();
+          const activatedState = applyAuthoritativeAction(
+            engine as GameState,
+            humanIdRef.current,
+            action,
+            { rejectionPrefix: 'Cannot activate ability' },
+          );
+          if (!activatedState) {
             return;
           }
-          newState = result.state;
-          collectedEvents.push(...result.events);
+          newState = activatedState;
         } else if (engineAction.kind === 'PassPriority') {
-          const result = tryPassPriority(engine as GameState, humanIdRef.current);
-          if (!result.ok) {
-            setActionError({ reason: result.reason, message: result.message });
-            addMessage('system', `Cannot pass priority: ${result.message}`);
-            syncState();
+          const passedState = applyAuthoritativeAction(
+            engine as GameState,
+            humanIdRef.current,
+            action,
+            { rejectionPrefix: 'Cannot pass priority' },
+          );
+          if (!passedState) {
             return;
           }
-          newState = result.state;
-          collectedEvents.push(...result.events);
+          newState = passedState;
         } else if (engineAction.kind === 'DeclareAttackers') {
-          const result = tryDeclareAttackers(engine as GameState, humanIdRef.current, engineAction.attacks);
-          if (!result.ok) {
-            setActionError({ reason: result.reason, message: result.message });
-            addMessage('system', `Cannot declare attackers: ${result.message}`);
-            syncState();
+          const attackState = applyAuthoritativeAction(
+            engine as GameState,
+            humanIdRef.current,
+            action,
+            { rejectionPrefix: 'Cannot declare attackers' },
+          );
+          if (!attackState) {
             return;
           }
-          newState = result.state;
-          collectedEvents.push(...result.events);
+          newState = attackState;
         } else if (engineAction.kind === 'DeclareBlockers') {
-          const result = tryDeclareBlockers(engine as GameState, humanIdRef.current, engineAction.blocks);
-          if (!result.ok) {
-            setActionError({ reason: result.reason, message: result.message });
-            addMessage('system', `Cannot declare blockers: ${result.message}`);
-            syncState();
+          const blockState = applyAuthoritativeAction(
+            engine as GameState,
+            humanIdRef.current,
+            action,
+            { rejectionPrefix: 'Cannot declare blockers' },
+          );
+          if (!blockState) {
             return;
           }
-          newState = result.state;
-          collectedEvents.push(...result.events);
+          newState = blockState;
         } else if (engineAction.kind === 'Equip') {
           let preEquipState = engine as GameState;
           const equipment = preEquipState.cards.get(engineAction.equipmentInstanceId);
@@ -4724,18 +4746,27 @@ export function useShelectorGame() {
             }
           }
 
-          const result = tryEquip(preEquipState, humanIdRef.current, engineAction.equipmentInstanceId, engineAction.targetCreatureId);
-          if (!result.ok) {
-            setActionError({ reason: result.reason, message: result.message });
-            addMessage('system', `Cannot equip: ${result.message}`);
-            syncState();
+          const equippedState = applyAuthoritativeAction(
+            preEquipState,
+            humanIdRef.current,
+            action,
+            { recordAcceptedUpdate: false, rejectionPrefix: 'Cannot equip' },
+          );
+          if (!equippedState) {
             return;
           }
-          newState = result.state;
-          collectedEvents.push(...result.events);
+          newState = equippedState;
         } else {
-          // Fallback: apply through the engine dispatcher (covers any future action kinds)
-          newState = applyAction(engine, humanIdRef.current, engineAction);
+          const fallbackState = applyAuthoritativeAction(
+            engine as GameState,
+            humanIdRef.current,
+            action,
+            { rejectionPrefix: 'Cannot apply action' },
+          );
+          if (!fallbackState) {
+            return;
+          }
+          newState = fallbackState;
         }
 
         if (action.kind === 'PlayLand') {
@@ -4748,7 +4779,9 @@ export function useShelectorGame() {
 
         // Accumulate events from this action and open the EndGameModal if needed
         applyEvents(collectedEvents, newState);
-        recordStateUpdate(engine as GameState, newState, action, collectedEvents);
+        if (!authorityUpdateRecorded) {
+          recordStateUpdate(engine as GameState, newState, action, collectedEvents);
+        }
 
         // Track uncommitted mana taps (can be untapped) vs committed (used for a spell)
         if (engineAction.kind === 'ActivateManaAbility' && 'cardInstanceId' in engineAction) {
@@ -4916,7 +4949,7 @@ export function useShelectorGame() {
         syncState();
       }
     },
-    [gameState, addMessage, appendLog, syncState, advanceGameLoop, applyEvents, lastPlayedCard, rememberLastPlayedCard, recordStateUpdate, skipEmptyPhases, skipRestOfTurn],
+    [gameState, addMessage, appendLog, syncState, advanceGameLoop, applyEvents, lastPlayedCard, rememberLastPlayedCard, recordAuthorityUpdate, recordStateUpdate, skipEmptyPhases, skipRestOfTurn],
   );
   submitActionRef.current = submitAction;
 
