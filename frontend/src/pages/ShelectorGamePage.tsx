@@ -70,6 +70,7 @@ export function ShelectorGamePage() {
     mulliganPhase,
     mulliganCount,
     mulliganBottomCount,
+    selectedMulliganCardIds,
     selectedMulliganBottomIds,
     discardPhase,
     discardCount,
@@ -87,6 +88,7 @@ export function ShelectorGamePage() {
     submitAction,
     keepHand,
     mulligan,
+    toggleMulliganCard,
     toggleMulliganBottomCard,
     discardCard,
     resolveTutor,
@@ -747,9 +749,11 @@ export function ShelectorGamePage() {
           mulliganPhase={mulliganPhase}
           mulliganCount={mulliganCount}
           mulliganBottomCount={mulliganBottomCount}
+          selectedMulliganCardIds={selectedMulliganCardIds}
           selectedMulliganBottomIds={selectedMulliganBottomIds}
           onKeepHand={keepHand}
           onMulligan={mulligan}
+          onToggleMulliganCard={toggleMulliganCard}
           onToggleMulliganBottom={toggleMulliganBottomCard}
           discardPhase={discardPhase}
           discardCount={discardCount}

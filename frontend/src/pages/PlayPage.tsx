@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, BarChart3, ClipboardPaste, Loader2, Swords, Link as LinkIcon, History, Trash2, Shield, Trophy, Users, Lightbulb, Menu, X, Save, FolderOpen, Database } from 'lucide-react';
+import { ArrowLeft, ClipboardPaste, Loader2, Swords, Link as LinkIcon, History, Trash2, Shield, Trophy, Users, Lightbulb, X, Save, FolderOpen, Database } from 'lucide-react';
 import { useShelectorGame, type ImportedCards, type ShelectorGameSaveSnapshot } from '../hooks/useShelectorGame';
 import { GameBoard } from '../components/GameBoard';
 import { GameReview } from '../components/GameReview';
@@ -90,6 +90,7 @@ export function PlayPage() {
     mulliganPhase,
     mulliganCount,
     mulliganBottomCount,
+    selectedMulliganCardIds,
     selectedMulliganBottomIds,
     discardPhase,
     discardCount,
@@ -108,6 +109,7 @@ export function PlayPage() {
     submitAction,
     keepHand,
     mulligan,
+    toggleMulliganCard,
     toggleMulliganBottomCard,
     discardCard,
     resolveTutor,
@@ -166,7 +168,6 @@ export function PlayPage() {
 
   // Review modal
   const [showReview, setShowReview] = useState(false);
-  const [mobileGameMenuOpen, setMobileGameMenuOpen] = useState(false);
   const [saveSlots, setSaveSlots] = useState<(PlaySaveSlotRecord | null)[]>(() => Array.from({ length: SAVE_SLOT_COUNT }, () => null));
   const [activeSaveSlot, setActiveSaveSlot] = useState(1);
   const [savePanelOpen, setSavePanelOpen] = useState(false);
@@ -709,112 +710,6 @@ export function PlayPage() {
   if (step === 'game' && gameState) {
     return (
       <div className={FLOATING_TABLE_LAYOUT.shell}>
-        <button
-          type="button"
-          onClick={() => setMobileGameMenuOpen(prev => !prev)}
-          className="fixed right-2 top-2 z-[70] flex h-10 w-10 items-center justify-center rounded border border-amber-500/40 bg-neutral-950/95 text-amber-200 shadow-xl shadow-black/40 backdrop-blur active:scale-95 md:hidden"
-          aria-label={mobileGameMenuOpen ? 'Close game menu' : 'Open game menu'}
-          aria-expanded={mobileGameMenuOpen}
-        >
-          {mobileGameMenuOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
-        </button>
-
-        {mobileGameMenuOpen && (
-          <>
-            <button
-              type="button"
-              className="fixed inset-0 z-[55] cursor-default bg-black/20 md:hidden"
-              aria-label="Close game menu"
-              onClick={() => setMobileGameMenuOpen(false)}
-            />
-            <div className="fixed right-2 top-14 z-[70] w-[min(15rem,calc(100vw-1rem))] overflow-hidden rounded-lg border border-neutral-700 bg-neutral-950/98 shadow-2xl shadow-black/50 backdrop-blur md:hidden">
-              <button
-                type="button"
-                onClick={() => {
-                  setShowReview(true);
-                  setMobileGameMenuOpen(false);
-                }}
-                className="flex min-h-11 w-full items-center gap-3 border-b border-neutral-800 px-3 text-left text-sm font-bold text-stone-100 transition-colors hover:bg-neutral-900"
-              >
-                <BarChart3 className="h-4 w-4 text-amber-300" />
-                <span className="flex-1">Review</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setSavePanelOpen(prev => !prev);
-                  setMobileGameMenuOpen(false);
-                }}
-                className="flex min-h-11 w-full items-center gap-3 border-b border-neutral-800 px-3 text-left text-sm font-bold text-stone-100 transition-colors hover:bg-neutral-900"
-              >
-                <Save className="h-4 w-4 text-emerald-300" />
-                <span className="flex-1">Saves</span>
-                <span className="rounded bg-neutral-800 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-stone-400">
-                  Slot {activeSaveSlot}
-                </span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setCoachMode(!coachMode)}
-                className="flex min-h-11 w-full items-center gap-3 border-b border-neutral-800 px-3 text-left text-sm font-bold text-stone-100 transition-colors hover:bg-neutral-900"
-              >
-                <Shield className="h-4 w-4 text-blue-300" />
-                <span className="flex-1">Coach</span>
-                <span className={`rounded px-2 py-0.5 text-[10px] font-black uppercase tracking-wider ${
-                  coachMode ? 'bg-blue-800 text-blue-100' : 'bg-neutral-800 text-stone-400'
-                }`}>
-                  {coachMode ? 'On' : 'Off'}
-                </span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setHoldPriority(!holdPriority)}
-                className="flex min-h-11 w-full items-center gap-3 border-b border-neutral-800 px-3 text-left text-sm font-bold text-stone-100 transition-colors hover:bg-neutral-900"
-              >
-                <Shield className="h-4 w-4 text-sky-300" />
-                <span className="flex-1">Hold Priority</span>
-                <span className={`rounded px-2 py-0.5 text-[10px] font-black uppercase tracking-wider ${
-                  holdPriority ? 'bg-sky-500 text-neutral-950' : 'bg-neutral-800 text-stone-400'
-                }`}>
-                  {holdPriority ? 'On' : 'Off'}
-                </span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setNewPlayerMode(!newPlayerMode)}
-                className="flex min-h-11 w-full items-center gap-3 px-3 text-left text-sm font-bold text-stone-100 transition-colors hover:bg-neutral-900"
-              >
-                <Lightbulb className="h-4 w-4 text-amber-300" />
-                <span className="flex-1">Guide</span>
-                <span className={`rounded px-2 py-0.5 text-[10px] font-black uppercase tracking-wider ${
-                  newPlayerMode ? 'bg-amber-500 text-neutral-950' : 'bg-neutral-800 text-stone-400'
-                }`}>
-                  {newPlayerMode ? 'On' : 'Off'}
-                </span>
-              </button>
-            </div>
-          </>
-        )}
-
-        <div className={FLOATING_TABLE_LAYOUT.reviewButton}>
-          <div className="hidden items-center gap-2 md:flex">
-            <button
-              onClick={() => setSavePanelOpen(prev => !prev)}
-              className="h-10 min-w-10 rounded border border-emerald-500/40 bg-neutral-950/90 px-2 text-[10px] font-bold uppercase tracking-wider text-emerald-100 shadow-xl shadow-black/40 backdrop-blur hover:border-emerald-300 md:px-3 md:text-xs"
-              aria-label="Open game saves"
-            >
-              Saves
-            </button>
-            <button
-              onClick={() => setShowReview(true)}
-              className="h-10 min-w-10 rounded border border-amber-500/40 bg-neutral-950/90 px-2 text-[10px] font-bold uppercase tracking-wider text-amber-200 shadow-xl shadow-black/40 backdrop-blur hover:border-amber-300 hover:text-amber-100 md:px-3 md:text-xs"
-              aria-label="Open game review"
-            >
-              Review
-            </button>
-          </div>
-        </div>
-
         {savePanelOpen && (
           <>
             <button
@@ -839,9 +734,11 @@ export function PlayPage() {
             mulliganPhase={mulliganPhase}
             mulliganCount={mulliganCount}
             mulliganBottomCount={mulliganBottomCount}
+            selectedMulliganCardIds={selectedMulliganCardIds}
             selectedMulliganBottomIds={selectedMulliganBottomIds}
             onKeepHand={keepHand}
             onMulligan={mulligan}
+            onToggleMulliganCard={toggleMulliganCard}
             onToggleMulliganBottom={toggleMulliganBottomCard}
             discardPhase={discardPhase}
             discardCount={discardCount}
@@ -869,6 +766,19 @@ export function PlayPage() {
             authorityUpdates={authorityUpdates}
             lastStateUpdate={lastStateUpdate}
             currentPrompt={currentPrompt}
+            menuActions={[
+              {
+                id: 'saves',
+                label: 'Saves',
+                detail: `Slot ${activeSaveSlot}`,
+                onSelect: () => setSavePanelOpen(prev => !prev),
+              },
+              {
+                id: 'review',
+                label: 'Review',
+                onSelect: () => setShowReview(true),
+              },
+            ]}
           />
         </div>
 

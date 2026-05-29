@@ -9,7 +9,7 @@
 import { useEffect, useState } from 'react';
 import type { LibraryManipulationChoice, SimpleGameState, SimpleLegalAction, SimpleCard, LastPlayedCard } from '../hooks/useShelectorGame';
 import type { EnginePrompt, EngineStateUpdate } from 'commander-engine';
-import { Loader2, ChevronDown, ChevronRight, Search, X, Lightbulb } from 'lucide-react';
+import { Loader2, ChevronDown, ChevronRight, Search, X, Lightbulb, Menu } from 'lucide-react';
 import { CardPickerModal } from './CardPickerModal';
 import { CardImage } from './CardImage';
 import { CARD_TILE_LAYOUT, FLOATING_TABLE_LAYOUT } from '../lib/gameBoardLayout';
@@ -76,9 +76,11 @@ interface GameBoardProps {
   mulliganPhase?: boolean;
   mulliganCount?: number;
   mulliganBottomCount?: number;
+  selectedMulliganCardIds?: string[];
   selectedMulliganBottomIds?: string[];
   onKeepHand?: () => void;
-  onMulligan?: () => void;
+  onMulligan?: (cardInstanceIds?: string[]) => void;
+  onToggleMulliganCard?: (cardInstanceId: string) => void;
   onToggleMulliganBottom?: (cardInstanceId: string) => void;
   discardPhase?: boolean;
   discardCount?: number;
@@ -106,6 +108,7 @@ interface GameBoardProps {
   authorityUpdates?: EngineStateUpdate[];
   lastStateUpdate?: EngineStateUpdate | null;
   currentPrompt?: EnginePrompt | null;
+  menuActions?: { id: string; label: string; detail?: string; onSelect: () => void }[];
 }
 
 /** Compute counter badge entries from a card's counters record */
@@ -394,6 +397,7 @@ function CardTile({
   compact,
   inspectable,
   selected,
+  selectedLabel,
   stackCount = 1,
 }: {
   card: SimpleCard;
@@ -406,6 +410,7 @@ function CardTile({
   compact?: boolean;
   inspectable?: boolean;
   selected?: boolean;
+  selectedLabel?: string;
   stackCount?: number;
 }) {
   const isCreature = card.cardTypes.includes('creature');
@@ -419,12 +424,12 @@ function CardTile({
   const metaClass = compact ? CARD_TILE_LAYOUT.compactMeta : CARD_TILE_LAYOUT.defaultMeta;
 
   // Border color: playable > token > default
-  const borderClass = playable
+  const borderClass = selected
+    ? 'border-amber-400 bg-amber-950/60 cursor-pointer ring-2 ring-amber-400/50 shadow-lg shadow-amber-950/20'
+    : playable
     ? 'border-green-500 bg-stone-700 hover:bg-stone-600 cursor-pointer ring-1 ring-green-500/50 shadow-lg shadow-green-900/20'
     : targetable
       ? 'border-sky-400 bg-sky-950/70 cursor-pointer ring-2 ring-sky-400/45 shadow-lg shadow-sky-950/30 hover:bg-sky-900/80'
-    : selected
-      ? 'border-amber-400 bg-amber-950/60 cursor-pointer ring-2 ring-amber-400/50 shadow-lg shadow-amber-950/20'
     : card.isToken
       ? `border-violet-500 bg-stone-800 ring-1 ring-violet-500/30 ${interactive ? 'cursor-pointer hover:bg-stone-700' : 'cursor-default'}`
       : `border-stone-600 bg-stone-800 ${interactive ? 'cursor-pointer hover:bg-stone-700' : 'cursor-default'}`;
@@ -531,7 +536,7 @@ function CardTile({
 
         {selected && (
           <div className="absolute inset-x-1 top-1 rounded bg-amber-400 px-1 py-px text-center text-[7px] font-black uppercase leading-none text-neutral-950">
-            Bottom
+            {selectedLabel || 'Selected'}
           </div>
         )}
 
@@ -1153,11 +1158,12 @@ export function GameBoard({
   isLoading,
   onAction,
   mulliganPhase,
-  mulliganCount,
   mulliganBottomCount,
+  selectedMulliganCardIds = [],
   selectedMulliganBottomIds = [],
   onKeepHand,
   onMulligan,
+  onToggleMulliganCard,
   onToggleMulliganBottom,
   discardPhase,
   discardCount,
@@ -1177,7 +1183,6 @@ export function GameBoard({
   onToggleNewPlayerMode,
   holdPriority = false,
   onToggleHoldPriority,
-  collapseModeControlsOnMobile = false,
   onUntapMana,
   onAdjustCounters,
   untappableCardIds,
@@ -1185,6 +1190,7 @@ export function GameBoard({
   authorityUpdates = [],
   lastStateUpdate,
   currentPrompt,
+  menuActions = [],
 }: GameBoardProps) {
   const [inspectedCard, setInspectedCard] = useState<SimpleCard | null>(null);
   const [hoveredCard, setHoveredCard] = useState<SimpleCard | null>(null);
@@ -1192,6 +1198,7 @@ export function GameBoard({
   const [showEngineUpdateToast, setShowEngineUpdateToast] = useState(false);
   const [stackLands, setStackLands] = useState(true);
   const [selectedOpponentId, setSelectedOpponentId] = useState<string | null>(null);
+  const [showUtilityMenu, setShowUtilityMenu] = useState(false);
 
   const handleCardHover = (card: SimpleCard | null) => {
     setHoveredCard(card);
@@ -1262,9 +1269,12 @@ export function GameBoard({
   const passAction = legalActions.find(a => a.kind === 'PassPriority');
   const skipRestAction = legalActions.find(a => a.kind === 'SkipRestOfTurn');
   const skipEmptyAction = legalActions.find(a => a.kind === 'SkipEmptyPhases');
+  const selectedMulliganCardSet = new Set(selectedMulliganCardIds);
   const selectedMulliganBottomSet = new Set(selectedMulliganBottomIds);
   const requiredMulliganBottoms = mulliganBottomCount ?? 0;
   const needsMulliganBottomSelection = !!mulliganPhase && requiredMulliganBottoms > 0;
+  const needsMulliganCardSelection = !!mulliganPhase && !needsMulliganBottomSelection;
+  const selectedMulliganCount = selectedMulliganCardSet.size;
   const mulliganBottomReady = !needsMulliganBottomSelection || selectedMulliganBottomSet.size === requiredMulliganBottoms;
 
   // Find non-card actions (declare attackers/blockers without a specific card)
@@ -1292,7 +1302,6 @@ export function GameBoard({
   const guideSuggestion = newPlayerMode && hasAnyAction
     ? getNewPlayerSuggestion(gameState, legalActions)
     : null;
-  const modeToggleVisibility = collapseModeControlsOnMobile ? 'hidden md:flex' : 'flex';
   const recentAuthorityUpdates = authorityUpdates.slice(-4).reverse();
 
   const handleCardClick = (card: SimpleCard) => {
@@ -1546,7 +1555,7 @@ export function GameBoard({
           <span className="text-3xl font-black text-red-500/60">M</span>
         </div>
       {/* Phase Bar */}
-      <div className="absolute left-2 right-16 top-2 z-40 flex min-h-10 items-center gap-1.5 overflow-x-auto rounded-lg border border-neutral-700/70 bg-neutral-950/90 px-2 py-1.5 shadow-xl shadow-black/30 backdrop-blur md:left-3 md:right-24 md:top-3 md:gap-3 md:px-3">
+      <div className="absolute left-2 right-2 top-2 z-40 flex min-h-10 items-center gap-1.5 overflow-x-auto rounded-lg border border-neutral-700/70 bg-neutral-950/90 px-2 py-1.5 shadow-xl shadow-black/30 backdrop-blur md:left-3 md:right-3 md:top-3 md:gap-3 md:px-3">
         <span className="text-amber-400 font-semibold text-xs md:text-sm whitespace-nowrap">
           T{gameState.turnNumber}
         </span>
@@ -1576,18 +1585,6 @@ export function GameBoard({
         </span>
         <div className="ml-auto flex items-center gap-1.5 md:gap-2 shrink-0">
           {isLoading && <Loader2 className="w-3.5 h-3.5 md:w-4 md:h-4 animate-spin text-amber-400" />}
-          <label className="hidden sm:flex min-h-7 items-center gap-1.5 rounded border border-neutral-700 bg-neutral-900 px-2 text-[10px] font-semibold text-stone-300">
-            <input
-              type="checkbox"
-              checked={stackLands}
-              onChange={event => setStackLands(event.target.checked)}
-              className="h-3.5 w-3.5 accent-amber-500"
-            />
-            <span className="whitespace-nowrap">Stack lands</span>
-          </label>
-          <span className="hidden max-w-[9rem] truncate rounded bg-neutral-800 px-1.5 py-0.5 text-[10px] font-semibold text-stone-300 sm:inline-block md:max-w-[12rem] md:px-2 md:text-xs">
-            Turn: {activeOwnerName}
-          </span>
           <span className={`max-w-[9rem] truncate text-[10px] md:text-xs font-semibold px-1.5 md:px-2 py-0.5 rounded whitespace-nowrap md:max-w-[12rem] ${
             isHumanTurn
               ? 'bg-green-800 text-green-200'
@@ -1595,51 +1592,144 @@ export function GameBoard({
           }`}>
             {isHumanTurn ? 'Your Priority' : `${priorityOwnerName} Priority`}
           </span>
-          {onToggleHoldPriority && (
-            <button
-              onClick={() => onToggleHoldPriority(!holdPriority)}
-              className={`flex min-h-7 items-center rounded px-1.5 py-0.5 text-[10px] font-semibold transition-colors md:px-2 md:text-xs ${
-                holdPriority
-                  ? 'bg-sky-500 text-neutral-950'
-                  : 'bg-stone-700 text-stone-500'
-              }`}
-              title="Hold priority after your own spells or abilities go on the stack"
-            >
-              <span className="hidden sm:inline">Hold {holdPriority ? 'ON' : 'OFF'}</span>
-              <span className="sm:hidden">Hold</span>
-            </button>
-          )}
-          {onToggleCoach && (
-            <button
-              onClick={() => onToggleCoach(!coachMode)}
-              className={`${modeToggleVisibility} min-h-7 items-center text-[10px] md:text-xs font-semibold px-1.5 md:px-2 py-0.5 rounded whitespace-nowrap transition-colors ${
-                coachMode
-                  ? 'bg-blue-800 text-blue-200'
-                  : 'bg-stone-700 text-stone-500'
-              }`}
-              title="Coach mode: evaluates your plays and suggests better options"
-            >
-              <span className="hidden sm:inline">Coach {coachMode ? 'ON' : 'OFF'}</span>
-              <span className="sm:hidden">Coach</span>
-            </button>
-          )}
-          {onToggleNewPlayerMode && (
-            <button
-              onClick={() => onToggleNewPlayerMode(!newPlayerMode)}
-              className={`${modeToggleVisibility} min-h-7 items-center gap-1 text-[10px] md:text-xs font-semibold px-1.5 md:px-2 py-0.5 rounded whitespace-nowrap transition-colors ${
-                newPlayerMode
-                  ? 'bg-amber-500 text-neutral-950'
-                  : 'bg-stone-700 text-stone-500'
-              }`}
-              title="Guide mode: suggests one available practice action"
-            >
-              <Lightbulb className="h-3 w-3" />
-              <span className="hidden sm:inline">Guide {newPlayerMode ? 'ON' : 'OFF'}</span>
-              <span className="sm:hidden">Guide</span>
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={() => setShowUtilityMenu(true)}
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded border border-amber-500/40 bg-neutral-900 text-amber-200 transition-colors hover:border-amber-300 hover:bg-neutral-800"
+            aria-label="Open game menu"
+            aria-expanded={showUtilityMenu}
+          >
+            <Menu className="h-4 w-4" />
+          </button>
         </div>
       </div>
+
+      {showUtilityMenu && (
+        <div
+          className="absolute inset-0 z-[72] flex items-center justify-center bg-black/35 px-3 py-8 backdrop-blur-sm"
+          role="presentation"
+          onClick={() => setShowUtilityMenu(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Game menu"
+            className="w-[min(26rem,calc(100vw-1.5rem))] overflow-hidden rounded-lg border border-neutral-700 bg-neutral-950 shadow-2xl shadow-black/60"
+            onClick={event => event.stopPropagation()}
+          >
+            <div className="flex items-center justify-between gap-3 border-b border-neutral-800 px-4 py-3">
+              <div>
+                <div className="text-sm font-black uppercase tracking-wider text-stone-100">Game Menu</div>
+                <div className="text-[11px] font-semibold text-stone-500">
+                  Turn {gameState.turnNumber} - {STEP_DISPLAY[gameState.step] || gameState.step}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowUtilityMenu(false)}
+                className="flex h-9 w-9 items-center justify-center rounded border border-neutral-700 text-stone-300 transition-colors hover:border-amber-400 hover:text-amber-200"
+                aria-label="Close game menu"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="space-y-3 p-4">
+              <div className="grid grid-cols-2 gap-2 text-xs font-bold">
+                <div className="rounded border border-neutral-800 bg-neutral-900 px-3 py-2 text-stone-300">
+                  <div className="text-[9px] uppercase tracking-wider text-stone-500">Active Turn</div>
+                  <div className="truncate">{activeOwnerName}</div>
+                </div>
+                <div className={`rounded border px-3 py-2 ${
+                  isHumanTurn
+                    ? 'border-green-600/40 bg-green-950/60 text-green-200'
+                    : 'border-red-700/40 bg-red-950/60 text-red-200'
+                }`}>
+                  <div className="text-[9px] uppercase tracking-wider opacity-70">Priority</div>
+                  <div className="truncate">{isHumanTurn ? 'You' : priorityOwnerName}</div>
+                </div>
+              </div>
+
+              <label className="flex min-h-11 items-center justify-between gap-3 rounded border border-neutral-800 bg-neutral-900 px-3 text-sm font-bold text-stone-200">
+                <span>Stack lands</span>
+                <input
+                  type="checkbox"
+                  checked={stackLands}
+                  onChange={event => setStackLands(event.target.checked)}
+                  className="h-4 w-4 accent-amber-500"
+                />
+              </label>
+
+              {onToggleHoldPriority && (
+                <button
+                  type="button"
+                  onClick={() => onToggleHoldPriority(!holdPriority)}
+                  className={`flex min-h-11 w-full items-center justify-between rounded border px-3 text-left text-sm font-bold transition-colors ${
+                    holdPriority
+                      ? 'border-sky-400/50 bg-sky-500 text-neutral-950'
+                      : 'border-neutral-800 bg-neutral-900 text-stone-200 hover:border-neutral-600'
+                  }`}
+                >
+                  <span>Hold priority</span>
+                  <span className="text-[10px] font-black uppercase tracking-wider">{holdPriority ? 'On' : 'Off'}</span>
+                </button>
+              )}
+
+              {onToggleCoach && (
+                <button
+                  type="button"
+                  onClick={() => onToggleCoach(!coachMode)}
+                  className={`flex min-h-11 w-full items-center justify-between rounded border px-3 text-left text-sm font-bold transition-colors ${
+                    coachMode
+                      ? 'border-blue-500/50 bg-blue-900 text-blue-100'
+                      : 'border-neutral-800 bg-neutral-900 text-stone-200 hover:border-neutral-600'
+                  }`}
+                >
+                  <span>Coach</span>
+                  <span className="text-[10px] font-black uppercase tracking-wider">{coachMode ? 'On' : 'Off'}</span>
+                </button>
+              )}
+
+              {onToggleNewPlayerMode && (
+                <button
+                  type="button"
+                  onClick={() => onToggleNewPlayerMode(!newPlayerMode)}
+                  className={`flex min-h-11 w-full items-center justify-between rounded border px-3 text-left text-sm font-bold transition-colors ${
+                    newPlayerMode
+                      ? 'border-amber-400/60 bg-amber-500 text-neutral-950'
+                      : 'border-neutral-800 bg-neutral-900 text-stone-200 hover:border-neutral-600'
+                  }`}
+                >
+                  <span className="flex items-center gap-2"><Lightbulb className="h-4 w-4" /> Guide</span>
+                  <span className="text-[10px] font-black uppercase tracking-wider">{newPlayerMode ? 'On' : 'Off'}</span>
+                </button>
+              )}
+
+              {menuActions.length > 0 && (
+                <div className="space-y-2 border-t border-neutral-800 pt-3">
+                  {menuActions.map(action => (
+                    <button
+                      key={action.id}
+                      type="button"
+                      onClick={() => {
+                        action.onSelect();
+                        setShowUtilityMenu(false);
+                      }}
+                      className="flex min-h-11 w-full items-center justify-between gap-3 rounded border border-neutral-800 bg-neutral-900 px-3 text-left text-sm font-bold text-stone-100 transition-colors hover:border-amber-400/60 hover:bg-neutral-800"
+                    >
+                      <span>{action.label}</span>
+                      {action.detail && (
+                        <span className="rounded bg-neutral-800 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-stone-400">
+                          {action.detail}
+                        </span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {recentAuthorityUpdates.length > 0 && (
         <div
@@ -2264,7 +2354,7 @@ export function GameBoard({
               : mulliganPhase
               ? needsMulliganBottomSelection
                 ? `Choose ${requiredMulliganBottoms} to bottom (${selectedMulliganBottomSet.size}/${requiredMulliganBottoms})`
-                : `Hand (${gameState.humanHand.length})${mulliganCount ? ` - Mull #${mulliganCount}` : ''}`
+                : `Select cards to mulligan (${selectedMulliganCount} selected)`
               : `Hand (${gameState.humanHand.length})`}
           </div>
           {mulliganPhase && (
@@ -2277,10 +2367,11 @@ export function GameBoard({
                 {needsMulliganBottomSelection ? 'Keep Selected' : 'Keep'}
               </button>
               <button
-                onClick={onMulligan}
-                className="px-3 md:px-4 py-1.5 rounded bg-amber-700 hover:bg-amber-600 text-white text-xs font-semibold transition-colors min-h-[44px]"
+                onClick={() => onMulligan?.(selectedMulliganCardIds)}
+                disabled={!needsMulliganCardSelection || selectedMulliganCount === 0}
+                className="px-3 md:px-4 py-1.5 rounded bg-amber-700 hover:bg-amber-600 text-white text-xs font-semibold transition-colors min-h-[44px] disabled:cursor-not-allowed disabled:opacity-45"
               >
-                Mulligan
+                {selectedMulliganCount > 0 ? `Mulligan ${selectedMulliganCount}` : 'Select Cards'}
               </button>
             </div>
           )}
@@ -2294,18 +2385,23 @@ export function GameBoard({
           ) : (
             gameState.humanHand.map(card => {
               const cardAction = getInspectAction(card);
+              const selectedForMulligan = selectedMulliganCardSet.has(card.instanceId);
               const selectedForBottom = selectedMulliganBottomSet.has(card.instanceId);
+              const mulliganSelectable = needsMulliganCardSelection && !!onToggleMulliganCard;
               return (
                   <CardTile
                     key={card.instanceId}
                     card={card}
-                    playable={discardPhase || (!mulliganPhase && playableIds.has(card.instanceId))}
-                    selected={selectedForBottom}
+                    playable={discardPhase || mulliganSelectable || (!mulliganPhase && playableIds.has(card.instanceId))}
+                    selected={selectedForBottom || selectedForMulligan}
+                    selectedLabel={selectedForBottom ? 'Bottom' : selectedForMulligan ? 'Mulligan' : undefined}
                     compact
                     inspectable
                     onHoverCard={handleCardHover}
                   onClick={
-                    needsMulliganBottomSelection && onToggleMulliganBottom
+                    mulliganSelectable && onToggleMulliganCard
+                      ? () => onToggleMulliganCard(card.instanceId)
+                      : needsMulliganBottomSelection && onToggleMulliganBottom
                       ? () => onToggleMulliganBottom(card.instanceId)
                       : cardAction
                       ? cardAction.run
