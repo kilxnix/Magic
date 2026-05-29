@@ -11,7 +11,8 @@ describe('FLOATING_TABLE_LAYOUT', () => {
     expect(FLOATING_TABLE_LAYOUT.table).toContain('safe-area-inset-bottom');
     expect(FLOATING_TABLE_LAYOUT.opponentStrip).toContain('shrink-0');
     expect(FLOATING_TABLE_LAYOUT.opponentStrip).toContain('max-h-[29svh]');
-    expect(FLOATING_TABLE_LAYOUT.actionsDock).toContain('top-[3.35rem]');
+    expect(FLOATING_TABLE_LAYOUT.actionsDock).toContain('bottom-[calc(env(safe-area-inset-bottom)+12.95rem)]');
+    expect(FLOATING_TABLE_LAYOUT.actionsDock).toContain('md:left-auto');
     expect(FLOATING_TABLE_LAYOUT.actionsDock).toContain('border-amber-500/35');
     expect(FLOATING_TABLE_LAYOUT.handDock).toContain('bottom-[calc(env(safe-area-inset-bottom)+0.5rem)]');
   });

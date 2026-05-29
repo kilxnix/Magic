@@ -3,9 +3,9 @@ export const FLOATING_TABLE_LAYOUT = {
   board: 'isolate flex-1 min-h-0 min-w-0',
   reviewButton: 'fixed right-2 top-2 z-50 md:right-4 md:top-4',
   reviewRail: 'hidden',
-  table: 'relative flex h-full min-w-0 flex-1 flex-col overflow-hidden bg-neutral-900 pt-[7.35rem] pb-[calc(env(safe-area-inset-bottom)+12.75rem)] md:pt-[6.75rem] md:pb-36',
+  table: 'relative flex h-full min-w-0 flex-1 flex-col overflow-hidden bg-neutral-900 pt-[3.95rem] pb-[calc(env(safe-area-inset-bottom)+12.75rem)] md:pt-[4.25rem] md:pb-36',
   opponentStrip: 'relative z-10 max-h-[29svh] shrink-0 overflow-y-auto overscroll-contain border-b border-neutral-800/70 bg-neutral-950/50 px-2 pb-1 pt-1 backdrop-blur-sm md:max-h-none md:px-4',
-  actionsDock: 'absolute inset-x-2 top-[3.35rem] z-40 max-h-[3.6rem] overflow-y-auto overscroll-contain rounded-lg border border-amber-500/35 bg-neutral-950/95 px-2 py-1 shadow-xl shadow-black/35 backdrop-blur md:inset-x-3 md:top-[3.75rem] md:max-h-[3.9rem] md:px-3',
+  actionsDock: 'absolute inset-x-2 bottom-[calc(env(safe-area-inset-bottom)+12.95rem)] z-40 max-h-[7.75rem] overflow-y-auto overscroll-contain rounded-lg border border-amber-500/35 bg-neutral-950/95 px-2 py-2 shadow-2xl shadow-black/45 backdrop-blur md:left-auto md:right-3 md:bottom-[12.95rem] md:w-[min(34rem,44vw)] md:max-h-[15rem] md:px-3',
   phaseDock: 'absolute inset-x-2 bottom-[calc(env(safe-area-inset-bottom)+9.05rem)] z-40 max-h-[3.35rem] overflow-y-auto overscroll-contain rounded-lg border border-neutral-700/75 bg-neutral-950/95 px-2 py-1 shadow-xl shadow-black/35 backdrop-blur md:inset-x-3 md:bottom-[9.2rem] md:max-h-[3.4rem] md:px-3',
   handDock: 'absolute inset-x-2 bottom-[calc(env(safe-area-inset-bottom)+0.5rem)] z-30 max-h-[8.25rem] overflow-hidden rounded-lg border border-neutral-700/70 bg-neutral-950/95 px-2 py-1.5 shadow-2xl shadow-black/40 backdrop-blur md:inset-x-3 md:bottom-3 md:max-h-none md:px-3',
 } as const;

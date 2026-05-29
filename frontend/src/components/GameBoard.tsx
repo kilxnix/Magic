@@ -2112,44 +2112,44 @@ export function GameBoard({
         <GraveyardViewer cards={gameState.humanGraveyard} label="Your" onInspect={setInspectedCard} />
       </div>
 
-      {/* Top utility/action bar: card actions, mana, prompts, and Undo. */}
+      {/* Action chooser: roomy on desktop, capped near the hand on mobile. */}
       {hasTopActions && (
         <div className={FLOATING_TABLE_LAYOUT.actionsDock} aria-label="Game actions">
           {currentPrompt && (
-            <div className="mb-1 flex min-h-10 items-start gap-2 rounded border border-sky-500/25 bg-sky-950/30 px-2 py-1 text-xs text-stone-100">
+            <div className="mb-2 flex items-start gap-2 rounded border border-sky-500/25 bg-sky-950/30 px-2 py-1.5 text-xs text-stone-100">
               <div className="shrink-0 rounded bg-sky-400/15 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-sky-200">
                 {PROMPT_TYPE_LABELS[currentPrompt.type] || 'Prompt'}
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
-                  <div className="truncate font-semibold">{currentPrompt.title}</div>
+                  <div className="font-semibold leading-snug">{currentPrompt.title}</div>
                   {promptChoiceSummaryText(currentPrompt) && (
-                    <div className="truncate text-[10px] font-semibold text-amber-100/80">
+                    <div className="text-[10px] font-semibold leading-snug text-amber-100/80">
                       {promptChoiceSummaryText(currentPrompt)}
                     </div>
                   )}
                 </div>
-                <div className="truncate text-[10px] text-sky-100/70">{promptMeta(currentPrompt)}</div>
+                <div className="text-[10px] leading-snug text-sky-100/70">{promptMeta(currentPrompt)}</div>
                 {currentPrompt.guidance && (
-                  <div className="mt-0.5 hidden truncate text-[10px] leading-snug text-sky-100/85 sm:block">
+                  <div className="mt-0.5 hidden text-[10px] leading-snug text-sky-100/85 sm:block">
                     {currentPrompt.guidance}
                   </div>
                 )}
               </div>
             </div>
           )}
-          <div className="flex min-h-10 items-center gap-1.5 overflow-x-auto py-0.5 md:gap-2">
+          <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2 md:gap-2">
           {guideSuggestion && (
             <>
-              <div className="flex min-h-10 max-w-[17rem] shrink-0 items-center gap-1.5 rounded-md border border-amber-400/25 bg-amber-950/70 px-2 py-1 text-[10px] text-stone-100 shadow-lg shadow-black/20 sm:max-w-[26rem] md:text-xs">
+              <div className="flex min-h-10 items-center gap-1.5 rounded-md border border-amber-400/25 bg-amber-950/70 px-2 py-1 text-[10px] text-stone-100 shadow-lg shadow-black/20 sm:col-span-2 md:text-xs">
                 <Lightbulb className="h-3.5 w-3.5 shrink-0 text-amber-300" />
                 <div className="min-w-0">
-                  <div className="truncate font-semibold text-stone-50">
+                  <div className="font-semibold leading-snug text-stone-50">
                     <span className="font-bold uppercase tracking-wider text-amber-300">Guide</span>
                     <span className="mx-1 text-stone-500">/</span>
                     {guideSuggestion.actionLabel}
                   </div>
-                  <div className="hidden truncate leading-snug text-stone-300 sm:block">
+                  <div className="hidden leading-snug text-stone-300 sm:block">
                     {guideSuggestion.reason}
                   </div>
                 </div>
@@ -2161,7 +2161,6 @@ export function GameBoard({
                   Do it
                 </button>
               </div>
-              <div className="h-6 w-px shrink-0 bg-stone-600/80" />
             </>
           )}
             {/* Cast Spells */}
@@ -2178,11 +2177,11 @@ export function GameBoard({
                 <button
                   key={`cast-${i}`}
                   onClick={() => onAction(action)}
-	                  className="flex min-h-10 shrink-0 items-center gap-1.5 whitespace-nowrap rounded border border-green-600/30 bg-green-900/60 px-3 py-1 text-left text-xs font-semibold text-green-200 transition-colors hover:bg-green-800/70 md:min-h-8"
+	                  className="flex min-h-10 w-full items-center gap-1.5 rounded border border-green-600/30 bg-green-900/60 px-3 py-1.5 text-left text-xs font-semibold leading-snug text-green-200 transition-colors hover:bg-green-800/70"
                   >
                   <span className="min-w-0">
-                    <span className="flex items-center gap-1.5">
-                      <span>{action.label}</span>
+                    <span className="flex flex-wrap items-center gap-1.5">
+                      <span className="break-words">{action.label}</span>
                       {counter.prob > 0 && (
                         <span className={`${counter.color} text-[10px] font-bold`}>
                           {'\u26A1'} {counter.prob}%
@@ -2190,7 +2189,7 @@ export function GameBoard({
                       )}
                     </span>
                     {action.paymentPreview && (
-                      <span className="block max-w-56 truncate text-[10px] font-semibold text-amber-100/80">
+                      <span className="block text-[10px] font-semibold leading-snug text-amber-100/80">
                         {action.paymentPreview}
                       </span>
                     )}
@@ -2203,7 +2202,7 @@ export function GameBoard({
               <button
                 key={`land-${i}`}
                 onClick={() => onAction(action)}
-	                className="min-h-10 shrink-0 whitespace-nowrap rounded border border-green-600/30 bg-green-900/60 px-3 py-1 text-xs font-semibold text-green-200 transition-colors hover:bg-green-800/70 md:min-h-8"
+	                className="min-h-10 w-full rounded border border-green-600/30 bg-green-900/60 px-3 py-1.5 text-left text-xs font-semibold leading-snug text-green-200 transition-colors hover:bg-green-800/70"
               >
                 {action.label}
               </button>
@@ -2213,11 +2212,11 @@ export function GameBoard({
               <button
                 key={`other-${i}`}
                 onClick={() => onAction(action)}
-	                className="min-h-10 shrink-0 whitespace-nowrap rounded border border-green-600/30 bg-green-900/60 px-3 py-1 text-left text-xs font-semibold text-green-200 transition-colors hover:bg-green-800/70 md:min-h-8"
+	                className="min-h-10 w-full rounded border border-green-600/30 bg-green-900/60 px-3 py-1.5 text-left text-xs font-semibold leading-snug text-green-200 transition-colors hover:bg-green-800/70"
               >
                 <span className="block">{action.label}</span>
                 {action.paymentPreview && (
-                  <span className="block max-w-56 truncate text-[10px] font-semibold text-amber-100/80">
+                  <span className="block text-[10px] font-semibold leading-snug text-amber-100/80">
                     {action.paymentPreview}
                   </span>
                 )}
@@ -2226,7 +2225,7 @@ export function GameBoard({
             {/* Mana Abilities */}
             {manaActions.length > 0 && (
               <>
-                <div className="w-px h-6 bg-stone-600 shrink-0 mx-0.5" />
+                <div className="h-px bg-stone-700/80 sm:col-span-2" />
                 {/* Tap All button: pick one action per card, choosing the color that
                     diversifies the resulting pool (so a Taiga + Mountain produces R + G
                     instead of R + R). */}
@@ -2265,7 +2264,7 @@ export function GameBoard({
                   return (
                     <button
                       onClick={() => { for (const a of tapAllPlan) onAction(a); }}
-                      className="min-h-10 shrink-0 whitespace-nowrap rounded border border-amber-500/40 bg-amber-700/70 px-3 py-1 text-xs font-bold text-amber-100 transition-colors hover:bg-amber-600/80 md:min-h-8"
+                      className="min-h-10 w-full rounded border border-amber-500/40 bg-amber-700/70 px-3 py-1.5 text-left text-xs font-bold leading-snug text-amber-100 transition-colors hover:bg-amber-600/80"
                     >
                       Tap All ({tapAllPlan.length})
                     </button>
@@ -2276,7 +2275,7 @@ export function GameBoard({
                   <button
                     key={`mana-${i}`}
                     onClick={() => onAction(action)}
-	                    className="min-h-10 shrink-0 whitespace-nowrap rounded border border-amber-600/30 bg-amber-900/50 px-2 py-1 text-[10px] font-semibold text-amber-200 transition-colors hover:bg-amber-800/60 md:min-h-8 md:text-xs"
+	                    className="min-h-10 w-full rounded border border-amber-600/30 bg-amber-900/50 px-2 py-1.5 text-left text-[10px] font-semibold leading-snug text-amber-200 transition-colors hover:bg-amber-800/60 md:text-xs"
                   >
                     {action.label || action.cardName}
                   </button>
@@ -2286,10 +2285,10 @@ export function GameBoard({
             {/* Undo button */}
             {canUndo && (
               <>
-                <div className="w-px h-6 bg-stone-600 shrink-0 mx-0.5" />
+                <div className="h-px bg-stone-700/80 sm:col-span-2" />
                 <button
                   onClick={onUndo}
-	                  className="min-h-10 shrink-0 whitespace-nowrap rounded border border-red-600/30 bg-red-900/50 px-3 py-1 text-xs font-semibold text-red-300 transition-colors hover:bg-red-800/60 md:min-h-8"
+	                  className="min-h-10 w-full rounded border border-red-600/30 bg-red-900/50 px-3 py-1.5 text-left text-xs font-semibold leading-snug text-red-300 transition-colors hover:bg-red-800/60"
                 >
                   Undo ({undosRemaining})
                 </button>
