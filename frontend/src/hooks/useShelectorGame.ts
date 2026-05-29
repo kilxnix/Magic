@@ -4509,11 +4509,31 @@ export function useShelectorGame() {
         const collectedEvents: ActionGameEvent[] = [];
         let authorityUpdateRecorded = false;
 
-        const recordRejectedResponse = (response: ClientActionResponse, prefix: string) => {
+        const recordRejectedResponse = (
+          response: ClientActionResponse,
+          prefix: string,
+          uiAction: SimpleLegalAction,
+        ) => {
           if (response.update) {
             recordAuthorityUpdate(response.update);
             authorityUpdateRecorded = true;
           }
+          appendLog({
+            ...captureLogEntry(
+              engine as GameState,
+              humanIdRef.current,
+              aiIdsRef.current,
+              'human',
+              `Rejected illegal action: ${uiAction.label}`,
+              0,
+              humanIdRef.current,
+            ),
+            playByPlay: `${uiAction.label} was rejected by the rules validator. State was not changed.`,
+            rulesAudit: {
+              severity: 'error',
+              reason: response.message || 'That action is not legal in the current game state.',
+            },
+          });
           setActionError({
             reason: response.reason || 'illegal_action',
             message: response.message || 'That action is not legal in the current game state.',
@@ -4534,7 +4554,7 @@ export function useShelectorGame() {
           });
           const response = applyClientActionRequest(state, request);
           if (!response.ok || !response.state) {
-            recordRejectedResponse(response, options.rejectionPrefix || 'Cannot apply action');
+            recordRejectedResponse(response, options.rejectionPrefix || 'Cannot apply action', uiAction);
             return null;
           }
           if (options.recordAcceptedUpdate !== false && response.update) {

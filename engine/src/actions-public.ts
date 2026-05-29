@@ -1,13 +1,12 @@
 // engine/src/actions-public.ts
-import type { GameState, ManaColor, Phase, ManaCost, AttackerDeclaration, BlockerDeclaration } from './types';
+import type { GameState, ManaColor, ManaCost, AttackerDeclaration, BlockerDeclaration } from './types';
 import {
   playLand,
-  canPlayLand,
+  canPlayLandDetailed,
   tapLandForMana,
   activateAbility,
   getActivatedAbilities,
   equipCreature,
-  maxLandsThisTurn,
   isBlockedBySummoningSicknessForTap,
   getAvailableManaColors,
   type PlayLandOptions,
@@ -99,8 +98,6 @@ function runWinCheck(state: GameState): GameEvent[] {
   }
 }
 
-const MAIN_PHASES: Phase[] = ['precombat_main', 'postcombat_main'];
-
 function reduceGenericCost(
   state: GameState,
   playerId: string,
@@ -117,28 +114,30 @@ export function tryPlayLand(
   cardInstanceId: string,
   options: PlayLandOptions = {},
 ): ActionResult {
-  const playerIndex = state.players.findIndex(p => p.id === playerId);
-  if (playerIndex === -1) return fail('card_not_found', 'Player not found');
-
-  const card = state.cards.get(cardInstanceId);
-  if (!card || card.ownerId !== playerId) return fail('card_not_found', 'Card not found or not yours');
-  if (card.zone !== 'hand') return fail('not_in_zone', 'Card is not in hand');
-
-  if (state.activePlayerIndex !== playerIndex) return fail('not_your_turn', 'Not your turn');
-  if (!MAIN_PHASES.includes(state.phase)) {
-    return fail('wrong_phase', 'Lands can only be played in main phases');
-  }
-  // Check land-drop cap (1 + Exploration-style "additional land" effects).
-  const player = state.players[playerIndex];
-  const playedSoFar = Math.max(
-    player.landsPlayedThisTurn ?? 0,
-    player.hasPlayedLand ? 1 : 0,
-  );
-  if (playedSoFar >= maxLandsThisTurn(state, playerId)) {
-    return fail('land_already_played', 'Already played the maximum lands this turn');
-  }
-  if (!canPlayLand(state, playerId, cardInstanceId)) {
-    return fail('internal_error', 'canPlayLand returned false for unknown reason');
+  const legality = canPlayLandDetailed(state, playerId, cardInstanceId);
+  if (!legality.legal) {
+    switch (legality.code) {
+      case 'player_not_found':
+      case 'card_not_found':
+        return fail('card_not_found', legality.reason);
+      case 'not_in_zone':
+        return fail('not_in_zone', legality.reason);
+      case 'not_your_turn':
+        return fail('not_your_turn', legality.reason);
+      case 'priority_not_yours':
+        return fail('priority_not_yours', legality.reason);
+      case 'wrong_phase':
+      case 'stack_not_empty':
+        return fail('wrong_phase', legality.reason);
+      case 'land_already_played':
+        return fail('land_already_played', legality.reason);
+      case 'not_land':
+        return fail('internal_error', legality.reason);
+      default: {
+        const _never: never = legality.code;
+        return fail('internal_error', _never);
+      }
+    }
   }
 
   try {

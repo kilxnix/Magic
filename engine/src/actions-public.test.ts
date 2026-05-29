@@ -145,6 +145,45 @@ describe('tryPlayLand', () => {
     if (!result.ok) expect(result.reason).toBe('wrong_phase');
   });
 
+  it('returns priority_not_yours when another player has priority', () => {
+    const state = makeTestState({ handLands: 1 });
+    state.priorityPlayerIndex = 1;
+    const landId = [...state.cards.values()].find(c => c.zone === 'hand')!.instanceId;
+    const result = tryPlayLand(state, 'human', landId);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toBe('priority_not_yours');
+      expect(result.message).toBe('You do not have priority');
+    }
+  });
+
+  it('returns wrong_phase with stack-empty reason while a spell is on the stack', () => {
+    const state = makeTestState({ handLands: 1 });
+    const landId = [...state.cards.values()].find(c => c.zone === 'hand')!.instanceId;
+    const spellId = addHandSpell(state, {
+      instanceId: 'stack_spell',
+      name: 'Stack Spell',
+      typeLine: 'Instant',
+      manaCost: '{G}',
+      cardTypes: ['instant'],
+    });
+    state.cards.set(spellId, { ...state.cards.get(spellId)!, zone: 'stack' });
+    state.stack = [{
+      kind: 'Spell',
+      id: 'stack-spell',
+      cardInstanceId: spellId,
+      casterId: 'human',
+      targets: [],
+    }];
+
+    const result = tryPlayLand(state, 'human', landId);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toBe('wrong_phase');
+      expect(result.message).toBe('The stack must be empty');
+    }
+  });
+
   it('returns not_your_turn when active player is elsewhere', () => {
     const state = makeTestState({ handLands: 1, activePlayerIndex: 1 });
     const landId = [...state.cards.values()].find(c => c.zone === 'hand')!.instanceId;

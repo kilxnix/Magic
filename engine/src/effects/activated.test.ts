@@ -481,6 +481,101 @@ describe('executeSearchLibrary', () => {
     expect(result.cards.get('inst_4')!.zone).toBe('battlefield');
   });
 
+  it('golden Sisay search only allows legendary permanents below current power and rejects forced invalid picks', () => {
+    const sisay = createTestDef({
+      id: 'sisay',
+      name: 'Sisay, Weatherlight Captain',
+      type_line: 'Legendary Creature — Human Soldier',
+      card_types: ['creature'],
+      cmc: 3,
+      power: 2,
+      toughness: 2,
+    });
+    const yoshimaru = createTestDef({
+      id: 'yoshimaru',
+      name: 'Yoshimaru, Ever Faithful',
+      type_line: 'Legendary Creature — Dog',
+      card_types: ['creature'],
+      cmc: 1,
+    });
+    const arcaneSignet = createTestDef({
+      id: 'arcane_signet',
+      name: 'Arcane Signet',
+      type_line: 'Artifact',
+      card_types: ['artifact'],
+      cmc: 2,
+    });
+    const akromasMemorial = createTestDef({
+      id: 'akromas_memorial',
+      name: "Akroma's Memorial",
+      type_line: 'Legendary Artifact',
+      card_types: ['artifact'],
+      cmc: 7,
+    });
+    const counterspell = createTestDef({
+      id: 'counterspell',
+      name: 'Counterspell',
+      type_line: 'Instant',
+      card_types: ['instant'],
+      cmc: 2,
+    });
+    const bloodCrypt = createTestDef({
+      id: 'blood_crypt',
+      name: 'Blood Crypt',
+      type_line: 'Land — Swamp Mountain',
+      card_types: ['land'],
+      cmc: 0,
+    });
+
+    const state = createTestState([
+      { def: sisay, zone: 'battlefield', ownerId: 'p1' },
+      { def: yoshimaru, zone: 'library', ownerId: 'p1' },
+      { def: arcaneSignet, zone: 'library', ownerId: 'p1' },
+      { def: akromasMemorial, zone: 'library', ownerId: 'p1' },
+      { def: counterspell, zone: 'library', ownerId: 'p1' },
+      { def: bloodCrypt, zone: 'library', ownerId: 'p1' },
+    ]);
+    const filter = { supertypes: ['Legendary'], permanent: true, manaValueLessThanSourcePower: true };
+    const libraryCards = [...state.cards.values()].filter(card => card.zone === 'library');
+    const legalNames = libraryCards
+      .filter(card => matchesCardFilter(state.cardDefinitions.get(card.definitionId)!, filter, {
+        state,
+        sourceInstanceId: 'inst_1',
+      }))
+      .map(card => state.cardDefinitions.get(card.definitionId)!.name);
+
+    expect(legalNames).toEqual(['Yoshimaru, Ever Faithful']);
+    expect(matchesCardFilter(arcaneSignet, filter, { state, sourceInstanceId: 'inst_1' })).toBe(false);
+    expect(matchesCardFilter(akromasMemorial, filter, { state, sourceInstanceId: 'inst_1' })).toBe(false);
+    expect(matchesCardFilter(counterspell, filter, { state, sourceInstanceId: 'inst_1' })).toBe(false);
+    expect(matchesCardFilter(bloodCrypt, filter, { state, sourceInstanceId: 'inst_1' })).toBe(false);
+
+    for (const illegalId of ['inst_3', 'inst_4', 'inst_5', 'inst_6']) {
+      const rejected = executeSearchLibrary(
+        state,
+        'p1',
+        filter,
+        'battlefield',
+        false,
+        false,
+        { selectedCardInstanceId: illegalId, sourceInstanceId: 'inst_1' },
+      );
+      expect(rejected.cards.get(illegalId)!.zone).toBe('library');
+      expect(rejected.cards.get('inst_2')!.zone).toBe('library');
+    }
+
+    const accepted = executeSearchLibrary(
+      state,
+      'p1',
+      filter,
+      'battlefield',
+      false,
+      false,
+      { selectedCardInstanceId: 'inst_2', sourceInstanceId: 'inst_1' },
+    );
+    expect(accepted.cards.get('inst_2')!.zone).toBe('battlefield');
+  });
+
   it('matches Farseek by land subtype, not by every land card', () => {
     const forest = createTestDef({
       id: 'forest',

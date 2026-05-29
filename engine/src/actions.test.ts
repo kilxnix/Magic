@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { playLand, canPlayLand, tapLandForMana, drawCards } from './actions';
+import { playLand, canPlayLand, canPlayLandDetailed, tapLandForMana, drawCards } from './actions';
 import { initGameState, getCardsInZone } from './game-state';
 import { CardDefinition } from './types';
 import { populateParsedCache } from './cards/card-parser-cache';
@@ -132,6 +132,64 @@ describe('Land Actions', () => {
       state = { ...state, phase: 'combat' };
 
       expect(canPlayLand(state, 'p1', card.instanceId)).toBe(false);
+    });
+
+    it('returns false with exact reason when the player lacks priority', () => {
+      const decks = [{
+        playerId: 'p1', name: 'Alice',
+        cards: [makeForest()], commanderId: 'cmd1',
+      }, {
+        playerId: 'p2', name: 'Bob',
+        cards: [], commanderId: 'cmd2',
+      }];
+      let state = initGameState(decks);
+      const card = getCardsInZone(state, 'p1', 'library')[0];
+      state.cards.set(card.instanceId, { ...card, zone: 'hand' });
+      state = { ...state, phase: 'precombat_main', priorityPlayerIndex: 1 };
+
+      expect(canPlayLand(state, 'p1', card.instanceId)).toBe(false);
+      expect(canPlayLandDetailed(state, 'p1', card.instanceId)).toEqual({
+        legal: false,
+        code: 'priority_not_yours',
+        reason: 'You do not have priority',
+      });
+    });
+
+    it('returns false with exact reason while the stack is nonempty', () => {
+      const decks = [{
+        playerId: 'p1', name: 'Alice',
+        cards: [makeForest(), makeCreature()], commanderId: 'cmd1',
+      }, {
+        playerId: 'p2', name: 'Bob',
+        cards: [], commanderId: 'cmd2',
+      }];
+      let state = initGameState(decks);
+      const card = getCardsInZone(state, 'p1', 'library')
+        .find(candidate => candidate.definitionId === 'forest-1')!;
+      const spell = getCardsInZone(state, 'p1', 'library')
+        .find(candidate => candidate.definitionId === 'bear-1')!;
+      state.cards.set(card.instanceId, { ...card, zone: 'hand' });
+      state.cards.set(spell.instanceId, { ...spell, zone: 'stack' });
+      state = {
+        ...state,
+        phase: 'precombat_main',
+        priorityPlayerIndex: 0,
+        stack: [{
+          kind: 'Spell',
+          id: 'stack-spell',
+          cardInstanceId: spell.instanceId,
+          casterId: 'p1',
+          targets: [],
+        }],
+      };
+
+      expect(canPlayLand(state, 'p1', card.instanceId)).toBe(false);
+      expect(canPlayLandDetailed(state, 'p1', card.instanceId)).toEqual({
+        legal: false,
+        code: 'stack_not_empty',
+        reason: 'The stack must be empty',
+      });
+      expect(getLegalActions(state, 'p1').some(action => action.kind === 'PlayLand')).toBe(false);
     });
 
     it('returns false if card is not a land', () => {

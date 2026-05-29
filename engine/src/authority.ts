@@ -10,6 +10,7 @@ import type {
 } from './types';
 import { getLegalActions } from './ai/legal-actions';
 import { dispatchAIAction } from './ai/agent';
+import { canPlayLandDetailed } from './actions';
 import type { AIAction } from './ai/types';
 import type { ActionFailure, GameEvent as ActionGameEvent } from './actions-public';
 
@@ -471,6 +472,16 @@ function isLegalRequestedAction(state: GameState, playerId: string, action: AIAc
   return getLegalActions(state, playerId).some(legal =>
     actionKey(legal) === requestedKey || actionReferencesSameObject(legal, action),
   );
+}
+
+function illegalActionMessage(state: GameState, playerId: string, action: AIAction): string {
+  if (action.kind === 'PlayLand') {
+    const legality = canPlayLandDetailed(state, playerId, action.cardInstanceId);
+    return legality.legal
+      ? 'That land play is not available from the current prompt.'
+      : legality.reason;
+  }
+  return 'That action is not legal in the current game state.';
 }
 
 export function labelForAction(state: GameState, action: AIAction): string {
@@ -1019,7 +1030,7 @@ export function applyClientActionRequest(
   }
 
   if (!isLegalRequestedAction(state, request.playerId, request.action)) {
-    const message = 'That action is not legal in the current game state.';
+    const message = illegalActionMessage(state, request.playerId, request.action);
     return {
       requestId: request.id,
       ok: false,

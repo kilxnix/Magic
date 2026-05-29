@@ -171,6 +171,77 @@ describe('authority action boundary', () => {
     ]);
   });
 
+  it('does not expose or accept land plays while the stack is nonempty', () => {
+    const state = stateWithForestInHand();
+    const forest = [...state.cards.values()].find(card => card.definitionId === 'forest' && card.ownerId === 'p1')!;
+    const commander = [...state.cards.values()].find(card => card.definitionId === 'commander' && card.ownerId === 'p1')!;
+    const instant = def('free-instant', 'Free Instant', 'Instant');
+    const creature = def('free-creature', 'Free Creature', 'Creature - Bear');
+    state.cardDefinitions.set(instant.id, instant);
+    state.cardDefinitions.set(creature.id, creature);
+    state.cards.set('instant-in-hand', {
+      instanceId: 'instant-in-hand',
+      definitionId: instant.id,
+      ownerId: 'p1',
+      zone: 'hand',
+      tapped: false,
+      summoningSick: false,
+      counters: {},
+      damage: 0,
+      isCommander: false,
+    });
+    state.cards.set('creature-in-hand', {
+      instanceId: 'creature-in-hand',
+      definitionId: creature.id,
+      ownerId: 'p1',
+      zone: 'hand',
+      tapped: false,
+      summoningSick: false,
+      counters: {},
+      damage: 0,
+      isCommander: false,
+    });
+    state.cards.set(commander.instanceId, { ...commander, zone: 'stack' });
+    state.stack = [{
+      kind: 'Spell',
+      id: 'stack-commander',
+      cardInstanceId: commander.instanceId,
+      casterId: 'p1',
+      targets: [],
+    }];
+
+    const prompt = buildActionPrompt(state, 'p1');
+    expect(prompt?.type).toBe('stack-response');
+    expect(prompt?.legalChoices.some(choice => choice.kind === 'PlayLand')).toBe(false);
+    expect(prompt?.legalChoices.some(choice => choice.kind === 'CastSpell' && choice.label === 'Cast Free Instant')).toBe(true);
+    expect(prompt?.legalChoices.some(choice => choice.kind === 'CastSpell' && choice.label === 'Cast Free Creature')).toBe(false);
+
+    const response = applyClientActionRequest(
+      state,
+      createClientActionRequest(
+        state,
+        'p1',
+        { kind: 'PlayLand', cardInstanceId: forest.instanceId },
+        { id: 'req-force-land-stack', createdAt: 3 },
+      ),
+    );
+
+    expect(response.ok).toBe(false);
+    expect(response.reason).toBe('illegal_action');
+    expect(response.state).toBeUndefined();
+    expect(state.cards.get(forest.instanceId)?.zone).toBe('hand');
+    expect(response.update?.rulesEvents).toEqual([
+      {
+        kind: 'ActionRejected',
+        requestId: 'req-force-land-stack',
+        playerId: 'p1',
+        actionKind: 'PlayLand',
+        reason: 'illegal_action',
+        message: 'The stack must be empty',
+      },
+    ]);
+  });
+
   it('emits granular diffs for combat, commander, and visible card state changes', () => {
     const before = stateWithForestInHand();
     const card = [...before.cards.values()].find(candidate => candidate.ownerId === 'p1' && candidate.zone === 'hand');

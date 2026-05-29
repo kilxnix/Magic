@@ -26,6 +26,21 @@ export interface PlayLandOptions {
   chosenCreatureType?: string;
 }
 
+export type LandPlayIllegalCode =
+  | 'player_not_found'
+  | 'not_your_turn'
+  | 'priority_not_yours'
+  | 'wrong_phase'
+  | 'stack_not_empty'
+  | 'card_not_found'
+  | 'not_in_zone'
+  | 'not_land'
+  | 'land_already_played';
+
+export type LandPlayLegality =
+  | { legal: true }
+  | { legal: false; code: LandPlayIllegalCode; reason: string };
+
 export function getAvailableManaColors(state: GameState, cardInstanceId: string): ManaColor[] {
   const card = state.cards.get(cardInstanceId);
   if (!card) return [];
@@ -148,26 +163,52 @@ export function maxLandsThisTurn(state: GameState, playerId: string): number {
   return 1 + extra;
 }
 
-export function canPlayLand(state: GameState, playerId: string, cardInstanceId: string): boolean {
+export function canPlayLandDetailed(state: GameState, playerId: string, cardInstanceId: string): LandPlayLegality {
   const playerIndex = state.players.findIndex(p => p.id === playerId);
-  if (playerIndex === -1) return false;
+  if (playerIndex === -1) {
+    return { legal: false, code: 'player_not_found', reason: 'Player not found' };
+  }
 
-  if (state.activePlayerIndex !== playerIndex) return false;
-  if (!MAIN_PHASES.includes(state.phase)) return false;
+  if (state.activePlayerIndex !== playerIndex) {
+    return { legal: false, code: 'not_your_turn', reason: 'Not your turn' };
+  }
+  if (state.priorityPlayerIndex !== playerIndex) {
+    return { legal: false, code: 'priority_not_yours', reason: 'You do not have priority' };
+  }
+  if (!MAIN_PHASES.includes(state.phase)) {
+    return { legal: false, code: 'wrong_phase', reason: 'Lands can only be played during a main phase' };
+  }
+  if (state.stack.length !== 0) {
+    return { legal: false, code: 'stack_not_empty', reason: 'The stack must be empty' };
+  }
+
+  const card = state.cards.get(cardInstanceId);
+  if (!card || card.ownerId !== playerId) {
+    return { legal: false, code: 'card_not_found', reason: 'Card not found or not yours' };
+  }
+  if (card.zone !== 'hand') {
+    return { legal: false, code: 'not_in_zone', reason: 'Card is not in a playable zone' };
+  }
+
+  const def = getCardDefinition(state, card);
+  if (!def.card_types.includes('land')) {
+    return { legal: false, code: 'not_land', reason: 'Not a land' };
+  }
+
   // Treat hasPlayedLand=true as at-least-one even if landsPlayedThisTurn isn't tracked.
   const playedSoFar = Math.max(
     state.players[playerIndex].landsPlayedThisTurn ?? 0,
     state.players[playerIndex].hasPlayedLand ? 1 : 0,
   );
-  if (playedSoFar >= maxLandsThisTurn(state, playerId)) return false;
+  if (playedSoFar >= maxLandsThisTurn(state, playerId)) {
+    return { legal: false, code: 'land_already_played', reason: 'No land plays remaining' };
+  }
 
-  const card = state.cards.get(cardInstanceId);
-  if (!card || card.zone !== 'hand' || card.ownerId !== playerId) return false;
+  return { legal: true };
+}
 
-  const def = getCardDefinition(state, card);
-  if (!def.card_types.includes('land')) return false;
-
-  return true;
+export function canPlayLand(state: GameState, playerId: string, cardInstanceId: string): boolean {
+  return canPlayLandDetailed(state, playerId, cardInstanceId).legal;
 }
 
 export function playLand(
