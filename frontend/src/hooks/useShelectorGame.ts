@@ -169,8 +169,15 @@ export interface SimpleLegalAction {
   cardName?: string;
   label: string;
   paymentPreview?: string;
+  targetChoices?: TargetActionChoice[];
   /** The raw engine action stored for applying back to the engine */
   _engineAction: AIAction;
+}
+
+interface TargetActionChoice {
+  targetId: string;
+  label: string;
+  action: SimpleLegalAction;
 }
 
 function displayNameForTarget(engineState: GameState, targetId: string): string {
@@ -179,6 +186,16 @@ function displayNameForTarget(engineState: GameState, targetId: string): string 
     return engineState.cardDefinitions.get(card.definitionId)?.name || targetId;
   }
   return engineState.players.find(player => player.id === targetId)?.name || targetId;
+}
+
+function targetPickerLabel(engineState: GameState, targetId: string): string {
+  const card = engineState.cards.get(targetId);
+  if (card) {
+    const name = displayNameForTarget(engineState, targetId);
+    const owner = engineState.players.find(player => player.id === card.ownerId);
+    return owner ? `${name} (${owner.name})` : name;
+  }
+  return displayNameForTarget(engineState, targetId);
 }
 
 function targetLabelSuffix(engineState: GameState, targets?: string[]): string {
@@ -603,6 +620,11 @@ type PendingPlayLandChoice = {
 type PendingSearchEntryChoice = {
   cardInstanceId: string;
   optionalLifeCost: number;
+};
+
+type PendingTargetChoice = {
+  label: string;
+  choices: TargetActionChoice[];
 };
 
 type PendingCastChoiceMode = 'discardLand' | 'sacrificeCreature';
@@ -1841,6 +1863,102 @@ function toSimpleLegalAction(action: AIAction, engineState: GameState): SimpleLe
   }
 }
 
+function targetGroupKey(action: SimpleLegalAction): string | null {
+  const engineAction = action._engineAction;
+  if (engineAction.kind === 'CastSpell' && engineAction.targets.length === 1) {
+    return `cast:${engineAction.cardInstanceId}:${(engineAction.chosenModes || []).join(',')}`;
+  }
+  if (engineAction.kind === 'ActivateAbility' && engineAction.targets.length === 1) {
+    return `ability:${engineAction.cardInstanceId}:${engineAction.abilityIndex}`;
+  }
+  if (engineAction.kind === 'Equip') {
+    return `equip:${engineAction.equipmentInstanceId}`;
+  }
+  return null;
+}
+
+function targetIdForGroupedAction(action: SimpleLegalAction): string | null {
+  const engineAction = action._engineAction;
+  if (engineAction.kind === 'CastSpell' || engineAction.kind === 'ActivateAbility') {
+    return engineAction.targets.length === 1 ? engineAction.targets[0] : null;
+  }
+  if (engineAction.kind === 'Equip') {
+    return engineAction.targetCreatureId;
+  }
+  return null;
+}
+
+function baseLabelForTargetGroup(engineState: GameState, action: SimpleLegalAction): string {
+  const engineAction = action._engineAction;
+  if (engineAction.kind === 'CastSpell') {
+    const card = engineState.cards.get(engineAction.cardInstanceId);
+    const def = card ? engineState.cardDefinitions.get(card.definitionId) : undefined;
+    return `Cast ${def?.name || action.cardName || 'spell'}`;
+  }
+  if (engineAction.kind === 'ActivateAbility') {
+    const card = engineState.cards.get(engineAction.cardInstanceId);
+    const def = card ? engineState.cardDefinitions.get(card.definitionId) : undefined;
+    return `Activate ${def?.name || action.cardName || 'ability'}`;
+  }
+  if (engineAction.kind === 'Equip') {
+    const card = engineState.cards.get(engineAction.equipmentInstanceId);
+    const def = card ? engineState.cardDefinitions.get(card.definitionId) : undefined;
+    return `Equip ${def?.name || action.cardName || 'equipment'}`;
+  }
+  return action.label;
+}
+
+function collapseTargetedActions(
+  actions: SimpleLegalAction[],
+  engineState: GameState,
+): SimpleLegalAction[] {
+  const groups = new Map<string, SimpleLegalAction[]>();
+  for (const action of actions) {
+    const key = targetGroupKey(action);
+    if (!key) continue;
+    const bucket = groups.get(key) || [];
+    bucket.push(action);
+    groups.set(key, bucket);
+  }
+
+  const emitted = new Set<string>();
+  const collapsed: SimpleLegalAction[] = [];
+  for (const action of actions) {
+    const key = targetGroupKey(action);
+    if (!key) {
+      collapsed.push(action);
+      continue;
+    }
+    const group = groups.get(key) || [];
+    if (group.length <= 1) {
+      collapsed.push(action);
+      continue;
+    }
+    if (emitted.has(key)) continue;
+    emitted.add(key);
+
+    const targetChoices = group
+      .map(groupedAction => {
+        const targetId = targetIdForGroupedAction(groupedAction);
+        return targetId
+          ? {
+              targetId,
+              label: targetPickerLabel(engineState, targetId),
+              action: groupedAction,
+            }
+          : null;
+      })
+      .filter(Boolean) as TargetActionChoice[];
+
+    collapsed.push({
+      ...action,
+      label: `${baseLabelForTargetGroup(engineState, action)}: choose target`,
+      targetChoices,
+    });
+  }
+  return collapsed;
+}
+
 // ========== Hook ==========
 
 export function useShelectorGame() {
@@ -1880,6 +1998,7 @@ export function useShelectorGame() {
   const pendingCastChoiceModeRef = useRef<PendingCastChoiceMode | null>(null);
   const pendingPlayLandChoiceRef = useRef<PendingPlayLandChoice | null>(null);
   const pendingSearchEntryChoiceRef = useRef<PendingSearchEntryChoice | null>(null);
+  const pendingTargetChoiceRef = useRef<PendingTargetChoice | null>(null);
   const pendingLibraryChoiceRef = useRef<{ stackItemId: string; mode: 'scry' | 'surveil' } | null>(null);
   const submitActionRef = useRef<((action: SimpleLegalAction) => void) | null>(null);
   const [undosRemaining, setUndosRemaining] = useState(10);
@@ -2278,8 +2397,9 @@ export function useShelectorGame() {
         });
       }
 
-      setLegalActions(simpleActions);
-      setCurrentPrompt(buildVisibleActionPrompt(engine, humanIdRef.current, simpleActions));
+      const visibleActions = collapseTargetedActions(simpleActions, engine);
+      setLegalActions(visibleActions);
+      setCurrentPrompt(buildVisibleActionPrompt(engine, humanIdRef.current, visibleActions));
     } else {
       setLegalActions([]);
       setCurrentPrompt(buildActionPrompt(engine, simple.priorityPlayerId) || null);
@@ -3393,6 +3513,7 @@ export function useShelectorGame() {
       pendingCastChoiceModeRef.current = null;
       pendingPlayLandChoiceRef.current = null;
       pendingSearchEntryChoiceRef.current = null;
+      pendingTargetChoiceRef.current = null;
       tutorSourceInstanceIdRef.current = undefined;
       tutorPromptRequestRef.current = null;
       setTutorPhase(false);
@@ -3886,6 +4007,22 @@ export function useShelectorGame() {
       return;
     }
 
+    const pendingTargetChoice = pendingTargetChoiceRef.current;
+    if (pendingTargetChoice) {
+      pendingTargetChoiceRef.current = null;
+      setTutorPhase(false);
+      setTutorCards([]);
+      setTutorTitle('');
+      const selected = pendingTargetChoice.choices.find(choice => choice.targetId === cardInstanceId);
+      if (!selected) {
+        addMessage('system', `${cardInstanceId} is not a legal target for ${pendingTargetChoice.label}.`);
+        syncState();
+        return;
+      }
+      submitActionRef.current?.(selected.action);
+      return;
+    }
+
     const pendingSearchEntryChoice = pendingSearchEntryChoiceRef.current;
     let selectedCardInstanceId = cardInstanceId;
     let payLifeForSearchEntry: boolean | undefined;
@@ -4223,6 +4360,13 @@ export function useShelectorGame() {
       return;
     }
 
+    if (pendingTargetChoiceRef.current) {
+      pendingTargetChoiceRef.current = null;
+      addMessage('player', 'Cancelled target selection.');
+      syncState();
+      return;
+    }
+
     if (activeSearchPrompt) {
       const promptResponse = applySearchLibraryPromptResponse(engineRef.current, activeSearchPrompt, {
         requestId: activeSearchPrompt.id,
@@ -4269,6 +4413,7 @@ export function useShelectorGame() {
     pendingCastChoiceModeRef.current = null;
     pendingPlayLandChoiceRef.current = null;
     pendingSearchEntryChoiceRef.current = null;
+    pendingTargetChoiceRef.current = null;
     setDiscardPhase(false);
     setTutorPhase(false);
     setTutorCards([]);
@@ -4590,6 +4735,43 @@ export function useShelectorGame() {
 
       if (action.kind === 'SkipEmptyPhases') {
         skipEmptyPhases();
+        return;
+      }
+
+      if (action.targetChoices?.length) {
+        pendingTargetChoiceRef.current = {
+          label: action.label,
+          choices: action.targetChoices,
+        };
+        tutorRemainingRef.current = 0;
+        tutorFilterRef.current = undefined;
+        tutorFilterSpecRef.current = undefined;
+        tutorTappedRef.current = false;
+        tutorShuffleRef.current = false;
+        tutorSourceNameRef.current = action.label;
+        tutorSourceInstanceIdRef.current = action.cardInstanceId;
+        tutorPromptRequestRef.current = null;
+        setTutorTitle(action.label);
+        setTutorCards(action.targetChoices.map(choice => {
+          const card = engine.cards.get(choice.targetId);
+          const def = card ? engine.cardDefinitions.get(card.definitionId) : undefined;
+          const player = engine.players.find(candidate => candidate.id === choice.targetId);
+          return {
+            instanceId: choice.targetId,
+            name: choice.label,
+            typeLine: def?.type_line || (player ? 'Player' : 'Target'),
+            manaCost: def?.mana_cost || '',
+            oracleText: def?.oracle_text,
+            colors: def?.colors,
+            cmc: def?.cmc,
+            legal: true,
+            reason: 'Legal target from the current engine prompt',
+            destination: 'choice' as const,
+          };
+        }));
+        setTutorPhase(true);
+        addMessage('system', `Choose a target for ${action.label}.`);
+        syncState();
         return;
       }
 
@@ -5531,6 +5713,7 @@ export function useShelectorGame() {
       pendingCastChoiceActionRef.current = null;
       pendingPlayLandChoiceRef.current = null;
       pendingSearchEntryChoiceRef.current = null;
+      pendingTargetChoiceRef.current = null;
       const restoredLibraryChoice = snapshot.libraryChoice || null;
       pendingLibraryChoiceRef.current = restoredLibraryChoice
         ? { stackItemId: restoredLibraryChoice.id.split(':')[0], mode: restoredLibraryChoice.mode }
