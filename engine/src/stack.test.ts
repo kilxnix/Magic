@@ -840,6 +840,35 @@ describe('Stack', () => {
       expect(next.cards.get(targetId)?.zone).toBe('battlefield');
     });
 
+    it('still resolves legal targets when another target becomes illegal before resolution', () => {
+      const { state, sourceId, targetId } = setupTargetedAbilityState();
+      state.stack.push({
+        kind: 'ActivatedAbility',
+        id: 'activated_double_ping',
+        sourceInstanceId: sourceId,
+        controllerId: 'p1',
+        ability: {
+          effects: [
+            { kind: 'DealDamage', target: { kind: 'Chosen', targetId: 'first' }, amount: 3 },
+            { kind: 'DealDamage', target: { kind: 'Chosen', targetId: 'second' }, amount: 3 },
+          ],
+          targets: [
+            { id: 'first', type: 'Creature' },
+            { id: 'second', type: 'Creature' },
+          ],
+        },
+        targets: [targetId, sourceId],
+      });
+
+      const first = state.cards.get(targetId)!;
+      state.cards.set(targetId, { ...first, grantedKeywords: ['Hexproof'] });
+
+      const next = resolveTopOfStack(state);
+      expect(next.stack).toHaveLength(0);
+      expect(next.cards.get(targetId)?.damage).toBe(0);
+      expect(next.cards.get(sourceId)?.zone).toBe('graveyard');
+    });
+
     it('creature resolves to battlefield with summoning sickness', () => {
       const { state, cardInstanceId } = setupWithCardInHand(makeCreature());
       state.players[0].manaPool = { W: 0, U: 0, B: 0, R: 0, G: 2, C: 0 };
