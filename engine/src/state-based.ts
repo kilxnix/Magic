@@ -7,6 +7,7 @@ import { applyReplacements } from './effects/replacement';
 import { getEffectiveToughness as getLayeredEffectiveToughness } from './effects/continuous';
 import { validateTargetChoices, type TargetSpec } from './effects/targets';
 import { typeLineHasSubtype, typeLineHasSupertype } from './type-line';
+import { playerCantLose } from './game-outcome';
 
 export function legendRuleChoiceKey(ownerId: string, cardName: string): string {
   return `${ownerId}:${cardName.trim().toLowerCase()}`;
@@ -166,7 +167,7 @@ export function checkStateBasedActions(state: GameState): GameState {
 
     // 5. Players at 0 or less life lose
     for (let i = 0; i < newPlayers.length; i++) {
-      if (!newPlayers[i].hasLost && newPlayers[i].life <= 0) {
+      if (!newPlayers[i].hasLost && newPlayers[i].life <= 0 && !playerCantLose(tempState, newPlayers[i].id)) {
         newPlayers[i].hasLost = true;
         stateChanged = true;
       }
@@ -177,7 +178,7 @@ export function checkStateBasedActions(state: GameState): GameState {
       if (newPlayers[i].hasLost) continue;
 
       for (const [commanderId, damage] of Object.entries(newPlayers[i].commanderDamage)) {
-        if (damage >= 21) {
+        if (damage >= 21 && !playerCantLose(tempState, newPlayers[i].id)) {
           newPlayers[i].hasLost = true;
           stateChanged = true;
           break; // Only need to mark lost once
@@ -203,7 +204,7 @@ export function checkStateBasedActions(state: GameState): GameState {
     // 7. Players with 10+ poison counters lose
     for (let i = 0; i < newPlayers.length; i++) {
       if (newPlayers[i].hasLost) continue;
-      if (newPlayers[i].poisonCounters >= 10) {
+      if (newPlayers[i].poisonCounters >= 10 && !playerCantLose(tempState, newPlayers[i].id)) {
         newPlayers[i].hasLost = true;
         stateChanged = true;
       }

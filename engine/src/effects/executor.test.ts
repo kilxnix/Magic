@@ -146,6 +146,34 @@ function createTestState(): GameState {
   };
 }
 
+function addPlatinumAngel(state: GameState, controllerId: string, instanceId = `platinum-${controllerId}`): void {
+  state.cardDefinitions.set('def-platinum-angel', {
+    id: 'def-platinum-angel',
+    name: 'Platinum Angel',
+    type_line: 'Artifact Creature - Angel',
+    oracle_text: "Flying\nYou can't lose the game and your opponents can't win the game.",
+    mana_cost: '{7}',
+    cmc: 7,
+    colors: [],
+    color_identity: [],
+    keywords: ['Flying'],
+    card_types: ['artifact', 'creature'],
+    power: 4,
+    toughness: 4,
+  });
+  state.cards.set(instanceId, {
+    instanceId,
+    definitionId: 'def-platinum-angel',
+    ownerId: controllerId,
+    zone: 'battlefield',
+    tapped: false,
+    summoningSick: false,
+    counters: {},
+    damage: 0,
+    isCommander: false,
+  });
+}
+
 function withLibraryCommander(state: GameState, commanderId = 'lib-card-1'): GameState {
   const commander = state.cards.get(commanderId);
   if (!commander) throw new Error(`Missing commander fixture ${commanderId}`);
@@ -2221,6 +2249,31 @@ describe('EachOpponent and AllCreatures effects', () => {
       expect(libraryOrder.slice(0, 3)).toEqual(['lib-card-2', 'lib-card-4', 'lib-card-5']);
       expect(newState.cards.get('lib-card-1')?.zone).toBe('graveyard');
       expect(newState.cards.get('lib-card-3')?.zone).toBe('graveyard');
+    });
+  });
+
+  describe('game outcome prevention', () => {
+    it("prevents LoseGame while a you-can't-lose permanent is controlled", () => {
+      const state = createTestState();
+      addPlatinumAngel(state, 'player-1');
+
+      const newState = executeEffects(state, [
+        { kind: 'LoseGame', player: { kind: 'Player', playerId: 'player-1' } },
+      ], 'player-2', [], []);
+
+      expect(newState.players.find(player => player.id === 'player-1')?.hasLost).toBe(false);
+    });
+
+    it("prevents a player from winning while an opponent controls opponents-can't-win text", () => {
+      const state = createTestState();
+      addPlatinumAngel(state, 'player-1');
+
+      const newState = executeEffects(state, [
+        { kind: 'WinGame', player: { kind: 'Player', playerId: 'player-2' } },
+      ], 'player-2', [], []);
+
+      expect(newState.players.find(player => player.id === 'player-1')?.hasLost).toBe(false);
+      expect(newState.players.find(player => player.id === 'player-2')?.hasLost).toBe(false);
     });
   });
 

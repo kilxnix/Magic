@@ -19,6 +19,7 @@ import { parseOracleText } from './parser';
 import { getOverride } from './overrides';
 import type { TargetSpec } from './targets';
 import { typeLineHasSubtype, typeLineHasSupertype, typeLineHasType } from '../type-line';
+import { playerCantLose, playerCantWin } from '../game-outcome';
 
 /**
  * Context for effect execution, includes X value from spell casting.
@@ -3012,14 +3013,16 @@ function executeEffect(
     // WinGame: all other players lose
     case 'WinGame': {
       const winnerId = resolveTargetRef(effect.player, casterId, chosenTargets);
+      if (playerCantWin(state, winnerId)) return state;
       const newPlayers = state.players.map(p =>
-        p.id !== winnerId ? { ...p, hasLost: true } : p
+        p.id !== winnerId && !playerCantLose(state, p.id) ? { ...p, hasLost: true } : p
       );
       return { ...state, players: newPlayers };
     }
     // LoseGame: the specified player loses
     case 'LoseGame': {
       const loserId = resolveTargetRef(effect.player, casterId, chosenTargets);
+      if (playerCantLose(state, loserId)) return state;
       const newPlayers = state.players.map(p =>
         p.id === loserId ? { ...p, hasLost: true } : p
       );

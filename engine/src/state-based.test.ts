@@ -39,6 +39,23 @@ function makeLegend(id: string = 'legend-1'): CardDefinition {
   };
 }
 
+function makePlatinumAngel(id: string = 'platinum-angel'): CardDefinition {
+  return {
+    id,
+    name: 'Platinum Angel',
+    type_line: 'Artifact Creature - Angel',
+    oracle_text: "Flying\nYou can't lose the game and your opponents can't win the game.",
+    mana_cost: '{7}',
+    cmc: 7,
+    colors: [],
+    color_identity: [],
+    keywords: ['Flying'],
+    card_types: ['artifact', 'creature'],
+    power: 4,
+    toughness: 4,
+  };
+}
+
 describe('State-Based Actions', () => {
   beforeEach(() => {
     clearReplacements();
@@ -133,6 +150,24 @@ describe('State-Based Actions', () => {
 
     const next = checkStateBasedActions(state);
     expect(next.players[0].hasLost).toBe(true);
+  });
+
+  it("does not mark a protected player as lost while a you-can't-lose permanent is on battlefield", () => {
+    const angel = makePlatinumAngel();
+    const decks = [
+      { playerId: 'p1', name: 'Alice', cards: [angel], commanderId: 'cmd1' },
+      { playerId: 'p2', name: 'Bob', cards: [], commanderId: 'cmd2' },
+    ];
+    const state = initGameState(decks);
+    const card = getCardsInZone(state, 'p1', 'library')[0];
+    state.cards.set(card.instanceId, { ...card, zone: 'battlefield', summoningSick: false });
+    state.players[0].life = -3;
+    state.players[0].poisonCounters = 10;
+    state.players[0].commanderDamage = { enemyCommander: 21 };
+
+    const next = checkStateBasedActions(state);
+
+    expect(next.players[0].hasLost).toBe(false);
   });
 
   it('handles multiple creatures dying at once', () => {
