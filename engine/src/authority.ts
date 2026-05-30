@@ -10,6 +10,7 @@ import type {
   Zone,
 } from './types';
 import { getLegalActions } from './ai/legal-actions';
+import { getLegalTargets } from './ai/legal-actions';
 import { dispatchAIAction } from './ai/agent';
 import { canPlayLandDetailed } from './actions';
 import { executeSearchLibrary, executeShuffleLibrary, matchesCardFilter } from './effects/executor';
@@ -19,6 +20,7 @@ import { validateStateInvariants } from './invariants';
 import type { AIAction } from './ai/types';
 import type { ActionFailure, GameEvent as ActionGameEvent } from './actions-public';
 import type { CardFilter } from './effects/ast';
+import type { TargetSpec } from './effects/targets';
 
 export type ClientActionSource = 'ui' | 'ai' | 'system';
 
@@ -44,7 +46,7 @@ export interface ClientActionResponse {
   update?: EngineStateUpdate;
 }
 
-export type EnginePromptKind = 'SearchLibrary';
+export type EnginePromptKind = 'SearchLibrary' | 'SelectTarget';
 
 export type ClientPromptFailure =
   | 'invalid_request'
@@ -109,6 +111,43 @@ export interface ClientPromptResponse {
   message?: string;
   state?: GameState;
   update?: EngineStateUpdate;
+  selectedTargetIds?: string[];
+}
+
+export interface TargetChoice {
+  targetId: string;
+  label: string;
+  legal: boolean;
+  reason?: string;
+}
+
+export interface SelectTargetPromptRequest {
+  id: string;
+  kind: 'SelectTarget';
+  playerId: string;
+  expectedStateId: string;
+  sourceInstanceId?: string;
+  targetSpec: TargetSpec;
+  minSelections: number;
+  maxSelections: number;
+  legalChoices: TargetChoice[];
+  invalidChoices: TargetChoice[];
+  createdAt: number;
+}
+
+export interface CreateSelectTargetPromptOptions {
+  id?: string;
+  sourceInstanceId?: string;
+  minSelections?: number;
+  maxSelections?: number;
+  createdAt?: number;
+}
+
+export interface SelectTargetPromptResponse {
+  requestId: string;
+  kind: 'SelectTarget';
+  playerId: string;
+  selectedTargetIds: string[];
 }
 
 export interface ActionReplayAuditStep {
@@ -363,6 +402,7 @@ export type EngineEvent =
       playerId: string;
       promptKind: EnginePromptKind;
       selectedCardInstanceIds?: string[];
+      selectedTargetIds?: string[];
       destination?: SearchLibraryDestination;
     }
   | {
@@ -373,6 +413,7 @@ export type EngineEvent =
       reason: ClientPromptFailure;
       message: string;
       selectedCardInstanceIds?: string[];
+      selectedTargetIds?: string[];
     }
   | {
       kind: 'RulesEvent';
@@ -1220,6 +1261,239 @@ export function applySearchLibraryPromptResponse(
         destination: request.destination,
       }],
     },
+  };
+}
+
+function targetLabel(state: GameState, targetId: string): string {
+  const card = state.cards.get(targetId);
+  if (card) return cardName(state, card) || targetId;
+  return playerName(state, targetId) || targetId;
+}
+
+function possibleTargetIds(state: GameState): string[] {
+  const ids = new Set<string>();
+  for (const player of state.players) {
+    if (!player.hasLost) ids.add(player.id);
+  }
+  for (const card of state.cards.values()) {
+    if (card.zone === 'battlefield') ids.add(card.instanceId);
+  }
+  for (const item of state.stack) {
+    ids.add(item.id);
+    if (item.kind === 'Spell') ids.add(item.cardInstanceId);
+  }
+  return [...ids].sort((a, b) => targetLabel(state, a).localeCompare(targetLabel(state, b)));
+}
+
+function targetFailureReason(state: GameState, spec: TargetSpec, targetId: string): string {
+  const card = state.cards.get(targetId);
+  if (spec.type === 'Player') return state.players.some(player => player.id === targetId && !player.hasLost)
+    ? 'Does not match this target restriction'
+    : 'Not a player';
+  if (!card) return 'Not a targetable object for this effect';
+  if (card.zone !== 'battlefield') return 'Not on the battlefield';
+  const def = state.cardDefinitions.get(card.definitionId);
+  if (!def) return 'Card definition missing';
+  switch (spec.type) {
+    case 'Creature':
+      return 'Not a creature';
+    case 'Permanent':
+      return 'Does not match this permanent target restriction';
+    case 'NonlandPermanent':
+      return def.card_types.includes('land') ? 'Land permanents are excluded' : 'Does not match this target restriction';
+    case 'Artifact':
+      return 'Not an artifact';
+    case 'Enchantment':
+      return 'Not an enchantment';
+    case 'ArtifactOrEnchantment':
+      return 'Not an artifact or enchantment';
+    case 'ArtifactEnchantmentOrLand':
+      return 'Not an artifact, enchantment, or land';
+    case 'Spell':
+    case 'NoncreatureSpell':
+    case 'CreatureSpell':
+    case 'InstantOrSorcerySpell':
+      return 'Not a matching spell on the stack';
+    case 'CreatureCardInGraveyard':
+      return 'Not a creature card in a graveyard';
+    case 'Any':
+      return 'Not a legal any-target object';
+    default: {
+      const _never: never = spec.type;
+      return `Unsupported target type ${_never}`;
+    }
+  }
+}
+
+function buildTargetChoices(
+  state: GameState,
+  playerId: string,
+  spec: TargetSpec,
+): { legalChoices: TargetChoice[]; invalidChoices: TargetChoice[] } {
+  const legalIds = new Set(getLegalTargets(state, playerId, spec));
+  const choices = possibleTargetIds(state).map(targetId => ({
+    targetId,
+    label: targetLabel(state, targetId),
+    legal: legalIds.has(targetId),
+    reason: legalIds.has(targetId) ? undefined : targetFailureReason(state, spec, targetId),
+  }));
+  return {
+    legalChoices: choices.filter(choice => choice.legal),
+    invalidChoices: choices.filter(choice => !choice.legal),
+  };
+}
+
+export function createSelectTargetPromptRequest(
+  state: GameState,
+  playerId: string,
+  targetSpec: TargetSpec,
+  options: CreateSelectTargetPromptOptions = {},
+): SelectTargetPromptRequest {
+  const expectedStateId = stateFingerprint(state);
+  const createdAt = options.createdAt ?? Date.now();
+  const { legalChoices, invalidChoices } = buildTargetChoices(state, playerId, targetSpec);
+  const count = targetSpec.count ?? 1;
+  return {
+    id: options.id || `target_${expectedStateId}_${hashText(`${playerId}:${targetSpec.id}:${createdAt}`)}`,
+    kind: 'SelectTarget',
+    playerId,
+    expectedStateId,
+    sourceInstanceId: options.sourceInstanceId,
+    targetSpec,
+    minSelections: options.minSelections ?? count,
+    maxSelections: options.maxSelections ?? count,
+    legalChoices,
+    invalidChoices,
+    createdAt,
+  };
+}
+
+function targetPromptRejectUpdate(
+  state: GameState,
+  request: SelectTargetPromptRequest,
+  response: SelectTargetPromptResponse,
+  reason: ClientPromptFailure,
+  message: string,
+): EngineStateUpdate {
+  const currentStateId = stateFingerprint(state);
+  return {
+    oldStateId: request.expectedStateId,
+    newStateId: currentStateId,
+    activePlayerId: activePlayerId(state),
+    priorityPlayerId: priorityPlayerId(state),
+    phase: state.phase,
+    step: state.step,
+    turnNumber: state.turnNumber,
+    priority: prioritySnapshot(state),
+    visibleDiffs: [],
+    rulesEvents: [{
+      kind: 'PromptResponseRejected',
+      requestId: response.requestId,
+      playerId: response.playerId,
+      promptKind: request.kind,
+      reason,
+      message,
+      selectedTargetIds: response.selectedTargetIds,
+    }],
+    prompt: buildActionPrompt(state),
+  };
+}
+
+export function applySelectTargetPromptResponse(
+  state: GameState,
+  request: SelectTargetPromptRequest,
+  response: SelectTargetPromptResponse,
+): ClientPromptResponse {
+  if (request.kind !== 'SelectTarget' || response.kind !== 'SelectTarget' || request.id !== response.requestId) {
+    const message = 'Prompt response does not match the active target request.';
+    return {
+      requestId: response.requestId,
+      ok: false,
+      reason: 'invalid_request',
+      message,
+      update: targetPromptRejectUpdate(state, request, response, 'invalid_request', message),
+    };
+  }
+
+  if (request.playerId !== response.playerId) {
+    const message = 'This target prompt belongs to another player.';
+    return {
+      requestId: response.requestId,
+      ok: false,
+      reason: 'wrong_player',
+      message,
+      update: targetPromptRejectUpdate(state, request, response, 'wrong_player', message),
+    };
+  }
+
+  const currentStateId = stateFingerprint(state);
+  if (request.expectedStateId !== currentStateId) {
+    const message = 'The game state changed before this target response reached the engine.';
+    return {
+      requestId: response.requestId,
+      ok: false,
+      reason: 'stale_state',
+      message,
+      update: targetPromptRejectUpdate(state, request, response, 'stale_state', message),
+    };
+  }
+
+  const selectedIds = [...new Set(response.selectedTargetIds)];
+  if (
+    selectedIds.length !== response.selectedTargetIds.length
+    || selectedIds.length < request.minSelections
+    || selectedIds.length > request.maxSelections
+  ) {
+    const message = `Target response must choose between ${request.minSelections} and ${request.maxSelections} target(s).`;
+    return {
+      requestId: response.requestId,
+      ok: false,
+      reason: 'illegal_response',
+      message,
+      update: targetPromptRejectUpdate(state, request, response, 'illegal_response', message),
+    };
+  }
+
+  const currentLegalIds = new Set(getLegalTargets(state, request.playerId, request.targetSpec));
+  for (const targetId of selectedIds) {
+    if (!currentLegalIds.has(targetId)) {
+      const message = `Illegal target selection: ${targetFailureReason(state, request.targetSpec, targetId)}`;
+      return {
+        requestId: response.requestId,
+        ok: false,
+        reason: 'illegal_response',
+        message,
+        update: targetPromptRejectUpdate(state, request, response, 'illegal_response', message),
+      };
+    }
+  }
+
+  const update: EngineStateUpdate = {
+    oldStateId: currentStateId,
+    newStateId: currentStateId,
+    activePlayerId: activePlayerId(state),
+    priorityPlayerId: priorityPlayerId(state),
+    phase: state.phase,
+    step: state.step,
+    turnNumber: state.turnNumber,
+    priority: prioritySnapshot(state),
+    visibleDiffs: [],
+    rulesEvents: [{
+      kind: 'PromptResponseAccepted',
+      requestId: response.requestId,
+      playerId: response.playerId,
+      promptKind: 'SelectTarget',
+      selectedTargetIds: selectedIds,
+    }],
+    prompt: buildActionPrompt(state),
+  };
+
+  return {
+    requestId: response.requestId,
+    ok: true,
+    state,
+    update,
+    selectedTargetIds: selectedIds,
   };
 }
 

@@ -2,11 +2,13 @@ import { describe, expect, it } from 'vitest';
 import {
   applyClientActionRequest,
   applySearchLibraryPromptResponse,
+  applySelectTargetPromptResponse,
   auditActionReplay,
   auditSearchPromptReplay,
   buildActionPrompt,
   createClientActionRequest,
   createSearchLibraryPromptRequest,
+  createSelectTargetPromptRequest,
   diffGameStates,
   labelForAction,
   stateFingerprint,
@@ -15,6 +17,7 @@ import { initGameState } from './game-state';
 import type { CardDefinition, CardInstance, GameState } from './types';
 import type { AIAction } from './ai/types';
 import type { CardFilter } from './effects/ast';
+import type { TargetSpec } from './effects/targets';
 
 function def(
   id: string,
@@ -220,6 +223,66 @@ function stateWithSearchedShockLand(): GameState {
     ]),
     cardDefinitions: new Map<string, CardDefinition>([
       [templeGarden.id, templeGarden],
+    ]),
+    activePlayerIndex: 0,
+    priorityPlayerIndex: 0,
+    phase: 'precombat_main',
+    step: 'upkeep',
+    turnNumber: 1,
+    hasPriorityPassed: [false, false],
+    stack: [],
+    combat: null,
+    battlefieldAbilities: new Map(),
+    pendingTriggers: [],
+  };
+}
+
+function stateWithTargetChoices(): GameState {
+  const forest = def('forest', 'Forest', 'Basic Land - Forest');
+  const bear: CardDefinition = {
+    ...def('bear', 'Grizzly Bears', 'Creature - Bear', '{1}{G}'),
+    cmc: 2,
+    power: 2,
+    toughness: 2,
+  };
+  return {
+    players: [
+      {
+        id: 'p1',
+        name: 'Player One',
+        life: 40,
+        poisonCounters: 0,
+        commanderDamage: {},
+        commanderTax: 0,
+        commanderInstanceId: null,
+        commanderCastCount: 0,
+        manaPool: { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 },
+        hasPlayedLand: false,
+        hasPriority: true,
+        hasLost: false,
+      },
+      {
+        id: 'p2',
+        name: 'Player Two',
+        life: 40,
+        poisonCounters: 0,
+        commanderDamage: {},
+        commanderTax: 0,
+        commanderInstanceId: null,
+        commanderCastCount: 0,
+        manaPool: { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 },
+        hasPlayedLand: false,
+        hasPriority: false,
+        hasLost: false,
+      },
+    ],
+    cards: new Map<string, CardInstance>([
+      ['forest_1', cardInstance('forest_1', forest.id, 'p1', 'battlefield')],
+      ['bear_1', cardInstance('bear_1', bear.id, 'p2', 'battlefield')],
+    ]),
+    cardDefinitions: new Map<string, CardDefinition>([
+      [forest.id, forest],
+      [bear.id, bear],
     ]),
     activePlayerIndex: 0,
     priorityPlayerIndex: 0,
@@ -472,6 +535,51 @@ describe('authority action boundary', () => {
     expect(rejected.message).toContain('effect puts the card onto the battlefield tapped');
     expect(rejected.state).toBeUndefined();
     expect(state.cards.get('temple_garden_1')?.zone).toBe('library');
+  });
+
+  it('creates typed target prompts and rejects illegal target ids without mutation', () => {
+    const state = stateWithTargetChoices();
+    const spec: TargetSpec = { id: 'target-permanent', type: 'Permanent', count: 1 };
+    const request = createSelectTargetPromptRequest(state, 'p1', spec, {
+      id: 'prompt-target-permanent',
+      createdAt: 17,
+    });
+
+    expect(request.expectedStateId).toBe(stateFingerprint(state));
+    expect(request.legalChoices.map(choice => choice.targetId)).toEqual(expect.arrayContaining(['forest_1', 'bear_1']));
+    expect(request.invalidChoices).toEqual(expect.arrayContaining([
+      expect.objectContaining({ targetId: 'p1', legal: false }),
+      expect.objectContaining({ targetId: 'p2', legal: false }),
+    ]));
+
+    const rejected = applySelectTargetPromptResponse(state, request, {
+      requestId: request.id,
+      kind: 'SelectTarget',
+      playerId: 'p1',
+      selectedTargetIds: ['p2'],
+    });
+    expect(rejected.ok).toBe(false);
+    expect(rejected.reason).toBe('illegal_response');
+    expect(rejected.message).toContain('Illegal target selection');
+    expect(rejected.state).toBeUndefined();
+    expect(rejected.update?.visibleDiffs).toEqual([]);
+
+    const accepted = applySelectTargetPromptResponse(state, request, {
+      requestId: request.id,
+      kind: 'SelectTarget',
+      playerId: 'p1',
+      selectedTargetIds: ['bear_1'],
+    });
+    expect(accepted.ok).toBe(true);
+    expect(accepted.state).toBe(state);
+    expect(accepted.selectedTargetIds).toEqual(['bear_1']);
+    expect(accepted.update?.rulesEvents).toEqual([{
+      kind: 'PromptResponseAccepted',
+      requestId: request.id,
+      playerId: 'p1',
+      promptKind: 'SelectTarget',
+      selectedTargetIds: ['bear_1'],
+    }]);
   });
 
   it('includes selected target names in command labels', () => {
