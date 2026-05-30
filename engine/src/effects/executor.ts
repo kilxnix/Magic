@@ -3,7 +3,7 @@
 // Phase 14: Extended with ExileFromLibrary, GainControl, ForEach, EachPlayer, AllOfType
 // Phase 17: Conditional, Blink, Copy, GrantKeyword, PhaseOut, loyalty ability execution
 
-import type { GameState, CardInstance, CardDefinition, PendingTrigger, Zone, DiceRollRecord } from '../types';
+import type { GameState, CardInstance, CardDefinition, PendingTrigger, TriggeredAbilityRef, Zone, DiceRollRecord } from '../types';
 import { isSpellStackItem } from '../types';
 import type { Effect, TargetRef, AmountRef, TokenDefinition, CardFilter, SurveilEffect, ForEachAmount, Condition, LoyaltyAbility } from './ast';
 import { getCardDefinition, pruneDetachedEffects } from '../game-state';
@@ -16,6 +16,7 @@ import { getEffectivePower } from './continuous';
 import { isEffectiveCreature } from '../effective-types';
 import { buildBattlefieldEntryPlan } from '../permanent-entry';
 import { parseOracleText } from './parser';
+import { getOverride } from './overrides';
 import type { TargetSpec } from './targets';
 
 /**
@@ -487,6 +488,204 @@ function normalizeTriggeredOracleLine(oracleText: string, cardName: string): str
     text = text.replace(new RegExp(`\\b${escapedShort}\\b`, 'gi'), '~');
   }
   return text;
+}
+
+function hasProwessAbility(def: CardDefinition): boolean {
+  return def.keywords.some(keyword => keyword.toLowerCase() === 'prowess')
+    || /(^|\n)\s*prowess\b/i.test(def.oracle_text);
+}
+
+function targetSpecsForTriggerKind(
+  state: GameState,
+  card: CardInstance,
+  triggerKind: TriggeredAbilityRef['trigger']['kind'],
+): TargetSpec[] {
+  const def = getCardDefinition(state, card);
+  for (const line of def.oracle_text.split('\n')) {
+    const parsed = parseOracleText(normalizeTriggeredOracleLine(line.trim(), def.name));
+    if (
+      (parsed.kind === 'Triggered' || parsed.kind === 'ETB' || parsed.kind === 'Dies') &&
+      parsed.ability.trigger.kind === triggerKind
+    ) {
+      return parsed.targets;
+    }
+  }
+  return [];
+}
+
+function registerBattlefieldAbilitiesAfterDirectEntry(state: GameState, instanceId: string): GameState {
+  const card = state.cards.get(instanceId);
+  if (!card || card.zone !== 'battlefield') return state;
+  const def = getCardDefinition(state, card);
+  const abilitiesToAdd: TriggeredAbilityRef[] = [];
+
+  if (hasProwessAbility(def)) {
+    abilitiesToAdd.push({
+      kind: 'TriggeredAbility',
+      trigger: { kind: 'CastNoncreatureSpell' },
+      effects: [{
+        kind: 'ModifyPT',
+        target: { kind: 'Source' },
+        power: 1,
+        toughness: 1,
+        untilEndOfTurn: true,
+      }],
+    } as TriggeredAbilityRef);
+  }
+
+  if (def.unlessTax) {
+    const trigger = { kind: def.unlessTax.triggerKind as 'OpponentCastSpell' | 'CardDrawn' };
+    const taxEffects: Effect[] = def.unlessTax.effect === 'draw'
+      ? [{ kind: 'Draw', player: { kind: 'Controller' }, count: def.unlessTax.effectCount }]
+      : def.unlessTax.effect === 'treasure'
+        ? [{
+            kind: 'CreateToken',
+            controller: { kind: 'Controller' },
+            token: {
+              name: 'Treasure',
+              colors: [],
+              types: ['artifact'],
+              subtypes: ['Treasure'],
+              power: 0,
+              toughness: 0,
+            },
+            count: def.unlessTax.effectCount,
+          }]
+        : [];
+    abilitiesToAdd.push({
+      kind: 'TriggeredAbility',
+      trigger,
+      effects: taxEffects,
+    } as TriggeredAbilityRef);
+  }
+
+  const override = getOverride(def.id, def.name);
+  if (override && override.kind === 'ETB') {
+    abilitiesToAdd.push({
+      ...(override.ability as TriggeredAbilityRef),
+      targets: override.targets,
+    });
+  }
+
+  for (const line of def.oracle_text.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const parsed = parseOracleText(normalizeTriggeredOracleLine(trimmed, def.name));
+
+    if (parsed.kind === 'ETB') {
+      if (!override || override.kind !== 'ETB') {
+        abilitiesToAdd.push({
+          ...(parsed.ability as TriggeredAbilityRef),
+          targets: parsed.targets,
+        });
+      }
+      if (/^whenever\s+~\s+enters\s+or\s+attacks\b/i.test(normalizeTriggeredOracleLine(trimmed, def.name))) {
+        abilitiesToAdd.push({
+          ...(parsed.ability as TriggeredAbilityRef),
+          trigger: { kind: 'Attacks', who: 'self' },
+          targets: parsed.targets,
+        });
+      }
+    } else if (parsed.kind === 'Dies') {
+      abilitiesToAdd.push({
+        ...(parsed.ability as TriggeredAbilityRef),
+        targets: parsed.targets,
+      });
+    } else if (parsed.kind === 'Triggered') {
+      const parsedTriggerKind = (parsed.ability as TriggeredAbilityRef).trigger.kind;
+      const alreadyRegistered = abilitiesToAdd.some(ability => ability.trigger.kind === parsedTriggerKind);
+      if (!alreadyRegistered) {
+        abilitiesToAdd.push({
+          ...(parsed.ability as TriggeredAbilityRef),
+          targets: parsed.targets,
+        });
+      }
+    }
+  }
+
+  const battlefieldAbilities = new Map(state.battlefieldAbilities || new Map());
+  battlefieldAbilities.delete(instanceId);
+  if (abilitiesToAdd.length > 0) {
+    battlefieldAbilities.set(instanceId, abilitiesToAdd);
+  }
+  return { ...state, battlefieldAbilities };
+}
+
+function queueSelfETBTriggersAfterDirectEntry(state: GameState, instanceId: string): GameState {
+  const card = state.cards.get(instanceId);
+  if (!card || card.zone !== 'battlefield') return state;
+  const abilities = state.battlefieldAbilities.get(instanceId);
+  if (!abilities || abilities.length === 0) return state;
+
+  const pendingTriggers: PendingTrigger[] = [...(state.pendingTriggers || [])];
+  for (const ability of abilities) {
+    if (ability.trigger.kind !== 'ETB' || ability.trigger.who !== 'self') continue;
+    pendingTriggers.push({
+      id: `trigger_direct_etb_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+      sourceInstanceId: instanceId,
+      controllerId: card.ownerId,
+      ability,
+      requiredTargets: (ability.targets as TargetSpec[] | undefined) || targetSpecsForTriggerKind(state, card, 'ETB'),
+    });
+  }
+  return { ...state, pendingTriggers };
+}
+
+function queueEntryTriggersForOtherPermanents(state: GameState, enteredInstanceId: string): GameState {
+  const entered = state.cards.get(enteredInstanceId);
+  if (!entered || entered.zone !== 'battlefield') return state;
+  const enteredDef = getCardDefinition(state, entered);
+  const enteredIsCreature = enteredDef.card_types.includes('creature');
+  const enteredIsLand = enteredDef.card_types.includes('land');
+  if (!enteredIsCreature && !enteredIsLand) return state;
+
+  const pendingTriggers: PendingTrigger[] = [...(state.pendingTriggers || [])];
+  const battlefieldAbilities = state.battlefieldAbilities || new Map();
+
+  for (const [sourceInstanceId, abilities] of battlefieldAbilities) {
+    if (sourceInstanceId === enteredInstanceId) continue;
+    const sourceCard = state.cards.get(sourceInstanceId);
+    if (!sourceCard || sourceCard.zone !== 'battlefield') continue;
+    const controllerId = sourceCard.ownerId;
+
+    for (const ability of abilities) {
+      const trigger = ability.trigger;
+      let shouldFire = false;
+
+      if (enteredIsCreature && trigger.kind === 'AnotherCreatureETB' && trigger.controller === 'yours' && entered.ownerId === controllerId) {
+        shouldFire = (!trigger.nontoken || !entered.isToken) && (!trigger.tokenOnly || entered.isToken === true);
+      }
+
+      if (enteredIsCreature && trigger.kind === 'AnyCreatureETB') {
+        const controllerRestriction = trigger.controller ?? 'any';
+        const tokenRestrictionOk = (!trigger.nontoken || !entered.isToken) && (!trigger.tokenOnly || entered.isToken === true);
+        shouldFire = tokenRestrictionOk && (controllerRestriction === 'any' || entered.ownerId === controllerId);
+      }
+
+      if (enteredIsLand && trigger.kind === 'Landfall' && entered.ownerId === controllerId) {
+        shouldFire = true;
+      }
+
+      if (!shouldFire) continue;
+
+      pendingTriggers.push({
+        id: `trigger_direct_entry_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+        sourceInstanceId,
+        controllerId,
+        ability,
+        requiredTargets: (ability.targets as TargetSpec[] | undefined) || targetSpecsForTriggerKind(state, sourceCard, trigger.kind),
+      });
+    }
+  }
+
+  return { ...state, pendingTriggers };
+}
+
+function applyDirectBattlefieldEntrySideEffects(state: GameState, instanceId: string): GameState {
+  let nextState = registerBattlefieldAbilitiesAfterDirectEntry(state, instanceId);
+  nextState = queueSelfETBTriggersAfterDirectEntry(nextState, instanceId);
+  nextState = queueEntryTriggersForOtherPermanents(nextState, instanceId);
+  return nextState;
 }
 
 function targetSpecsForLifeGainTrigger(
@@ -1368,7 +1567,12 @@ export function executeSearchLibrary(
   }
 
   const movedState = { ...state, cards: newCards, players };
-  return shuffleRest ? executeShuffleLibrary(movedState, playerId) : movedState;
+  let finalState = movedState;
+  if (destination === 'battlefield') {
+    finalState = applyDirectBattlefieldEntrySideEffects(finalState, matchedCard.instanceId);
+  }
+
+  return shuffleRest ? executeShuffleLibrary(finalState, playerId) : finalState;
 }
 
 /**
@@ -1521,8 +1725,8 @@ function executeCreateToken(
     }
   }
 
-  if (tokenDef.types.some(type => type.toLowerCase() === 'creature')) {
-    nextState = queueCreatureTokenETBTriggers(nextState, createdTokenIds, controllerId);
+  for (const tokenId of createdTokenIds) {
+    nextState = applyDirectBattlefieldEntrySideEffects(nextState, tokenId);
   }
 
   return nextState;
@@ -1561,64 +1765,6 @@ function executeRollD20(state: GameState, effect: Extract<Effect, { kind: 'RollD
     nextState = executeEffect(nextState, nestedEffect, ctx);
   }
   return nextState;
-}
-
-function queueCreatureTokenETBTriggers(
-  state: GameState,
-  tokenIds: string[],
-  tokenControllerId: string,
-): GameState {
-  if (tokenIds.length === 0) return state;
-
-  const pendingTriggers: PendingTrigger[] = [...(state.pendingTriggers || [])];
-  const battlefieldAbilities = state.battlefieldAbilities || new Map();
-
-  for (const tokenId of tokenIds) {
-    for (const [sourceInstanceId, abilities] of battlefieldAbilities) {
-      const sourceCard = state.cards.get(sourceInstanceId);
-      if (!sourceCard || sourceCard.zone !== 'battlefield') continue;
-      const sourceControllerId = sourceCard.ownerId;
-
-      for (const ability of abilities) {
-        const trigger = ability.trigger;
-        let shouldFire = false;
-
-        if (
-          trigger.kind === 'AnotherCreatureETB' &&
-          trigger.controller === 'yours' &&
-          tokenControllerId === sourceControllerId &&
-          tokenId !== sourceInstanceId &&
-          !trigger.nontoken &&
-          (trigger.tokenOnly !== false)
-        ) {
-          shouldFire = true;
-        }
-
-        if (trigger.kind === 'AnyCreatureETB' && tokenId !== sourceInstanceId) {
-          const controllerRestriction = trigger.controller ?? 'any';
-          if (
-            !trigger.nontoken &&
-            trigger.tokenOnly !== false &&
-            (controllerRestriction === 'any' || tokenControllerId === sourceControllerId)
-          ) {
-            shouldFire = true;
-          }
-        }
-
-        if (shouldFire) {
-          pendingTriggers.push({
-            id: `trigger_token_etb_${Date.now()}_${Math.random().toString(36).slice(2)}`,
-            sourceInstanceId,
-            controllerId: sourceControllerId,
-            ability,
-            requiredTargets: [],
-          });
-        }
-      }
-    }
-  }
-
-  return { ...state, pendingTriggers };
 }
 
 /**
@@ -1711,7 +1857,7 @@ function executeReturnFromGraveyard(
       ...entry.card,
       counters: nextCounters,
     });
-    return { ...state, cards: newCards, players: entry.players };
+    return applyDirectBattlefieldEntrySideEffects({ ...state, cards: newCards, players: entry.players }, targetId);
   }
 
   newCards.set(targetId, {
@@ -1965,7 +2111,7 @@ function executeBlink(state: GameState, targetId: string): GameState {
   const newCards = new Map(state.cards);
   newCards.set(targetId, entry.card);
 
-  return { ...state, cards: newCards, players: entry.players };
+  return applyDirectBattlefieldEntrySideEffects({ ...state, cards: newCards, players: entry.players }, targetId);
 }
 
 /**
@@ -2002,7 +2148,7 @@ function executeCopy(state: GameState, targetId: string, controllerId: string): 
   const newCards = new Map(state.cards);
   newCards.set(copyId, entry.card);
 
-  return { ...state, cards: newCards, players: entry.players };
+  return applyDirectBattlefieldEntrySideEffects({ ...state, cards: newCards, players: entry.players }, copyId);
 }
 
 /**

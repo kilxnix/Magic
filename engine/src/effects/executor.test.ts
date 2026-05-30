@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { executeEffects, executeEffectsWithSBA, resetTokenCounter } from './executor';
+import { executeEffects, executeEffectsWithSBA, executeSearchLibrary, resetTokenCounter } from './executor';
 import type { Effect } from './ast';
-import type { GameState, CardInstance, CardDefinition } from '../types';
+import type { GameState, CardInstance, CardDefinition, TriggeredAbilityRef } from '../types';
 
 function createTestState(): GameState {
   const cards = new Map<string, CardInstance>();
@@ -718,6 +718,127 @@ describe('Phase 10 effects', () => {
       );
 
       expect(newState.cards.get('creature-1')?.zone).toBe('command');
+    });
+
+    it('queues self ETB triggers for creatures returned from graveyard to battlefield', () => {
+      const state = createTestState();
+      const cards = new Map(state.cards);
+      const cardDefinitions = new Map(state.cardDefinitions);
+      cardDefinitions.set('def-etb-return', {
+        id: 'def-etb-return',
+        name: 'Grave Visionary',
+        type_line: 'Creature - Elf',
+        oracle_text: 'When Grave Visionary enters the battlefield, draw a card.',
+        mana_cost: '{1}{G}',
+        cmc: 2,
+        colors: ['G'],
+        color_identity: ['G'],
+        keywords: [],
+        power: 1,
+        toughness: 1,
+        card_types: ['creature'],
+      });
+      cards.set('grave-etb', {
+        instanceId: 'grave-etb',
+        definitionId: 'def-etb-return',
+        ownerId: 'player-1',
+        zone: 'graveyard',
+        tapped: false,
+        summoningSick: false,
+        counters: {},
+        damage: 0,
+        isCommander: false,
+      });
+      const modifiedState = { ...state, cards, cardDefinitions };
+      const effects: Effect[] = [
+        { kind: 'ReturnFromGraveyard', target: { kind: 'Chosen', targetId: 'target_1' }, destination: 'battlefield' },
+      ];
+
+      const newState = executeEffects(
+        modifiedState,
+        effects,
+        'player-1',
+        ['grave-etb'],
+        [{ id: 'target_1' }],
+      );
+
+      expect(newState.cards.get('grave-etb')?.zone).toBe('battlefield');
+      expect(newState.pendingTriggers).toHaveLength(1);
+      expect(newState.pendingTriggers[0]).toMatchObject({
+        sourceInstanceId: 'grave-etb',
+        controllerId: 'player-1',
+      });
+      expect(newState.pendingTriggers[0].ability.trigger.kind).toBe('ETB');
+    });
+  });
+
+  describe('Direct battlefield entry triggers', () => {
+    it('queues landfall when a library search puts a land onto the battlefield', () => {
+      const state = createTestState();
+      const cards = new Map(state.cards);
+      const cardDefinitions = new Map(state.cardDefinitions);
+      cardDefinitions.set('def-landfall', {
+        id: 'def-landfall',
+        name: 'Landfall Watcher',
+        type_line: 'Creature - Elemental',
+        oracle_text: 'Landfall - Whenever a land enters the battlefield under your control, you gain 1 life.',
+        mana_cost: '{2}{G}',
+        cmc: 3,
+        colors: ['G'],
+        color_identity: ['G'],
+        keywords: [],
+        power: 2,
+        toughness: 2,
+        card_types: ['creature'],
+      });
+      cards.set('landfall-source', {
+        instanceId: 'landfall-source',
+        definitionId: 'def-landfall',
+        ownerId: 'player-1',
+        zone: 'battlefield',
+        tapped: false,
+        summoningSick: false,
+        counters: {},
+        damage: 0,
+        isCommander: false,
+      });
+      cards.set('fetchable-forest', {
+        instanceId: 'fetchable-forest',
+        definitionId: 'def-land',
+        ownerId: 'player-1',
+        zone: 'library',
+        tapped: false,
+        summoningSick: false,
+        counters: {},
+        damage: 0,
+        isCommander: false,
+      });
+      const landfallAbility: TriggeredAbilityRef = {
+        kind: 'TriggeredAbility',
+        trigger: { kind: 'Landfall' },
+        effects: [{ kind: 'GainLife', player: { kind: 'Controller' }, amount: 1 }],
+      };
+      const modifiedState = {
+        ...state,
+        cards,
+        cardDefinitions,
+        battlefieldAbilities: new Map(state.battlefieldAbilities).set('landfall-source', [landfallAbility]),
+      };
+
+      const newState = executeSearchLibrary(
+        modifiedState,
+        'player-1',
+        { types: ['land'] },
+        'battlefield',
+      );
+
+      expect(newState.cards.get('fetchable-forest')?.zone).toBe('battlefield');
+      expect(newState.pendingTriggers).toHaveLength(1);
+      expect(newState.pendingTriggers[0]).toMatchObject({
+        sourceInstanceId: 'landfall-source',
+        controllerId: 'player-1',
+      });
+      expect(newState.pendingTriggers[0].ability.trigger.kind).toBe('Landfall');
     });
   });
 

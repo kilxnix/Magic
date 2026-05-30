@@ -298,6 +298,47 @@ describe('Blink/Flicker', () => {
       expect(blinked.damage).toBe(0);
     });
 
+    it('blink queues the permanent self ETB trigger again', () => {
+      const state = createTestState();
+      const cards = new Map(state.cards);
+      const cardDefinitions = new Map(state.cardDefinitions);
+      cardDefinitions.set('def-blink-etb', {
+        id: 'def-blink-etb',
+        name: 'Blink Visionary',
+        type_line: 'Creature - Elf',
+        oracle_text: 'When Blink Visionary enters the battlefield, draw a card.',
+        mana_cost: '{1}{G}',
+        cmc: 2,
+        colors: ['G'],
+        color_identity: ['G'],
+        keywords: [],
+        power: 1,
+        toughness: 1,
+        card_types: ['creature'],
+      });
+      cards.set('blink-etb', {
+        instanceId: 'blink-etb',
+        definitionId: 'def-blink-etb',
+        ownerId: 'player-1',
+        zone: 'battlefield',
+        tapped: false,
+        summoningSick: false,
+        counters: {},
+        damage: 0,
+        isCommander: false,
+      });
+      const modifiedState = { ...state, cards, cardDefinitions };
+      const effects: Effect[] = [
+        { kind: 'Blink', target: { kind: 'Chosen', targetId: 'target_1' } },
+      ];
+
+      const newState = executeEffects(modifiedState, effects, 'player-1', ['blink-etb'], [{ id: 'target_1' }]);
+
+      expect(newState.pendingTriggers).toHaveLength(1);
+      expect(newState.pendingTriggers[0].sourceInstanceId).toBe('blink-etb');
+      expect(newState.pendingTriggers[0].ability.trigger.kind).toBe('ETB');
+    });
+
     it('blink does nothing if target is not on battlefield', () => {
       const state = createTestState();
       const cards = new Map(state.cards);
@@ -417,6 +458,51 @@ describe('Copy Effects', () => {
       expect(copy?.zone).toBe('battlefield');
       expect(copy?.tapped).toBe(true);
       expect(copy?.isToken).toBe(true);
+    });
+
+    it('copy tokens queue copied self ETB triggers', () => {
+      const state = createTestState();
+      const cards = new Map(state.cards);
+      const cardDefinitions = new Map(state.cardDefinitions);
+      cardDefinitions.set('def-copy-etb', {
+        id: 'def-copy-etb',
+        name: 'Copy Visionary',
+        type_line: 'Creature - Elf',
+        oracle_text: 'When Copy Visionary enters the battlefield, draw a card.',
+        mana_cost: '{1}{G}',
+        cmc: 2,
+        colors: ['G'],
+        color_identity: ['G'],
+        keywords: [],
+        power: 1,
+        toughness: 1,
+        card_types: ['creature'],
+      });
+      cards.set('copy-etb-source', {
+        instanceId: 'copy-etb-source',
+        definitionId: 'def-copy-etb',
+        ownerId: 'player-2',
+        zone: 'battlefield',
+        tapped: false,
+        summoningSick: false,
+        counters: {},
+        damage: 0,
+        isCommander: false,
+      });
+      const modifiedState = { ...state, cards, cardDefinitions };
+      const effects: Effect[] = [
+        { kind: 'Copy', target: { kind: 'Chosen', targetId: 'target_1' } },
+      ];
+
+      const newState = executeEffects(modifiedState, effects, 'player-1', ['copy-etb-source'], [{ id: 'target_1' }]);
+      const copy = [...newState.cards.values()].find(card =>
+        card.instanceId.startsWith('copy_') && card.definitionId === 'def-copy-etb',
+      );
+
+      expect(copy).toBeDefined();
+      expect(newState.pendingTriggers).toHaveLength(1);
+      expect(newState.pendingTriggers[0].sourceInstanceId).toBe(copy?.instanceId);
+      expect(newState.pendingTriggers[0].ability.trigger.kind).toBe('ETB');
     });
 
     it('copy of a card that does not exist returns unchanged state', () => {
