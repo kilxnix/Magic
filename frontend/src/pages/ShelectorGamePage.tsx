@@ -80,6 +80,7 @@ export function ShelectorGamePage() {
     libraryChoice,
     optionalTriggerChoice,
     taxPaymentChoice,
+    wardPaymentChoice,
     damageAssignmentChoice,
     triggerOrderChoice,
     gameLog,
@@ -103,6 +104,7 @@ export function ShelectorGamePage() {
     resolveLibraryChoice,
     resolveOptionalTriggerChoice,
     resolveTaxPaymentChoice,
+    resolveWardPaymentChoice,
     resolveDamageAssignmentChoice,
     resolveTriggerOrderChoice,
     undosRemaining,
@@ -790,6 +792,8 @@ export function ShelectorGamePage() {
           onResolveOptionalTrigger={resolveOptionalTriggerChoice}
           taxPaymentChoice={taxPaymentChoice}
           onResolveTaxPayment={resolveTaxPaymentChoice}
+          wardPaymentChoice={wardPaymentChoice}
+          onResolveWardPayment={resolveWardPaymentChoice}
           damageAssignmentChoice={damageAssignmentChoice}
           onResolveDamageAssignment={resolveDamageAssignmentChoice}
           triggerOrderChoice={triggerOrderChoice}

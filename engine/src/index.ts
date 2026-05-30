@@ -10,6 +10,7 @@ export * from './state-based';
 export * from './effective-types';
 export * from './permanent-entry';
 export * from './invariants';
+export * from './ward';
 
 // Keywords (Phase 5)
 export * from './keywords';

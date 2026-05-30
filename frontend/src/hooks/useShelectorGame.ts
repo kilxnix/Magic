@@ -30,6 +30,7 @@ import {
   executeEffects,
   parseManaString,
   canPayCost,
+  canPayUnrestrictedCost,
   isEffectiveCreature,
   isBlockedBySummoningSicknessForTap,
   type GameState,
@@ -113,6 +114,8 @@ import {
   deserializeGameState,
   type SerializedGameStateV1,
   type CardFilter,
+  parseWardCost,
+  type WardCost,
 } from 'commander-engine';
 import {
   buildDecisionReview,
@@ -581,6 +584,7 @@ export interface ShelectorGameSaveSnapshot {
   libraryManipulationPromptRequest?: LibraryManipulationPromptRequest | null;
   optionalTriggerChoice?: OptionalTriggerChoice | null;
   taxPaymentChoice?: TaxPaymentChoice | null;
+  wardPaymentChoice?: WardPaymentChoice | null;
   damageAssignmentChoice?: DamageAssignmentChoice | null;
   triggerOrderChoice?: TriggerOrderChoiceState | null;
   undosRemaining: number;
@@ -868,6 +872,18 @@ export interface TaxPaymentChoice {
   taxAmount: number;
   effect: 'draw' | 'treasure' | 'other';
   effectCount: number;
+  canPay: boolean;
+}
+
+export interface WardPaymentChoice {
+  id: string;
+  stackItemId: string;
+  targetId: string;
+  sourceName: string;
+  targetName: string;
+  casterId: string;
+  casterName: string;
+  costLabel: string;
   canPay: boolean;
 }
 
@@ -1383,6 +1399,65 @@ function stackSacrificeChoiceInfoFromEffects(
 function controllerIdForStackItem(item: StackItem | undefined): string | undefined {
   if (!item) return undefined;
   return item.kind === 'Spell' ? item.casterId : item.controllerId;
+}
+
+function stackItemTargets(item: StackItem | undefined): string[] {
+  if (!item) return [];
+  return 'targets' in item && Array.isArray(item.targets) ? item.targets : [];
+}
+
+function stackItemSourceName(state: GameState, item: StackItem | undefined): string {
+  if (!item) return 'Stack object';
+  const sourceId = item.kind === 'Spell' ? item.cardInstanceId : item.sourceInstanceId;
+  const card = state.cards.get(sourceId);
+  return card ? getCardDefinition(state, card).name : 'Stack object';
+}
+
+function wardCostLabel(cost: WardCost): string {
+  if (cost.kind === 'life') return `${cost.amount} life`;
+  const parts = (['W', 'U', 'B', 'R', 'G', 'C'] as const)
+    .flatMap(color => Array.from({ length: cost.cost[color] || 0 }, () => `{${color}}`));
+  if (cost.cost.generic) parts.unshift(`{${cost.cost.generic}}`);
+  return parts.length > 0 ? parts.join('') : '{0}';
+}
+
+function canPayWardChoice(state: GameState, playerId: string, cost: WardCost): boolean {
+  const player = state.players.find(candidate => candidate.id === playerId);
+  if (!player) return false;
+  if (cost.kind === 'life') return player.life >= cost.amount;
+  return canPayUnrestrictedCost(player, cost.cost);
+}
+
+function pendingWardChoiceForStack(state: GameState, item: StackItem | undefined, humanId: string): WardPaymentChoice | null {
+  if (!item) return null;
+  const controllerId = controllerIdForStackItem(item);
+  if (controllerId !== humanId) return null;
+  const choices = (item as StackItem & { namedCardChoices?: Record<string, string> }).namedCardChoices || {};
+  const sourceName = stackItemSourceName(state, item);
+
+  for (const targetId of stackItemTargets(item)) {
+    if (Object.prototype.hasOwnProperty.call(choices, `ward:${targetId}`) || Object.prototype.hasOwnProperty.call(choices, 'ward')) {
+      continue;
+    }
+    const target = state.cards.get(targetId);
+    if (!target || target.zone !== 'battlefield' || target.ownerId === controllerId) continue;
+    const targetDef = getCardDefinition(state, target);
+    const ward = parseWardCost(targetDef);
+    if (!ward) continue;
+    return {
+      id: `${item.id}:ward:${targetId}`,
+      stackItemId: item.id,
+      targetId,
+      sourceName,
+      targetName: targetDef.name,
+      casterId: controllerId,
+      casterName: 'You',
+      costLabel: wardCostLabel(ward),
+      canPay: canPayWardChoice(state, controllerId, ward),
+    };
+  }
+
+  return null;
 }
 
 function normalizeOracleForFrontendParser(oracleText: string, cardName: string): string {
@@ -2483,6 +2558,7 @@ export function useShelectorGame() {
   const [optionalTriggerChoice, setOptionalTriggerChoice] = useState<OptionalTriggerChoice | null>(null);
   const optionalTriggerPromptRequestRef = useRef<OptionalTriggerPromptRequest | null>(null);
   const [taxPaymentChoice, setTaxPaymentChoice] = useState<TaxPaymentChoice | null>(null);
+  const [wardPaymentChoice, setWardPaymentChoice] = useState<WardPaymentChoice | null>(null);
   const [damageAssignmentChoice, setDamageAssignmentChoice] = useState<DamageAssignmentChoice | null>(null);
   const damageAssignmentPromptRequestRef = useRef<DamageAssignmentPromptRequest | null>(null);
   const [triggerOrderChoice, setTriggerOrderChoice] = useState<TriggerOrderChoiceState | null>(null);
@@ -3768,6 +3844,17 @@ export function useShelectorGame() {
         return true;
       };
 
+      const tryPauseForWardChoice = (): boolean => {
+        if (state.stack.length === 0) return false;
+        const top = state.stack[state.stack.length - 1];
+        const choice = pendingWardChoiceForStack(state, top, humanIdRef.current);
+        if (!choice) return false;
+        engineRef.current = state as GameStateWithAI;
+        setWardPaymentChoice(choice);
+        messages.push({ role: 'system', text: `${choice.targetName} has ward. Pay ${choice.costLabel} or ${choice.sourceName} will be countered.` });
+        return true;
+      };
+
       const tryPauseForTopLibraryChoice = (): boolean => {
         if (state.stack.length === 0) return false;
         const top = state.stack[state.stack.length - 1] as StackItem & { namedCardChoices?: Record<string, string> };
@@ -4108,6 +4195,7 @@ export function useShelectorGame() {
             // does not have to click through every opponent phase.
             if (state.hasPriorityPassed.every((p, i) => p || state.players[i].hasLost)) {
               console.log(`  -> all passed, resolving stack (${state.stack.length} items)`);
+              if (tryPauseForWardChoice()) break;
               if (tryPauseForNamedCardChoice()) break;
               if (tryPauseForStackSacrificeChoice()) break;
               if (tryPauseForTopLibraryChoice()) break;
@@ -4140,6 +4228,7 @@ export function useShelectorGame() {
                 // Check if all players have now passed (stack resolves)
                 if (state.hasPriorityPassed.every((p, i) => p || state.players[i].hasLost)) {
                   console.log(`  -> all passed, resolving stack (${state.stack.length} items)`);
+                  if (tryPauseForWardChoice()) break;
                   if (tryPauseForNamedCardChoice()) break;
                   if (tryPauseForStackSacrificeChoice()) break;
                   if (tryPauseForTopLibraryChoice()) break;
@@ -4176,6 +4265,7 @@ export function useShelectorGame() {
 
           // Fallback: no valid priority player — just resolve
           console.log(`  -> resolving stack (${state.stack.length} items)`);
+          if (tryPauseForWardChoice()) break;
           if (tryPauseForNamedCardChoice()) break;
           if (tryPauseForStackSacrificeChoice()) break;
           if (tryPauseForTopLibraryChoice()) break;
@@ -4764,6 +4854,51 @@ export function useShelectorGame() {
     syncState();
   }, [addMessage, advanceGameLoop, applyTaxTriggerDecision, runSBAAndTriggers, syncState, taxPaymentChoice]);
 
+  const resolveWardPaymentChoice = useCallback((pay: boolean) => {
+    const engine = engineRef.current;
+    const choice = wardPaymentChoice;
+    if (!engine || !choice) {
+      setWardPaymentChoice(null);
+      syncState();
+      return;
+    }
+    if (pay && !choice.canPay) {
+      addMessage('system', `Cannot pay ward for ${choice.targetName}.`);
+      syncState();
+      return;
+    }
+
+    const stackIndex = engine.stack.findIndex(item => item.id === choice.stackItemId);
+    if (stackIndex < 0) {
+      setWardPaymentChoice(null);
+      addMessage('system', `${choice.sourceName} is no longer on the stack.`);
+      syncState();
+      return;
+    }
+
+    const stackItem = engine.stack[stackIndex] as StackItem & { namedCardChoices?: Record<string, string> };
+    const stack = [...engine.stack];
+    stack[stackIndex] = {
+      ...stackItem,
+      namedCardChoices: {
+        ...(stackItem.namedCardChoices || {}),
+        [`ward:${choice.targetId}`]: pay ? 'pay' : 'decline',
+      },
+    } as StackItem;
+
+    setWardPaymentChoice(null);
+    let state = recordSystemStateTransition(engine, { ...engine, stack }) as GameStateWithAI;
+    const loopMessages: { role: ChatMessage['role']; text: string }[] = [];
+    const loopLogEntries: GameLogEntry[] = [];
+    state = advanceGameLoop(state, loopMessages, loopLogEntries) as GameStateWithAI;
+
+    engineRef.current = state;
+    addMessage('player', pay ? `Paid ward ${choice.costLabel} for ${choice.targetName}.` : `Declined ward for ${choice.targetName}.`);
+    for (const msg of loopMessages) addMessage(msg.role, msg.text);
+    if (loopLogEntries.length > 0) setGameLog(prev => [...prev, ...loopLogEntries]);
+    syncState();
+  }, [addMessage, advanceGameLoop, recordSystemStateTransition, syncState, wardPaymentChoice]);
+
   const resolveDamageAssignmentChoice = useCallback((orders: DamageAssignmentOrder[]) => {
     const engine = engineRef.current;
     const promptRequest = damageAssignmentPromptRequestRef.current;
@@ -4944,6 +5079,7 @@ export function useShelectorGame() {
       setLastStateUpdate(null);
       setCurrentPrompt(null);
       setLastPlayedCard(null);
+      setWardPaymentChoice(null);
       setSelectedMulliganBottomIds([]);
       setMulliganBottomSelectionActive(false);
       uncommittedTapsRef.current.clear();
@@ -6340,6 +6476,7 @@ export function useShelectorGame() {
     triggerOrderPromptRequestRef.current = null;
     setOptionalTriggerChoice(null);
     setTaxPaymentChoice(null);
+    setWardPaymentChoice(null);
     setDamageAssignmentChoice(null);
     setTriggerOrderChoice(null);
     setDiscardPhase(false);
@@ -6695,7 +6832,7 @@ export function useShelectorGame() {
 
   const skipEmptyPhases = useCallback(() => {
     let state = engineRef.current as GameState | null;
-    if (!state || gameState?.gameOver || mulliganPhase || discardPhase || tutorPhase || libraryChoice || optionalTriggerChoice || taxPaymentChoice || damageAssignmentChoice || triggerOrderChoice) return;
+    if (!state || gameState?.gameOver || mulliganPhase || discardPhase || tutorPhase || libraryChoice || optionalTriggerChoice || taxPaymentChoice || wardPaymentChoice || damageAssignmentChoice || triggerOrderChoice) return;
 
     const humanId = humanIdRef.current;
     const loopMessages: { role: ChatMessage['role']; text: string }[] = [];
@@ -6790,6 +6927,7 @@ export function useShelectorGame() {
     mulliganPhase,
     optionalTriggerChoice,
     taxPaymentChoice,
+    wardPaymentChoice,
     triggerOrderChoice,
     syncState,
     tutorPhase,
@@ -6798,7 +6936,7 @@ export function useShelectorGame() {
 
   const skipRestOfTurn = useCallback(() => {
     let state = engineRef.current as GameState | null;
-    if (!state || gameState?.gameOver || mulliganPhase || discardPhase || tutorPhase || libraryChoice || optionalTriggerChoice || taxPaymentChoice || damageAssignmentChoice || triggerOrderChoice) return;
+    if (!state || gameState?.gameOver || mulliganPhase || discardPhase || tutorPhase || libraryChoice || optionalTriggerChoice || taxPaymentChoice || wardPaymentChoice || damageAssignmentChoice || triggerOrderChoice) return;
 
     const humanId = humanIdRef.current;
     if (state.players[state.activePlayerIndex]?.id !== humanId) {
@@ -6975,6 +7113,10 @@ export function useShelectorGame() {
       }
       if (taxPaymentChoice) {
         addMessage('system', 'Choose whether to pay the pending tax trigger first.');
+        return;
+      }
+      if (wardPaymentChoice) {
+        addMessage('system', 'Choose whether to pay the pending ward cost first.');
         return;
       }
       if (damageAssignmentChoice) {
@@ -8059,7 +8201,7 @@ export function useShelectorGame() {
         syncState();
       }
     },
-    [gameState, addMessage, appendEngineEventLogRecord, appendEnginePromptEventLogRecord, appendLog, syncState, advanceGameLoop, advanceStepWithAuthority, applyActionThroughAuthority, applyEvents, damageAssignmentChoice, lastPlayedCard, optionalTriggerChoice, rememberLastPlayedCard, recordAuthorityUpdate, recordStateUpdate, skipEmptyPhases, skipRestOfTurn, taxPaymentChoice, triggerOrderChoice],
+    [gameState, addMessage, appendEngineEventLogRecord, appendEnginePromptEventLogRecord, appendLog, syncState, advanceGameLoop, advanceStepWithAuthority, applyActionThroughAuthority, applyEvents, damageAssignmentChoice, lastPlayedCard, optionalTriggerChoice, rememberLastPlayedCard, recordAuthorityUpdate, recordStateUpdate, skipEmptyPhases, skipRestOfTurn, taxPaymentChoice, wardPaymentChoice, triggerOrderChoice],
   );
   submitActionRef.current = submitAction;
 
@@ -8111,6 +8253,7 @@ export function useShelectorGame() {
       libraryManipulationPromptRequest: libraryManipulationPromptRequestRef.current,
       optionalTriggerChoice,
       taxPaymentChoice,
+      wardPaymentChoice,
       damageAssignmentChoice,
       triggerOrderChoice,
       undosRemaining,
@@ -8144,6 +8287,7 @@ export function useShelectorGame() {
     libraryChoice,
     optionalTriggerChoice,
     taxPaymentChoice,
+    wardPaymentChoice,
     damageAssignmentChoice,
     triggerOrderChoice,
     undosRemaining,
@@ -8256,6 +8400,7 @@ export function useShelectorGame() {
         : null;
       setOptionalTriggerChoice(restoredOptionalTriggerChoice);
       setTaxPaymentChoice(snapshot.taxPaymentChoice || null);
+      setWardPaymentChoice(snapshot.wardPaymentChoice || null);
       const restoredDamageAssignmentChoice = snapshot.damageAssignmentChoice || null;
       damageAssignmentPromptRequestRef.current = restoredDamageAssignmentChoice
         ? createDamageAssignmentPromptRequest(restored, humanIdRef.current, {
@@ -8319,6 +8464,7 @@ export function useShelectorGame() {
       libraryChoice,
       optionalTriggerChoice,
       taxPaymentChoice,
+      wardPaymentChoice,
       damageAssignmentChoice,
       triggerOrderChoice,
       gameLog,
@@ -8371,6 +8517,7 @@ export function useShelectorGame() {
     resolveLibraryChoice,
     resolveOptionalTriggerChoice,
     resolveTaxPaymentChoice,
+    resolveWardPaymentChoice,
     resolveDamageAssignmentChoice,
     resolveTriggerOrderChoice,
     undoAction,

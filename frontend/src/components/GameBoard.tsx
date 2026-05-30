@@ -7,7 +7,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import type { DamageAssignmentChoice, LibraryManipulationChoice, OptionalTriggerChoice, PriorityStopKey, PriorityStops, SimpleGameState, SimpleLegalAction, SimpleCard, LastPlayedCard, TaxPaymentChoice, TriggerOrderChoiceState } from '../hooks/useShelectorGame';
+import type { DamageAssignmentChoice, LibraryManipulationChoice, OptionalTriggerChoice, PriorityStopKey, PriorityStops, SimpleGameState, SimpleLegalAction, SimpleCard, LastPlayedCard, TaxPaymentChoice, TriggerOrderChoiceState, WardPaymentChoice } from '../hooks/useShelectorGame';
 import type { DamageAssignmentOrder } from 'commander-engine';
 import type { EnginePrompt, EngineStateUpdate } from 'commander-engine';
 import { Loader2, ChevronDown, ChevronRight, Search, X, Lightbulb, Menu, Undo2 } from 'lucide-react';
@@ -134,6 +134,8 @@ interface GameBoardProps {
   onResolveOptionalTrigger?: (use: boolean) => void;
   taxPaymentChoice?: TaxPaymentChoice | null;
   onResolveTaxPayment?: (pay: boolean) => void;
+  wardPaymentChoice?: WardPaymentChoice | null;
+  onResolveWardPayment?: (pay: boolean) => void;
   damageAssignmentChoice?: DamageAssignmentChoice | null;
   onResolveDamageAssignment?: (orders: DamageAssignmentOrder[]) => void;
   triggerOrderChoice?: TriggerOrderChoiceState | null;
@@ -1999,6 +2001,45 @@ function TaxPaymentModal({
   );
 }
 
+function WardPaymentModal({
+  choice,
+  onResolve,
+}: {
+  choice: WardPaymentChoice;
+  onResolve: (pay: boolean) => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-[87] flex items-center justify-center bg-black/75 p-3 backdrop-blur-sm">
+      <div className="w-full max-w-md overflow-hidden rounded-lg border border-amber-500/45 bg-neutral-950 shadow-2xl">
+        <div className="border-b border-neutral-800 px-4 py-3">
+          <div className="text-[10px] font-black uppercase tracking-wider text-amber-300">Ward</div>
+          <div className="mt-1 text-lg font-black text-stone-100">{choice.targetName}</div>
+          <div className="mt-1 text-xs text-stone-400">
+            {choice.sourceName} targets {choice.targetName}. Pay {choice.costLabel} or it will be countered by ward.
+          </div>
+        </div>
+        <div className="grid gap-2 p-4 sm:grid-cols-2">
+          <button
+            type="button"
+            onClick={() => onResolve(false)}
+            className="min-h-12 rounded border border-stone-700 px-4 text-sm font-bold text-stone-200 transition-colors hover:bg-stone-900"
+          >
+            Decline
+          </button>
+          <button
+            type="button"
+            onClick={() => onResolve(true)}
+            disabled={!choice.canPay}
+            className="min-h-12 rounded bg-amber-400 px-4 text-sm font-black text-neutral-950 transition-colors hover:bg-amber-300 disabled:cursor-not-allowed disabled:bg-stone-800 disabled:text-stone-500"
+          >
+            Pay {choice.costLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function DamageAssignmentModal({
   choice,
   onResolve,
@@ -2276,6 +2317,8 @@ export function GameBoard({
   onResolveOptionalTrigger,
   taxPaymentChoice,
   onResolveTaxPayment,
+  wardPaymentChoice,
+  onResolveWardPayment,
   damageAssignmentChoice,
   onResolveDamageAssignment,
   triggerOrderChoice,
@@ -2721,6 +2764,12 @@ export function GameBoard({
         <TaxPaymentModal
           choice={taxPaymentChoice}
           onResolve={onResolveTaxPayment}
+        />
+      )}
+      {wardPaymentChoice && onResolveWardPayment && (
+        <WardPaymentModal
+          choice={wardPaymentChoice}
+          onResolve={onResolveWardPayment}
         />
       )}
       {damageAssignmentChoice && onResolveDamageAssignment && (

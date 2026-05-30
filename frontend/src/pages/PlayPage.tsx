@@ -102,6 +102,7 @@ export function PlayPage() {
     libraryChoice,
     optionalTriggerChoice,
     taxPaymentChoice,
+    wardPaymentChoice,
     damageAssignmentChoice,
     triggerOrderChoice,
     gameLog,
@@ -126,6 +127,7 @@ export function PlayPage() {
     resolveLibraryChoice,
     resolveOptionalTriggerChoice,
     resolveTaxPaymentChoice,
+    resolveWardPaymentChoice,
     resolveDamageAssignmentChoice,
     resolveTriggerOrderChoice,
     undosRemaining,
@@ -807,6 +809,8 @@ export function PlayPage() {
             onResolveOptionalTrigger={resolveOptionalTriggerChoice}
             taxPaymentChoice={taxPaymentChoice}
             onResolveTaxPayment={resolveTaxPaymentChoice}
+            wardPaymentChoice={wardPaymentChoice}
+            onResolveWardPayment={resolveWardPaymentChoice}
             damageAssignmentChoice={damageAssignmentChoice}
             onResolveDamageAssignment={resolveDamageAssignmentChoice}
             triggerOrderChoice={triggerOrderChoice}

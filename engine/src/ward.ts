@@ -3,11 +3,11 @@ import { getCommanderDestinationZone } from './commander';
 import { getCardDefinition } from './game-state';
 import { canPayUnrestrictedCost, parseManaString, payUnrestrictedManaCost } from './mana';
 
-type WardCost =
+export type WardCost =
   | { kind: 'mana'; cost: ManaCost }
   | { kind: 'life'; amount: number };
 
-function parseWardCost(def: CardDefinition): WardCost | null {
+export function parseWardCost(def: CardDefinition): WardCost | null {
   const text = def.oracle_text || '';
   const match = text.match(/\bward\s*(?:[\u2014\u2013-]\s*)?(\{[^.\n]+}|\d+|pay\s+\d+\s+life)/i);
   if (!match) return null;
