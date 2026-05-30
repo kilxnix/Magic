@@ -185,6 +185,8 @@ Additional guide-mode verification added after this audit: new-player guidance n
 
 Additional action-layout verification added after this audit: Undo now lives in the top header controls, while phase movement remains in the lower dock near the hand/play area. This directly reduces lower action-dock crowding without moving turn progression back away from cards.
 
+Additional save-slot verification added after this audit: engine-level autosave rotation now uses four autosave slots, matching the `/play` four-slot browser save surface and its existing save-slot UI tests.
+
 ## Direct Answer
 
 Yes, relative to the actual size and meaning of these markdown files, I was effectively treating large portions as direction/backlog while reporting progress too broadly. The right status is not "done." The right status is "a verified slice is done; most of the Arena/MTGA parity roadmap remains partial or incomplete."

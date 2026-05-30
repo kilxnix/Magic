@@ -20,6 +20,7 @@ Scope: recent `game-reliability-refactor` work from `88e54bb..597d918`, with Sis
 | Room moderation obfuscation | `pytest backend/tests/test_multiplayer.py -q` | 17 passed; chat moderation now rejects spaced/leetspeak sexual probes and self-harm/slur probes in addition to links, plain sexual content, harassment, and spam while preserving normal MTG phrases. |
 | Guide mode combo filtering | `cd frontend && npm.cmd test -- --run tests/newPlayerSuggestions.test.ts`; `cd frontend && npm.cmd run build` | 8 passed plus frontend build passed; guided first-game suggestions now avoid likely infinite-combo activated abilities as well as combo spell casts. |
 | Action/undo layout | `cd frontend && npm.cmd test -- --run tests/gameBoardLayout.test.ts`; `cd frontend && npm.cmd run build` | 2 layout tests and frontend build passed; Undo moved out of the lower action dock into the top header control cluster, leaving phase movement near the bottom hand/play area and reducing action dock clutter. |
+| Engine autosave slot count | `cd engine && npm.cmd test -- --run src/persistence/manager.test.ts`; `cd engine && npm.cmd run build` | 20 passed plus engine build passed; engine persistence autosaves now rotate through four slots, matching `/play`'s four user-facing save slots. |
 | Mobile typecheck | `cd mobile && npm.cmd run typecheck` | Passed |
 | Mobile lint | `cd mobile && npm.cmd run lint` | Initially broken because ESLint was not installed/configured; fixed during this audit and now passes |
 | Mobile dependency audit | `cd mobile && npm.cmd audit --omit=dev --json` | Fails with 28 production dependency advisories, mostly Expo/Metro transitive packages; the available bundled fix is a semver-major Expo upgrade and was not applied in this audit |
@@ -57,6 +58,7 @@ Scope: recent `game-reliability-refactor` work from `88e54bb..597d918`, with Sis
 - Expanded server-side room chat moderation to catch common spaced/leetspeak sexual and harassment probes before messages enter room history.
 - Kept guide mode's "new player" suggestions away from likely infinite-combo activated abilities, not only combo-looking spell casts.
 - Moved Undo to the top header controls and removed the duplicate lower action-dock undo row so the action box stays focused on current playable actions.
+- Aligned the lower-level engine `SaveManager` autosave rotation with the four-slot `/play` save-slot product surface.
 
 ## What This Does Not Prove
 

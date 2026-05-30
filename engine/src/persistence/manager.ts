@@ -49,6 +49,7 @@ export class MemoryStorageAdapter implements StorageAdapter {
 
 const SAVE_KEY_PREFIX = 'mtg_save_';
 const METADATA_KEY_PREFIX = 'mtg_meta_';
+const AUTOSAVE_SLOT_COUNT = 4;
 
 /**
  * Save game manager.
@@ -177,7 +178,7 @@ export class SaveManager {
    * Auto-save to a rotating slot.
    */
   async autoSave(state: GameState, slotIndex: number = 0): Promise<SaveMetadata> {
-    const slotId = `autosave_${slotIndex % 3}`; // Rotate through 3 slots
+    const slotId = `autosave_${slotIndex % AUTOSAVE_SLOT_COUNT}`;
     return this.saveGame(slotId, state, `Auto Save ${slotIndex + 1}`);
   }
 }

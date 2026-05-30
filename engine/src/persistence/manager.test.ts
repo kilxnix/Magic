@@ -259,19 +259,24 @@ describe('SaveManager', () => {
       state3.turnNumber = 3;
       const state4 = createTestState();
       state4.turnNumber = 4;
+      const state5 = createTestState();
+      state5.turnNumber = 5;
 
       await manager.autoSave(state1, 0); // autosave_0
       await manager.autoSave(state2, 1); // autosave_1
       await manager.autoSave(state3, 2); // autosave_2
-      await manager.autoSave(state4, 3); // autosave_0 (overwrites)
+      await manager.autoSave(state4, 3); // autosave_3
+      await manager.autoSave(state5, 4); // autosave_0 (overwrites)
 
       const slot0 = await manager.loadGame('autosave_0');
       const slot1 = await manager.loadGame('autosave_1');
       const slot2 = await manager.loadGame('autosave_2');
+      const slot3 = await manager.loadGame('autosave_3');
 
-      expect(slot0!.turnNumber).toBe(4); // Overwritten
+      expect(slot0!.turnNumber).toBe(5); // Overwritten after four slots
       expect(slot1!.turnNumber).toBe(2);
       expect(slot2!.turnNumber).toBe(3);
+      expect(slot3!.turnNumber).toBe(4);
     });
   });
 
