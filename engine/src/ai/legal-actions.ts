@@ -76,6 +76,21 @@ export function getSpellTargetSpecs(
   if (parsed.kind === 'Spell') {
     return parsed.targets;
   }
+  if (parsed.kind === 'Modal') {
+    const chosenModes = options.chosenModes ?? [];
+    if (chosenModes.length !== parsed.modal.chooseCount) return [];
+    const specs: TargetSpec[] = [];
+    for (const modeIndex of chosenModes) {
+      const choice = parsed.modal.choices[modeIndex];
+      if (!choice) return [];
+      specs.push(...choice.targets.map(target => ({
+        id: target.id,
+        type: target.type as TargetSpec['type'],
+        count: (target as Partial<TargetSpec>).count ?? 1,
+      })));
+    }
+    return specs;
+  }
 
   return [];
 }

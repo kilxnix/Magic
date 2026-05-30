@@ -1169,4 +1169,25 @@ describe('Modal spell actions', () => {
       }),
     ]));
   });
+
+  it('returns modal target specs for the exact selected modes', () => {
+    const state = createTestState();
+    addCard(state, 'targeted_modal', 'p1', 'hand', {
+      name: 'Targeted Command',
+      type_line: 'Instant',
+      oracle_text: 'Choose two - \u2022 Counter target spell. \u2022 Draw two cards. \u2022 You gain 3 life.',
+      mana_cost: '{1}{U}{R}',
+      cmc: 3,
+      colors: ['U', 'R'],
+      color_identity: ['U', 'R'],
+      card_types: ['instant'],
+    });
+
+    const card = state.cards.get('targeted_modal')!;
+    expect(getSpellTargetSpecs(state, card, { chosenModes: [0, 1] })).toEqual([
+      expect.objectContaining({ type: 'Spell', count: 1 }),
+    ]);
+    expect(getSpellTargetSpecs(state, card, { chosenModes: [1, 2] })).toEqual([]);
+    expect(getSpellTargetSpecs(state, card)).toEqual([]);
+  });
 });

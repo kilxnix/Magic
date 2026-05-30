@@ -6544,6 +6544,52 @@ export function useShelectorGame() {
           return false;
         };
 
+        const validateTargetPromptResponses = (
+          state: GameState,
+          specs: TargetSpec[],
+          selectedTargetIds: string[],
+          sourceInstanceId: string | undefined,
+          label: string,
+        ): boolean => {
+          if (specs.length === 0 && selectedTargetIds.length === 0) return true;
+          let offset = 0;
+          for (const spec of specs) {
+            const count = spec.count ?? 1;
+            const selectedForSpec = selectedTargetIds.slice(offset, offset + count);
+            offset += count;
+            if (!validateTargetPromptResponse(state, spec, selectedForSpec, sourceInstanceId, label)) {
+              return false;
+            }
+          }
+          if (offset !== selectedTargetIds.length) {
+            const message = `Target response supplied ${selectedTargetIds.length} target(s), but ${label} expects ${offset}.`;
+            appendLog({
+              ...captureLogEntry(
+                state,
+                humanIdRef.current,
+                aiIdsRef.current,
+                'human',
+                `Rejected target count for ${label}`,
+                0,
+                humanIdRef.current,
+              ),
+              playByPlay: `Target selection for ${label} was rejected because the target count did not match the current engine prompt.`,
+              rulesAudit: {
+                severity: 'error',
+                reason: message,
+              },
+            });
+            setActionError({
+              reason: 'illegal_response',
+              message,
+            });
+            addMessage('system', `Cannot choose target: ${message}`);
+            syncState();
+            return false;
+          }
+          return true;
+        };
+
         // For DeclareAttackers with no actual attacks, skip combat through
         // authority-recorded no-op declarations and priority passes.
         if (engineAction.kind === 'DeclareAttackers' && engineAction.attacks.length === 0) {
@@ -6645,12 +6691,14 @@ export function useShelectorGame() {
           }
 
           if (card && player) {
-            const targetSpecs = getSpellTargetSpecs(engine as GameState, card, { faceName });
+            const targetSpecs = getSpellTargetSpecs(engine as GameState, card, {
+              faceName,
+              chosenModes: engineAction.chosenModes,
+            });
             if (
-              targetSpecs.length === 1
-              && !validateTargetPromptResponse(
+              !validateTargetPromptResponses(
                 engine as GameState,
-                targetSpecs[0],
+                targetSpecs,
                 engineAction.targets,
                 engineAction.cardInstanceId,
                 action.label,
@@ -6727,15 +6775,15 @@ export function useShelectorGame() {
           let preActivateState = engine as GameState;
           const abilities = getActivatedAbilities(preActivateState, engineAction.cardInstanceId);
           const ability = abilities[engineAction.abilityIndex];
-          if (ability?.targets?.length === 1) {
-            const targetSpec: TargetSpec = {
-              id: ability.targets[0].id,
-              type: ability.targets[0].type as TargetSpec['type'],
-              count: 1,
-            };
-            if (!validateTargetPromptResponse(
+          if (ability?.targets?.length) {
+            const targetSpecs: TargetSpec[] = ability.targets.map(target => ({
+              id: target.id,
+              type: target.type as TargetSpec['type'],
+              count: (target as Partial<TargetSpec>).count ?? 1,
+            }));
+            if (!validateTargetPromptResponses(
               preActivateState,
-              targetSpec,
+              targetSpecs,
               engineAction.targets,
               engineAction.cardInstanceId,
               action.label,
