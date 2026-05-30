@@ -246,6 +246,8 @@ export interface SearchLibraryEffect {
   shuffle: boolean;
   topCount?: number;
   putUnselectedTopCardsOnBottom?: boolean;
+  minSelections?: number;
+  maxSelections?: number;
   namedCardChoiceId?: string;
   selectedCardChoiceId?: string;
 }
@@ -453,6 +455,7 @@ export type TargetRef =
   | { kind: 'AllCreaturesYouControl' }
   | { kind: 'AllOfType'; filter: CardFilter }
   | { kind: 'Source' }
+  | { kind: 'SourceAttachedTo' }
   | { kind: 'EventCaster' }
   | { kind: 'EventSpell' };
 

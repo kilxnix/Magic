@@ -235,6 +235,8 @@ function resolveTargetRef(
       throw new Error('AllOfType must be handled before calling resolveTargetRef');
     case 'Source':
       throw new Error('Source target must be handled with effect execution context');
+    case 'SourceAttachedTo':
+      throw new Error('SourceAttachedTo target must be handled with effect execution context');
     case 'EventCaster':
       if (!eventContext?.casterId) {
         throw new Error('EventCaster target requires trigger event context');
@@ -712,6 +714,12 @@ function executeUntap(state: GameState, targetId: string): GameState {
   newCards.set(targetId, { ...card, tapped: false });
 
   return { ...state, cards: newCards };
+}
+
+function getSourceAttachedTo(state: GameState, sourceInstanceId?: string): string | null {
+  if (!sourceInstanceId) return null;
+  const source = state.cards.get(sourceInstanceId);
+  return source?.attachedTo ?? null;
 }
 
 /**
@@ -2102,7 +2110,10 @@ function executeEffect(
       return executeRemoveCounters(state, rcTargetId, effect.counterType, rcCount);
     }
     case 'Tap': {
-      const tapTargetId = resolveTargetRef(effect.target, casterId, chosenTargets);
+      const tapTargetId = effect.target.kind === 'SourceAttachedTo'
+        ? getSourceAttachedTo(state, sourceInstanceId)
+        : resolveTargetRef(effect.target, casterId, chosenTargets);
+      if (!tapTargetId) return state;
       return executeTap(state, tapTargetId);
     }
     case 'Untap': {
@@ -2112,7 +2123,10 @@ function executeEffect(
           : resolveAmount(effect.maxCount, xValue, state, casterId, chosenTargets, undefined, eventContext?.cardInstanceId);
         return executeUntapAllOfType(state, effect.target.filter, maxCount);
       }
-      const untapTargetId = resolveTargetRef(effect.target, casterId, chosenTargets);
+      const untapTargetId = effect.target.kind === 'SourceAttachedTo'
+        ? getSourceAttachedTo(state, sourceInstanceId)
+        : resolveTargetRef(effect.target, casterId, chosenTargets);
+      if (!untapTargetId) return state;
       return executeUntap(state, untapTargetId);
     }
     case 'CreateToken': {
@@ -2268,6 +2282,16 @@ function executeEffect(
       return state;
     // Phase 16: GrantKeyword — give keyword to creature
     case 'GrantKeyword': {
+      if (effect.target.kind === 'AllCreaturesYouControl') {
+        let nextState = state;
+        for (const card of state.cards.values()) {
+          if (card.ownerId !== casterId || card.zone !== 'battlefield') continue;
+          const def = getCardDefinition(state, card);
+          if (!def.card_types.includes('creature')) continue;
+          nextState = executeGrantKeyword(nextState, card.instanceId, effect.keyword);
+        }
+        return nextState;
+      }
       const gkTargetId = resolveTargetRef(effect.target, casterId, chosenTargets);
       return executeGrantKeyword(state, gkTargetId, effect.keyword);
     }

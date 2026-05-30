@@ -1,48 +1,42 @@
 {
-  "generatedAt": "2026-05-30T11:59:57.898Z",
+  "generatedAt": "2026-05-30T12:10:36.072Z",
   "source": "mtg_data/cards_min.jsonl",
   "commanderLegalOnly": true,
   "includedCards": 30969,
   "totalOracleFaces": 31420,
-  "parsedFaces": 15433,
-  "unparsedFaces": 15987,
-  "parsedPercent": 49.12,
+  "parsedFaces": 15535,
+  "unparsedFaces": 15885,
+  "parsedPercent": 49.44,
   "parsedKindCounts": {
-    "Unparsed": 15987,
-    "Spell": 11672,
-    "ETB": 1267,
+    "Unparsed": 15885,
+    "Spell": 10489,
+    "ETB": 2044,
+    "Triggered": 1177,
     "KeywordOnly": 887,
-    "Triggered": 674,
-    "EntryCounters": 361,
+    "EntryCounters": 362,
     "StaticAbility": 340,
-    "Modal": 232
+    "Modal": 236
   },
   "unparsedReasons": [
     {
       "reason": "No recognized pattern",
-      "count": 14587
+      "count": 13314
     },
     {
       "reason": "Could not parse ETB effect clause",
-      "count": 736
+      "count": 1409
     },
     {
       "reason": "Could not parse trigger effect clause",
-      "count": 664
+      "count": 1162
     }
   ],
   "syntaxClusters": [
     {
       "id": "trigger-timing",
       "reason": "Triggered or delayed triggered abilities need event registration and APNAP ordering.",
-      "count": 6885,
+      "count": 6850,
       "samples": [
-        {
-          "name": "Waterknot",
-          "set": "jmp",
-          "reason": "No recognized pattern",
-          "text": "Enchant creature When this Aura enters, tap enchanted creature. Enchanted creature doesn't untap during its controller's untap step."
-        },
         {
           "name": "Murk Dwellers",
           "set": "5ed",
@@ -68,29 +62,35 @@
           "text": "Trample (This creature can deal excess combat damage to the player it's attacking.) Whenever you attack, you may pay {1}{R}. When you do, target creature can't block this turn."
         },
         {
-          "name": "Squadron Hawk",
-          "set": "a25",
-          "reason": "No recognized pattern",
-          "text": "Flying When this creature enters, you may search your library for up to three cards named Squadron Hawk, reveal them, put them into your hand, then shuffle."
-        },
-        {
-          "name": "Ogre Arsonist",
-          "set": "p02",
-          "reason": "Could not parse ETB effect clause",
-          "text": "When this creature enters, destroy target land."
-        },
-        {
           "name": "Ogre Battlecaster",
           "set": "j22",
-          "reason": "No recognized pattern",
+          "reason": "Could not parse trigger effect clause",
           "text": "First strike Whenever this creature attacks, you may cast target instant or sorcery card from your graveyard by paying {R}{R} in addition to its other costs. If that spell would be put into a graveyard, exile it instead. When you cast that spell, this creature gets +X/+0 until end of turn, where X is that spell's mana value."
+        },
+        {
+          "name": "Fear of Falling",
+          "set": "dsk",
+          "reason": "Could not parse trigger effect clause",
+          "text": "Flying Whenever this creature attacks, target creature defending player controls gets -2/-0 and loses flying until your next turn."
+        },
+        {
+          "name": "Hot Pursuit",
+          "set": "mkc",
+          "reason": "Could not parse ETB effect clause",
+          "text": "When this enchantment enters, suspect target creature an opponent controls. As long as this enchantment remains on the battlefield, that creature is also goaded. At the beginning of combat on your turn, if two or more players have lost the game, gain control of all goaded and/or suspected creatures until end of turn. Untap them. They gain haste until end of "
+        },
+        {
+          "name": "Demonic Vigor",
+          "set": "dom",
+          "reason": "No recognized pattern",
+          "text": "Enchant creature Enchanted creature gets +1/+1. When enchanted creature dies, return that card to its owner's hand."
         }
       ]
     },
     {
       "id": "unclassified",
       "reason": "Unparsed text did not match a known syntax cluster; inspect manually.",
-      "count": 3509,
+      "count": 3471,
       "samples": [
         {
           "name": "Static Orb",
@@ -145,7 +145,7 @@
     {
       "id": "continuous-layers",
       "reason": "Continuous effects need layer/timestamp/dependency handling.",
-      "count": 3324,
+      "count": 3295,
       "samples": [
         {
           "name": "Sensory Deprivation",
@@ -192,7 +192,7 @@
         {
           "name": "Fear of Falling",
           "set": "dsk",
-          "reason": "No recognized pattern",
+          "reason": "Could not parse trigger effect clause",
           "text": "Flying Whenever this creature attacks, target creature defending player controls gets -2/-0 and loses flying until your next turn."
         }
       ]
@@ -200,7 +200,7 @@
     {
       "id": "combat-multiplayer",
       "reason": "Combat or multiplayer-defender text needs combat/defender-aware execution.",
-      "count": 2418,
+      "count": 2424,
       "samples": [
         {
           "name": "Marang River Prowler",
@@ -217,7 +217,7 @@
         {
           "name": "Fear of Falling",
           "set": "dsk",
-          "reason": "No recognized pattern",
+          "reason": "Could not parse trigger effect clause",
           "text": "Flying Whenever this creature attacks, target creature defending player controls gets -2/-0 and loses flying until your next turn."
         },
         {
@@ -255,7 +255,7 @@
     {
       "id": "tokens-counters",
       "reason": "Token/counter wording needs typed objects, counters, and downstream interactions.",
-      "count": 2305,
+      "count": 2316,
       "samples": [
         {
           "name": "Coalition Relic",
@@ -266,7 +266,7 @@
         {
           "name": "Puppeteer Clique",
           "set": "ecc",
-          "reason": "No recognized pattern",
+          "reason": "Could not parse ETB effect clause",
           "text": "Flying When this creature enters, put target creature card from an opponent's graveyard onto the battlefield under your control. It gains haste. At the beginning of your next end step, exile it. Persist (When this creature dies, if it had no -1/-1 counters on it, return it to the battlefield under its owner's control with a -1/-1 counter on it.)"
         },
         {
@@ -302,7 +302,7 @@
         {
           "name": "Metamorphosis Fanatic",
           "set": "dsc",
-          "reason": "No recognized pattern",
+          "reason": "Could not parse ETB effect clause",
           "text": "Lifelink When this creature enters, return up to one target creature card from your graveyard to the battlefield with a lifelink counter on it. Miracle {1}{B} (You may cast this card for its miracle cost when you draw it if it's the first card you drew this turn.)"
         }
       ]
@@ -310,7 +310,7 @@
     {
       "id": "replacement-prevention",
       "reason": "Replacement/prevention effects require replacement-layer handling.",
-      "count": 1628,
+      "count": 1625,
       "samples": [
         {
           "name": "Sodden Verdure",
@@ -333,7 +333,7 @@
         {
           "name": "Ogre Battlecaster",
           "set": "j22",
-          "reason": "No recognized pattern",
+          "reason": "Could not parse trigger effect clause",
           "text": "First strike Whenever this creature attacks, you may cast target instant or sorcery card from your graveyard by paying {R}{R} in addition to its other costs. If that spell would be put into a graveyard, exile it instead. When you cast that spell, this creature gets +X/+0 until end of turn, where X is that spell's mana value."
         },
         {
@@ -365,7 +365,7 @@
     {
       "id": "non-hand-zones",
       "reason": "Non-hand zone casting/movement needs zone permission and visibility checks.",
-      "count": 1550,
+      "count": 1552,
       "samples": [
         {
           "name": "Road of Return",
@@ -388,7 +388,7 @@
         {
           "name": "Ogre Battlecaster",
           "set": "j22",
-          "reason": "No recognized pattern",
+          "reason": "Could not parse trigger effect clause",
           "text": "First strike Whenever this creature attacks, you may cast target instant or sorcery card from your graveyard by paying {R}{R} in addition to its other costs. If that spell would be put into a graveyard, exile it instead. When you cast that spell, this creature gets +X/+0 until end of turn, where X is that spell's mana value."
         },
         {
@@ -420,7 +420,7 @@
     {
       "id": "cost-system",
       "reason": "Alternative/additional/reduced costs need prompt-backed payment and legality.",
-      "count": 1237,
+      "count": 1229,
       "samples": [
         {
           "name": "Pteramander",
@@ -475,7 +475,7 @@
     {
       "id": "choice-modal",
       "reason": "Choice/modal/naming text should be prompt-backed instead of deterministic.",
-      "count": 825,
+      "count": 820,
       "samples": [
         {
           "name": "Road of Return",
@@ -530,7 +530,7 @@
     {
       "id": "library-selection",
       "reason": "Library search/look/reveal effects need legal choices, destinations, reveal policy, and ordering.",
-      "count": 781,
+      "count": 773,
       "samples": [
         {
           "name": "Safewright Quest",
@@ -549,12 +549,6 @@
           "set": "lcc",
           "reason": "No recognized pattern",
           "text": "As an additional cost to cast this spell, reveal a Dinosaur card from your hand or pay {1}. Search your library for a basic land card, put it onto the battlefield tapped, then shuffle."
-        },
-        {
-          "name": "Squadron Hawk",
-          "set": "a25",
-          "reason": "No recognized pattern",
-          "text": "Flying When this creature enters, you may search your library for up to three cards named Squadron Hawk, reveal them, put them into your hand, then shuffle."
         },
         {
           "name": "Lantern of Revealing",
@@ -579,13 +573,19 @@
           "set": "iko",
           "reason": "No recognized pattern",
           "text": "Whenever a non-Human creature you control attacks, look at the top six cards of your library. You may put a Human creature card from among them onto the battlefield tapped and attacking. It gains indestructible until end of turn. Put the rest of the cards on the bottom of your library in a random order."
+        },
+        {
+          "name": "Blighted Woodland",
+          "set": "clb",
+          "reason": "No recognized pattern",
+          "text": "{T}: Add {C}. {3}{G}, {T}, Sacrifice this land: Search your library for up to two basic land cards, put them onto the battlefield tapped, then shuffle."
         }
       ]
     },
     {
       "id": "copy-stack",
       "reason": "Copy/stack mechanics need stack-object identity and trigger multiplication.",
-      "count": 609,
+      "count": 610,
       "samples": [
         {
           "name": "Mindlink Mech",
@@ -640,12 +640,12 @@
     {
       "id": "special-mechanics",
       "reason": "Special mechanics need dedicated state and UI presentation.",
-      "count": 297,
+      "count": 295,
       "samples": [
         {
           "name": "Sword-Swallowing Seraph",
           "set": "unf",
-          "reason": "No recognized pattern",
+          "reason": "Could not parse ETB effect clause",
           "text": "Flying, vigilance When this creature enters, you may put a name sticker on a nonland permanent you own. {1}{W}, {T}: Put a +1/+1 counter on another target creature with a name sticker on it. Activate only as a sorcery."
         },
         {
@@ -657,7 +657,7 @@
         {
           "name": "Rakdos, the Showstopper",
           "set": "clu",
-          "reason": "No recognized pattern",
+          "reason": "Could not parse ETB effect clause",
           "text": "Flying, trample When Rakdos enters, flip a coin for each creature that isn't a Demon, Devil, or Imp. Destroy each creature whose coin comes up tails."
         },
         {
@@ -681,7 +681,7 @@
         {
           "name": "Nadaar, Selfless Paladin",
           "set": "afr",
-          "reason": "No recognized pattern",
+          "reason": "Could not parse ETB effect clause",
           "text": "Vigilance Whenever Nadaar enters or attacks, venture into the dungeon. (Enter the first room or advance to the next room.) Other creatures you control get +1/+1 as long as you've completed a dungeon."
         },
         {
@@ -812,9 +812,9 @@
       "text": "Whenever this creature deals damage to an opponent, you may draw a card."
     },
     {
-      "name": "Ruthless Knave",
-      "kind": "Spell",
-      "text": "{2}{B}, Sacrifice a creature: Create two Treasure tokens. (They're artifacts with \"{T}, Sacrifice this token: Add one mana of any color.\") Sacrifice three Treasures: Draw a card."
+      "name": "Waterknot",
+      "kind": "ETB",
+      "text": "Enchant creature When this Aura enters, tap enchanted creature. Enchanted creature doesn't untap during its controller's untap step."
     }
   ],
   "unparsedSamples": [
@@ -855,16 +855,16 @@
       "text": "{T}: Add {C}{G}."
     },
     {
-      "name": "Waterknot",
-      "set": "jmp",
-      "reason": "No recognized pattern",
-      "text": "Enchant creature When this Aura enters, tap enchanted creature. Enchanted creature doesn't untap during its controller's untap step."
-    },
-    {
       "name": "Hua Tuo, Honored Physician",
       "set": "c13",
       "reason": "No recognized pattern",
       "text": "{T}: Put target creature card from your graveyard on top of your library. Activate only during your turn, before attackers are declared."
+    },
+    {
+      "name": "Marang River Prowler",
+      "set": "znc",
+      "reason": "No recognized pattern",
+      "text": "This creature can't block and can't be blocked. You may cast this card from your graveyard as long as you control a black or green permanent."
     }
   ]
 }

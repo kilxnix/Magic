@@ -47,6 +47,47 @@ function parsePowerToughnessToken(token: string): { fixed: number; amount?: Amou
   return { fixed };
 }
 
+const LEADING_PREAMBLE_STARTS = new Set([
+  'deathtouch',
+  'defender',
+  'double',
+  'enchant',
+  'equip',
+  'first',
+  'flash',
+  'flying',
+  'haste',
+  'hexproof',
+  'indestructible',
+  'lifelink',
+  'menace',
+  'protection',
+  'prowess',
+  'reach',
+  'trample',
+  'vigilance',
+  'ward',
+]);
+
+function startsWithTriggeredAbility(tokens: string[], idx: number): boolean {
+  return tokens[idx] === 'when'
+    || tokens[idx] === 'whenever'
+    || (tokens[idx] === 'at' && tokens[idx + 1] === 'the' && tokens[idx + 2] === 'beginning');
+}
+
+function trimLeadingKeywordOrEnchantPreamble(tokens: string[]): string[] {
+  if (tokens.length === 0 || startsWithTriggeredAbility(tokens, 0)) return tokens;
+  if (!LEADING_PREAMBLE_STARTS.has(tokens[0])) return tokens;
+
+  for (let idx = 1; idx < Math.min(tokens.length, 80); idx++) {
+    if (startsWithTriggeredAbility(tokens, idx)) {
+      return tokens.slice(idx);
+    }
+  }
+
+  return tokens;
+}
+
 // Pattern matchers return [Effect[], TargetSpec[], tokensConsumed] or null
 
 type PatternResult = { effects: Effect[]; targets: TargetSpec[]; consumed: number } | null;
@@ -60,6 +101,7 @@ type CreatureETBPrefixMatch = {
 const SELF_ETB_SUBJECT_TYPES = new Set([
   'creature',
   'artifact',
+  'aura',
   'enchantment',
   'permanent',
   'planeswalker',
@@ -269,6 +311,7 @@ function matchPreventDamage(tokens: string[], startIndex: number): PatternResult
  * Match: "destroy target permanent"
  * Match: "destroy target artifact"
  * Match: "destroy target enchantment"
+ * Match: "destroy target land"
  * Match: "destroy target artifact or enchantment"
  * Match: "destroy target artifact, enchantment, or land"
  */
@@ -301,6 +344,8 @@ function matchDestroy(tokens: string[], startIndex: number): PatternResult {
     targetType = 'Artifact';
   } else if (slice[2] === 'enchantment') {
     targetType = 'Enchantment';
+  } else if (slice[2] === 'land') {
+    targetType = 'Land';
   } else {
     return null;
   }
@@ -522,6 +567,14 @@ function parseRevealCardFilter(tokens: string[]): CardFilter {
   }
 
   return subfilters.length === 1 ? subfilters[0] : { anyOf: subfilters };
+}
+
+function titleCaseCardName(tokens: string[]): string {
+  return tokens
+    .filter(token => token !== ',' && token !== '.' && token !== 'then')
+    .map(token => token.charAt(0).toUpperCase() + token.slice(1))
+    .join(' ')
+    .trim();
 }
 
 /**
@@ -1056,6 +1109,18 @@ function matchTap(tokens: string[], startIndex: number): PatternResult {
 
   if (slice.length < 3) return null;
   if (slice[0] !== 'tap') return null;
+  if (slice[1] === 'enchanted' && targetTypeFromSimplePermanentWord(slice[2])) {
+    let consumed = 3;
+    if (tokens[startIndex + consumed] === '.') consumed++;
+    return {
+      effects: [{
+        kind: 'Tap',
+        target: { kind: 'SourceAttachedTo' },
+      }],
+      targets: [],
+      consumed,
+    };
+  }
   if (slice[1] !== 'target') return null;
   const targetType = targetTypeFromSimplePermanentWord(slice[2]);
   if (!targetType) return null;
@@ -1795,6 +1860,30 @@ function matchModifyPT(tokens: string[], startIndex: number): PatternResult {
     const power = parseInt(ptMatch[1], 10);
     const toughness = parseInt(ptMatch[2], 10);
 
+    if (slice[5] === 'and' && slice[6] === 'gain') {
+      const keyword = slice[7];
+      if (!keyword) return null;
+      if (slice[8] !== 'until' || slice[9] !== 'end' || slice[10] !== 'of' || slice[11] !== 'turn') return null;
+
+      let consumed = 12;
+      if (tokens[startIndex + consumed] === '.') consumed++;
+
+      const effects: Effect[] = [{
+        kind: 'ModifyPT',
+        target: { kind: 'AllCreaturesYouControl' },
+        power,
+        toughness,
+        untilEndOfTurn: true,
+      }, {
+        kind: 'GrantKeyword',
+        target: { kind: 'AllCreaturesYouControl' },
+        keyword: keyword.charAt(0).toUpperCase() + keyword.slice(1),
+        untilEndOfTurn: true,
+      }];
+
+      return { effects, targets: [], consumed };
+    }
+
     if (slice[5] !== 'until' || slice[6] !== 'end' || slice[7] !== 'of' || slice[8] !== 'turn') return null;
 
     let consumed = 9;
@@ -2199,10 +2288,31 @@ function matchSearchLibraryGeneric(tokens: string[], startIndex: number): Patter
   if (slice[1] !== 'your') return null;
   if (slice[2] !== 'library') return null;
   if (slice[3] !== 'for') return null;
-  if (slice[4] !== 'a' && slice[4] !== 'an') return null;
 
-  let idx = 5;
+  let idx = 4;
   let filter: CardFilter = {};
+
+  let minSelections: number | undefined;
+  let maxSelections: number | undefined;
+  if (slice[idx] === 'up' && slice[idx + 1] === 'to') {
+    const count = parseSmallNumberToken(slice[idx + 2]);
+    if (Number.isNaN(count) || (slice[idx + 3] !== 'card' && slice[idx + 3] !== 'cards')) return null;
+    if (slice[idx + 4] !== 'named') return null;
+    let nameEnd = idx + 5;
+    while (nameEnd < slice.length && slice[nameEnd] !== ',' && slice[nameEnd] !== '.' && slice[nameEnd] !== 'reveal' && slice[nameEnd] !== 'put') {
+      nameEnd++;
+    }
+    const name = titleCaseCardName(slice.slice(idx + 5, nameEnd));
+    if (!name) return null;
+    filter = { names: [name] };
+    minSelections = 0;
+    maxSelections = count;
+    idx = nameEnd;
+  } else {
+    if (slice[idx] !== 'a' && slice[idx] !== 'an') return null;
+    idx++;
+  }
+
   if (slice[idx] === 'card') {
     idx++;
   } else if (slice[idx + 1] === 'card') {
@@ -2217,7 +2327,7 @@ function matchSearchLibraryGeneric(tokens: string[], startIndex: number): Patter
       subtypes: [subtype.charAt(0).toUpperCase() + subtype.slice(1)],
     };
     idx += 2;
-  } else {
+  } else if (!maxSelections) {
     return null;
   }
 
@@ -2264,6 +2374,8 @@ function matchSearchLibraryGeneric(tokens: string[], startIndex: number): Patter
       filter,
       destination,
       shuffle,
+      ...(minSelections !== undefined ? { minSelections } : {}),
+      ...(maxSelections !== undefined ? { maxSelections } : {}),
       namedCardChoiceId: 'tutorCard',
       selectedCardChoiceId: 'tutorCardId',
     },
@@ -4658,7 +4770,7 @@ export function parseOracleText(oracleText: string, manaCost?: string): ParsedOr
   // Reset counter for deterministic IDs in tests
   targetSpecCounter = 0;
 
-  const tokens = tokenizeOracleText(oracleText);
+  const tokens = trimLeadingKeywordOrEnchantPreamble(tokenizeOracleText(oracleText));
   const xCost = manaCost ? hasXInCost(manaCost) : false;
 
   if (tokens.length === 0) {

@@ -1868,6 +1868,8 @@ export function resolveTopStackSearchPrompt(
       sourceInstanceId,
       tapped: options.tapped ?? effect.tapped,
       shuffle: options.shuffle ?? effect.shuffle,
+      minSelections: options.minSelections ?? effect.minSelections,
+      maxSelections: options.maxSelections ?? effect.maxSelections,
       topCount: options.topCount ?? effect.topCount,
       putUnselectedTopCardsOnBottom: options.putUnselectedTopCardsOnBottom ?? effect.putUnselectedTopCardsOnBottom,
       revealPolicy,

@@ -75,6 +75,17 @@ describe('parseOracleText', () => {
       expect(result.targets[0].type).toBe('Creature');
       expect(result.targets[0].constraints?.opponentControls).toBe(true);
     });
+
+    it('parses "Destroy target land."', () => {
+      const result = parseOracleText('Destroy target land.');
+
+      expect(result.kind).toBe('Spell');
+      if (result.kind !== 'Spell') return;
+
+      expect(result.effects[0].kind).toBe('Destroy');
+      expect(result.targets).toHaveLength(1);
+      expect(result.targets[0].type).toBe('Land');
+    });
   });
 
   describe('draw patterns', () => {
@@ -172,6 +183,24 @@ describe('parseOracleText', () => {
       expect(result.ability.effects[0].kind).toBe('DealDamage');
       expect(result.targets).toHaveLength(1);
       expect(result.targets[0].type).toBe('Any');
+    });
+
+    it('parses ETB triggers after leading keyword or enchant preamble text', () => {
+      const aura = parseOracleText("Enchant creature When this Aura enters, tap enchanted creature. Enchanted creature doesn't untap during its controller's untap step.");
+      expect(aura.kind).toBe('ETB');
+      if (aura.kind !== 'ETB') return;
+      expect(aura.ability.effects[0]).toMatchObject({
+        kind: 'Tap',
+        target: { kind: 'SourceAttachedTo' },
+      });
+
+      const keyword = parseOracleText('Menace (This creature can\'t be blocked except by two or more creatures.) When ~ enters, look at the top five cards of your library. You may reveal an Elf, Warrior, or Tyvar card from among them and put it into your hand. Put the rest on the bottom of your library in a random order.');
+      expect(keyword.kind).toBe('ETB');
+      if (keyword.kind !== 'ETB') return;
+      expect(keyword.ability.effects[0]).toMatchObject({
+        kind: 'SearchLibrary',
+        topCount: 5,
+      });
     });
   });
 
@@ -780,6 +809,24 @@ describe('parseOracleText', () => {
       expect(result.effects[0].target).toEqual({ kind: 'AllCreaturesYouControl' });
       expect(result.targets).toHaveLength(0); // no targeting needed
     });
+
+    it('parses team pump plus keyword grant in one clause', () => {
+      const result = parseOracleText('When ~ enters, creatures you control get +1/+1 and gain vigilance until end of turn.');
+      expect(result.kind).toBe('ETB');
+      if (result.kind !== 'ETB') return;
+      expect(result.ability.effects).toHaveLength(2);
+      expect(result.ability.effects[0]).toMatchObject({
+        kind: 'ModifyPT',
+        target: { kind: 'AllCreaturesYouControl' },
+        power: 1,
+        toughness: 1,
+      });
+      expect(result.ability.effects[1]).toMatchObject({
+        kind: 'GrantKeyword',
+        target: { kind: 'AllCreaturesYouControl' },
+        keyword: 'Vigilance',
+      });
+    });
   });
 
   describe('new trigger type patterns', () => {
@@ -1100,6 +1147,20 @@ describe('parseOracleText', () => {
           ]),
         },
         topCount: 5,
+      });
+    });
+
+    it('parses up-to-N named-card library searches with prompt selection limits', () => {
+      const result = parseOracleText('Search your library for up to three cards named Squadron Hawk, reveal them, put them into your hand, then shuffle.');
+      expect(result.kind).toBe('Spell');
+      if (result.kind !== 'Spell') return;
+      expect(result.effects[0]).toMatchObject({
+        kind: 'SearchLibrary',
+        filter: { names: ['Squadron Hawk'] },
+        destination: 'hand',
+        minSelections: 0,
+        maxSelections: 3,
+        shuffle: true,
       });
     });
 
