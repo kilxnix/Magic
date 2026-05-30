@@ -651,9 +651,15 @@ export interface PromptReplayAuditReport {
   steps: PromptReplayAuditStep[];
 }
 
+export interface ReplayExpectation {
+  expectedStateBeforeId?: string;
+  expectedStateAfterId?: string;
+  expectedRuleEventKinds?: EngineEvent['kind'][];
+}
+
 export type EngineReplayRecord =
-  | { kind: 'Action'; request: ClientActionRequest }
-  | ({ kind: 'Prompt' } & PromptReplayRecord);
+  | ({ kind: 'Action'; request: ClientActionRequest } & ReplayExpectation)
+  | ({ kind: 'Prompt' } & PromptReplayRecord & ReplayExpectation);
 
 export interface EngineReplayAuditStep {
   index: number;
@@ -665,7 +671,7 @@ export interface EngineReplayAuditStep {
   ok: boolean;
   actionKind?: AIAction['kind'];
   promptKind?: EnginePromptKind;
-  reason?: ClientActionFailure | ClientPromptFailure | 'missing_state' | 'invariant_violation';
+  reason?: ClientActionFailure | ClientPromptFailure | 'missing_state' | 'invariant_violation' | 'state_mismatch' | 'event_mismatch';
   message?: string;
 }
 
@@ -5134,6 +5140,22 @@ export function auditEngineReplay(
   for (let index = 0; index < records.length; index += 1) {
     const record = records[index];
     const stateBeforeId = stateFingerprint(state);
+    if (record.expectedStateBeforeId && record.expectedStateBeforeId !== stateBeforeId) {
+      steps.push({
+        index,
+        kind: record.kind,
+        requestId: record.kind === 'Action' ? record.request.id : record.request.id,
+        playerId: record.kind === 'Action' ? record.request.playerId : record.request.playerId,
+        stateBeforeId,
+        ok: false,
+        actionKind: record.kind === 'Action' ? record.request.action.kind : undefined,
+        promptKind: record.kind === 'Prompt' ? record.request.kind : undefined,
+        reason: 'state_mismatch',
+        message: `Replay state-before mismatch: expected ${record.expectedStateBeforeId}, got ${stateBeforeId}.`,
+      });
+      return { ok: false, steps };
+    }
+
     const result = record.kind === 'Action'
       ? applyClientActionRequest(state, record.request)
       : record.request.kind === 'SearchLibrary'
@@ -5173,6 +5195,30 @@ export function auditEngineReplay(
 
     if (!result.ok || !result.state) {
       return { ok: false, steps };
+    }
+
+    if (record.expectedStateAfterId && result.update?.newStateId !== record.expectedStateAfterId) {
+      steps[steps.length - 1] = {
+        ...step,
+        ok: false,
+        reason: 'state_mismatch',
+        message: `Replay state-after mismatch: expected ${record.expectedStateAfterId}, got ${result.update?.newStateId || 'missing state update'}.`,
+      };
+      return { ok: false, steps };
+    }
+
+    if (record.expectedRuleEventKinds?.length) {
+      const actualKinds = new Set((result.update?.rulesEvents || []).map(event => event.kind));
+      const missingKind = record.expectedRuleEventKinds.find(kind => !actualKinds.has(kind));
+      if (missingKind) {
+        steps[steps.length - 1] = {
+          ...step,
+          ok: false,
+          reason: 'event_mismatch',
+          message: `Replay event mismatch: missing ${missingKind}.`,
+        };
+        return { ok: false, steps };
+      }
     }
 
     const invariantReport = validateStateInvariants(result.state);

@@ -1219,7 +1219,13 @@ describe('authority action boundary', () => {
     });
 
     const report = auditEngineReplay(state, [
-      { kind: 'Action', request: actionRequest },
+      {
+        kind: 'Action',
+        request: actionRequest,
+        expectedStateBeforeId: stateFingerprint(state),
+        expectedStateAfterId: afterPass.update?.newStateId,
+        expectedRuleEventKinds: ['ActionAccepted'],
+      },
       {
         kind: 'Prompt',
         request: targetRequest,
@@ -1229,6 +1235,8 @@ describe('authority action boundary', () => {
           playerId: 'p1',
           selectedTargetIds: ['bear_1'],
         },
+        expectedStateBeforeId: stateFingerprint(afterPass.state!),
+        expectedRuleEventKinds: ['PromptResponseAccepted'],
       },
     ]);
 
@@ -1238,6 +1246,54 @@ describe('authority action boundary', () => {
       expect.objectContaining({ kind: 'Action', actionKind: 'PassPriority', ok: true }),
       expect.objectContaining({ kind: 'Prompt', promptKind: 'SelectTarget', ok: true }),
     ]);
+  });
+
+  it('fails mixed replay audit when recorded state ids do not match the replay stream', () => {
+    const state = stateWithTargetChoices();
+    const pass = buildActionPrompt(state, 'p1')?.legalChoices.find(choice => choice.kind === 'PassPriority')?.action;
+    expect(pass).toBeDefined();
+    const actionRequest = createClientActionRequest(state, 'p1', pass as AIAction, {
+      id: 'req-replay-state-mismatch',
+      createdAt: 240,
+    });
+
+    const report = auditEngineReplay(state, [{
+      kind: 'Action',
+      request: actionRequest,
+      expectedStateBeforeId: 'recorded-wrong-state',
+    }]);
+
+    expect(report.ok).toBe(false);
+    expect(report.steps).toEqual([expect.objectContaining({
+      requestId: 'req-replay-state-mismatch',
+      ok: false,
+      reason: 'state_mismatch',
+      message: expect.stringContaining('Replay state-before mismatch'),
+    })]);
+  });
+
+  it('fails mixed replay audit when recorded presentation events are missing', () => {
+    const state = stateWithTargetChoices();
+    const pass = buildActionPrompt(state, 'p1')?.legalChoices.find(choice => choice.kind === 'PassPriority')?.action;
+    expect(pass).toBeDefined();
+    const actionRequest = createClientActionRequest(state, 'p1', pass as AIAction, {
+      id: 'req-replay-event-mismatch',
+      createdAt: 241,
+    });
+
+    const report = auditEngineReplay(state, [{
+      kind: 'Action',
+      request: actionRequest,
+      expectedRuleEventKinds: ['DiceRolled'],
+    }]);
+
+    expect(report.ok).toBe(false);
+    expect(report.steps).toEqual([expect.objectContaining({
+      requestId: 'req-replay-event-mismatch',
+      ok: false,
+      reason: 'event_mismatch',
+      message: 'Replay event mismatch: missing DiceRolled.',
+    })]);
   });
 
   it('validates pay-cost prompt responses and applies mana taps through authority', () => {
