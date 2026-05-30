@@ -809,6 +809,21 @@ function applyPermanentEntryChoices(
   return { cards, entered: true };
 }
 
+function applyAttachedAuraEntryEffects(state: GameState, auraInstanceId: string): GameState {
+  const aura = state.cards.get(auraInstanceId);
+  if (!aura || aura.zone !== 'battlefield' || !aura.attachedTo) return state;
+  const def = getCardDefinition(state, aura);
+  if (!/\bwhen this aura enters\b/i.test(def.oracle_text)) return state;
+  if (!/\btap enchanted creature\b/i.test(def.oracle_text)) return state;
+
+  const enchanted = state.cards.get(aura.attachedTo);
+  if (!enchanted || enchanted.zone !== 'battlefield') return state;
+
+  const cards = new Map(state.cards);
+  cards.set(enchanted.instanceId, { ...enchanted, tapped: true });
+  return { ...state, cards };
+}
+
 /**
  * Strip keyword-ability name prefixes that decorate triggered abilities.
  * Cards like Omnath, Locus of Rage write "Landfall — Whenever a land you control enters, ...".
@@ -1364,6 +1379,7 @@ export function resolveTopOfStack(state: GameState): GameState {
     }
 
     resultState = applyEntersWithCounters(resultState, card.instanceId, def);
+    resultState = applyAttachedAuraEntryEffects(resultState, card.instanceId);
     // Register all triggered abilities for this permanent (ETB, dies, attacks, etc.)
     resultState = registerBattlefieldAbilities(resultState, card.instanceId);
     resultState = registerContinuousAbilitiesForPermanent(resultState, card.instanceId);

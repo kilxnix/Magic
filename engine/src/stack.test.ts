@@ -3,6 +3,7 @@ import { canCastSpell, castSpell, putTriggersOnStack, resolveTopOfStack } from '
 import { tryTapLandForMana } from './actions-public';
 import { initGameState, getCardsInZone } from './game-state';
 import { CardDefinition, StackItem } from './types';
+import { performUntapStep } from './turn-manager';
 
 function makeCreature(): CardDefinition {
   return {
@@ -223,6 +224,21 @@ function makeEnchantment(): CardDefinition {
     oracle_text: 'When Omen of the Sea enters the battlefield, scry 2, then draw a card.',
     mana_cost: '{1}{U}', cmc: 2,
     colors: ['U'], color_identity: ['U'], keywords: ['Flash'],
+    card_types: ['enchantment'],
+  };
+}
+
+function makeWaterknotAura(): CardDefinition {
+  return {
+    id: 'waterknot-1',
+    name: 'Waterknot',
+    type_line: 'Enchantment - Aura',
+    oracle_text: "Enchant creature\nWhen this Aura enters, tap enchanted creature.\nEnchanted creature doesn't untap during its controller's untap step.",
+    mana_cost: '{1}{U}',
+    cmc: 2,
+    colors: ['U'],
+    color_identity: ['U'],
+    keywords: [],
     card_types: ['enchantment'],
   };
 }
@@ -974,6 +990,28 @@ describe('Stack', () => {
       next = resolveTopOfStack(next);
 
       expect(next.cards.get(cardInstanceId)!.zone).toBe('battlefield');
+    });
+
+    it('aura ETB can tap enchanted creature and prevent untap', () => {
+      const decks = [
+        { playerId: 'p1', name: 'Alice', cards: [makeWaterknotAura(), makeCreature()], commanderId: 'cmd1' },
+        { playerId: 'p2', name: 'Bob', cards: [], commanderId: 'cmd2' },
+      ];
+      let state = initGameState(decks);
+      const [aura, creature] = getCardsInZone(state, 'p1', 'library');
+      state.cards.set(aura.instanceId, { ...aura, zone: 'hand' });
+      state.cards.set(creature.instanceId, { ...creature, zone: 'battlefield', tapped: false, summoningSick: false });
+      state = { ...state, phase: 'precombat_main' as any, step: 'untap' };
+      state.players[0].manaPool = { W: 0, U: 2, B: 0, R: 0, G: 0, C: 0 };
+
+      state = castSpell(state, 'p1', aura.instanceId, [creature.instanceId]);
+      state = resolveTopOfStack(state);
+
+      expect(state.cards.get(aura.instanceId)?.attachedTo).toBe(creature.instanceId);
+      expect(state.cards.get(creature.instanceId)?.tapped).toBe(true);
+
+      state = performUntapStep(state);
+      expect(state.cards.get(creature.instanceId)?.tapped).toBe(true);
     });
 
     it('applies enters-with counters before the permanent can be checked as a creature', () => {

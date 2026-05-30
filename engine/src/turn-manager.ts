@@ -1,6 +1,7 @@
 import { GameState, Phase, Step } from './types';
 import { checkTriggersForEvent } from './stack';
 import { pruneDamagePreventionEffects } from './effects/replacement';
+import { getCardDefinition } from './game-state';
 
 export const STEP_ORDER: Step[] = [
   'untap', 'upkeep', 'draw',
@@ -111,6 +112,17 @@ export function performUntapStep(state: GameState): GameState {
   const activePlayerId = state.players[state.activePlayerIndex].id;
   const newCards = new Map(state.cards);
 
+  const isPreventedFromUntapping = (cardId: string): boolean => {
+    for (const attached of state.cards.values()) {
+      if (attached.zone !== 'battlefield' || attached.attachedTo !== cardId) continue;
+      const def = getCardDefinition(state, attached);
+      if (/\b(?:enchanted|equipped) creature doesn't untap during its controller's untap step\b/i.test(def.oracle_text)) {
+        return true;
+      }
+    }
+    return false;
+  };
+
   for (const [id, card] of newCards) {
     if (card.zone !== 'battlefield') continue;
     if (card.ownerId !== activePlayerId) continue;
@@ -126,6 +138,8 @@ export function performUntapStep(state: GameState): GameState {
       if (newCounters.stun === 0) delete newCounters.stun;
       newCards.set(id, { ...card, counters: newCounters });
       // stays tapped
+    } else if (isPreventedFromUntapping(id)) {
+      newCards.set(id, { ...card, summoningSick: false });
     } else {
       newCards.set(id, { ...card, tapped: false, summoningSick: false });
     }
