@@ -119,7 +119,8 @@ export function getNewPlayerSuggestion(
   const utilityAction = legalActions.find(action =>
     action.cardInstanceId &&
     CARD_ACTION_KINDS.has(action.kind) &&
-    !['CastSpell', 'PlayLand', 'ActivateManaAbility'].includes(action.kind)
+    !['CastSpell', 'PlayLand', 'ActivateManaAbility'].includes(action.kind) &&
+    !isLikelyInfiniteCombo(findHumanCard(gameState, action))
   );
   const attackAction = chooseNonSkip(legalActions.filter(action => action.kind === 'DeclareAttackers'));
   const blockAction = chooseNonSkip(legalActions.filter(action => action.kind === 'DeclareBlockers'));

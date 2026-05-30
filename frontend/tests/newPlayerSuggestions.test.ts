@@ -134,6 +134,28 @@ describe('getNewPlayerSuggestion', () => {
     expect(suggestion?.actionLabel).toBe('End Phase');
   });
 
+  it('does not recommend likely infinite-combo activated abilities in guide mode', () => {
+    const comboPiece = card({
+      instanceId: 'combo-board-card',
+      name: 'Loop Engine',
+      manaCost: '{2}',
+      typeLine: 'Artifact',
+      oracleText: '{T}: Repeat this process any number of times.',
+      cardTypes: ['artifact'],
+      zone: 'battlefield',
+    });
+    const suggestion = getNewPlayerSuggestion(
+      state({ humanBattlefield: [comboPiece] }),
+      [
+        action({ kind: 'ActivateAbility', cardInstanceId: comboPiece.instanceId, cardName: comboPiece.name, label: 'Activate Loop Engine' }),
+        action({ kind: 'PassPriority', label: 'End Phase' }),
+      ],
+    );
+
+    expect(suggestion?.kind).toBe('pass');
+    expect(suggestion?.actionLabel).toBe('End Phase');
+  });
+
   it('prioritizes instant and sorcery spells when an instant/sorcery payoff is on board', () => {
     const talrand = card({
       instanceId: 'talrand',

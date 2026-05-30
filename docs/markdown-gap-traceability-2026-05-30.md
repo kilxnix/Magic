@@ -181,6 +181,8 @@ Additional solo preflight verification added after this audit: `/play` now share
 
 Additional room moderation verification added after this audit: server-side room chat moderation now rejects common spaced/leetspeak sexual and harassment probes before they enter room history, while backend tests continue to verify safe MTG table phrases are accepted.
 
+Additional guide-mode verification added after this audit: new-player guidance now filters likely infinite-combo activated abilities in addition to combo-looking spell casts, so those lines stay out of the lightweight first-game suggestion lane.
+
 ## Direct Answer
 
 Yes, relative to the actual size and meaning of these markdown files, I was effectively treating large portions as direction/backlog while reporting progress too broadly. The right status is not "done." The right status is "a verified slice is done; most of the Arena/MTGA parity roadmap remains partial or incomplete."
