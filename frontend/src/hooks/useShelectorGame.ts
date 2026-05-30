@@ -338,6 +338,16 @@ export interface CardDataFromAPI {
   colors: string[];
   color_identity: string[];
   keywords: string[];
+  layout?: string | null;
+  card_faces?: Array<{
+    name: string;
+    type_line?: string;
+    oracle_text?: string | null;
+    mana_cost?: string | null;
+    colors?: string[] | null;
+    power?: string | null;
+    toughness?: string | null;
+  }> | null;
 }
 
 export interface ImportedCards {
@@ -529,6 +539,23 @@ function apiCardToScryfall(name: string, data: CardDataFromAPI): ScryfallCard {
     keywords: data.keywords || [],
     power: data.power ?? undefined,
     toughness: data.toughness ?? undefined,
+    layout: data.layout || undefined,
+    card_faces: data.card_faces || undefined,
+  };
+}
+
+function apiCardFaceToScryfall(parent: ScryfallCard, face: NonNullable<CardDataFromAPI['card_faces']>[number], index: number): ScryfallCard {
+  return {
+    ...parent,
+    id: `${parent.id}:face:${index}`,
+    name: face.name,
+    type_line: face.type_line || parent.type_line,
+    oracle_text: face.oracle_text ?? '',
+    mana_cost: face.mana_cost ?? '',
+    colors: face.colors || [],
+    power: face.power ?? undefined,
+    toughness: face.toughness ?? undefined,
+    card_faces: null,
   };
 }
 
@@ -3670,6 +3697,10 @@ export function useShelectorGame() {
           const scryfallCard = apiCardToScryfall(name, data);
           addLookup(name, scryfallCard);
           addLookup(data.name, scryfallCard);
+          for (const [index, face] of (data.card_faces || []).entries()) {
+            const faceCard = apiCardFaceToScryfall(scryfallCard, face, index);
+            addLookup(face.name, faceCard);
+          }
         }
       }
       return (name: string) => byName.get(normalizeLookupName(name));
