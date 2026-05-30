@@ -334,6 +334,12 @@ export interface GameState {
   turnNumber: number;
   spellsCastThisTurn?: number;
   playersWhoAttackedThisTurn?: string[];
+  /**
+   * Explicit legend-rule choices keyed by `${ownerId}:${lowercaseCardName}`.
+   * When omitted or invalid, SBAs keep the first matching permanent as a
+   * deterministic AI/test fallback.
+   */
+  legendRuleKeepChoices?: Record<string, string>;
   hasPriorityPassed: boolean[];
   stack: StackItem[];
   combat: CombatState | null;

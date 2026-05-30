@@ -1,5 +1,5 @@
 import { beforeEach, describe, it, expect } from 'vitest';
-import { checkStateBasedActions, cleanupDamage } from './state-based';
+import { checkStateBasedActions, cleanupDamage, legendRuleChoiceKey } from './state-based';
 import { initGameState, getCardsInZone } from './game-state';
 import { CardDefinition } from './types';
 import { makeTestState } from './__tests__/test-helpers';
@@ -15,6 +15,23 @@ function makeBear(id: string = 'bear-1'): CardDefinition {
     cmc: 2,
     colors: ['G'],
     color_identity: ['G'],
+    keywords: [],
+    card_types: ['creature'],
+    power: 2,
+    toughness: 2,
+  };
+}
+
+function makeLegend(id: string = 'legend-1'): CardDefinition {
+  return {
+    id,
+    name: 'Mirror Legend',
+    type_line: 'Legendary Creature - Human Wizard',
+    oracle_text: '',
+    mana_cost: '{1}{U}',
+    cmc: 2,
+    colors: ['U'],
+    color_identity: ['U'],
     keywords: [],
     card_types: ['creature'],
     power: 2,
@@ -160,6 +177,26 @@ describe('State-Based Actions', () => {
     const next = checkStateBasedActions(state);
 
     expect(next.cards.get(cards[0].instanceId)?.zone).toBe('battlefield');
+    expect(next.cards.get(cards[1].instanceId)?.zone).toBe('battlefield');
+  });
+
+  it('honors explicit legend-rule keep choices instead of always keeping the first permanent', () => {
+    const legend = makeLegend();
+    const decks = [
+      { playerId: 'p1', name: 'Alice', cards: [legend, legend], commanderId: 'cmd1' },
+      { playerId: 'p2', name: 'Bob', cards: [], commanderId: 'cmd2' },
+    ];
+    const state = initGameState(decks);
+    const cards = getCardsInZone(state, 'p1', 'library').filter(card => card.definitionId === legend.id);
+    state.cards.set(cards[0].instanceId, { ...cards[0], zone: 'battlefield' });
+    state.cards.set(cards[1].instanceId, { ...cards[1], zone: 'battlefield' });
+    state.legendRuleKeepChoices = {
+      [legendRuleChoiceKey('p1', legend.name)]: cards[1].instanceId,
+    };
+
+    const next = checkStateBasedActions(state);
+
+    expect(next.cards.get(cards[0].instanceId)?.zone).toBe('graveyard');
     expect(next.cards.get(cards[1].instanceId)?.zone).toBe('battlefield');
   });
 

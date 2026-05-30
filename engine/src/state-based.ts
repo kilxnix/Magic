@@ -8,6 +8,10 @@ import { getEffectiveToughness as getLayeredEffectiveToughness } from './effects
 import { validateTargetChoices, type TargetSpec } from './effects/targets';
 import { typeLineHasSubtype, typeLineHasSupertype } from './type-line';
 
+export function legendRuleChoiceKey(ownerId: string, cardName: string): string {
+  return `${ownerId}:${cardName.trim().toLowerCase()}`;
+}
+
 /**
  * Cancel +1/+1 and -1/-1 counters on a creature.
  * Returns updated counters or null if no change needed.
@@ -123,7 +127,8 @@ export function checkStateBasedActions(state: GameState): GameState {
     }
 
     // 4. Legend rule: if a player controls 2+ legendary permanents with same name,
-    //    they choose one to keep (deterministic: keep first one found)
+    //    they choose one to keep. When no explicit choice exists, the engine
+    //    keeps the first one found as the AI/test fallback.
     const legendaryByOwner = new Map<string, Map<string, CardInstance[]>>();
 
     for (const [id, card] of newCards) {
@@ -140,12 +145,13 @@ export function checkStateBasedActions(state: GameState): GameState {
       legendaryByOwner.set(card.ownerId, ownerMap);
     }
 
-    for (const [, ownerMap] of legendaryByOwner) {
-      for (const [, cards] of ownerMap) {
+    for (const [ownerId, ownerMap] of legendaryByOwner) {
+      for (const [cardName, cards] of ownerMap) {
         if (cards.length > 1) {
-          // Keep the first, move others to graveyard (or command zone for commanders)
-          for (let i = 1; i < cards.length; i++) {
-            const card = cards[i];
+          const keepChoice = state.legendRuleKeepChoices?.[legendRuleChoiceKey(ownerId, cardName)];
+          const keepCard = cards.find(card => card.instanceId === keepChoice) ?? cards[0];
+          for (const card of cards) {
+            if (card.instanceId === keepCard.instanceId) continue;
             const destination = isEffectiveCreature(tempState, card.instanceId)
               ? creatureDeathDest(card.instanceId, card)
               : graveyardDest(card.instanceId);
