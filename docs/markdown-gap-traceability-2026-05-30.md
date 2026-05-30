@@ -97,7 +97,7 @@ Minimum acceptance bar from that file:
 | 2.1 Sisay Legal Choice Filtering | browser-proven for tested flow |
 | 2.2 Search Legality In General | partial; top-N search prompts now limit choices to the looked-at cards and bottom unselected cards for Impulse-style effects, ExileUntilNamed effects now prompt through a typed live named-card choice in `/play` with arbitrary card-name entry instead of forcing a hard-coded Oracle line, and unrestricted tutor prompts now require a selection when a card is findable while restricted hidden-library searches still allow fail-to-find. Room deck locking now has tested partner-commander/sideboard exclusion and decorated export cleanup before deck cards are sent to room state. |
 | 2.3 Card Type Constraints | partial/test-proven; engine card filters, prompt failure reasons, imported card type parsing, intrinsic basic-land subtype mana inference, and frontend deck/room/draft/permanent-prompt classification now match types, supertypes, and subtypes as separated type-line terms instead of broad substrings, with regression coverage for `land` not matching inside `Island`, subtype phrase matching such as `Time Lord`, `Creature - Island Scout` not importing as a land, and `Islander` not granting Island mana. |
-| 2.4 Mana Value Constraints | partial/test-proven; generic library searches and static spell-cost modifiers now parse `with mana value` limits, including strict `less than` / `greater than` phrasing, into CMC filters that authority prompts and continuous cost effects enforce. |
+| 2.4 Mana Value Constraints | partial/test-proven; generic library searches, targeted removal/bounce, legal target generation, target validation, and static spell-cost modifiers now parse `with mana value` limits, including strict `less than` / `greater than` phrasing, into CMC filters that authority prompts, target validation, and continuous cost effects enforce. |
 | 2.5 Continuous Effects And Layers | partial |
 | 2.6 Triggered Abilities | partial |
 | 2.7 Replacement And Prevention Effects | partial |
@@ -200,7 +200,7 @@ Additional state/layer/protection exactness added after this audit: state-based 
 
 Additional restricted-mana exactness added after this audit: Cavern-style creature-type mana now recognizes multi-word creature types such as Time Lord, and legendary-only restricted mana now checks the Legendary supertype instead of substring matching subtype text.
 
-Additional mana-value filter verification added after this audit: generic library searches and static spell-cost modifiers now parse `with mana value` constraints into executable CMC filters, with focused parser/continuous/authority tests and engine build verification.
+Additional mana-value filter verification added after this audit: generic library searches, targeted removal/bounce, target validation, legal-target generation, and static spell-cost modifiers now parse/enforce `with mana value` constraints as executable CMC filters, with focused parser/continuous/authority/legal-action tests and engine build verification.
 
 Additional commander-zone verification added after this audit: manual move corrections now call commander replacement before mutation, so a commander moved toward graveyard/exile/hand by correction lands in command zone and the manual event reports the final command-zone destination. The `/play` manual correction message now reads from the resulting state so it says command zone instead of the requested graveyard/exile destination.
 

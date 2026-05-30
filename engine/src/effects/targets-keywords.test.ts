@@ -141,6 +141,24 @@ describe('Target Validation with Keywords', () => {
       }).not.toThrow();
     });
 
+    it('rejects targets outside a mana value constraint', () => {
+      const state = createStateWithCreature([], 'player-2');
+      const specs = [{ id: 'target_1', type: 'Creature' as const, count: 1, constraints: { cmc: { op: 'lte' as const, value: 1 } } }];
+
+      expect(() => {
+        validateTargetChoices(state, 'player-1', specs, ['creature-1']);
+      }).toThrow('mana value 2 does not satisfy lte 1');
+    });
+
+    it('accepts targets inside a mana value constraint', () => {
+      const state = createStateWithCreature([], 'player-2');
+      const specs = [{ id: 'target_1', type: 'Creature' as const, count: 1, constraints: { cmc: { op: 'lte' as const, value: 2 } } }];
+
+      expect(() => {
+        validateTargetChoices(state, 'player-1', specs, ['creature-1']);
+      }).not.toThrow();
+    });
+
     it('prevents targeting from a source of a protected card type', () => {
       const state = addSource(
         createStateWithCreature([], 'player-2'),

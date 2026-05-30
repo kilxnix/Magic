@@ -21,6 +21,7 @@ export interface TargetSpec {
     notSource?: boolean;
     colors?: Array<'W' | 'U' | 'B' | 'R' | 'G'>;
     notColors?: Array<'W' | 'U' | 'B' | 'R' | 'G'>;
+    cmc?: { op: 'eq' | 'lte' | 'gte'; value: number };
   };
 }
 
@@ -65,6 +66,24 @@ function isSpellTargetOnStack(
     return !isCreatureSpell;
   }
   return false;
+}
+
+function matchesCmcConstraint(value: number, constraint: NonNullable<TargetSpec['constraints']>['cmc']): boolean {
+  if (!constraint) return true;
+  if (constraint.op === 'eq') return value === constraint.value;
+  if (constraint.op === 'lte') return value <= constraint.value;
+  return value >= constraint.value;
+}
+
+function getTargetDefinition(state: GameState, chosenId: string): ReturnType<typeof getCardDefinition> | undefined {
+  const card = state.cards.get(chosenId);
+  if (card) return getCardDefinition(state, card);
+  const stackItem = state.stack.find(item => item.id === chosenId || (isSpellStackItem(item) && item.cardInstanceId === chosenId));
+  if (stackItem && isSpellStackItem(stackItem)) {
+    const stackCard = state.cards.get(stackItem.cardInstanceId);
+    return stackCard ? getCardDefinition(state, stackCard) : undefined;
+  }
+  return undefined;
 }
 
 /**
@@ -242,6 +261,16 @@ export function validateTargetChoices(
         const def = getCardDefinition(state, card);
         if (!spec.constraints.colors.some(color => def.colors.includes(color))) {
           throw new Error(`Invalid target for ${spec.id}: target is missing a required color`);
+        }
+      }
+
+      if (spec.constraints?.cmc) {
+        const def = getTargetDefinition(state, chosenId);
+        if (!def) {
+          throw new Error(`Invalid target for ${spec.id}: mana value restriction requires a card, got ${chosenId}`);
+        }
+        if (!matchesCmcConstraint(def.cmc ?? 0, spec.constraints.cmc)) {
+          throw new Error(`Invalid target for ${spec.id}: mana value ${def.cmc ?? 0} does not satisfy ${spec.constraints.cmc.op} ${spec.constraints.cmc.value}`);
         }
       }
 

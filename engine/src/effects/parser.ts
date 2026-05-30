@@ -382,16 +382,21 @@ function matchDestroy(tokens: string[], startIndex: number): PatternResult {
     consumed += 3;
   }
 
+  let constraints: TargetSpec['constraints'] = {
+    ...(opponentControls ? { opponentControls: true } : {}),
+    ...(notColors ? { notColors } : {}),
+  };
+  const destroyManaValueTarget = applyManaValueTargetConstraint(slice, consumed, constraints);
+  if (destroyManaValueTarget) {
+    constraints = destroyManaValueTarget.constraints;
+    consumed = destroyManaValueTarget.nextIndex;
+  }
   // Handle trailing period
   if (tokens[startIndex + consumed] === '.') {
     consumed++;
   }
 
-  const constraints: TargetSpec['constraints'] = {
-    ...(opponentControls ? { opponentControls: true } : {}),
-    ...(notColors ? { notColors } : {}),
-  };
-  const spec = makeTargetSpec(targetType, Object.keys(constraints).length > 0 ? constraints : undefined);
+  const spec = makeTargetSpec(targetType, Object.keys(constraints || {}).length > 0 ? constraints : undefined);
   const effect: Effect = {
     kind: 'Destroy',
     target: makeChosenRef(spec),
@@ -829,7 +834,7 @@ function matchExile(tokens: string[], startIndex: number): PatternResult {
 
   let targetType: TargetType;
   let consumed: number;
-  let constraints: { opponentControls?: boolean } | undefined;
+  let constraints: TargetSpec['constraints'] = undefined;
 
   if (slice[2] === 'creature') {
     targetType = 'Creature';
@@ -862,6 +867,12 @@ function matchExile(tokens: string[], startIndex: number): PatternResult {
     consumed = 3;
   } else {
     return null;
+  }
+
+  const exileManaValueTarget = applyManaValueTargetConstraint(slice, consumed, constraints);
+  if (exileManaValueTarget) {
+    constraints = exileManaValueTarget.constraints;
+    consumed = exileManaValueTarget.nextIndex;
   }
 
   // Handle trailing period
@@ -902,6 +913,13 @@ function matchReturnToHand(tokens: string[], startIndex: number): PatternResult 
     return null;
   }
 
+  let constraints: TargetSpec['constraints'] = undefined;
+  const returnManaValueTarget = applyManaValueTargetConstraint(slice, idx, constraints);
+  if (returnManaValueTarget) {
+    constraints = returnManaValueTarget.constraints;
+    idx = returnManaValueTarget.nextIndex;
+  }
+
   if (slice[idx] !== 'to') return null;
   if (slice[idx + 1] !== 'its') return null;
   if (slice[idx + 2] !== "owner's" && slice[idx + 2] !== 'owners') return null;
@@ -914,7 +932,7 @@ function matchReturnToHand(tokens: string[], startIndex: number): PatternResult 
     consumed++;
   }
 
-  const spec = makeTargetSpec(targetType);
+  const spec = makeTargetSpec(targetType, constraints);
   const effect: Effect = {
     kind: 'ReturnToHand',
     target: makeChosenRef(spec),
@@ -1921,6 +1939,13 @@ function matchReturnFromGraveyard(tokens: string[], startIndex: number): Pattern
   idx++;
   if (slice[idx] !== 'graveyard') return null;
   idx++;
+  let constraints: TargetSpec['constraints'] = undefined;
+  const manaValueTarget = applyManaValueTargetConstraint(slice, idx, constraints);
+  if (manaValueTarget) {
+    constraints = manaValueTarget.constraints;
+    idx = manaValueTarget.nextIndex;
+  }
+
   if (slice[idx] !== 'to') return null;
   idx++;
 
@@ -1956,7 +1981,7 @@ function matchReturnFromGraveyard(tokens: string[], startIndex: number): Pattern
 
   if (tokens[next] === '.') consumed++;
 
-  const spec = makeTargetSpec(targetType);
+  const spec = makeTargetSpec(targetType, constraints);
   const effect: Effect = {
     kind: 'ReturnFromGraveyard',
     target: makeChosenRef(spec),
@@ -4129,6 +4154,22 @@ function parseManaValueFilterSuffix(
     return { filter: { cmc: { op: 'gte', value } }, nextIndex: idx + 2 };
   }
   return { filter: { cmc: { op: 'eq', value } }, nextIndex: idx };
+}
+
+function applyManaValueTargetConstraint(
+  tokens: string[],
+  startIndex: number,
+  constraints: TargetSpec['constraints'],
+): { constraints: TargetSpec['constraints']; nextIndex: number } | null {
+  const parsed = parseManaValueFilterSuffix(tokens, startIndex);
+  if (!parsed?.filter.cmc) return null;
+  return {
+    constraints: {
+      ...(constraints || {}),
+      cmc: parsed.filter.cmc,
+    },
+    nextIndex: parsed.nextIndex,
+  };
 }
 
 function mergeStaticFilters(a: CardFilter, b: CardFilter): CardFilter {

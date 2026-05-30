@@ -101,6 +101,32 @@ describe('parseOracleText', () => {
       expect(result.targets).toHaveLength(1);
       expect(result.targets[0].type).toBe('Land');
     });
+
+    it('parses mana value limits on targeted removal and bounce', () => {
+      const destroy = parseOracleText('Destroy target creature with mana value 3 or less.');
+      expect(destroy.kind).toBe('Spell');
+      if (destroy.kind !== 'Spell') return;
+      expect(destroy.targets[0]).toMatchObject({
+        type: 'Creature',
+        constraints: { cmc: { op: 'lte', value: 3 } },
+      });
+
+      const exile = parseOracleText('Exile target nonland permanent with mana value less than 4.');
+      expect(exile.kind).toBe('Spell');
+      if (exile.kind !== 'Spell') return;
+      expect(exile.targets[0]).toMatchObject({
+        type: 'NonlandPermanent',
+        constraints: { cmc: { op: 'lte', value: 3 } },
+      });
+
+      const bounce = parseOracleText("Return target creature with mana value greater than or equal to 4 to its owner's hand.");
+      expect(bounce.kind).toBe('Spell');
+      if (bounce.kind !== 'Spell') return;
+      expect(bounce.targets[0]).toMatchObject({
+        type: 'Creature',
+        constraints: { cmc: { op: 'gte', value: 4 } },
+      });
+    });
   });
 
   describe('draw patterns', () => {

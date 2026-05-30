@@ -106,6 +106,13 @@ export function getLegalTargets(
   sourceInstanceId?: string,
 ): string[] {
   const targets: string[] = [];
+  const matchesCmcConstraint = (value: number): boolean => {
+    const constraint = spec.constraints?.cmc;
+    if (!constraint) return true;
+    if (constraint.op === 'eq') return value === constraint.value;
+    if (constraint.op === 'lte') return value <= constraint.value;
+    return value >= constraint.value;
+  };
   const addIfValid = (targetId: string) => {
     try {
       validateTargetChoices(state, casterId, [{ ...spec, count: 1 }], [targetId], sourceInstanceId);
@@ -130,6 +137,7 @@ export function getLegalTargets(
       const def = getCardDefinition(state, card);
       if (spec.constraints?.colors?.length && !spec.constraints.colors.some(color => def.colors.includes(color))) continue;
       if (spec.constraints?.notColors?.some(color => def.colors.includes(color))) continue;
+      if (!matchesCmcConstraint(def.cmc ?? 0)) continue;
 
       // Check opponentControls constraint
       if (spec.constraints?.opponentControls && card.ownerId === casterId) continue;
@@ -149,6 +157,8 @@ export function getLegalTargets(
     for (const card of state.cards.values()) {
       if (card.zone !== 'battlefield') continue;
       if (!isEffectiveCreature(state, card.instanceId)) continue;
+      const def = getCardDefinition(state, card);
+      if (!matchesCmcConstraint(def.cmc ?? 0)) continue;
       if (spec.constraints?.opponentControls && card.ownerId === casterId) continue;
       if (spec.constraints?.controllerControls && card.ownerId !== casterId) continue;
       if (spec.constraints?.notSource && sourceInstanceId && card.instanceId === sourceInstanceId) continue;
@@ -172,6 +182,7 @@ export function getLegalTargets(
       if (spec.type === 'CreatureOrEnchantmentSpell' && !def.card_types.includes('creature') && !def.card_types.includes('enchantment')) continue;
       if (spec.type === 'ArtifactOrCreatureSpell' && !def.card_types.includes('artifact') && !def.card_types.includes('creature')) continue;
       if (spec.type === 'InstantOrSorcerySpell' && !def.card_types.includes('instant') && !def.card_types.includes('sorcery')) continue;
+      if (!matchesCmcConstraint(def.cmc ?? 0)) continue;
       addIfValid(card.instanceId);
     }
   } else if (
@@ -188,6 +199,7 @@ export function getLegalTargets(
       const def = getCardDefinition(state, card);
       if (spec.constraints?.colors?.length && !spec.constraints.colors.some(color => def.colors.includes(color))) continue;
       if (spec.constraints?.notColors?.some(color => def.colors.includes(color))) continue;
+      if (!matchesCmcConstraint(def.cmc ?? 0)) continue;
 
       if (spec.type === 'NonlandPermanent' && def.card_types.includes('land')) continue;
       if (spec.type === 'Land' && !def.card_types.includes('land')) continue;
@@ -220,6 +232,7 @@ export function getLegalTargets(
       const def = getCardDefinition(state, card);
       if (spec.constraints?.colors?.length && !spec.constraints.colors.some(color => def.colors.includes(color))) continue;
       if (spec.constraints?.notColors?.some(color => def.colors.includes(color))) continue;
+      if (!matchesCmcConstraint(def.cmc ?? 0)) continue;
       if (spec.type === 'CreatureCardInGraveyard' && !def.card_types.includes('creature')) continue;
       if (
         spec.type === 'CreatureOrEnchantmentCardInGraveyard'
