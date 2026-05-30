@@ -13,6 +13,7 @@ import {
   getCardDefinition,
   getPlayer,
   getLegalActions,
+  getActivatedAbilities,
   getSpellTargetSpecs,
   getLegalTargets,
   applyAction,
@@ -32,6 +33,7 @@ import {
   parseManaString,
   canPayCost,
   isEffectiveCreature,
+  isBlockedBySummoningSicknessForTap,
   type GameState,
   type GameStateWithAI,
   type CardInstance,
@@ -54,6 +56,7 @@ import {
   getEffectivePower,
   resetLoopDetector,
   type Effect,
+  type ActivatedAbility,
   type StackItem,
   type ActionGameEvent,
   createClientActionRequest,
@@ -873,6 +876,12 @@ function normalizeOracleForFrontendParser(oracleText: string, cardName: string):
   return oracleText.replace(new RegExp(escaped, 'gi'), '~');
 }
 
+function definitionLooksPermanent(def: CardDefinition): boolean {
+  const typeText = [def.type_line, ...def.card_types].join(' ').toLowerCase();
+  return ['artifact', 'battle', 'creature', 'enchantment', 'land', 'planeswalker']
+    .some(type => typeText.includes(type));
+}
+
 function spellEffectsForChoicePrompt(state: GameState, item: Extract<StackItem, { kind: 'Spell' }>): Effect[] {
   const card = state.cards.get(item.cardInstanceId);
   const def = card ? state.cardDefinitions.get(card.definitionId) : undefined;
@@ -880,6 +889,8 @@ function spellEffectsForChoicePrompt(state: GameState, item: Extract<StackItem, 
 
   const override = getOverride(def.id, def.name);
   if (override?.kind === 'Spell') return override.effects as Effect[];
+
+  if (definitionLooksPermanent(def)) return [];
 
   const parsed = parseOracleText(normalizeOracleForFrontendParser(def.oracle_text, def.name));
   if (parsed.kind === 'Spell') return parsed.effects as Effect[];
@@ -966,6 +977,20 @@ function enumerateVirtualCastTargets(state: GameState, playerId: string, card: C
   if (specs.length === 0) return [[]];
   if (specs.length === 1 && specs[0].count === 1) {
     return getLegalTargets(state, playerId, specs[0]).map(target => [target]);
+  }
+  return [];
+}
+
+function enumerateVirtualActivatedAbilityTargets(state: GameState, playerId: string, ability: ActivatedAbility): string[][] {
+  const specs = ability.targets ?? [];
+  if (specs.length === 0) return [[]];
+  if (specs.length === 1) {
+    const spec = {
+      id: specs[0].id,
+      type: specs[0].type as Parameters<typeof getLegalTargets>[2]['type'],
+      count: 1,
+    };
+    return getLegalTargets(state, playerId, spec).map(target => [target]);
   }
   return [];
 }
@@ -1795,6 +1820,7 @@ export function useShelectorGame() {
   const tutorRemainingRef = useRef<number>(0);
   const tutorFilterRef = useRef<string | undefined>(undefined);
   const tutorSourceNameRef = useRef<string>('Search');
+  const tutorSourceInstanceIdRef = useRef<string | undefined>(undefined);
   const pendingCastChoiceActionRef = useRef<SimpleLegalAction | null>(null);
   const pendingCastChoiceModeRef = useRef<PendingCastChoiceMode | null>(null);
   const pendingPlayLandChoiceRef = useRef<PendingPlayLandChoice | null>(null);
@@ -2084,6 +2110,53 @@ export function useShelectorGame() {
                 label: `Cast ${def.name}${targetLabelSuffix(engine, targets)}`,
                 paymentPreview: describeManaPaymentPlan(engine, humanId, paymentPlan),
                 _engineAction: castAction,
+              });
+            }
+          }
+        }
+
+        // Add virtual activated abilities that can be paid by auto-tapping mana sources.
+        // The engine only returns ActivateAbility once the mana is already floating.
+        const existingActivateKeys = new Set(
+          engineActions
+            .filter(a => a.kind === 'ActivateAbility')
+            .map(a => `${a.cardInstanceId}:${a.abilityIndex}:${a.targets.join(',')}`),
+        );
+        const battlefieldForAbilities = getCardsInZone(engine, humanId, 'battlefield');
+        for (const sourceCard of battlefieldForAbilities) {
+          if (sourceCard.ownerId !== humanId) continue;
+          const abilities = getActivatedAbilities(engine, sourceCard.instanceId);
+          for (let abilityIndex = 0; abilityIndex < abilities.length; abilityIndex++) {
+            const ability = abilities[abilityIndex];
+            if (ability.isManaAbility) continue;
+            if (!ability.cost.mana) continue;
+            if (ability.cost.tap && sourceCard.tapped) continue;
+            if (ability.cost.tap && isBlockedBySummoningSicknessForTap(engine, sourceCard.instanceId)) continue;
+            if (ability.cost.sacrifice && ability.cost.sacrifice !== 'self') continue;
+            if (ability.cost.payLife && player.life < ability.cost.payLife) continue;
+
+            const abilityCost = parseManaString(ability.cost.mana);
+            const paymentPlan = findLandsToTap(engine, humanId, abilityCost, availableManaActions);
+            if (!paymentPlan) continue;
+
+            const sourceDef = getCardDefinition(engine, sourceCard);
+            const targetSets = enumerateVirtualActivatedAbilityTargets(engine, humanId, ability);
+            for (const targets of targetSets) {
+              const key = `${sourceCard.instanceId}:${abilityIndex}:${targets.join(',')}`;
+              if (existingActivateKeys.has(key)) continue;
+              const activateAction: AIAction = {
+                kind: 'ActivateAbility',
+                cardInstanceId: sourceCard.instanceId,
+                abilityIndex,
+                targets,
+              };
+              simpleActions.push({
+                kind: 'ActivateAbility',
+                cardInstanceId: sourceCard.instanceId,
+                cardName: sourceDef.name,
+                label: `Activate ${sourceDef.name}${targetLabelSuffix(engine, targets)}`,
+                paymentPreview: describeManaPaymentPlan(engine, humanId, paymentPlan),
+                _engineAction: activateAction,
               });
             }
           }
@@ -2405,18 +2478,20 @@ export function useShelectorGame() {
         // Determine if this is a human-controlled search effect
         let controllerId: string | undefined;
         let sourceName = 'Search';
+        let sourceInstanceId: string | undefined;
         let searchInfo: StackSearchInfo | undefined;
 
         if (top.kind === 'Spell' && top.casterId === humanIdRef.current) {
           // Spell with search (Demonic Tutor, etc.)
           controllerId = top.casterId;
+          sourceInstanceId = top.cardInstanceId;
           const tc = state.cards.get(top.cardInstanceId);
           const td = tc ? state.cardDefinitions.get(tc.definitionId) : undefined;
           sourceName = td?.name || sourceName;
           const effectSearch = searchInfoFromEffects(spellEffectsForChoicePrompt(state, top), state, top.cardInstanceId);
           if (effectSearch) {
             searchInfo = effectSearch;
-          } else if (td?.searchAbility) {
+          } else if (td?.searchAbility && !definitionLooksPermanent(td)) {
             const ability = td.searchAbility as {
               filter?: string;
               destination: SearchDestination;
@@ -2429,6 +2504,7 @@ export function useShelectorGame() {
         } else if (top.kind === 'ActivatedAbility' && top.controllerId === humanIdRef.current) {
           // Activated ability with search (fetch lands, Sakura-Tribe Elder, etc.)
           controllerId = top.controllerId;
+          sourceInstanceId = top.sourceInstanceId;
           const sourceCard = state.cards.get(top.sourceInstanceId);
           const sourceDef = sourceCard ? state.cardDefinitions.get(sourceCard.definitionId) : undefined;
           sourceName = sourceDef?.name || sourceName;
@@ -2503,6 +2579,7 @@ export function useShelectorGame() {
         tutorRemainingRef.current = totalCount - 1;
         tutorFilterRef.current = search.filter;
         tutorSourceNameRef.current = sourceName;
+        tutorSourceInstanceIdRef.current = sourceInstanceId;
         const filterDesc = search.filter ? ` for ${search.filter}` : '';
         const countSuffix = totalCount > 1 ? ` (pick 1 of up to ${totalCount})` : '';
         setTutorTitle(`${sourceName}: Search your library${filterDesc}${countSuffix}`);
@@ -3241,6 +3318,7 @@ export function useShelectorGame() {
       pendingCastChoiceModeRef.current = null;
       pendingPlayLandChoiceRef.current = null;
       pendingSearchEntryChoiceRef.current = null;
+      tutorSourceInstanceIdRef.current = undefined;
       setTutorPhase(false);
       setTutorCards([]);
       setTutorTitle('');
@@ -3804,6 +3882,7 @@ export function useShelectorGame() {
         tutorShuffleRef.current,
         {
           selectedCardInstanceId,
+          sourceInstanceId: tutorSourceInstanceIdRef.current,
           payLifeToEnterUntapped: payLifeForSearchEntry,
         },
       ) as GameStateWithAI;
@@ -3913,6 +3992,7 @@ export function useShelectorGame() {
     tutorFilterSpecRef.current = undefined;
     tutorTappedRef.current = false;
     tutorShuffleRef.current = true;
+    tutorSourceInstanceIdRef.current = undefined;
 
     const loopMessages: { role: ChatMessage['role']; text: string }[] = [];
     const loopLogEntries: GameLogEntry[] = [];
@@ -3941,6 +4021,7 @@ export function useShelectorGame() {
     tutorFilterSpecRef.current = undefined;
     tutorTappedRef.current = false;
     tutorShuffleRef.current = true;
+    tutorSourceInstanceIdRef.current = undefined;
 
     if (pendingCastChoice) {
       pendingCastChoiceActionRef.current = null;
@@ -4350,6 +4431,7 @@ export function useShelectorGame() {
           tutorTappedRef.current = false;
           tutorShuffleRef.current = false;
           tutorSourceNameRef.current = def?.name || 'Cast choice';
+          tutorSourceInstanceIdRef.current = undefined;
           setTutorTitle(`${def?.name || 'Mox Diamond'}: discard a land card`);
           setTutorCards(discardOptions);
           setTutorPhase(true);
@@ -4385,6 +4467,7 @@ export function useShelectorGame() {
           tutorTappedRef.current = false;
           tutorShuffleRef.current = false;
           tutorSourceNameRef.current = def?.name || 'Cast choice';
+          tutorSourceInstanceIdRef.current = undefined;
           setTutorTitle(`${def?.name || 'Cast trigger'}: choose a creature to sacrifice, or cancel to decline`);
           setTutorCards(sacrificeOptions);
           setTutorPhase(true);
@@ -4418,6 +4501,7 @@ export function useShelectorGame() {
           tutorTappedRef.current = false;
           tutorShuffleRef.current = false;
           tutorSourceNameRef.current = def.name;
+          tutorSourceInstanceIdRef.current = undefined;
           setTutorTitle(`${def.name}: choose a creature type`);
           setTutorCards(typeOptions);
           setTutorPhase(true);
@@ -4435,6 +4519,7 @@ export function useShelectorGame() {
           tutorTappedRef.current = false;
           tutorShuffleRef.current = false;
           tutorSourceNameRef.current = def.name;
+          tutorSourceInstanceIdRef.current = undefined;
           setTutorTitle(`${def.name}: enter untapped?`);
           setTutorCards([
             {
@@ -4706,11 +4791,58 @@ export function useShelectorGame() {
           }
           newState = manaState;
         } else if (engineAction.kind === 'ActivateAbility') {
+          let preActivateState = engine as GameState;
+          const abilities = getActivatedAbilities(preActivateState, engineAction.cardInstanceId);
+          const ability = abilities[engineAction.abilityIndex];
+          const abilityCost = ability?.cost.mana ? parseManaString(ability.cost.mana) : null;
+
+          if (abilityCost) {
+            const player = preActivateState.players.find(p => p.id === humanIdRef.current);
+            if (player && !canPayCost(player.manaPool, abilityCost)) {
+              const manaActions = getLegalActions(preActivateState, humanIdRef.current).filter(
+                (a): a is { kind: 'ActivateManaAbility'; cardInstanceId: string; color: ManaColor } =>
+                  a.kind === 'ActivateManaAbility',
+              );
+              const landsToTap = findLandsToTap(preActivateState, humanIdRef.current, abilityCost, manaActions);
+              if (landsToTap && landsToTap.length > 0) {
+                let tapState = preActivateState;
+                for (const manaAction of landsToTap) {
+                  if (manaAction.kind !== 'ActivateManaAbility') continue;
+                  const beforePool = tapState.players.find(p => p.id === humanIdRef.current)?.manaPool;
+                  const tapResult = tryTapLandForMana(tapState, humanIdRef.current, manaAction.cardInstanceId, manaAction.color);
+                  if (!tapResult.ok) {
+                    console.warn('Auto-tap failed:', tapResult.message);
+                    continue;
+                  }
+                  tapState = tapResult.state;
+                  collectedEvents.push(...tapResult.events);
+
+                  const afterPool = tapState.players.find(p => p.id === humanIdRef.current)?.manaPool;
+                  const tappedCard = tapState.cards.get(manaAction.cardInstanceId);
+                  const tappedDef = tappedCard ? getCardDefinition(tapState, tappedCard) : undefined;
+                  const gained: string[] = [];
+                  if (afterPool && beforePool) {
+                    for (const c of ['W', 'U', 'B', 'R', 'G', 'C'] as const) {
+                      const diff = afterPool[c] - beforePool[c];
+                      if (diff > 0) gained.push(`+${diff}${c}`);
+                    }
+                  }
+                  addMessage('system', `Auto-tapped ${tappedDef?.name || 'a permanent'} (${gained.join(' ') || '+mana'}).`);
+                }
+                const poolBeforeAbility = tapState.players.find(p => p.id === humanIdRef.current)?.manaPool;
+                addMessage('system', `Mana available: ${poolBeforeAbility ? formatManaPool(poolBeforeAbility) : '?'}`);
+                preActivateState = tapState;
+              }
+            } else if (player) {
+              addMessage('system', `Using floating mana: ${formatManaPool(player.manaPool)}`);
+            }
+          }
+
           const activatedState = applyAuthoritativeAction(
-            engine as GameState,
+            preActivateState,
             humanIdRef.current,
             action,
-            { rejectionPrefix: 'Cannot activate ability' },
+            { recordAcceptedUpdate: false, rejectionPrefix: 'Cannot activate ability' },
           );
           if (!activatedState) {
             return;
@@ -4845,8 +4977,8 @@ export function useShelectorGame() {
               amount: Math.max(0, amount),
             });
           }
-        } else if (engineAction.kind === 'CastSpell') {
-          // Spell was cast — all tapped mana sources are now committed
+        } else if (engineAction.kind === 'CastSpell' || engineAction.kind === 'ActivateAbility' || engineAction.kind === 'Equip') {
+          // Mana was spent on a spell or ability, so manual taps are now committed.
           uncommittedTapsRef.current.clear();
         }
 

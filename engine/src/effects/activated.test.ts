@@ -576,6 +576,66 @@ describe('executeSearchLibrary', () => {
     expect(accepted.cards.get('inst_2')!.zone).toBe('battlefield');
   });
 
+  it('full Sisay flow pays WUBRG, uses the stack, and resolves a legal legend to battlefield', () => {
+    const sisay = createTestDef({
+      id: 'sisay',
+      name: 'Sisay, Weatherlight Captain',
+      type_line: 'Legendary Creature - Human Soldier',
+      oracle_text: '{W}{U}{B}{R}{G}, {T}: Search your library for a legendary permanent card with mana value less than Sisay, Weatherlight Captain\'s power, put that card onto the battlefield, then shuffle.',
+      card_types: ['creature'],
+      mana_cost: '{2}{W}',
+      cmc: 3,
+      power: 2,
+      toughness: 2,
+    });
+    const yoshimaru = createTestDef({
+      id: 'yoshimaru',
+      name: 'Yoshimaru, Ever Faithful',
+      type_line: 'Legendary Creature - Dog',
+      card_types: ['creature'],
+      cmc: 1,
+      power: 1,
+      toughness: 1,
+    });
+    const arcaneSignet = createTestDef({
+      id: 'arcane_signet',
+      name: 'Arcane Signet',
+      type_line: 'Artifact',
+      card_types: ['artifact'],
+      cmc: 2,
+    });
+
+    const baseState = createTestState([
+      { def: sisay, zone: 'battlefield', ownerId: 'p1' },
+      { def: yoshimaru, zone: 'library', ownerId: 'p1' },
+      { def: arcaneSignet, zone: 'library', ownerId: 'p1' },
+    ]);
+    const state: GameState = {
+      ...baseState,
+      players: baseState.players.map(player =>
+        player.id === 'p1'
+          ? { ...player, manaPool: { W: 1, U: 1, B: 1, R: 1, G: 1, C: 0 } }
+          : player,
+      ),
+    };
+
+    const abilities = getActivatedAbilities(state, 'inst_1');
+    expect(abilities).toHaveLength(1);
+    expect(abilities[0].cost.mana).toBe('{W}{U}{B}{R}{G}');
+    expect(canActivateAbility(state, 'p1', 'inst_1', 0)).toBe(true);
+
+    const activated = activateAbility(state, 'p1', 'inst_1', 0);
+    expect(activated.cards.get('inst_1')!.tapped).toBe(true);
+    expect(activated.players[0].manaPool).toEqual({ W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 });
+    expect(activated.stack).toHaveLength(1);
+    expect(activated.cards.get('inst_2')!.zone).toBe('library');
+
+    const resolved = resolveTopOfStack(activated);
+    expect(resolved.stack).toHaveLength(0);
+    expect(resolved.cards.get('inst_2')!.zone).toBe('battlefield');
+    expect(resolved.cards.get('inst_3')!.zone).toBe('library');
+  });
+
   it('matches Farseek by land subtype, not by every land card', () => {
     const forest = createTestDef({
       id: 'forest',
