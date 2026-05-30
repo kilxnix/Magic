@@ -3,6 +3,7 @@ import {
   applyClientActionRequest,
   applyChooseReplacementPromptResponse,
   applyPayCostsPromptResponse,
+  applyLibraryManipulationPromptResponse,
   applySearchLibraryPromptResponse,
   applySelectCardsPromptResponse,
   applySelectTargetPromptResponse,
@@ -13,6 +14,7 @@ import {
   buildActionPrompt,
   createClientActionRequest,
   createBattlefieldEntryReplacementPromptRequest,
+  createLibraryManipulationPromptRequest,
   createSearchLibraryPromptRequest,
   createSelectCardsPromptRequest,
   createSelectTargetPromptRequest,
@@ -936,6 +938,41 @@ describe('authority action boundary', () => {
     });
     expect(illegal.ok).toBe(false);
     expect(illegal.message).toContain('required selection filter');
+  });
+
+  it('validates scry and surveil library manipulation responses against the revealed card set', () => {
+    const state = stateWithSisaySearchChoices();
+    const request = createLibraryManipulationPromptRequest(state, 'p1', 'surveil', 3, {
+      id: 'prompt-surveil-three',
+      stackItemId: 'stack-surveil',
+      createdAt: 24,
+    });
+    const revealedIds = request.legalChoices.map(choice => choice.cardInstanceId);
+    expect(revealedIds).toHaveLength(3);
+
+    const accepted = applyLibraryManipulationPromptResponse(state, request, {
+      requestId: request.id,
+      kind: 'LibraryManipulation',
+      playerId: 'p1',
+      topCardInstanceIds: [revealedIds[1]],
+      movedCardInstanceIds: [revealedIds[0], revealedIds[2]],
+    });
+    expect(accepted.ok).toBe(true);
+    expect(accepted.state).toBe(state);
+    expect(accepted.libraryManipulationChoices).toEqual({
+      surveilTopIds: revealedIds[1],
+      surveilGraveyardIds: `${revealedIds[0]},${revealedIds[2]}`,
+    });
+
+    const illegal = applyLibraryManipulationPromptResponse(state, request, {
+      requestId: request.id,
+      kind: 'LibraryManipulation',
+      playerId: 'p1',
+      topCardInstanceIds: [revealedIds[0]],
+      movedCardInstanceIds: ['not-revealed'],
+    });
+    expect(illegal.ok).toBe(false);
+    expect(illegal.message).toContain('choose each revealed card exactly once');
   });
 
   it('includes selected target names in command labels', () => {

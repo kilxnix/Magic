@@ -71,12 +71,15 @@ import {
   applyPayCostsPromptResponse,
   createSelectCardsPromptRequest,
   applySelectCardsPromptResponse,
+  createLibraryManipulationPromptRequest,
+  applyLibraryManipulationPromptResponse,
   type ActionPromptChoice,
   type ClientActionResponse,
   type EnginePrompt,
   type EngineStateUpdate,
   type SearchLibraryPromptRequest,
   type SelectCardsPromptRequest,
+  type LibraryManipulationPromptRequest,
   type TargetSpec,
   summarizeActionPromptChoices,
   serializeGameState,
@@ -1998,6 +2001,7 @@ export function useShelectorGame() {
   const pendingSearchEntryChoiceRef = useRef<PendingSearchEntryChoice | null>(null);
   const pendingTargetChoiceRef = useRef<PendingTargetChoice | null>(null);
   const pendingLibraryChoiceRef = useRef<{ stackItemId: string; mode: 'scry' | 'surveil' } | null>(null);
+  const libraryManipulationPromptRequestRef = useRef<LibraryManipulationPromptRequest | null>(null);
   const submitActionRef = useRef<((action: SimpleLegalAction) => void) | null>(null);
   const [undosRemaining, setUndosRemaining] = useState(10);
 
@@ -2833,22 +2837,26 @@ export function useShelectorGame() {
 
         let controllerId: string | undefined;
         let sourceName = 'Library choice';
+        let sourceInstanceId: string | undefined;
         let effects: unknown[] | undefined;
 
         if (top.kind === 'Spell') {
           controllerId = top.casterId;
+          sourceInstanceId = top.cardInstanceId;
           const spellCard = state.cards.get(top.cardInstanceId);
           const spellDef = spellCard ? state.cardDefinitions.get(spellCard.definitionId) : undefined;
           sourceName = spellDef?.name || sourceName;
           effects = spellEffectsForChoicePrompt(state, top);
         } else if (top.kind === 'ActivatedAbility') {
           controllerId = top.controllerId;
+          sourceInstanceId = top.sourceInstanceId;
           const sourceCard = state.cards.get(top.sourceInstanceId);
           const sourceDef = sourceCard ? state.cardDefinitions.get(sourceCard.definitionId) : undefined;
           sourceName = sourceDef?.name || sourceName;
           effects = top.ability.effects;
         } else if (top.kind === 'TriggeredAbility') {
           controllerId = top.controllerId;
+          sourceInstanceId = top.sourceInstanceId;
           const sourceCard = state.cards.get(top.sourceInstanceId);
           const sourceDef = sourceCard ? state.cardDefinitions.get(sourceCard.definitionId) : undefined;
           sourceName = sourceDef?.name || sourceName;
@@ -2860,15 +2868,27 @@ export function useShelectorGame() {
         if (!info || info.count <= 0) return false;
         if (top.namedCardChoices?.[`${info.mode}TopIds`]) return false;
 
-        const libraryCards = getCardsInZone(state, humanIdRef.current, 'library').slice(0, info.count);
-        if (libraryCards.length === 0) return false;
-        const cards = libraryCards
+        const promptRequest = createLibraryManipulationPromptRequest(
+          state,
+          humanIdRef.current,
+          info.mode,
+          info.count,
+          {
+            sourceInstanceId,
+            stackItemId: top.id,
+          },
+        );
+        if (promptRequest.legalChoices.length === 0) return false;
+        const cards = promptRequest.legalChoices
+          .map(choice => state.cards.get(choice.cardInstanceId))
+          .filter((card): card is CardInstance => Boolean(card))
           .map(card => toTutorCardOption(state, card))
           .filter((option): option is TutorCardOption => !!option);
         if (cards.length === 0) return false;
 
         engineRef.current = state as GameStateWithAI;
         pendingLibraryChoiceRef.current = { stackItemId: top.id, mode: info.mode };
+        libraryManipulationPromptRequestRef.current = promptRequest;
         setLibraryChoice({
           id: `${top.id}:${info.mode}:${cards.map(card => card.instanceId).join('|')}`,
           mode: info.mode,
@@ -3400,6 +3420,7 @@ export function useShelectorGame() {
     if (!engine || !pending || engine.stack.length === 0) {
       setLibraryChoice(null);
       pendingLibraryChoiceRef.current = null;
+      libraryManipulationPromptRequestRef.current = null;
       syncState();
       return;
     }
@@ -3408,32 +3429,36 @@ export function useShelectorGame() {
     if (!top || top.id !== pending.stackItemId) {
       setLibraryChoice(null);
       pendingLibraryChoiceRef.current = null;
+      libraryManipulationPromptRequestRef.current = null;
       syncState();
       return;
     }
 
-    const revealedIds = libraryChoice?.cards.map(card => card.instanceId) || [];
-    const revealedSet = new Set(revealedIds);
-    const submittedIds = [...topIds, ...movedIds];
-    const submittedSet = new Set(submittedIds);
-    const hasDuplicate = submittedSet.size !== submittedIds.length;
-    const hasUnknownCard = submittedIds.some(id => !revealedSet.has(id));
-    const missedRevealedCard = revealedIds.some(id => !submittedSet.has(id));
-    if (hasDuplicate || hasUnknownCard || missedRevealedCard) {
-      addMessage('system', `Could not resolve ${pending.mode}: choose each revealed card exactly once.`);
+    const promptRequest = libraryManipulationPromptRequestRef.current;
+    if (!promptRequest) {
+      addMessage('system', `Could not resolve ${pending.mode}: missing engine prompt.`);
       syncState();
       return;
     }
 
-    const namedCardChoices: Record<string, string> = { ...(top.namedCardChoices || {}) };
-    if (pending.mode === 'scry') {
-      namedCardChoices.scryTopIds = topIds.join(',');
-      namedCardChoices.scryBottomIds = movedIds.join(',');
-    } else {
-      namedCardChoices.surveilTopIds = topIds.join(',');
-      namedCardChoices.surveilGraveyardIds = movedIds.join(',');
+    const promptResponse = applyLibraryManipulationPromptResponse(engine, promptRequest, {
+      requestId: promptRequest.id,
+      kind: 'LibraryManipulation',
+      playerId: humanIdRef.current,
+      topCardInstanceIds: topIds,
+      movedCardInstanceIds: movedIds,
+    });
+    recordAuthorityUpdate(promptResponse.update);
+    if (!promptResponse.ok || !promptResponse.libraryManipulationChoices) {
+      addMessage('system', promptResponse.message || `Could not resolve ${pending.mode}: choose each revealed card exactly once.`);
+      syncState();
+      return;
     }
 
+    const namedCardChoices: Record<string, string> = {
+      ...(top.namedCardChoices || {}),
+      ...promptResponse.libraryManipulationChoices,
+    };
     const stack = [
       ...engine.stack.slice(0, -1),
       { ...top, namedCardChoices } as StackItem,
@@ -3442,6 +3467,7 @@ export function useShelectorGame() {
 
     setLibraryChoice(null);
     pendingLibraryChoiceRef.current = null;
+    libraryManipulationPromptRequestRef.current = null;
 
     state = resolveTopOfStack(state);
     state = runSBAAndTriggers(state);
@@ -3455,7 +3481,7 @@ export function useShelectorGame() {
     for (const msg of loopMessages) addMessage(msg.role, msg.text);
     if (loopLogEntries.length > 0) setGameLog(prev => [...prev, ...loopLogEntries]);
     syncState();
-  }, [addMessage, advanceGameLoop, libraryChoice, runSBAAndTriggers, syncState]);
+  }, [addMessage, advanceGameLoop, recordAuthorityUpdate, runSBAAndTriggers, syncState]);
 
   // Spawn opponent via the Shelector API
   const spawnOpponent = useCallback(async (options?: SpawnOptions) => {
@@ -3563,6 +3589,7 @@ export function useShelectorGame() {
       pendingTargetChoiceRef.current = null;
       tutorSourceInstanceIdRef.current = undefined;
       tutorPromptRequestRef.current = null;
+      libraryManipulationPromptRequestRef.current = null;
       setTutorPhase(false);
       setTutorCards([]);
       setTutorTitle('');
@@ -4383,6 +4410,7 @@ export function useShelectorGame() {
     tutorShuffleRef.current = true;
     tutorSourceInstanceIdRef.current = undefined;
     tutorPromptRequestRef.current = null;
+    libraryManipulationPromptRequestRef.current = null;
 
     const loopMessages: { role: ChatMessage['role']; text: string }[] = [];
     const loopLogEntries: GameLogEntry[] = [];
@@ -5845,6 +5873,7 @@ export function useShelectorGame() {
       pendingPlayLandChoiceRef.current = null;
       pendingSearchEntryChoiceRef.current = null;
       pendingTargetChoiceRef.current = null;
+      libraryManipulationPromptRequestRef.current = null;
       const restoredLibraryChoice = snapshot.libraryChoice || null;
       pendingLibraryChoiceRef.current = restoredLibraryChoice
         ? { stackItemId: restoredLibraryChoice.id.split(':')[0], mode: restoredLibraryChoice.mode }

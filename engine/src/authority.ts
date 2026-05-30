@@ -55,7 +55,8 @@ export type EnginePromptKind =
   | 'SelectTarget'
   | 'ChooseReplacement'
   | 'PayCosts'
-  | 'SelectCards';
+  | 'SelectCards'
+  | 'LibraryManipulation';
 
 export type ClientPromptFailure =
   | 'invalid_request'
@@ -124,6 +125,7 @@ export interface ClientPromptResponse {
   selectedReplacementOptionId?: ReplacementOptionId;
   selectedManaActions?: ManaPaymentAction[];
   selectedCardInstanceIds?: string[];
+  libraryManipulationChoices?: Record<string, string>;
 }
 
 export interface TargetChoice {
@@ -284,6 +286,44 @@ export interface CreateSelectCardsPromptOptions {
   createdAt?: number;
 }
 
+export type LibraryManipulationMode = 'scry' | 'surveil';
+
+export interface LibraryManipulationChoice {
+  cardInstanceId: string;
+  cardName: string;
+  legal: boolean;
+  reason?: string;
+}
+
+export interface LibraryManipulationPromptRequest {
+  id: string;
+  kind: 'LibraryManipulation';
+  playerId: string;
+  expectedStateId: string;
+  sourceInstanceId?: string;
+  stackItemId?: string;
+  mode: LibraryManipulationMode;
+  count: number;
+  legalChoices: LibraryManipulationChoice[];
+  invalidChoices: LibraryManipulationChoice[];
+  createdAt: number;
+}
+
+export interface CreateLibraryManipulationPromptOptions {
+  id?: string;
+  sourceInstanceId?: string;
+  stackItemId?: string;
+  createdAt?: number;
+}
+
+export interface LibraryManipulationPromptResponse {
+  requestId: string;
+  kind: 'LibraryManipulation';
+  playerId: string;
+  topCardInstanceIds: string[];
+  movedCardInstanceIds: string[];
+}
+
 export interface SelectCardsPromptResponse {
   requestId: string;
   kind: 'SelectCards';
@@ -334,12 +374,18 @@ export interface SelectCardsPromptReplayRecord {
   response: SelectCardsPromptResponse;
 }
 
+export interface LibraryManipulationPromptReplayRecord {
+  request: LibraryManipulationPromptRequest;
+  response: LibraryManipulationPromptResponse;
+}
+
 export type PromptReplayRecord =
   | SearchPromptReplayRecord
   | TargetPromptReplayRecord
   | ReplacementPromptReplayRecord
   | PayCostsPromptReplayRecord
-  | SelectCardsPromptReplayRecord;
+  | SelectCardsPromptReplayRecord
+  | LibraryManipulationPromptReplayRecord;
 
 export interface PromptReplayAuditStep {
   index: number;
@@ -2318,6 +2364,167 @@ export function applySelectCardsPromptResponse(
   };
 }
 
+function libraryManipulationRejectUpdate(
+  state: GameState,
+  request: LibraryManipulationPromptRequest,
+  response: LibraryManipulationPromptResponse,
+  reason: ClientPromptFailure,
+  message: string,
+): EngineStateUpdate {
+  const currentStateId = stateFingerprint(state);
+  return {
+    oldStateId: request.expectedStateId,
+    newStateId: currentStateId,
+    activePlayerId: activePlayerId(state),
+    priorityPlayerId: priorityPlayerId(state),
+    phase: state.phase,
+    step: state.step,
+    turnNumber: state.turnNumber,
+    priority: prioritySnapshot(state),
+    visibleDiffs: [],
+    rulesEvents: [{
+      kind: 'PromptResponseRejected',
+      requestId: response.requestId,
+      playerId: response.playerId,
+      promptKind: request.kind,
+      reason,
+      message,
+      selectedCardInstanceIds: [...response.topCardInstanceIds, ...response.movedCardInstanceIds],
+    }],
+    prompt: buildActionPrompt(state),
+  };
+}
+
+function libraryManipulationChoiceKeys(
+  mode: LibraryManipulationMode,
+  topIds: string[],
+  movedIds: string[],
+): Record<string, string> {
+  return mode === 'scry'
+    ? {
+        scryTopIds: topIds.join(','),
+        scryBottomIds: movedIds.join(','),
+      }
+    : {
+        surveilTopIds: topIds.join(','),
+        surveilGraveyardIds: movedIds.join(','),
+      };
+}
+
+export function createLibraryManipulationPromptRequest(
+  state: GameState,
+  playerId: string,
+  mode: LibraryManipulationMode,
+  count: number,
+  options: CreateLibraryManipulationPromptOptions = {},
+): LibraryManipulationPromptRequest {
+  const expectedStateId = stateFingerprint(state);
+  const createdAt = options.createdAt ?? Date.now();
+  const topLibraryCards = [...state.cards.values()]
+    .filter(card => card.ownerId === playerId && card.zone === 'library')
+    .slice(0, Math.max(0, count));
+  const legalChoices = topLibraryCards.map(card => ({
+    cardInstanceId: card.instanceId,
+    cardName: cardName(state, card) || card.instanceId,
+    legal: true,
+  }));
+
+  return {
+    id: options.id || `library_choice_${expectedStateId}_${hashText(`${playerId}:${mode}:${count}:${createdAt}`)}`,
+    kind: 'LibraryManipulation',
+    playerId,
+    expectedStateId,
+    sourceInstanceId: options.sourceInstanceId,
+    stackItemId: options.stackItemId,
+    mode,
+    count,
+    legalChoices,
+    invalidChoices: [],
+    createdAt,
+  };
+}
+
+export function applyLibraryManipulationPromptResponse(
+  state: GameState,
+  request: LibraryManipulationPromptRequest,
+  response: LibraryManipulationPromptResponse,
+): ClientPromptResponse {
+  if (request.kind !== 'LibraryManipulation' || response.kind !== 'LibraryManipulation' || request.id !== response.requestId) {
+    const message = 'Prompt response does not match the active library-manipulation request.';
+    return {
+      requestId: response.requestId,
+      ok: false,
+      reason: 'invalid_request',
+      message,
+      update: libraryManipulationRejectUpdate(state, request, response, 'invalid_request', message),
+    };
+  }
+
+  if (request.playerId !== response.playerId) {
+    const message = 'This library-manipulation prompt belongs to another player.';
+    return {
+      requestId: response.requestId,
+      ok: false,
+      reason: 'wrong_player',
+      message,
+      update: libraryManipulationRejectUpdate(state, request, response, 'wrong_player', message),
+    };
+  }
+
+  const currentStateId = stateFingerprint(state);
+  if (request.expectedStateId !== currentStateId) {
+    const message = 'The game state changed before this library-manipulation response reached the engine.';
+    return {
+      requestId: response.requestId,
+      ok: false,
+      reason: 'stale_state',
+      message,
+      update: libraryManipulationRejectUpdate(state, request, response, 'stale_state', message),
+    };
+  }
+
+  const submittedIds = [...response.topCardInstanceIds, ...response.movedCardInstanceIds];
+  const submittedSet = new Set(submittedIds);
+  const revealedIds = request.legalChoices.map(choice => choice.cardInstanceId);
+  const revealedSet = new Set(revealedIds);
+  const hasDuplicate = submittedSet.size !== submittedIds.length;
+  const hasUnknown = submittedIds.some(id => !revealedSet.has(id));
+  const missesRevealed = revealedIds.some(id => !submittedSet.has(id));
+  if (hasDuplicate || hasUnknown || missesRevealed) {
+    const message = `${request.mode} response must choose each revealed card exactly once.`;
+    return {
+      requestId: response.requestId,
+      ok: false,
+      reason: 'illegal_response',
+      message,
+      update: libraryManipulationRejectUpdate(state, request, response, 'illegal_response', message),
+    };
+  }
+
+  const choiceKeys = libraryManipulationChoiceKeys(
+    request.mode,
+    response.topCardInstanceIds,
+    response.movedCardInstanceIds,
+  );
+  return {
+    requestId: response.requestId,
+    ok: true,
+    state,
+    update: {
+      ...buildStateUpdate(state, state),
+      rulesEvents: [{
+        kind: 'PromptResponseAccepted',
+        requestId: response.requestId,
+        playerId: response.playerId,
+        promptKind: 'LibraryManipulation',
+        selectedCardInstanceIds: submittedIds,
+      }],
+    },
+    selectedCardInstanceIds: submittedIds,
+    libraryManipulationChoices: choiceKeys,
+  };
+}
+
 function manaPoolDiffs(before: ManaPool, after: ManaPool, playerId: string): VisibleDiff[] {
   const diffs: VisibleDiff[] = [];
   for (const color of MANA_COLORS) {
@@ -2932,7 +3139,9 @@ export function auditPromptReplay(
         ? applyChooseReplacementPromptResponse(state, request, response as ChooseReplacementPromptResponse)
         : request.kind === 'PayCosts'
           ? applyPayCostsPromptResponse(state, request, response as PayCostsPromptResponse)
-          : applySelectCardsPromptResponse(state, request, response as SelectCardsPromptResponse);
+          : request.kind === 'SelectCards'
+            ? applySelectCardsPromptResponse(state, request, response as SelectCardsPromptResponse)
+            : applyLibraryManipulationPromptResponse(state, request, response as LibraryManipulationPromptResponse);
     const step: PromptReplayAuditStep = {
       index,
       requestId: request.id,
@@ -2991,7 +3200,9 @@ export function auditEngineReplay(
             ? applyChooseReplacementPromptResponse(state, record.request, record.response as ChooseReplacementPromptResponse)
             : record.request.kind === 'PayCosts'
               ? applyPayCostsPromptResponse(state, record.request, record.response as PayCostsPromptResponse)
-              : applySelectCardsPromptResponse(state, record.request, record.response as SelectCardsPromptResponse);
+              : record.request.kind === 'SelectCards'
+                ? applySelectCardsPromptResponse(state, record.request, record.response as SelectCardsPromptResponse)
+                : applyLibraryManipulationPromptResponse(state, record.request, record.response as LibraryManipulationPromptResponse);
 
     const step: EngineReplayAuditStep = {
       index,
