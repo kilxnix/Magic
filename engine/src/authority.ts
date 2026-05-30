@@ -2762,6 +2762,88 @@ function shuffleCardEntries(entries: [string, CardInstance][]): [string, CardIns
   return shuffled;
 }
 
+function openingHandCards(state: GameState, playerId: string): CardInstance[] {
+  return [...state.cards.values()].filter(card => card.ownerId === playerId && card.zone === 'hand');
+}
+
+function openingHandLandCount(state: GameState, hand: CardInstance[]): number {
+  return hand.filter(card => {
+    const def = state.cardDefinitions.get(card.definitionId);
+    return def?.card_types.includes('land') === true;
+  }).length;
+}
+
+export function redrawOpeningHandForMulligan(
+  state: GameState,
+  playerId: string,
+  handSize = 7,
+): GameState {
+  const pool: [string, CardInstance][] = [];
+  const otherEntries: [string, CardInstance][] = [];
+
+  for (const [id, card] of state.cards) {
+    if (card.ownerId === playerId && (card.zone === 'hand' || card.zone === 'library')) {
+      pool.push([id, { ...card, zone: 'library' }]);
+    } else {
+      otherEntries.push([id, card]);
+    }
+  }
+
+  const shuffled = shuffleCardEntries(pool).map(([id, card], index) => [
+    id,
+    { ...card, zone: index < handSize ? 'hand' : 'library' },
+  ] as [string, CardInstance]);
+
+  return { ...state, cards: new Map([...otherEntries, ...shuffled]) };
+}
+
+export function bottomOpeningHandCardsForMulligan(
+  state: GameState,
+  playerId: string,
+  count: number,
+): GameState {
+  if (count <= 0) return state;
+
+  const hand = openingHandCards(state, playerId);
+  if (hand.length === 0) return state;
+  const lands = openingHandLandCount(state, hand);
+
+  const scored = hand.map(card => {
+    const def = state.cardDefinitions.get(card.definitionId);
+    const isLand = def?.card_types.includes('land') === true;
+    let score = def?.cmc ?? 0;
+    if (isLand && lands > 3) score += 10;
+    if (isLand && lands <= 2) score -= 10;
+    if (!isLand && lands <= 2 && (def?.cmc ?? 0) >= 5) score += 6;
+    if (!isLand && (def?.cmc ?? 0) <= 2) score -= 2;
+    return { card, score };
+  });
+
+  const toBottom = new Set(
+    scored
+      .sort((a, b) => b.score - a.score)
+      .slice(0, Math.min(count, hand.length))
+      .map(item => item.card.instanceId),
+  );
+
+  const keptEntries: [string, CardInstance][] = [];
+  const bottomEntries: [string, CardInstance][] = [];
+  for (const [id, card] of state.cards) {
+    if (toBottom.has(id)) {
+      bottomEntries.push([id, {
+        ...card,
+        zone: 'library',
+        tapped: false,
+        damage: 0,
+      }]);
+    } else {
+      keptEntries.push([id, card]);
+    }
+  }
+
+  return { ...state, cards: new Map([...keptEntries, ...bottomEntries]) };
+}
+
 function openingMulliganRedrawReject(
   state: GameState,
   reason: OpeningMulliganRedrawFailure,

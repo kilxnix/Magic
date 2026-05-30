@@ -74,6 +74,8 @@ import {
   createSelectCardsPromptRequest,
   applySelectCardsPromptResponse,
   applyOpeningMulliganRedraw,
+  redrawOpeningHandForMulligan,
+  bottomOpeningHandCardsForMulligan,
   createLibraryManipulationPromptRequest,
   applyLibraryManipulationPromptResponse,
   createOptionalTriggerPromptRequest,
@@ -1095,15 +1097,6 @@ function couldCastWithLands(state: GameState, playerId: string, manaCost: ManaCo
   return findLandsToTap(state, playerId, manaCost, manaActions) !== null;
 }
 
-function shuffleCardEntries(entries: [string, CardInstance][]): [string, CardInstance][] {
-  const shuffled = [...entries];
-  for (let i = shuffled.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-  }
-  return shuffled;
-}
-
 function enumerateVirtualCastTargets(state: GameState, playerId: string, card: CardInstance): string[][] {
   const specs = getSpellTargetSpecs(state, card);
   if (specs.length === 0) return [[]];
@@ -1443,64 +1436,6 @@ function shouldAIMulliganOpeningHand(state: GameState, playerId: string, mulliga
   return false;
 }
 
-function redrawOpeningHand(state: GameState, playerId: string, handSize = 7): GameState {
-  const pool: [string, CardInstance][] = [];
-  const otherEntries: [string, CardInstance][] = [];
-
-  for (const [id, card] of state.cards) {
-    if (card.ownerId === playerId && (card.zone === 'hand' || card.zone === 'library')) {
-      pool.push([id, { ...card, zone: 'library' as Zone }]);
-    } else {
-      otherEntries.push([id, card]);
-    }
-  }
-
-  const shuffled = shuffleCardEntries(pool).map(([id, card], index) => [
-    id,
-    { ...card, zone: index < handSize ? 'hand' as Zone : 'library' as Zone },
-  ] as [string, CardInstance]);
-
-  return { ...state, cards: new Map([...otherEntries, ...shuffled]) };
-}
-
-function bottomOpeningHandCards(state: GameState, playerId: string, count: number): GameState {
-  if (count <= 0) return state;
-
-  const hand = getCardsInZone(state, playerId, 'hand');
-  if (hand.length === 0) return state;
-
-  const stats = getOpeningHandStats(state, playerId);
-  const scored = hand.map(card => {
-    const def = getCardDefinition(state, card);
-    const isLand = def.card_types.includes('land');
-    let score = def.cmc;
-    if (isLand && stats.lands > 3) score += 10;
-    if (isLand && stats.lands <= 2) score -= 10;
-    if (!isLand && stats.lands <= 2 && def.cmc >= 5) score += 6;
-    if (!isLand && def.cmc <= 2) score -= 2;
-    return { card, score };
-  });
-
-  const toBottom = new Set(
-    scored
-      .sort((a, b) => b.score - a.score)
-      .slice(0, Math.min(count, hand.length))
-      .map(item => item.card.instanceId),
-  );
-
-  const keptEntries: [string, CardInstance][] = [];
-  const bottomEntries: [string, CardInstance][] = [];
-  for (const [id, card] of state.cards) {
-    if (toBottom.has(id)) {
-      bottomEntries.push([id, { ...card, zone: 'library' as Zone }]);
-    } else {
-      keptEntries.push([id, card]);
-    }
-  }
-
-  return { ...state, cards: new Map([...keptEntries, ...bottomEntries]) };
-}
-
 function runAIMulligans(
   state: GameStateWithAI,
   aiIds: string[],
@@ -1512,12 +1447,12 @@ function runAIMulligans(
   for (const aiId of aiIds) {
     let mulligansTaken = 0;
     while (shouldAIMulliganOpeningHand(current, aiId, mulligansTaken)) {
-      current = redrawOpeningHand(current, aiId);
+      current = redrawOpeningHandForMulligan(current, aiId);
       mulligansTaken += 1;
       messages.push(`${aiCommanderNames[aiId] || aiId} mulligans to ${7 - mulligansTaken}.`);
     }
 
-    current = bottomOpeningHandCards(current, aiId, mulligansTaken);
+    current = bottomOpeningHandCardsForMulligan(current, aiId, mulligansTaken);
     if (mulligansTaken === 0) {
       messages.push(`${aiCommanderNames[aiId] || aiId} keeps their hand.`);
     } else {
