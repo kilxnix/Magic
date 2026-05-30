@@ -1,10 +1,11 @@
-import { GameState, CardInstance, TriggeredAbilityRef, Zone } from './types';
+import { GameState, CardInstance, CardDefinition, TriggeredAbilityRef, Zone } from './types';
 import { isIndestructible } from './keywords';
 import { getCommanderDestinationZone } from './commander';
 import { getCardDefinition, pruneDetachedEffects } from './game-state';
 import { isEffectiveCreature } from './effective-types';
 import { applyReplacements } from './effects/replacement';
 import { getEffectiveToughness as getLayeredEffectiveToughness } from './effects/continuous';
+import { validateTargetChoices, type TargetSpec } from './effects/targets';
 
 /**
  * Cancel +1/+1 and -1/-1 counters on a creature.
@@ -261,14 +262,22 @@ export function checkStateBasedActions(state: GameState): GameState {
     }
   }
 
-  // Unattach equipment from creatures that left the battlefield
+  // Unattach Equipment/Fortifications from illegal objects and put illegal
+  // Auras into the graveyard. This covers both targets leaving and effects
+  // that make an attachment illegal later, such as protection.
   const attachmentsMovedToGraveyard: string[] = [];
   for (const [id, card] of newCards) {
     if (card.attachedTo) {
       const attachedToCard = newCards.get(card.attachedTo);
-      if (!attachedToCard || attachedToCard.zone !== 'battlefield') {
-        const def = getCardDefinition(state, card);
-        const isAura = def.type_line.toLowerCase().includes('aura');
+      const attachmentState = { ...state, cards: newCards, players: newPlayers };
+      const def = getCardDefinition(attachmentState, card);
+      const isAura = def.type_line.toLowerCase().includes('aura');
+      const illegalAttachment =
+        !attachedToCard
+        || attachedToCard.zone !== 'battlefield'
+        || !attachmentIsLegal(attachmentState, id, card);
+
+      if (illegalAttachment) {
         if (isAura) attachmentsMovedToGraveyard.push(id);
         newCards.set(id, {
           ...card,
@@ -288,6 +297,70 @@ export function checkStateBasedActions(state: GameState): GameState {
   }
 
   return pruneDetachedEffects({ ...state, cards: newCards, players: newPlayers, pendingTriggers: newPendingTriggers, battlefieldAbilities: newBattlefieldAbilities });
+}
+
+function attachmentTargetSpec(def: CardDefinition): TargetSpec | null {
+  const lowerType = def.type_line.toLowerCase();
+  const oracle = def.oracle_text.toLowerCase();
+  const text = `${lowerType}\n${oracle}`;
+
+  if (lowerType.includes('aura')) {
+    let targetType: TargetSpec['type'] | null = null;
+    if (/\benchant\s+(?:target\s+)?creature\b/.test(text)) {
+      targetType = 'Creature';
+    } else if (/\benchant\s+(?:target\s+)?land\b/.test(text)) {
+      targetType = 'Land';
+    } else if (/\benchant\s+(?:target\s+)?artifact\b/.test(text)) {
+      targetType = 'Artifact';
+    } else if (/\benchant\s+(?:target\s+)?enchantment\b/.test(text)) {
+      targetType = 'Enchantment';
+    } else if (/\benchant\s+(?:target\s+)?permanent\b/.test(text)) {
+      targetType = 'Permanent';
+    }
+    if (!targetType) return null;
+
+    const constraints: TargetSpec['constraints'] = {};
+    if (/\benchant\s+(?:target\s+)?(?:creature|land|artifact|enchantment|permanent)\s+you\s+control\b/.test(text)) {
+      constraints.controllerControls = true;
+    } else if (
+      /\benchant\s+(?:target\s+)?(?:creature|land|artifact|enchantment|permanent)\s+(?:an\s+)?opponent\s+controls\b/.test(text)
+      || /\benchant\s+(?:target\s+)?(?:creature|land|artifact|enchantment|permanent)\s+you\s+don'?t\s+control\b/.test(text)
+    ) {
+      constraints.opponentControls = true;
+    }
+
+    return {
+      id: 'attached-to',
+      type: targetType,
+      count: 1,
+      constraints: Object.keys(constraints).length > 0 ? constraints : undefined,
+    };
+  }
+
+  if (lowerType.includes('equipment')) {
+    return { id: 'equipped-to', type: 'Creature', count: 1 };
+  }
+
+  if (lowerType.includes('fortification')) {
+    return { id: 'fortified-to', type: 'Land', count: 1 };
+  }
+
+  return null;
+}
+
+function attachmentIsLegal(state: GameState, attachmentId: string, attachment: CardInstance): boolean {
+  if (!attachment.attachedTo) return true;
+  const target = state.cards.get(attachment.attachedTo);
+  if (!target || target.zone !== 'battlefield') return false;
+  const def = getCardDefinition(state, attachment);
+  const spec = attachmentTargetSpec(def);
+  if (!spec) return true;
+  try {
+    validateTargetChoices(state, attachment.ownerId, [spec], [attachment.attachedTo], attachmentId);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**

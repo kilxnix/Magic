@@ -132,6 +132,95 @@ describe('State-Based Actions', () => {
     expect(next.cards.get(cards[0].instanceId)!.zone).toBe('graveyard');
     expect(next.cards.get(cards[1].instanceId)!.zone).toBe('graveyard');
   });
+
+  it('moves illegal creature Auras to graveyard and detaches illegal Equipment', () => {
+    const aura: CardDefinition = {
+      id: 'creature_aura',
+      name: 'Creature Aura',
+      type_line: 'Enchantment - Aura',
+      oracle_text: 'Enchant creature',
+      mana_cost: '{W}',
+      cmc: 1,
+      colors: ['W'],
+      color_identity: ['W'],
+      keywords: [],
+      card_types: ['enchantment'],
+    };
+    const equipment: CardDefinition = {
+      id: 'test_equipment',
+      name: 'Training Sword',
+      type_line: 'Artifact - Equipment',
+      oracle_text: 'Equipped creature gets +1/+0.',
+      mana_cost: '{1}',
+      cmc: 1,
+      colors: [],
+      color_identity: [],
+      keywords: [],
+      card_types: ['artifact'],
+    };
+    const land: CardDefinition = {
+      id: 'forest',
+      name: 'Forest',
+      type_line: 'Basic Land - Forest',
+      oracle_text: '',
+      mana_cost: '',
+      cmc: 0,
+      colors: [],
+      color_identity: ['G'],
+      keywords: [],
+      card_types: ['land'],
+    };
+    const decks = [
+      { playerId: 'p1', name: 'Alice', cards: [aura, equipment, land], commanderId: 'cmd1' },
+      { playerId: 'p2', name: 'Bob', cards: [], commanderId: 'cmd2' },
+    ];
+    const state = initGameState(decks);
+    const auraCard = getCardsInZone(state, 'p1', 'library').find(card => card.definitionId === aura.id)!;
+    const equipmentCard = getCardsInZone(state, 'p1', 'library').find(card => card.definitionId === equipment.id)!;
+    const landCard = getCardsInZone(state, 'p1', 'library').find(card => card.definitionId === land.id)!;
+    state.cards.set(landCard.instanceId, { ...landCard, zone: 'battlefield' });
+    state.cards.set(auraCard.instanceId, { ...auraCard, zone: 'battlefield', attachedTo: landCard.instanceId });
+    state.cards.set(equipmentCard.instanceId, { ...equipmentCard, zone: 'battlefield', attachedTo: landCard.instanceId });
+
+    const next = checkStateBasedActions(state);
+    expect(next.cards.get(auraCard.instanceId)?.zone).toBe('graveyard');
+    expect(next.cards.get(auraCard.instanceId)?.attachedTo).toBeUndefined();
+    expect(next.cards.get(equipmentCard.instanceId)?.zone).toBe('battlefield');
+    expect(next.cards.get(equipmentCard.instanceId)?.attachedTo).toBeUndefined();
+  });
+
+  it('moves Auras to graveyard when protection makes the attachment illegal', () => {
+    const protectedBear: CardDefinition = {
+      ...makeBear('protected-bear'),
+      oracle_text: 'Protection from white',
+      keywords: ['Protection from white'],
+    };
+    const whiteAura: CardDefinition = {
+      id: 'white_aura',
+      name: 'White Aura',
+      type_line: 'Enchantment - Aura',
+      oracle_text: 'Enchant creature',
+      mana_cost: '{W}',
+      cmc: 1,
+      colors: ['W'],
+      color_identity: ['W'],
+      keywords: [],
+      card_types: ['enchantment'],
+    };
+    const decks = [
+      { playerId: 'p1', name: 'Alice', cards: [protectedBear, whiteAura], commanderId: 'cmd1' },
+      { playerId: 'p2', name: 'Bob', cards: [], commanderId: 'cmd2' },
+    ];
+    const state = initGameState(decks);
+    const bearCard = getCardsInZone(state, 'p1', 'library').find(card => card.definitionId === protectedBear.id)!;
+    const auraCard = getCardsInZone(state, 'p1', 'library').find(card => card.definitionId === whiteAura.id)!;
+    state.cards.set(bearCard.instanceId, { ...bearCard, zone: 'battlefield' });
+    state.cards.set(auraCard.instanceId, { ...auraCard, zone: 'battlefield', attachedTo: bearCard.instanceId });
+
+    const next = checkStateBasedActions(state);
+    expect(next.cards.get(auraCard.instanceId)?.zone).toBe('graveyard');
+    expect(next.cards.get(auraCard.instanceId)?.attachedTo).toBeUndefined();
+  });
 });
 
 describe('Commander Damage Loss', () => {
