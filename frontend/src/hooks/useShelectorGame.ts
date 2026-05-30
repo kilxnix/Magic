@@ -3392,6 +3392,19 @@ export function useShelectorGame() {
       return;
     }
 
+    const revealedIds = libraryChoice?.cards.map(card => card.instanceId) || [];
+    const revealedSet = new Set(revealedIds);
+    const submittedIds = [...topIds, ...movedIds];
+    const submittedSet = new Set(submittedIds);
+    const hasDuplicate = submittedSet.size !== submittedIds.length;
+    const hasUnknownCard = submittedIds.some(id => !revealedSet.has(id));
+    const missedRevealedCard = revealedIds.some(id => !submittedSet.has(id));
+    if (hasDuplicate || hasUnknownCard || missedRevealedCard) {
+      addMessage('system', `Could not resolve ${pending.mode}: choose each revealed card exactly once.`);
+      syncState();
+      return;
+    }
+
     const namedCardChoices: Record<string, string> = { ...(top.namedCardChoices || {}) };
     if (pending.mode === 'scry') {
       namedCardChoices.scryTopIds = topIds.join(',');
@@ -3422,7 +3435,7 @@ export function useShelectorGame() {
     for (const msg of loopMessages) addMessage(msg.role, msg.text);
     if (loopLogEntries.length > 0) setGameLog(prev => [...prev, ...loopLogEntries]);
     syncState();
-  }, [addMessage, advanceGameLoop, runSBAAndTriggers, syncState]);
+  }, [addMessage, advanceGameLoop, libraryChoice, runSBAAndTriggers, syncState]);
 
   // Spawn opponent via the Shelector API
   const spawnOpponent = useCallback(async (options?: SpawnOptions) => {
