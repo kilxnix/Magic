@@ -56,13 +56,14 @@ export type { TargetSelection } from './targeting';
 
 // Agent
 export {
+  chooseAction,
   makeDecision,
   applyAction,
   runAITurn,
   isAIPlayer,
   createAIConfig,
 } from './agent';
-export type { AIDecision } from './agent';
+export type { AIActionChoice, AIDecision } from './agent';
 
 // Personalities (Phase 11)
 export {

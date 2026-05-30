@@ -6,6 +6,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
+  chooseAction,
   dispatchAIAction,
   makeDecision,
   runAITurn,
@@ -194,6 +195,34 @@ describe('dispatchAIAction', () => {
 
     // Either ok:false (guarded) or the action itself triggers an error caught as internal_error
     expect(result.ok).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Non-mutating action choice tests
+// ---------------------------------------------------------------------------
+
+describe('chooseAction', () => {
+  it('selects an action without applying it to the game state', () => {
+    const state = createTestState({
+      activePlayerIndex: 0,
+      priorityPlayerIndex: 0,
+      phase: 'precombat_main',
+      step: 'main',
+    });
+
+    addCard(state, 'forest1', 'p1', 'hand', {
+      name: 'Forest',
+      type_line: 'Basic Land - Forest',
+      card_types: ['land'],
+    });
+
+    const choice = chooseAction(state, createAIConfig('p1', 5));
+
+    expect(choice).not.toBeNull();
+    expect(choice?.action.kind).toBe('PlayLand');
+    expect(state.cards.get('forest1')?.zone).toBe('hand');
+    expect(state.players[0].landsPlayed ?? 0).toBe(0);
   });
 });
 

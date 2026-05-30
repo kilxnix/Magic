@@ -38,6 +38,16 @@ export interface AIDecision {
 }
 
 /**
+ * AI choice result without applying the action. Use this in authority-driven
+ * callers so the selected action is validated and committed exactly once by
+ * the canonical action boundary.
+ */
+export interface AIActionChoice {
+  action: AIAction;
+  reasoning?: string;
+}
+
+/**
  * Dispatch an AI action through the try* API, returning an ActionResult.
  *
  * This is the canonical action-application layer: it validates and applies
@@ -211,6 +221,42 @@ function enhanceAttackTargets(
   return { ...action, attacks: enhancedAttacks };
 }
 
+function rankedActionChoices(
+  state: GameState,
+  config: AIPlayerConfig,
+): { actions: AIAction[]; evaluations: ActionEvaluation[] } {
+  const { playerId, difficulty } = config;
+
+  let actions = getLegalActions(state, playerId);
+  if (actions.length === 0) {
+    return { actions, evaluations: [] };
+  }
+
+  actions = filterActionsByDifficulty(state, playerId, actions, difficulty);
+  actions = actions.map(action => {
+    action = enhanceCastSpellTargets(state, playerId, action);
+    action = enhanceAttackTargets(state, playerId, action);
+    return action;
+  });
+
+  let evaluations = evaluateActions(state, playerId, actions);
+  evaluations = addRandomness(evaluations, difficulty);
+  return { actions, evaluations };
+}
+
+export function chooseAction(
+  state: GameState,
+  config: AIPlayerConfig,
+): AIActionChoice | null {
+  const { evaluations } = rankedActionChoices(state, config);
+  const bestEvaluation = evaluations[0];
+  if (!bestEvaluation) return null;
+  return {
+    action: bestEvaluation.action,
+    reasoning: bestEvaluation.reasoning,
+  };
+}
+
 /**
  * Make a single decision for an AI player, dispatching the chosen action
  * through the try* API.
@@ -225,30 +271,8 @@ export function makeDecision(
   state: GameState,
   config: AIPlayerConfig,
 ): AIDecision | null {
-  const { playerId, difficulty } = config;
-
-  // Get all legal actions
-  let actions = getLegalActions(state, playerId);
-
-  if (actions.length === 0) {
-    return null; // No legal actions available
-  }
-
-  // Filter by difficulty
-  actions = filterActionsByDifficulty(state, playerId, actions, difficulty);
-
-  // Enhance actions with intelligent targeting
-  actions = actions.map(action => {
-    action = enhanceCastSpellTargets(state, playerId, action);
-    action = enhanceAttackTargets(state, playerId, action);
-    return action;
-  });
-
-  // Evaluate all actions
-  let evaluations = evaluateActions(state, playerId, actions);
-
-  // Add randomness for lower difficulties
-  evaluations = addRandomness(evaluations, difficulty);
+  const { playerId } = config;
+  const { actions, evaluations } = rankedActionChoices(state, config);
 
   // Select the best action
   const bestEvaluation = evaluations[0];

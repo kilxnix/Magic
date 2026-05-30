@@ -16,7 +16,7 @@ import {
   getActivatedAbilities,
   getSpellTargetSpecs,
   getLegalTargets,
-  makeDecision,
+  chooseAction,
   createAIConfig,
   advanceStep,
   performUntapStep,
@@ -2945,7 +2945,7 @@ export function useShelectorGame() {
             // AI has priority with items on the stack — let AI decide (may cast instants)
             try {
               const config = createAIConfig(priorityPlayer.id, 3);
-              const decision = makeDecision(state, config);
+              const decision = chooseAction(state, config);
 
               if (!decision || decision.action.kind === 'PassPriority') {
                 // AI passes priority on the stack
@@ -3060,7 +3060,7 @@ export function useShelectorGame() {
             const currentAiId = activeId;
             try {
               const config = createAIConfig(currentAiId, 3);
-              const decision = makeDecision(state, config);
+              const decision = chooseAction(state, config);
 
               if (!decision) {
                 console.log(`  -> AI (${currentAiId}) main phase: no decision (null)`);
@@ -3199,7 +3199,7 @@ export function useShelectorGame() {
               // AI declares attackers
               try {
                 const config = createAIConfig(activeId, 3);
-                const decision = makeDecision(state, config);
+                const decision = chooseAction(state, config);
                 if (decision && decision.action.kind === 'DeclareAttackers' && decision.action.attacks.length > 0) {
                   const applied = applyValidatedLoopAction(state, activeId, decision.action, 'ai');
                   if (applied) {
