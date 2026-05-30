@@ -1,13 +1,13 @@
 # Verification Ledger - May 30, 2026
 
-Scope: recent `game-reliability-refactor` work from `88e54bb..597d918`, with Sisay excluded from this ledger because it was separately browser-proven.
+Scope: recent `game-reliability-refactor` work from `88e54bb..06c27b5` plus the current verified stack-choice worktree, with Sisay excluded from this ledger because it was separately browser-proven.
 
 ## Automated Verification
 
 | Area | Command | Result |
 | --- | --- | --- |
 | Backend + agent | `pytest backend/tests backend/agent/tests` | 187 passed, 13 skipped |
-| Engine | `cd engine && npm.cmd test -- --run` | 1418 passed, 1 skipped |
+| Engine | `cd engine && npm.cmd test -- --run` | 1435 passed, 1 skipped |
 | Starter deck card QA | `cd engine && npm.cmd test -- --run src/__tests__/starter-decks-card-qa.test.ts` | 16 passed |
 | Frontend | `cd frontend && npm.cmd test -- --run` | 30 passed |
 | Engine build | `cd engine && npm.cmd run build` | Passed |
@@ -29,6 +29,9 @@ Scope: recent `game-reliability-refactor` work from `88e54bb..597d918`, with Sis
 | Color-choice sacrifice mana artifacts | `cd engine && npm.cmd test -- --run src/cards/card-parser-cache.test.ts src/__tests__/lotus-petal-mana.test.ts src/ai/legal-actions.test.ts`; `cd engine && npm.cmd run build` | 71 focused engine tests passed plus engine build passed; Lotus Petal and Lion's Eye Diamond now use parsed color-choice mana production through `ActivateManaAbility`, LED discards the controller's hand and sacrifices itself, and the old colorless activated overrides were removed. |
 | Toxic Deluge X life and -X/-X | `cd engine && npm.cmd test -- --run src/playtesting-report-regressions.test.ts src/ai/legal-actions.test.ts src/stack.test.ts`; `cd engine && npm.cmd run build` | 120 focused engine tests passed plus engine build passed; Toxic Deluge now carries X even though its mana cost has no `{X}`, pays X life as an additional cost during casting, and applies -X/-X until cleanup instead of destroying every creature outright. |
 | Delayed blink return | `cd engine && npm.cmd test -- --run src/effects/blink-copy-keyword-phase.test.ts src/stack.test.ts src/__tests__/multiplayer-maturity.test.ts`; `cd engine && npm.cmd run build` | 102 focused engine tests passed plus engine build passed; delayed blink now exiles the permanent, creates a one-shot next-end-step delayed trigger, and returns the same card from exile on trigger resolution instead of returning immediately. |
+| Targeted opponent mana and impulse exile permissions | `cd engine && npm.cmd test -- --run src/effects/parser.test.ts src/__tests__/ritual-mana-overrides.test.ts`; `cd engine && npm.cmd test -- --run src/__tests__/ritual-mana-overrides.test.ts src/ai/legal-actions.test.ts src/actions-public.test.ts src/persistence/serialize.test.ts`; `cd engine && npm.cmd run build` | 152 parser/ritual tests and 138 zone/legal-action/persistence tests passed plus engine build passed; Jeska's Will now counts the chosen target opponent's hand for red mana and exiles the top three cards with this-turn play permission, and cast/play generation can see cards temporarily playable from exile. |
+| Brainstorm and Fact or Fiction choices | `cd engine && npm.cmd test -- --run src/__tests__/brainstorm-choice.test.ts src/effects/overrides.test.ts`; `cd engine && npm.cmd run build` | 20 focused tests passed plus engine build passed; Brainstorm can use explicit hand-card choices for the two cards put back on top, and Fact or Fiction now moves chosen top-library cards to hand with the rest to graveyard instead of drawing a fixed pile. |
+| Copy choice fidelity and ward choices | `cd engine && npm.cmd test -- --run src/stack.test.ts src/effects/blink-copy-keyword-phase.test.ts src/__tests__/brainstorm-choice.test.ts src/__tests__/ritual-mana-overrides.test.ts`; `cd engine && npm.cmd run build` | 102 focused tests passed plus engine build passed; copy effects preserve copiable face/choice values without copying counters/damage, and Ward now accepts explicit pay/decline choices instead of always auto-paying when mana exists. |
 | Manual commander zone replacement | `cd engine && npm.cmd test -- --run src/actions-public.test.ts src/commander.test.ts`; `cd engine && npm.cmd run build`; `cd frontend && npm.cmd run build` | 80 passed plus engine/frontend builds passed; manual move corrections now apply commander replacement, so sending a commander to graveyard/exile/hand through correction resolves to command zone by default, and the `/play` message reports the final zone. |
 | Room deck parser + decorated unsupported names | `cd frontend && npm.cmd test -- --run tests/roomDeckParser.test.ts tests/enginePreflight.test.ts`; `pytest backend/tests/test_multiplayer.py -q`; `cd frontend && npm.cmd run build` | 4 frontend tests, 17 backend room tests, and frontend build passed; room deck locking now ignores partner commanders/sideboards and strips repeated `*tags*`, set codes, collector numbers, MTGO-style prefixes, and quantity prefixes before card comparison/preflight. |
 | Room moderation obfuscation | `pytest backend/tests/test_multiplayer.py -q` | 17 passed; chat moderation now rejects spaced/leetspeak sexual probes and self-harm/slur probes in addition to links, plain sexual content, harassment, and spam while preserving normal MTG phrases. |
@@ -85,6 +88,10 @@ Scope: recent `game-reliability-refactor` work from `88e54bb..597d918`, with Sis
 - Removed the colorless Lotus Petal / Lion's Eye Diamond activated overrides; parser-backed sacrifice mana artifacts now expose real color choices, and Lion's Eye Diamond pays its discard-hand cost before adding the selected three mana.
 - Replaced the Toxic Deluge destroy-all shortcut with an X life additional-cost path and an X-backed -X/-X override that leaves large creatures alive with temporary P/T modifiers until cleanup.
 - Replaced immediate delayed-blink resolution with a one-shot next-end-step delayed trigger and a `ReturnFromExile` effect, so delayed flicker effects actually wait before returning the exiled card.
+- Replaced Jeska's Will's fixed draw-style shortcut with target-opponent hand-count mana plus top-three exile play permissions, and persisted those temporary exile permissions through save/load.
+- Added explicit choice effects for Brainstorm hand-to-library ordering and Fact or Fiction top-five pile selection instead of fixed draw shortcuts.
+- Tightened copy effects so token copies keep copiable face/choice values while excluding damage and counters.
+- Added explicit Ward pay/decline choice handling so a player can decline ward even when they have enough mana.
 - Changed frontend stack-choice permanent detection to use engine card types directly, preventing subtype/name fragments from deciding whether a spell should be parsed for pending prompt effects.
 - Applied commander replacement to manual move corrections, keeping commanders out of graveyard/exile/hand when the trainer's default command-zone replacement is active, and updated the `/play` correction message to display the final resolved zone.
 - Moved the room deck-list parser into a tested shared frontend helper and hardened both room and solo preflight name normalization against decorated exports (`1x`, set codes, collector numbers, MTGO prefixes, and repeated `*F*` / `*CMDR*` tags).

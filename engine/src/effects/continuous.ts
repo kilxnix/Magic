@@ -4,7 +4,7 @@
  * Handles static/continuous abilities that apply as long as their source
  * is on the battlefield. These are recalculated every time game state is queried.
  *
- * MTG Layer system (simplified):
+ * MTG Layer system implemented in focused passes:
  *   Layer 1: Copy effects
  *   Layer 2: Control-changing effects
  *   Layer 3: Text-changing effects

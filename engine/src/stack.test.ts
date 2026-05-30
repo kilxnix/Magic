@@ -541,6 +541,36 @@ describe('Stack', () => {
       expect(next.players[0].manaPool.C).toBe(0);
     });
 
+    it('respects an explicit Ward decline choice even when mana is available', () => {
+      const killSpell = makeDestroyCreatureSpell();
+      const wardCreature: CardDefinition = {
+        ...makeCreature(),
+        id: 'ward-bear-decline',
+        name: 'Ward Bear Decline',
+        oracle_text: 'Ward {2}',
+        keywords: ['Ward'],
+      };
+      const decks = [
+        { playerId: 'p1', name: 'Alice', cards: [killSpell], commanderId: 'cmd1' },
+        { playerId: 'p2', name: 'Bob', cards: [wardCreature], commanderId: 'cmd2' },
+      ];
+      let state = initGameState(decks);
+      const spell = getCardsInZone(state, 'p1', 'library')[0];
+      const target = getCardsInZone(state, 'p2', 'library')[0];
+      state.cards.set(spell.instanceId, { ...spell, zone: 'hand' });
+      state.cards.set(target.instanceId, { ...target, zone: 'battlefield' });
+      state.players[0].manaPool = { W: 0, U: 0, B: 0, R: 0, G: 1, C: 2 };
+      state = { ...state, phase: 'precombat_main' as any };
+
+      const next = castSpell(state, 'p1', spell.instanceId, [target.instanceId], {
+        namedCardChoices: { [`ward:${target.instanceId}`]: 'decline' },
+      });
+
+      expect(next.stack).toHaveLength(0);
+      expect(next.cards.get(spell.instanceId)?.zone).toBe('graveyard');
+      expect(next.players[0].manaPool.C).toBe(2);
+    });
+
     it('charges and resolves selected X values for X spells', () => {
       const xSpell: CardDefinition = {
         id: 'x-bolt-1',

@@ -203,7 +203,10 @@ export function canPlayLandDetailed(state: GameState, playerId: string, cardInst
   if (!card || card.ownerId !== playerId) {
     return { legal: false, code: 'card_not_found', reason: 'Card not found or not yours' };
   }
-  if (card.zone !== 'hand') {
+  const playableFromExile = card.zone === 'exile'
+    && typeof card.playableFromExileUntilTurn === 'number'
+    && card.playableFromExileUntilTurn >= state.turnNumber;
+  if (card.zone !== 'hand' && !playableFromExile) {
     return { legal: false, code: 'not_in_zone', reason: 'Card is not in a playable zone' };
   }
 

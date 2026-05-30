@@ -93,6 +93,8 @@ export function buildBattlefieldEntryPlan(
       tapped,
       summoningSick: options.summoningSick ?? true,
       damage: 0,
+      playableFromExileUntilTurn: undefined,
+      playableFromExileSourceId: undefined,
       choices: options.choices,
     },
     players,

@@ -69,10 +69,20 @@ function counterWardSubject(state: GameState, item: StackItem): GameState {
   return { ...state, cards: newCards, stack: newStack };
 }
 
+function wardPaymentChoice(item: StackItem, targetId: string): 'pay' | 'decline' | undefined {
+  const choices = (item as StackItem & { namedCardChoices?: Record<string, string> }).namedCardChoices;
+  const raw = choices?.[`ward:${targetId}`] || choices?.ward;
+  if (!raw) return undefined;
+  const normalized = raw.trim().toLowerCase();
+  if (normalized === 'pay' || normalized === 'paid') return 'pay';
+  if (normalized === 'decline' || normalized === 'no' || normalized === 'counter') return 'decline';
+  return undefined;
+}
+
 /**
- * Resolves simple Ward costs for targeted spells/abilities through the same
- * stack path. Prompting and response windows are future UI work, but this
- * prevents unsupported Ward permanents from being silently targetable for free.
+ * Resolves simple Ward costs for targeted spells/abilities through the stack path.
+ * A stack item may carry namedCardChoices["ward:<targetId>"] = "pay" | "decline";
+ * otherwise the deterministic default pays when possible and counters when not.
  */
 export function applyWardForStackItem(
   state: GameState,
@@ -93,6 +103,12 @@ export function applyWardForStackItem(
 
     const wardCost = parseWardCost(targetDef);
     if (!wardCost) continue;
+
+    const choice = wardPaymentChoice(item, targetId);
+    if (choice === 'decline') {
+      nextState = counterWardSubject(nextState, item);
+      break;
+    }
 
     if (canPayWard(nextState, controllerId, wardCost)) {
       nextState = payWard(nextState, controllerId, wardCost);

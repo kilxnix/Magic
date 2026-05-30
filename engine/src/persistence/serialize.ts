@@ -113,6 +113,8 @@ function serializeCardInstance(card: CardInstance): SerializedCardInstanceV1 {
     isCommander: card.isCommander,
     isToken: card.isToken,
     fromSideboard: card.fromSideboard,
+    playableFromExileUntilTurn: card.playableFromExileUntilTurn,
+    playableFromExileSourceId: card.playableFromExileSourceId,
     activeFaceName: card.activeFaceName,
     choices: serializeCardChoices(card.choices),
   };
@@ -152,6 +154,8 @@ function deserializeCardInstance(data: SerializedCardInstanceV1): CardInstance {
     isCommander: data.isCommander,
     isToken: data.isToken,
     fromSideboard: data.fromSideboard,
+    playableFromExileUntilTurn: data.playableFromExileUntilTurn,
+    playableFromExileSourceId: data.playableFromExileSourceId,
     activeFaceName: data.activeFaceName,
     choices: deserializeCardChoices(data.choices),
   };

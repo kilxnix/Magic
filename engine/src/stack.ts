@@ -999,7 +999,10 @@ export function canCastSpell(
   // Can cast from hand OR command zone (if it's the player's commander)
   const player = state.players.find(p => p.id === playerId);
   const isCommander = card.isCommander === true || player?.commanderInstanceIds?.includes(cardInstanceId) || player?.commanderInstanceId === cardInstanceId;
-  const validZone = card.zone === 'hand' || (card.zone === 'command' && isCommander);
+  const playableFromExile = card.zone === 'exile'
+    && typeof card.playableFromExileUntilTurn === 'number'
+    && card.playableFromExileUntilTurn >= state.turnNumber;
+  const validZone = card.zone === 'hand' || playableFromExile || (card.zone === 'command' && isCommander);
   if (!validZone) return false;
   if (findCastZoneRestriction(state, playerId, card)) return false;
 
@@ -1102,6 +1105,8 @@ export function castSpell(
   newCards.set(cardInstanceId, {
     ...card,
     zone: 'stack' as const,
+    playableFromExileUntilTurn: undefined,
+    playableFromExileSourceId: undefined,
     ...(castOptions.faceName ? { activeFaceName: castOptions.faceName } : {}),
   });
 

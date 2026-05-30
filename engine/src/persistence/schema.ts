@@ -96,6 +96,8 @@ export interface SerializedCardInstanceV1 {
   isCommander: boolean;
   isToken?: boolean;
   fromSideboard?: boolean;
+  playableFromExileUntilTurn?: number;
+  playableFromExileSourceId?: string;
   activeFaceName?: string;
   choices?: {
     chosenCreatureType?: string;

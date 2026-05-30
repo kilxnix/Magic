@@ -70,7 +70,7 @@ function resolveAmount(
     return eventDef?.cmc ?? 0;
   }
   if (amount.kind === 'ForEach') {
-    return resolveForEachCount(amount, state, casterId);
+    return resolveForEachCount(amount, state, casterId, chosenTargets);
   }
   if (amount.kind === 'GreatestPower') {
     return resolveGreatestPower(amount, state, casterId);
@@ -100,6 +100,22 @@ function resolveControllerIds(
   return state.players.filter(p => !p.hasLost).map(p => p.id);
 }
 
+function resolveForEachControllerIds(
+  state: GameState,
+  casterId: string,
+  forEach: ForEachAmount,
+  chosenTargets: Map<string, string>,
+): string[] {
+  if (forEach.controller === 'target') {
+    if (!forEach.target) return [];
+    const targetId = resolveTargetRef(forEach.target, casterId, chosenTargets, state);
+    return state.players.some(player => player.id === targetId && !player.hasLost)
+      ? [targetId]
+      : [];
+  }
+  return resolveControllerIds(state, casterId, forEach.controller);
+}
+
 /**
  * Count entities matching a ForEachAmount condition.
  */
@@ -107,13 +123,14 @@ function resolveForEachCount(
   forEach: ForEachAmount,
   state?: GameState,
   casterId?: string,
+  chosenTargets: Map<string, string> = new Map(),
 ): number {
   if (!state || !casterId) return 0;
 
   let count = 0;
-  const { zone, filter, controller } = forEach;
+  const { zone, filter } = forEach;
 
-  const playerIds = resolveControllerIds(state, casterId, controller);
+  const playerIds = resolveForEachControllerIds(state, casterId, forEach, chosenTargets);
 
   for (const [, card] of state.cards) {
     if (card.zone !== zone) continue;
@@ -1644,6 +1661,124 @@ function executePutLandFromHandOntoBattlefield(
   return { ...state, cards: newCards, players: entry.players };
 }
 
+function executePutCardsFromHandOnTop(
+  state: GameState,
+  playerId: string,
+  count: number,
+  selectedCardIds: string[],
+): GameState {
+  const selectedUnique = [...new Set(selectedCardIds.filter(Boolean))];
+  if (selectedUnique.length < count || count <= 0) return state;
+
+  const selectedCards: CardInstance[] = [];
+  for (const selectedId of selectedUnique.slice(0, count)) {
+    const card = state.cards.get(selectedId);
+    if (!card || card.ownerId !== playerId || card.zone !== 'hand') return state;
+    selectedCards.push(card);
+  }
+
+  const selectedSet = new Set(selectedCards.map(card => card.instanceId));
+  const libraryCards = [...state.cards.values()]
+    .filter(card => card.ownerId === playerId && card.zone === 'library');
+  const otherEntries: [string, CardInstance][] = [];
+
+  for (const [id, card] of state.cards) {
+    if (selectedSet.has(id)) continue;
+    if (card.ownerId === playerId && card.zone === 'library') continue;
+    otherEntries.push([id, card]);
+  }
+
+  const newCards = new Map<string, CardInstance>();
+  for (const [id, card] of otherEntries) newCards.set(id, card);
+  for (const card of selectedCards) {
+    newCards.set(card.instanceId, {
+      ...card,
+      zone: 'library',
+      tapped: false,
+      damage: 0,
+      counters: {},
+    });
+  }
+  for (const card of libraryCards) {
+    newCards.set(card.instanceId, card);
+  }
+
+  return { ...state, cards: newCards };
+}
+
+function moveLibraryChoiceCard(
+  state: GameState,
+  card: CardInstance,
+  destination: 'hand' | 'graveyard' | 'exile',
+): CardInstance {
+  const zone = getCommanderDestinationZone(state, card.instanceId, destination);
+  return {
+    ...card,
+    zone,
+    tapped: false,
+    damage: 0,
+    counters: {},
+    playableFromExileUntilTurn: undefined,
+    playableFromExileSourceId: undefined,
+  };
+}
+
+function executeChooseFromTopOfLibrary(
+  state: GameState,
+  playerId: string,
+  count: number,
+  destination: 'hand' | 'graveyard' | 'exile',
+  restDestination: 'bottom' | 'graveyard' | 'exile',
+  selectedCardIds: string[],
+  minSelections: number,
+  maxSelections: number,
+  fallbackSelectionCount: number,
+): GameState {
+  const libraryCards = [...state.cards.values()]
+    .filter(card => card.ownerId === playerId && card.zone === 'library');
+  const revealCount = Math.min(Math.max(0, count), libraryCards.length);
+  if (revealCount <= 0) return state;
+
+  const revealed = libraryCards.slice(0, revealCount);
+  const restLibrary = libraryCards.slice(revealCount);
+  const revealedById = new Map(revealed.map(card => [card.instanceId, card]));
+  const uniqueSelected = [...new Set(selectedCardIds.filter(id => revealedById.has(id)))];
+  const selectionCount = uniqueSelected.length >= minSelections && uniqueSelected.length <= maxSelections
+    ? uniqueSelected.length
+    : Math.min(Math.max(fallbackSelectionCount, minSelections), maxSelections, revealed.length);
+  const selected = (uniqueSelected.length >= minSelections && uniqueSelected.length <= maxSelections
+    ? uniqueSelected
+    : revealed.slice(0, selectionCount).map(card => card.instanceId))
+    .map(id => revealedById.get(id))
+    .filter((card): card is CardInstance => Boolean(card));
+  const selectedSet = new Set(selected.map(card => card.instanceId));
+  const unselected = revealed.filter(card => !selectedSet.has(card.instanceId));
+
+  const otherEntries: [string, CardInstance][] = [];
+  for (const [id, card] of state.cards) {
+    if (card.ownerId === playerId && card.zone === 'library') continue;
+    otherEntries.push([id, card]);
+  }
+
+  const newCards = new Map<string, CardInstance>();
+  for (const [id, card] of otherEntries) newCards.set(id, card);
+  for (const card of selected) {
+    newCards.set(card.instanceId, moveLibraryChoiceCard(state, card, destination));
+  }
+  for (const card of restLibrary) {
+    newCards.set(card.instanceId, card);
+  }
+  for (const card of unselected) {
+    if (restDestination === 'bottom') {
+      newCards.set(card.instanceId, { ...card, zone: 'library' });
+    } else {
+      newCards.set(card.instanceId, moveLibraryChoiceCard(state, card, restDestination));
+    }
+  }
+
+  return { ...state, cards: newCards };
+}
+
 // Token instance counter
 let tokenInstanceCounter = 0;
 
@@ -1918,7 +2053,7 @@ function executeExileFromLibrary(
   state: GameState,
   playerId: string,
   count: number,
-  options: { sourceInstanceId?: string; delayedDamageEachOpponentPerCard?: number } = {},
+  options: { sourceInstanceId?: string; delayedDamageEachOpponentPerCard?: number; mayPlay?: boolean } = {},
 ): GameState {
   const newCards = new Map(state.cards);
 
@@ -1942,6 +2077,15 @@ function executeExileFromLibrary(
       tapped: false,
       damage: 0,
       counters: {},
+      ...(destination === 'exile' && options.mayPlay
+        ? {
+            playableFromExileUntilTurn: state.turnNumber,
+            playableFromExileSourceId: options.sourceInstanceId,
+          }
+        : {
+            playableFromExileUntilTurn: undefined,
+            playableFromExileSourceId: undefined,
+          }),
     });
   }
 
@@ -2193,9 +2337,8 @@ function executeBlink(state: GameState, targetId: string, delayed = false): Game
 }
 
 /**
- * Copy: create a token that's a copy of target creature (simplified).
- * Creates a new CardInstance that references the same CardDefinition as the target.
- * The copy is marked as a token.
+ * Copy: create a token with the target's copiable card definition and entry choices.
+ * Damage, counters, attachments, and temporary grants are intentionally not copied.
  */
 function executeCopy(state: GameState, targetId: string, controllerId: string): GameState {
   const card = state.cards.get(targetId);
@@ -2204,6 +2347,11 @@ function executeCopy(state: GameState, targetId: string, controllerId: string): 
   // Create a token copy with a fresh instance ID
   const copyId = `copy_${++tokenInstanceCounter}`;
   const def = getCardDefinition(state, card);
+  const copiedChoices = card.choices ? {
+    chosenCreatureType: card.choices.chosenCreatureType,
+    imprintedCardIds: card.choices.imprintedCardIds ? [...card.choices.imprintedCardIds] : undefined,
+    discardedCardIds: card.choices.discardedCardIds ? [...card.choices.discardedCardIds] : undefined,
+  } : undefined;
   const entry = buildBattlefieldEntryPlan(
     state,
     controllerId,
@@ -2219,9 +2367,11 @@ function executeCopy(state: GameState, targetId: string, controllerId: string): 
       isCommander: false,
       isToken: true,
       copiedFromDefinitionId: card.definitionId,
+      ...(card.activeFaceName ? { activeFaceName: card.activeFaceName } : {}),
+      ...(copiedChoices ? { choices: copiedChoices } : {}),
     },
     def,
-    { summoningSick: true },
+    { summoningSick: true, choices: copiedChoices },
   );
   const newCards = new Map(state.cards);
   newCards.set(copyId, entry.card);
@@ -2676,6 +2826,34 @@ function executeEffect(
         sourceInstanceId,
       });
     }
+    case 'PutCardsFromHandOnTop': {
+      const topPlayerId = resolveTargetRef(effect.player, casterId, chosenTargets);
+      const topCount = resolveAmount(effect.count, xValue, state, casterId, chosenTargets);
+      const selectedIds = splitChoiceIds(
+        namedCardChoices.get(effect.selectedCardChoiceId ?? 'putOnTopIds')
+          || namedCardChoices.get('handTopIds'),
+      );
+      return executePutCardsFromHandOnTop(state, topPlayerId, topCount, selectedIds);
+    }
+    case 'ChooseFromTopOfLibrary': {
+      const choicePlayerId = resolveTargetRef(effect.player, casterId, chosenTargets);
+      const choiceCount = resolveAmount(effect.count, xValue, state, casterId, chosenTargets);
+      const selectedIds = splitChoiceIds(
+        namedCardChoices.get(effect.selectedCardChoiceId ?? 'topLibraryChoiceIds')
+          || namedCardChoices.get('selectedCardIds'),
+      );
+      return executeChooseFromTopOfLibrary(
+        state,
+        choicePlayerId,
+        choiceCount,
+        effect.destination,
+        effect.restDestination,
+        selectedIds,
+        effect.minSelections ?? 0,
+        effect.maxSelections ?? choiceCount,
+        effect.fallbackSelectionCount ?? effect.maxSelections ?? choiceCount,
+      );
+    }
     case 'ShuffleLibrary': {
       const shPlayerId = resolveTargetRef(effect.player, casterId, chosenTargets);
       return executeShuffleLibrary(state, shPlayerId);
@@ -2729,6 +2907,7 @@ function executeEffect(
       const eflCount = resolveAmount(effect.count, xValue, state, casterId);
       return executeExileFromLibrary(state, eflPlayerId, eflCount, {
         sourceInstanceId,
+        mayPlay: effect.mayPlay,
         delayedDamageEachOpponentPerCard: effect.delayedDamageEachOpponentPerCard,
       });
     }
@@ -2768,7 +2947,7 @@ function executeEffect(
       if (!returnTargetId) return state;
       return executeReturnFromExile(state, returnTargetId);
     }
-    // Phase 16: Copy — create token copy (simplified)
+    // Phase 16: Copy - create a token copy
     case 'Copy': {
       const copyTargetId = resolveTargetRef(effect.target, casterId, chosenTargets);
       return executeCopy(state, copyTargetId, casterId);

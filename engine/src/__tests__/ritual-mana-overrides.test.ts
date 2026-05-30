@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { executeEffects } from '../effects/executor';
 import { getOverride } from '../effects/overrides';
+import { canCastSpell } from '../stack';
 import type { CardDefinition, CardInstance, GameState } from '../types';
 
 type Zone = CardInstance['zone'];
@@ -68,6 +69,7 @@ function baseState(): GameState {
     cardDefinitions: new Map([
       ['creature-def', definition('creature-def', 'Graveyard Creature', 'Creature - Test', ['creature'])],
       ['spell-def', definition('spell-def', 'Spent Spell', 'Instant', ['instant'])],
+      ['library-def', definition('library-def', 'Library Card', 'Sorcery', ['sorcery'])],
       ['rite-def', definition('rite-def', 'Rite of Flame', 'Sorcery', ['sorcery'])],
     ]),
     activePlayerIndex: 0,
@@ -85,11 +87,11 @@ function withCards(state: GameState, cards: CardInstance[]): GameState {
   return { ...state, cards: new Map(cards.map(card => [card.instanceId, card])) };
 }
 
-function resolveSpellOverride(state: GameState, name: string): GameState {
+function resolveSpellOverride(state: GameState, name: string, chosenTargetIds: string[] = []): GameState {
   const override = getOverride('any', name);
   expect(override?.kind).toBe('Spell');
   if (!override || override.kind !== 'Spell') return state;
-  return executeEffects(state, override.effects, 'p1', [], []);
+  return executeEffects(state, override.effects, 'p1', chosenTargetIds, override.targets);
 }
 
 describe('ritual mana overrides', () => {
@@ -129,5 +131,27 @@ describe('ritual mana overrides', () => {
 
     const next = resolveSpellOverride(state, 'Songs of the Damned');
     expect(next.players[0].manaPool.B).toBe(3);
+  });
+
+  it("counts the chosen opponent's hand for Jeska's Will mana", () => {
+    const state = withCards(baseState(), [
+      instance('p2-hand-1', 'spell-def', 'p2', 'hand'),
+      instance('p2-hand-2', 'spell-def', 'p2', 'hand'),
+      instance('p2-hand-3', 'spell-def', 'p2', 'hand'),
+      instance('p2-hand-4', 'spell-def', 'p2', 'hand'),
+      instance('p1-library-1', 'library-def', 'p1', 'library'),
+      instance('p1-library-2', 'library-def', 'p1', 'library'),
+      instance('p1-library-3', 'library-def', 'p1', 'library'),
+      instance('p1-library-4', 'library-def', 'p1', 'library'),
+    ]);
+
+    const next = resolveSpellOverride(state, "Jeska's Will", ['p2']);
+
+    expect(next.players[0].manaPool.R).toBe(4);
+    const exiled = [...next.cards.values()].filter(card => card.ownerId === 'p1' && card.zone === 'exile');
+    expect(exiled).toHaveLength(3);
+    expect(exiled.every(card => card.playableFromExileUntilTurn === next.turnNumber)).toBe(true);
+    expect(canCastSpell(next, 'p1', exiled[0].instanceId)).toBe(true);
+    expect([...next.cards.values()].filter(card => card.ownerId === 'p2' && card.zone === 'hand')).toHaveLength(4);
   });
 });

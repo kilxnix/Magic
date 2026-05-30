@@ -336,7 +336,12 @@ export function tryCastSpell(
   const card = state.cards.get(cardInstanceId);
   if (!card) return fail('card_not_found', 'Card not found');
   if (card.ownerId !== playerId) return fail('card_not_found', 'Not your card');
-  if (card.zone !== 'hand' && card.zone !== 'command') return fail('not_in_zone', 'Card not in hand or command zone');
+  const playableFromExile = card.zone === 'exile'
+    && typeof card.playableFromExileUntilTurn === 'number'
+    && card.playableFromExileUntilTurn >= state.turnNumber;
+  if (card.zone !== 'hand' && card.zone !== 'command' && !playableFromExile) {
+    return fail('not_in_zone', 'Card not in hand, command zone, or playable exile');
+  }
 
   const playerIndex = state.players.findIndex(p => p.id === playerId);
   if (playerIndex === -1) return fail('card_not_found', 'Player not found');

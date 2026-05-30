@@ -148,18 +148,31 @@ export function getOverrideCounts(): { byId: number; byName: number } {
 // Commander Staples — Mana / Ramp
 // =============================================================================
 
-// Jeska's Will — "Choose one or both: Add {R} for each card in target opponent's hand.
-// Exile top 3, may play this turn." → Simplified: add 5R (average hand size)
+// Jeska's Will - current engine mode applies both commander-enabled modes:
+// add {R} for each card in target opponent's hand, then exile the top 3.
 registerOverrideByName("Jeska's Will", {
   kind: 'Spell',
   effects: [
     {
-      kind: 'Draw',
+      kind: 'AddMana',
+      player: { kind: 'Controller' },
+      mana: {
+        R: {
+          kind: 'ForEach',
+          zone: 'hand',
+          controller: 'target',
+          target: { kind: 'Chosen', targetId: 'target_1' },
+        },
+      },
+    },
+    {
+      kind: 'ExileFromLibrary',
       player: { kind: 'Controller' },
       count: 3,
+      mayPlay: true,
     },
   ],
-  targets: [],
+  targets: [{ id: 'target_1', type: 'Player', count: 1, constraints: { opponentControls: true } }],
 });
 
 // Cultivate — search two basic lands: one to battlefield tapped, one to hand.
@@ -266,8 +279,7 @@ registerOverrideByName('Cyclonic Rift', {
 
 // Beast Within — "Destroy target permanent. Its controller creates a 3/3
 // green Beast creature token." → Destroy + create 3/3 token for controller
-// (simplified: token goes to spell's controller since we can't reference
-// target's controller in TargetRef)
+// through TargetController so the destroyed permanent's controller receives it.
 registerOverrideByName('Beast Within', {
   kind: 'Spell',
   effects: [
@@ -604,7 +616,8 @@ registerOverrideByName('Swan Song', {
 // Batch 3 — Card Draw
 // =============================================================================
 
-// Brainstorm — Draw 3 (simplified)
+// Brainstorm choices can be supplied as putOnTopIds. Browser play keeps a
+// follow-up selection prompt for human casts when the stack item has no choice yet.
 registerOverrideByName('Wheel of Fortune', {
   kind: 'Spell',
   effects: [
@@ -630,6 +643,12 @@ registerOverrideByName('Brainstorm', {
       kind: 'Draw',
       player: { kind: 'Controller' },
       count: 3,
+    },
+    {
+      kind: 'PutCardsFromHandOnTop',
+      player: { kind: 'Controller' },
+      count: 2,
+      selectedCardChoiceId: 'putOnTopIds',
     },
   ],
   targets: [],
@@ -802,14 +821,21 @@ registerOverrideByName('Read the Bones', {
   targets: [],
 });
 
-// Fact or Fiction — Draw 3 (simplified from pile split)
+// Fact or Fiction - choose a revealed pile with factOrFictionPileIds; fallback
+// keeps the larger pile in hand and puts the rest into the graveyard.
 registerOverrideByName('Fact or Fiction', {
   kind: 'Spell',
   effects: [
     {
-      kind: 'Draw',
+      kind: 'ChooseFromTopOfLibrary',
       player: { kind: 'Controller' },
-      count: 3,
+      count: 5,
+      destination: 'hand',
+      restDestination: 'graveyard',
+      minSelections: 1,
+      maxSelections: 5,
+      fallbackSelectionCount: 3,
+      selectedCardChoiceId: 'factOrFictionPileIds',
     },
   ],
   targets: [],

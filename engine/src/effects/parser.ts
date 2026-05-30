@@ -2287,11 +2287,41 @@ function parseWordNumber(word: string): number {
 
 /**
  * Match: "draw a card for each creature you control"
- * Match: "add {R} for each card in target opponent's hand" (simplified: gain life = N)
  * Match: "create a 1/1 ... token for each creature that died this turn"
  *
  * This detects "for each" trailing an effect and wraps the amount in ForEachAmount.
  */
+function matchForEachAddMana(tokens: string[], startIndex: number): PatternResult {
+  const slice = tokens.slice(startIndex);
+  if (slice.length < 10) return null;
+  if (slice[0] !== 'add') return null;
+
+  const symbol = slice[1]?.match(/^\{([wubrgc])\}$/i);
+  if (!symbol) return null;
+  if (slice[2] !== 'for' || slice[3] !== 'each' || slice[4] !== 'card') return null;
+  if (slice[5] !== 'in' || slice[6] !== 'target' || slice[7] !== "opponent's" || slice[8] !== 'hand') return null;
+
+  let consumed = 9;
+  if (slice[consumed] === '.') consumed++;
+
+  const color = symbol[1].toUpperCase() as 'W' | 'U' | 'B' | 'R' | 'G' | 'C';
+  const spec = makeTargetSpec('Player', { opponentControls: true });
+  const effect: Effect = {
+    kind: 'AddMana',
+    player: { kind: 'Controller' },
+    mana: {
+      [color]: {
+        kind: 'ForEach',
+        zone: 'hand',
+        controller: 'target',
+        target: makeChosenRef(spec),
+      },
+    },
+  };
+
+  return { effects: [effect], targets: [spec], consumed };
+}
+
 function matchForEachDraw(tokens: string[], startIndex: number): PatternResult {
   const slice = tokens.slice(startIndex);
 
@@ -2358,7 +2388,7 @@ function matchForEachDraw(tokens: string[], startIndex: number): PatternResult {
     zone = 'battlefield';
     idx += 3;
   }
-  // "in target opponent's hand" — simplified, treat as opponent
+  // "in target opponent's hand" in a count-only draw pattern.
   else if (slice[idx] === 'in' && slice[idx + 1] === 'target' && slice[idx + 2] === "opponent's" && slice[idx + 3] === 'hand') {
     zone = 'hand';
     controller = 'opponent';
@@ -4451,7 +4481,7 @@ function parseEffectClauseInternal(tokens: string[], startIndex: number): Patter
   }
 
   const patterns = [
-    matchWinGame, matchLoseGame, matchAddMana,
+    matchWinGame, matchLoseGame, matchForEachAddMana, matchAddMana,
     matchBlink, matchCopyThatSpell, matchCopySpell, matchCopyCreature, matchModifyPTAndLoseKeyword, matchGrantKeywordAndDynamicPT, matchTargetCombatRestriction, matchGrantKeyword, matchPhaseOut,
     matchPreventDamage, matchDealDamageGreatestManaValue, matchDealDamageForEach, matchForEachDraw, matchCreateTokenForEach,
     matchExileFromLibraryTop, matchSearchLibraryGeneric, matchSacrificeSelfUnlessTargetOpponentSacrifices, matchEachOpponentSacrifice,
@@ -4492,6 +4522,7 @@ function parseEffectClause(tokens: string[], startIndex: number): PatternResult 
     // Win/lose game effects (simple patterns, high priority)
     matchWinGame,                 // "you win the game"
     matchLoseGame,                // "you lose the game" / "target player loses the game"
+    matchForEachAddMana,          // "add {R} for each card in target opponent's hand"
     matchAddMana,                 // "add {R}{R}{R}"
 
     // Phase 15: Conditional effects (before other patterns)

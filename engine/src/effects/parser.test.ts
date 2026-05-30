@@ -1200,6 +1200,22 @@ describe('parseOracleText', () => {
       });
     });
 
+    it('parses targeted opponent hand-count mana', () => {
+      const result = parseOracleText("Add {R} for each card in target opponent's hand.");
+      expect(result.kind).toBe('Spell');
+      if (result.kind !== 'Spell') return;
+      expect(result.targets).toHaveLength(1);
+      expect(result.targets[0]).toMatchObject({ type: 'Player', constraints: { opponentControls: true } });
+      expect(result.effects[0].kind).toBe('AddMana');
+      if (result.effects[0].kind !== 'AddMana') return;
+      expect(result.effects[0].mana.R).toEqual({
+        kind: 'ForEach',
+        zone: 'hand',
+        controller: 'target',
+        target: { kind: 'Chosen', targetId: result.targets[0].id },
+      });
+    });
+
     it('parses "~ deals damage equal to the number of creatures you control to any target."', () => {
       const result = parseOracleText('~ deals damage equal to the number of creatures you control to any target.');
       expect(result.kind).toBe('Spell');

@@ -33,6 +33,8 @@ export type Effect =
   | SurveilEffect
   | LookAtHandEffect
   | SearchLibraryEffect
+  | ChooseFromTopOfLibraryEffect
+  | PutCardsFromHandOnTopEffect
   | ShuffleLibraryEffect
   | CounterSpellEffect
   | ReturnFromGraveyardEffect
@@ -69,7 +71,8 @@ export interface ForEachAmount {
   kind: 'ForEach';
   zone: 'battlefield' | 'hand' | 'graveyard' | 'library';
   filter?: CardFilter;
-  controller: 'you' | 'opponent' | 'each';
+  controller: 'you' | 'opponent' | 'each' | 'target';
+  target?: TargetRef;
 }
 
 export interface GreatestPowerAmount {
@@ -254,6 +257,25 @@ export interface SearchLibraryEffect {
   minSelections?: number;
   maxSelections?: number;
   namedCardChoiceId?: string;
+  selectedCardChoiceId?: string;
+}
+
+export interface PutCardsFromHandOnTopEffect {
+  kind: 'PutCardsFromHandOnTop';
+  player: TargetRef;
+  count: AmountRef;
+  selectedCardChoiceId?: string;
+}
+
+export interface ChooseFromTopOfLibraryEffect {
+  kind: 'ChooseFromTopOfLibrary';
+  player: TargetRef;
+  count: AmountRef;
+  destination: 'hand' | 'graveyard' | 'exile';
+  restDestination: 'bottom' | 'graveyard' | 'exile';
+  minSelections?: number;
+  maxSelections?: number;
+  fallbackSelectionCount?: number;
   selectedCardChoiceId?: string;
 }
 

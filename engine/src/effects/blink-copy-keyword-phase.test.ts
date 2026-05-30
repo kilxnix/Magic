@@ -443,6 +443,32 @@ describe('Copy Effects', () => {
       expect(copyFound).toBe(true);
     });
 
+    it('copies copiable entry choices and active face without copying damage or counters', () => {
+      const state = createTestState();
+      const source = state.cards.get('creature-2')!;
+      state.cards.set('creature-2', {
+        ...source,
+        activeFaceName: 'Back Face',
+        choices: { chosenCreatureType: 'Goblin' },
+        damage: 2,
+        counters: { '+1/+1': 3 },
+      });
+      const effects: Effect[] = [
+        { kind: 'Copy', target: { kind: 'Chosen', targetId: 'target_1' } },
+      ];
+
+      const newState = executeEffects(state, effects, 'player-1', ['creature-2'], [{ id: 'target_1' }]);
+      const copy = [...newState.cards.values()].find(card =>
+        card.instanceId.startsWith('copy_') && card.definitionId === 'def-creature-2',
+      );
+
+      expect(copy).toBeDefined();
+      expect(copy?.activeFaceName).toBe('Back Face');
+      expect(copy?.choices?.chosenCreatureType).toBe('Goblin');
+      expect(copy?.damage).toBe(0);
+      expect(copy?.counters).toEqual({});
+    });
+
     it('copy tokens apply copied card battlefield entry replacement text', () => {
       const state = createTestState();
       const cards = new Map(state.cards);

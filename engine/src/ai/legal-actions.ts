@@ -416,9 +416,12 @@ function castFacesForCard(
 function generateCastSpellActions(state: GameState, playerId: string): CastSpellAction[] {
   const actions: CastSpellAction[] = [];
 
-  // Check hand
+  const playableExile = getCardsInZone(state, playerId, 'exile')
+    .filter(card => typeof card.playableFromExileUntilTurn === 'number' && card.playableFromExileUntilTurn >= state.turnNumber);
+
+  // Check hand and impulse-draw exile permissions.
   const hand = getCardsInZone(state, playerId, 'hand');
-  for (const card of hand) {
+  for (const card of [...hand, ...playableExile]) {
     for (const faceCast of castFacesForCard(state, card)) {
       if (!canCastSpell(state, playerId, card.instanceId, faceCast.options)) continue;
       // Check for modal spells first
@@ -535,8 +538,10 @@ function generateManaActions(state: GameState, playerId: string): ActivateManaAb
     }
   }
 
+  const playableExile = getCardsInZone(state, playerId, 'exile')
+    .filter(card => typeof card.playableFromExileUntilTurn === 'number' && card.playableFromExileUntilTurn >= state.turnNumber);
   const hand = getCardsInZone(state, playerId, 'hand');
-  for (const card of hand) {
+  for (const card of [...hand, ...playableExile]) {
     const def = getCardDefinition(state, card);
     if (def.manaProduction?.activationZone !== 'hand') continue;
     if (!def.manaProduction.requiresExileFromHand) continue;
