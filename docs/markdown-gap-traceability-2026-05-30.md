@@ -45,7 +45,7 @@ Source files audited:
 | 13. Continuous effects/derived characteristics | partial | Sisay power and some layers/effective types work. Full CR-style layer/dependency system is not complete. |
 | 14. AI uses same engine contract | partial | AI action tests pass and AI uses try paths in slices. Full 4p politics/hidden-info safe AI is not complete. |
 | 15. Deterministic scenario testing | partial | Many scenarios exist; not the whole listed minimum bar. |
-| 16. Replay/audit layer | not done | Save/load and event logs exist, but replay legality audit is not built. |
+| 16. Replay/audit layer | partial/test-proven | `auditEngineEventLogReplay` can replay committed action/prompt records from event-log state hashes, verify rules-event and visible-diff sequences, and fail on mismatch. This is not yet a full persisted/shareable replay product. |
 
 Minimum acceptance bar from that file:
 
@@ -60,7 +60,7 @@ Minimum acceptance bar from that file:
 | Land plays never appear while stack non-empty | partial/test-proven, not exhaustively browser-proven |
 | Event feed and visible UI never disagree | partial |
 | AI actions use same validation path | partial |
-| Replay audit proves every committed action legal | not done |
+| Replay audit proves every committed action legal | partial/test-proven; committed event-log records now replay through engine legality and invariant checks, but this is not yet wired into every saved/live game log |
 
 ## `deckreps_arena_fix_blueprint.md`
 
@@ -71,7 +71,7 @@ Minimum acceptance bar from that file:
 | Fix 3: Shared Legality Engine | partial | Action paths improved, review and UI suggestions still not fully unified. |
 | Fix 4: Prompt System | partial | Search/scry/surveil/equipment style prompts exist, Brainstorm hand-to-library-top selection exists, and manual attach/detach plus turn/phase correction now use validated action requests; no fully generic typed request system. |
 | Fix 5: Transactional Engine Updates | partial | Authority/action response structures exist; not a complete event-sourced transaction model. |
-| Fix 6: Event-Sourced Replay | not done | Logging exists; deterministic replay/audit is not complete. |
+| Fix 6: Event-Sourced Replay | partial/test-proven | Engine event-log records now carry request, before/after state IDs, rules events, and visible diffs; `auditEngineEventLogReplay` replays and rejects tampered/mismatched records. Persistence and UI replay are still incomplete. |
 | Fix 7: Review Must Audit Legality | partial | Review wording and some legality surfacing exist; no full legality audit. |
 | Fix 8: Stack And Priority | partial | Visible stack/priority exists; full-control/stop settings are incomplete. |
 | Fix 9: Turn And Phase Labels | partial/browser-checked in UI scripts | Labels improved and a validated turn/phase correction surface exists; event consistency is not globally audited. |
@@ -92,7 +92,7 @@ Minimum acceptance bar from that file:
 | 1.1 UI Actions Can Still Appear Too Close To State Mutation | partial |
 | 1.2 Missing Hard Revalidation At Resolution Time | partial |
 | 1.3 No Clear Separation Between Legal Actions, Suggested Actions, And Coach Actions | partial |
-| 1.4 No Proven Canonical Event-Sourced State | not done |
+| 1.4 No Proven Canonical Event-Sourced State | partial/test-proven for engine event-log replay records |
 | 2.1 Sisay Legal Choice Filtering | browser-proven for tested flow |
 | 2.2 Search Legality In General | partial; top-N search prompts now limit choices to the looked-at cards and bottom unselected cards for Impulse-style effects |
 | 2.3 Card Type Constraints | partial |
@@ -139,7 +139,7 @@ Minimum acceptance bar from that file:
 | 12.2 No Opponent Thinking/Intent Feedback | partial |
 | 12.3 AI Legality And Hidden Information | partial |
 | 14.1 Need Golden Rule Tests | partial |
-| 14.2 Need Replay Regression Harness | not done |
+| 14.2 Need Replay Regression Harness | partial/test-proven; engine event-log replay auditing exists, but broad replay corpus/persistence is still incomplete |
 | 14.3 Need Unsupported-Card Surfacing | partial; room Engine Beta now has server-side deck preflight and UI surfacing for known unsupported cards, plus parser coverage reports for syntax clusters; solo game-start surfacing and full unsupported taxonomy are still incomplete |
 
 ## `deckreps_mtga_gap_analysis.md`

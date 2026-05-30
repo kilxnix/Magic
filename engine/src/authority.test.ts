@@ -13,12 +13,14 @@ import {
   applySelectCardsPromptResponse,
   applySelectTargetPromptResponse,
   auditActionReplay,
+  auditEngineEventLogReplay,
   auditEngineReplay,
   auditPromptReplay,
   auditSearchPromptReplay,
   buildActionPrompt,
   buildStateUpdate,
   createClientActionRequest,
+  createEngineEventLogRecord,
   createBattlefieldEntryReplacementPromptRequest,
   createChooseModePromptRequest,
   createDamageAssignmentPromptRequest,
@@ -2337,6 +2339,74 @@ describe('authority action boundary', () => {
     ]);
     expect(report.finalState?.cards.get((playLand as Extract<AIAction, { kind: 'PlayLand' }>).cardInstanceId)?.zone)
       .toBe('battlefield');
+  });
+
+  it('builds and audits event-log records from committed authoritative updates', () => {
+    const state = stateWithForestInHand();
+    const prompt = buildActionPrompt(state, 'p1');
+    const playLand = prompt?.legalChoices.find(choice => choice.kind === 'PlayLand')?.action;
+    expect(playLand).toBeDefined();
+
+    const request = createClientActionRequest(state, 'p1', playLand as AIAction, {
+      id: 'req-event-log-play-forest',
+      createdAt: 17,
+    });
+    const applied = applyClientActionRequest(state, request);
+    expect(applied.ok).toBe(true);
+    expect(applied.update).toBeDefined();
+
+    const logRecord = createEngineEventLogRecord(
+      0,
+      { kind: 'Action', request },
+      applied.update!,
+      1700000000000,
+    );
+    const report = auditEngineEventLogReplay(state, [logRecord]);
+
+    expect(logRecord.stateIdBefore).toBe(stateFingerprint(state));
+    expect(logRecord.stateIdAfter).toBe(applied.update?.newStateId);
+    expect(logRecord.rulesEvents.map(event => event.kind)).toEqual(['ActionAccepted', 'RulesEvent']);
+    expect(logRecord.visibleDiffs.map(diff => diff.kind)).toContain('CardZoneChanged');
+    expect(report.ok).toBe(true);
+    expect(report.finalState?.cards.get((playLand as Extract<AIAction, { kind: 'PlayLand' }>).cardInstanceId)?.zone)
+      .toBe('battlefield');
+    expect(report.steps[0]).toEqual(expect.objectContaining({
+      sequence: 0,
+      requestId: 'req-event-log-play-forest',
+      expectedStateBeforeId: logRecord.stateIdBefore,
+      expectedStateAfterId: logRecord.stateIdAfter,
+      ok: true,
+    }));
+  });
+
+  it('rejects event-log replay when committed diffs no longer match engine output', () => {
+    const state = stateWithForestInHand();
+    const prompt = buildActionPrompt(state, 'p1');
+    const playLand = prompt?.legalChoices.find(choice => choice.kind === 'PlayLand')?.action;
+    expect(playLand).toBeDefined();
+
+    const request = createClientActionRequest(state, 'p1', playLand as AIAction, {
+      id: 'req-event-log-tampered-diff',
+      createdAt: 18,
+    });
+    const applied = applyClientActionRequest(state, request);
+    expect(applied.ok).toBe(true);
+    expect(applied.update).toBeDefined();
+
+    const logRecord = createEngineEventLogRecord(0, { kind: 'Action', request }, applied.update!);
+    const tampered = {
+      ...logRecord,
+      visibleDiffs: [],
+    };
+    const report = auditEngineEventLogReplay(state, [tampered]);
+
+    expect(report.ok).toBe(false);
+    expect(report.steps[0]).toEqual(expect.objectContaining({
+      requestId: 'req-event-log-tampered-diff',
+      ok: false,
+      reason: 'diff_mismatch',
+      message: 'Event log visible-diff sequence does not match replayed engine output.',
+    }));
   });
 
   it('replays validated manual mana untap corrections after a mana action', () => {

@@ -671,7 +671,7 @@ export interface EngineReplayAuditStep {
   ok: boolean;
   actionKind?: AIAction['kind'];
   promptKind?: EnginePromptKind;
-  reason?: ClientActionFailure | ClientPromptFailure | 'missing_state' | 'invariant_violation' | 'state_mismatch' | 'event_mismatch';
+  reason?: ClientActionFailure | ClientPromptFailure | 'missing_state' | 'invariant_violation' | 'state_mismatch' | 'event_mismatch' | 'diff_mismatch';
   message?: string;
 }
 
@@ -679,6 +679,35 @@ export interface EngineReplayAuditReport {
   ok: boolean;
   finalState?: GameState;
   steps: EngineReplayAuditStep[];
+}
+
+export interface EngineEventLogRecord {
+  sequence: number;
+  actorPlayerId: string;
+  kind: EngineReplayRecord['kind'];
+  requestId: string;
+  stateIdBefore: string;
+  stateIdAfter: string;
+  record: EngineReplayRecord;
+  rulesEvents: EngineEvent[];
+  visibleDiffs: VisibleDiff[];
+  timestamp?: number;
+}
+
+export interface EngineEventLogAuditStep extends EngineReplayAuditStep {
+  sequence: number;
+  expectedStateBeforeId: string;
+  expectedStateAfterId: string;
+  expectedRuleEventKinds: EngineEvent['kind'][];
+  actualRuleEventKinds?: EngineEvent['kind'][];
+  expectedVisibleDiffKinds: VisibleDiff['kind'][];
+  actualVisibleDiffKinds?: VisibleDiff['kind'][];
+}
+
+export interface EngineEventLogAuditReport {
+  ok: boolean;
+  finalState?: GameState;
+  steps: EngineEventLogAuditStep[];
 }
 
 export type PromptType =
@@ -5131,6 +5160,34 @@ export function auditPromptReplay(
   };
 }
 
+type EngineReplayResult = ClientActionResponse | ClientPromptResponse;
+
+function applyEngineReplayRecord(state: GameState, record: EngineReplayRecord): EngineReplayResult {
+  if (record.kind === 'Action') {
+    return applyClientActionRequest(state, record.request);
+  }
+
+  return record.request.kind === 'SearchLibrary'
+    ? applySearchLibraryPromptResponse(state, record.request, record.response as SearchLibraryPromptResponse)
+    : record.request.kind === 'SelectTarget'
+      ? applySelectTargetPromptResponse(state, record.request, record.response as SelectTargetPromptResponse)
+      : record.request.kind === 'ChooseReplacement'
+        ? applyChooseReplacementPromptResponse(state, record.request, record.response as ChooseReplacementPromptResponse)
+        : record.request.kind === 'PayCosts'
+          ? applyPayCostsPromptResponse(state, record.request, record.response as PayCostsPromptResponse)
+          : record.request.kind === 'SelectCards'
+            ? applySelectCardsPromptResponse(state, record.request, record.response as SelectCardsPromptResponse)
+            : record.request.kind === 'LibraryManipulation'
+              ? applyLibraryManipulationPromptResponse(state, record.request, record.response as LibraryManipulationPromptResponse)
+              : record.request.kind === 'OptionalTrigger'
+                ? applyOptionalTriggerPromptResponse(state, record.request, record.response as OptionalTriggerPromptResponse)
+                : record.request.kind === 'OrderTriggers'
+                  ? applyOrderTriggersPromptResponse(state, record.request, record.response as OrderTriggersPromptResponse)
+                  : record.request.kind === 'DamageAssignment'
+                    ? applyDamageAssignmentPromptResponse(state, record.request, record.response as DamageAssignmentPromptResponse)
+                    : applyChooseModePromptResponse(state, record.request, record.response as ChooseModePromptResponse);
+}
+
 export function auditEngineReplay(
   initialState: GameState,
   records: EngineReplayRecord[],
@@ -5157,27 +5214,7 @@ export function auditEngineReplay(
       return { ok: false, steps };
     }
 
-    const result = record.kind === 'Action'
-      ? applyClientActionRequest(state, record.request)
-      : record.request.kind === 'SearchLibrary'
-        ? applySearchLibraryPromptResponse(state, record.request, record.response as SearchLibraryPromptResponse)
-        : record.request.kind === 'SelectTarget'
-          ? applySelectTargetPromptResponse(state, record.request, record.response as SelectTargetPromptResponse)
-          : record.request.kind === 'ChooseReplacement'
-            ? applyChooseReplacementPromptResponse(state, record.request, record.response as ChooseReplacementPromptResponse)
-            : record.request.kind === 'PayCosts'
-              ? applyPayCostsPromptResponse(state, record.request, record.response as PayCostsPromptResponse)
-              : record.request.kind === 'SelectCards'
-                ? applySelectCardsPromptResponse(state, record.request, record.response as SelectCardsPromptResponse)
-                : record.request.kind === 'LibraryManipulation'
-                  ? applyLibraryManipulationPromptResponse(state, record.request, record.response as LibraryManipulationPromptResponse)
-                  : record.request.kind === 'OptionalTrigger'
-                    ? applyOptionalTriggerPromptResponse(state, record.request, record.response as OptionalTriggerPromptResponse)
-                    : record.request.kind === 'OrderTriggers'
-                      ? applyOrderTriggersPromptResponse(state, record.request, record.response as OrderTriggersPromptResponse)
-                      : record.request.kind === 'DamageAssignment'
-                        ? applyDamageAssignmentPromptResponse(state, record.request, record.response as DamageAssignmentPromptResponse)
-                        : applyChooseModePromptResponse(state, record.request, record.response as ChooseModePromptResponse);
+    const result = applyEngineReplayRecord(state, record);
 
     const step: EngineReplayAuditStep = {
       index,
@@ -5220,6 +5257,145 @@ export function auditEngineReplay(
         };
         return { ok: false, steps };
       }
+    }
+
+    const invariantReport = validateStateInvariants(result.state);
+    if (!invariantReport.ok) {
+      steps[steps.length - 1] = {
+        ...step,
+        ok: false,
+        reason: 'invariant_violation',
+        message: invariantReport.violations[0]?.message || 'invalid state',
+      };
+      return { ok: false, steps };
+    }
+
+    state = result.state;
+  }
+
+  return {
+    ok: true,
+    finalState: state,
+    steps,
+  };
+}
+
+export function createEngineEventLogRecord(
+  sequence: number,
+  record: EngineReplayRecord,
+  update: EngineStateUpdate,
+  timestamp?: number,
+): EngineEventLogRecord {
+  const request = record.kind === 'Action' ? record.request : record.request;
+  return {
+    sequence,
+    actorPlayerId: request.playerId,
+    kind: record.kind,
+    requestId: request.id,
+    stateIdBefore: update.oldStateId,
+    stateIdAfter: update.newStateId,
+    record,
+    rulesEvents: update.rulesEvents,
+    visibleDiffs: update.visibleDiffs,
+    timestamp,
+  };
+}
+
+function eventKinds(events: EngineEvent[]): EngineEvent['kind'][] {
+  return events.map(event => event.kind);
+}
+
+function diffKinds(diffs: VisibleDiff[]): VisibleDiff['kind'][] {
+  return diffs.map(diff => diff.kind);
+}
+
+function sameStringList(left: string[], right: string[]): boolean {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
+export function auditEngineEventLogReplay(
+  initialState: GameState,
+  records: EngineEventLogRecord[],
+): EngineEventLogAuditReport {
+  let state = initialState;
+  const steps: EngineEventLogAuditStep[] = [];
+
+  for (const record of records) {
+    const stateBeforeId = stateFingerprint(state);
+    const request = record.record.kind === 'Action' ? record.record.request : record.record.request;
+    const baseStep: EngineEventLogAuditStep = {
+      index: steps.length,
+      sequence: record.sequence,
+      kind: record.record.kind,
+      requestId: request.id,
+      playerId: request.playerId,
+      stateBeforeId,
+      expectedStateBeforeId: record.stateIdBefore,
+      expectedStateAfterId: record.stateIdAfter,
+      expectedRuleEventKinds: eventKinds(record.rulesEvents),
+      expectedVisibleDiffKinds: diffKinds(record.visibleDiffs),
+      ok: true,
+      actionKind: record.record.kind === 'Action' ? record.record.request.action.kind : undefined,
+      promptKind: record.record.kind === 'Prompt' ? record.record.request.kind : undefined,
+    };
+
+    if (stateBeforeId !== record.stateIdBefore) {
+      steps.push({
+        ...baseStep,
+        ok: false,
+        reason: 'state_mismatch',
+        message: `Event log state-before mismatch: expected ${record.stateIdBefore}, got ${stateBeforeId}.`,
+      });
+      return { ok: false, steps };
+    }
+
+    const result = applyEngineReplayRecord(state, record.record);
+    const stateAfterId = result.update?.newStateId;
+    const actualRuleEventKinds = result.update ? eventKinds(result.update.rulesEvents) : undefined;
+    const actualVisibleDiffKinds = result.update ? diffKinds(result.update.visibleDiffs) : undefined;
+    const step: EngineEventLogAuditStep = {
+      ...baseStep,
+      stateAfterId,
+      ok: result.ok,
+      reason: result.reason,
+      message: result.message,
+      actualRuleEventKinds,
+      actualVisibleDiffKinds,
+    };
+    steps.push(step);
+
+    if (!result.ok || !result.state) {
+      return { ok: false, steps };
+    }
+
+    if (stateAfterId !== record.stateIdAfter) {
+      steps[steps.length - 1] = {
+        ...step,
+        ok: false,
+        reason: 'state_mismatch',
+        message: `Event log state-after mismatch: expected ${record.stateIdAfter}, got ${stateAfterId || 'missing state update'}.`,
+      };
+      return { ok: false, steps };
+    }
+
+    if (!actualRuleEventKinds || !sameStringList(step.expectedRuleEventKinds, actualRuleEventKinds)) {
+      steps[steps.length - 1] = {
+        ...step,
+        ok: false,
+        reason: 'event_mismatch',
+        message: 'Event log rules-event sequence does not match replayed engine output.',
+      };
+      return { ok: false, steps };
+    }
+
+    if (!actualVisibleDiffKinds || !sameStringList(step.expectedVisibleDiffKinds, actualVisibleDiffKinds)) {
+      steps[steps.length - 1] = {
+        ...step,
+        ok: false,
+        reason: 'diff_mismatch',
+        message: 'Event log visible-diff sequence does not match replayed engine output.',
+      };
+      return { ok: false, steps };
     }
 
     const invariantReport = validateStateInvariants(result.state);
