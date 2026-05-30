@@ -13,6 +13,7 @@ import { FLOATING_TABLE_LAYOUT } from '../lib/gameBoardLayout';
 import { shelectorApiUrl } from '../lib/api';
 import { BEGINNER_DECKS, type BeginnerDeck } from '../lib/beginnerDecks';
 import { auditPlaySaveSnapshot } from '../lib/playSaveAudit';
+import { findUnsupportedEngineCards, formatUnsupportedEngineCards } from '../lib/enginePreflight';
 import {
   deletePlaySaveSlot,
   getPlaySaveSlots,
@@ -692,6 +693,26 @@ export function PlayPage() {
         });
       }
 
+      const unsupported = findUnsupportedEngineCards([
+        {
+          label: 'Your deck',
+          commander: humanCommander,
+          cards: importResult.cards,
+          lands: importResult.lands,
+          sideboard: importResult.sideboard || [],
+        },
+        ...aiDecks.map((deck, index) => ({
+          label: `Shelector AI ${index + 1}`,
+          commander: deck.commander,
+          cards: deck.cards,
+          lands: deck.lands,
+          sideboard: [],
+        })),
+      ]);
+      if (unsupported.length > 0) {
+        setImportError(formatUnsupportedEngineCards(unsupported));
+        return;
+      }
       const started = startGame(
         {
           commander: humanCommander,

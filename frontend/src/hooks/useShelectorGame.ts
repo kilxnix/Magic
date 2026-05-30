@@ -122,6 +122,7 @@ import {
   type DecisionReview,
 } from '../lib/turnReview';
 import { shelectorApiUrl } from '../lib/api';
+import { findUnsupportedEngineCards, formatUnsupportedEngineCards } from '../lib/enginePreflight';
 
 // ========== End-Game Modal State (Task 27 — game-reliability-refactor) ==========
 
@@ -4776,6 +4777,29 @@ export function useShelectorGame() {
       const aiDeckDatas: (ImportedCards | undefined)[] = aiDeckDataArray
         ? Array.isArray(aiDeckDataArray) ? aiDeckDataArray : [aiDeckDataArray]
         : [undefined];
+
+      const unsupported = findUnsupportedEngineCards([
+        {
+          label: 'Your deck',
+          commander: importedCards?.commander,
+          cards: importedCards?.cards || [],
+          lands: importedCards?.lands || [],
+          sideboard: importedCards?.sideboard || [],
+        },
+        ...aiDeckDatas.map((deck, index) => ({
+          label: `Shelector AI ${index + 1}`,
+          commander: deck?.commander,
+          cards: deck?.cards || [],
+          lands: deck?.lands || [],
+          sideboard: deck?.sideboard || [],
+        })),
+      ]);
+      if (unsupported.length > 0) {
+        const message = formatUnsupportedEngineCards(unsupported);
+        setError(message);
+        addMessage('system', message);
+        return false;
+      }
 
       // Determine human deck info
       const humanCommanderName = importedCards?.commander || 'Unknown Commander';

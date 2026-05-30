@@ -14,6 +14,7 @@ Scope: recent `game-reliability-refactor` work from `88e54bb..597d918`, with Sis
 | Frontend build | `cd frontend && npm.cmd run build` | Passed |
 | Cost modifier slice | `cd engine && npm.cmd test -- --run src/effects/continuous.test.ts src/ai/legal-actions.test.ts` | 95 passed; covers registered cost reducers, intrinsic self-reducers in the broader continuous suite, and new noncreature/opponent spell cost increasers in legal action generation. |
 | AI named-card fallback | `cd engine && npm.cmd test -- --run src/ai/integration.test.ts src/authority.test.ts src/playtesting-report-regressions.test.ts` | 96 passed; AI-sourced ExileUntilNamed casts can receive a deterministic named-card fallback while UI-sourced casts still pause for the typed NamedCard prompt. |
+| Solo engine preflight | `cd frontend && npm.cmd test -- --run tests/enginePreflight.test.ts` | 2 passed; `/play` deck-start preflight reports hard unsupported cards such as Chaos Orb/Falling Star/Shahrazad with deck labels and reasons before engine initialization. |
 | Mobile typecheck | `cd mobile && npm.cmd run typecheck` | Passed |
 | Mobile lint | `cd mobile && npm.cmd run lint` | Initially broken because ESLint was not installed/configured; fixed during this audit and now passes |
 | Mobile dependency audit | `cd mobile && npm.cmd audit --omit=dev --json` | Fails with 28 production dependency advisories, mostly Expo/Metro transitive packages; the available bundled fix is a semver-major Expo upgrade and was not applied in this audit |
@@ -45,6 +46,7 @@ Scope: recent `game-reliability-refactor` work from `88e54bb..597d918`, with Sis
 - Added engine-authoritative `/play` browser support for live "name a card" stack choices, using a typed `NamedCard` prompt plus the searchable picker surface/custom text naming for Tainted Pact / Demonic Consultation style effects instead of relying on a deterministic named-card shortcut.
 - Added AI-only fallback naming for ExileUntilNamed spells and kept the authority path source-aware so human/UI Tainted Pact casts still open the live named-card prompt instead of being silently auto-named.
 - Hardened `scripts/play_named_card_choice_ui_playtest.js` so it does not click Undo while driving toward the prompt and captures the final body/screenshot on prompt failures.
+- Added shared solo `/play` engine preflight helpers and start guards so hard unsupported cards fail with explicit reasons before the local practice engine starts.
 
 ## What This Does Not Prove
 
