@@ -3809,7 +3809,7 @@ export function GameBoard({
                       ? () => onToggleMulliganCard(card.instanceId)
                       : needsMulliganBottomSelection && onToggleMulliganBottom
                       ? () => onToggleMulliganBottom(card.instanceId)
-                      : cardAction
+                      : discardPhase && cardAction
                       ? cardAction.run
                       : () => setInspectedCard(card)
                   }
