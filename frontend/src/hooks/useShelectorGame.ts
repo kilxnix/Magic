@@ -88,6 +88,7 @@ import {
   applyChooseModePromptResponse,
   type ActionPromptChoice,
   type ClientActionResponse,
+  type ClientPromptResponse,
   type EngineEventLogRecord,
   type EnginePrompt,
   type EngineReplayRecord,
@@ -99,6 +100,7 @@ import {
   type DamageAssignmentOrder,
   type DamageAssignmentPromptRequest,
   type OrderTriggersPromptRequest,
+  type ReplacementOptionId,
   type TargetSpec,
   summarizeActionPromptChoices,
   serializeGameState,
@@ -2402,6 +2404,13 @@ export function useShelectorGame() {
     setEngineEventLog(next);
   }, []);
 
+  const appendEnginePromptEventLogRecord = useCallback((
+    record: EngineReplayRecord,
+    response: ClientPromptResponse,
+  ) => {
+    appendEngineEventLogRecord(record, response.update, response.ok);
+  }, [appendEngineEventLogRecord]);
+
   const recordAuthorityUpdate = useCallback((update?: EngineStateUpdate) => {
     if (!update) return;
     const playerCount = engineRef.current?.players.length || 1;
@@ -4155,12 +4164,14 @@ export function useShelectorGame() {
                     minSelections: toDiscard.length,
                     maxSelections: toDiscard.length,
                   });
-                  const discardResponse = applySelectCardsPromptResponse(state, discardRequest, {
+                  const discardSubmission = {
                     requestId: discardRequest.id,
-                    kind: 'SelectCards',
+                    kind: 'SelectCards' as const,
                     playerId: activeId,
                     selectedCardInstanceIds: toDiscard.map(card => card.instanceId),
-                  });
+                  };
+                  const discardResponse = applySelectCardsPromptResponse(state, discardRequest, discardSubmission);
+                  appendEnginePromptEventLogRecord({ kind: 'Prompt', request: discardRequest, response: discardSubmission }, discardResponse);
                   recordAuthorityUpdate(discardResponse.update);
                   if (!discardResponse.ok || !discardResponse.state) {
                     messages.push({
@@ -4220,6 +4231,7 @@ export function useShelectorGame() {
     },
     [
       advanceStepWithAuthority,
+      appendEnginePromptEventLogRecord,
       applyActionThroughAuthority,
       drawCardsWithAuthority,
       narrateDecisions,
@@ -4260,13 +4272,15 @@ export function useShelectorGame() {
       return;
     }
 
-    const promptResponse = applyLibraryManipulationPromptResponse(engine, promptRequest, {
+    const promptSubmission = {
       requestId: promptRequest.id,
-      kind: 'LibraryManipulation',
+      kind: 'LibraryManipulation' as const,
       playerId: humanIdRef.current,
       topCardInstanceIds: topIds,
       movedCardInstanceIds: movedIds,
-    });
+    };
+    const promptResponse = applyLibraryManipulationPromptResponse(engine, promptRequest, promptSubmission);
+    appendEnginePromptEventLogRecord({ kind: 'Prompt', request: promptRequest, response: promptSubmission }, promptResponse);
     recordAuthorityUpdate(promptResponse.update);
     if (!promptResponse.ok || !promptResponse.libraryManipulationChoices) {
       addMessage('system', promptResponse.message || `Could not resolve ${pending.mode}: choose each revealed card exactly once.`);
@@ -4292,7 +4306,7 @@ export function useShelectorGame() {
     for (const msg of loopMessages) addMessage(msg.role, msg.text);
     if (loopLogEntries.length > 0) setGameLog(prev => [...prev, ...loopLogEntries]);
     syncState();
-  }, [addMessage, advanceGameLoop, recordAuthorityUpdate, resolveTopOfStackWithAuthority, runSBAAndTriggers, syncState]);
+  }, [addMessage, advanceGameLoop, appendEnginePromptEventLogRecord, recordAuthorityUpdate, resolveTopOfStackWithAuthority, runSBAAndTriggers, syncState]);
 
   const resolveOptionalTriggerChoice = useCallback((use: boolean) => {
     const engine = engineRef.current;
@@ -4304,13 +4318,15 @@ export function useShelectorGame() {
       return;
     }
 
-    const promptResponse = applyOptionalTriggerPromptResponse(engine, promptRequest, {
+    const promptSubmission = {
       requestId: promptRequest.id,
-      kind: 'OptionalTrigger',
+      kind: 'OptionalTrigger' as const,
       playerId: humanIdRef.current,
       triggerId: promptRequest.triggerId,
       use,
-    });
+    };
+    const promptResponse = applyOptionalTriggerPromptResponse(engine, promptRequest, promptSubmission);
+    appendEnginePromptEventLogRecord({ kind: 'Prompt', request: promptRequest, response: promptSubmission }, promptResponse);
     recordAuthorityUpdate(promptResponse.update);
     if (!promptResponse.ok || !promptResponse.state) {
       addMessage('system', promptResponse.message || 'Could not resolve optional trigger choice.');
@@ -4335,7 +4351,7 @@ export function useShelectorGame() {
     for (const msg of loopMessages) addMessage(msg.role, msg.text);
     if (loopLogEntries.length > 0) setGameLog(prev => [...prev, ...loopLogEntries]);
     syncState();
-  }, [addMessage, advanceGameLoop, recordAuthorityUpdate, runSBAAndTriggers, syncState]);
+  }, [addMessage, advanceGameLoop, appendEnginePromptEventLogRecord, recordAuthorityUpdate, runSBAAndTriggers, syncState]);
 
   const resolveTaxPaymentChoice = useCallback((pay: boolean) => {
     const engine = engineRef.current;
@@ -4389,12 +4405,14 @@ export function useShelectorGame() {
       return;
     }
 
-    const promptResponse = applyDamageAssignmentPromptResponse(engine, promptRequest, {
+    const promptSubmission = {
       requestId: promptRequest.id,
-      kind: 'DamageAssignment',
+      kind: 'DamageAssignment' as const,
       playerId: humanIdRef.current,
       orders,
-    });
+    };
+    const promptResponse = applyDamageAssignmentPromptResponse(engine, promptRequest, promptSubmission);
+    appendEnginePromptEventLogRecord({ kind: 'Prompt', request: promptRequest, response: promptSubmission }, promptResponse);
     recordAuthorityUpdate(promptResponse.update);
     if (!promptResponse.ok || !promptResponse.state) {
       addMessage('system', promptResponse.message || 'Could not apply combat damage order.');
@@ -4415,7 +4433,7 @@ export function useShelectorGame() {
     for (const msg of loopMessages) addMessage(msg.role, msg.text);
     if (loopLogEntries.length > 0) setGameLog(prev => [...prev, ...loopLogEntries]);
     syncState();
-  }, [addMessage, advanceGameLoop, recordAuthorityUpdate, syncState]);
+  }, [addMessage, advanceGameLoop, appendEnginePromptEventLogRecord, recordAuthorityUpdate, syncState]);
 
   const resolveTriggerOrderChoice = useCallback((orderedTriggerIds: string[]) => {
     const engine = engineRef.current;
@@ -4427,12 +4445,14 @@ export function useShelectorGame() {
       return;
     }
 
-    const promptResponse = applyOrderTriggersPromptResponse(engine, promptRequest, {
+    const promptSubmission = {
       requestId: promptRequest.id,
-      kind: 'OrderTriggers',
+      kind: 'OrderTriggers' as const,
       playerId: humanIdRef.current,
       orderedTriggerIds,
-    });
+    };
+    const promptResponse = applyOrderTriggersPromptResponse(engine, promptRequest, promptSubmission);
+    appendEnginePromptEventLogRecord({ kind: 'Prompt', request: promptRequest, response: promptSubmission }, promptResponse);
     recordAuthorityUpdate(promptResponse.update);
     if (!promptResponse.ok || !promptResponse.state) {
       addMessage('system', promptResponse.message || 'Could not apply trigger order.');
@@ -4453,7 +4473,7 @@ export function useShelectorGame() {
     for (const msg of loopMessages) addMessage(msg.role, msg.text);
     if (loopLogEntries.length > 0) setGameLog(prev => [...prev, ...loopLogEntries]);
     syncState();
-  }, [addMessage, advanceGameLoop, recordAuthorityUpdate, syncState]);
+  }, [addMessage, advanceGameLoop, appendEnginePromptEventLogRecord, recordAuthorityUpdate, syncState]);
 
   // Spawn opponent via the Shelector API
   const spawnOpponent = useCallback(async (options?: SpawnOptions) => {
@@ -4777,12 +4797,14 @@ export function useShelectorGame() {
         minSelections: cardsToBottom,
         maxSelections: cardsToBottom,
       });
-      const bottomResponse = applySelectCardsPromptResponse(engine, bottomRequest, {
+      const bottomSubmission = {
         requestId: bottomRequest.id,
-        kind: 'SelectCards',
+        kind: 'SelectCards' as const,
         playerId: humanIdRef.current,
         selectedCardInstanceIds: selectedIds,
-      });
+      };
+      const bottomResponse = applySelectCardsPromptResponse(engine, bottomRequest, bottomSubmission);
+      appendEnginePromptEventLogRecord({ kind: 'Prompt', request: bottomRequest, response: bottomSubmission }, bottomResponse);
       recordAuthorityUpdate(bottomResponse.update);
       if (!bottomResponse.ok || !bottomResponse.state) {
         addMessage('system', bottomResponse.message || 'Those mulligan bottom choices are not legal.');
@@ -4809,7 +4831,7 @@ export function useShelectorGame() {
     engineRef.current = advanced as GameStateWithAI;
 
     syncState();
-  }, [mulliganCount, selectedMulliganBottomIds, addMessage, syncState, advanceToPrecombatMain]);
+  }, [mulliganCount, selectedMulliganBottomIds, addMessage, appendEnginePromptEventLogRecord, syncState, advanceToPrecombatMain]);
 
   // Mulligan selected cards during the opening-hand trainer phase. If called
   // without selected cards, keep the old full-redraw London mulligan fallback.
@@ -4838,12 +4860,14 @@ export function useShelectorGame() {
         maxSelections: handIds.size,
         commitSelection: false,
       });
-      const mulliganResponse = applySelectCardsPromptResponse(engine, mulliganRequest, {
+      const mulliganSubmission = {
         requestId: mulliganRequest.id,
-        kind: 'SelectCards',
+        kind: 'SelectCards' as const,
         playerId: humanIdRef.current,
         selectedCardInstanceIds: validIds,
-      });
+      };
+      const mulliganResponse = applySelectCardsPromptResponse(engine, mulliganRequest, mulliganSubmission);
+      appendEnginePromptEventLogRecord({ kind: 'Prompt', request: mulliganRequest, response: mulliganSubmission }, mulliganResponse);
       recordAuthorityUpdate(mulliganResponse.update);
       if (!mulliganResponse.ok) {
         addMessage('system', mulliganResponse.message || 'Those mulligan choices are not legal.');
@@ -4903,12 +4927,14 @@ export function useShelectorGame() {
             minSelections: cardsToBottom,
             maxSelections: cardsToBottom,
           });
-          const bottomResponse = applySelectCardsPromptResponse(newEngine, bottomRequest, {
+          const bottomSubmission = {
             requestId: bottomRequest.id,
-            kind: 'SelectCards',
+            kind: 'SelectCards' as const,
             playerId: humanIdRef.current,
             selectedCardInstanceIds: selectedBottomIds,
-          });
+          };
+          const bottomResponse = applySelectCardsPromptResponse(newEngine, bottomRequest, bottomSubmission);
+          appendEnginePromptEventLogRecord({ kind: 'Prompt', request: bottomRequest, response: bottomSubmission }, bottomResponse);
           recordAuthorityUpdate(bottomResponse.update);
           if (!bottomResponse.ok || !bottomResponse.state) {
             addMessage('system', bottomResponse.message || 'Auto-keep mulligan bottom choices were rejected.');
@@ -4959,7 +4985,7 @@ export function useShelectorGame() {
       setError(msg);
       console.error('Mulligan error:', err);
     }
-  }, [mulliganCount, addMessage, initEngine, recordAuthorityUpdate, syncState, advanceToPrecombatMain]);
+  }, [mulliganCount, addMessage, appendEnginePromptEventLogRecord, initEngine, recordAuthorityUpdate, syncState, advanceToPrecombatMain]);
 
   const toggleMulliganCard = useCallback((cardInstanceId: string) => {
     setSelectedMulliganCardIds(prev =>
@@ -5000,12 +5026,14 @@ export function useShelectorGame() {
         minSelections: 1,
         maxSelections: 1,
       });
-      const discardResponse = applySelectCardsPromptResponse(engine, discardRequest, {
+      const discardSubmission = {
         requestId: discardRequest.id,
-        kind: 'SelectCards',
+        kind: 'SelectCards' as const,
         playerId: humanIdRef.current,
         selectedCardInstanceIds: [cardInstanceId],
-      });
+      };
+      const discardResponse = applySelectCardsPromptResponse(engine, discardRequest, discardSubmission);
+      appendEnginePromptEventLogRecord({ kind: 'Prompt', request: discardRequest, response: discardSubmission }, discardResponse);
       recordAuthorityUpdate(discardResponse.update);
       if (!discardResponse.ok || !discardResponse.state) {
         addMessage('system', discardResponse.message || 'That discard is not legal right now.');
@@ -5061,7 +5089,7 @@ export function useShelectorGame() {
 
       syncState();
     },
-    [advanceGameLoop, advanceStepWithAuthority, addMessage, discardPhase, recordAuthorityUpdate, runSBAAndTriggers, syncState],
+    [advanceGameLoop, advanceStepWithAuthority, addMessage, appendEnginePromptEventLogRecord, discardPhase, recordAuthorityUpdate, runSBAAndTriggers, syncState],
   );
 
   const resolveTutor = useCallback((cardInstanceId: string) => {
@@ -5087,12 +5115,14 @@ export function useShelectorGame() {
         return;
       }
 
-      const selectResponse = applySelectCardsPromptResponse(engineForChoice, pendingHandTopLibrary.promptRequest, {
+      const selectSubmission = {
         requestId: pendingHandTopLibrary.promptRequest.id,
-        kind: 'SelectCards',
+        kind: 'SelectCards' as const,
         playerId: humanIdRef.current,
         selectedCardInstanceIds: selectedIds,
-      });
+      };
+      const selectResponse = applySelectCardsPromptResponse(engineForChoice, pendingHandTopLibrary.promptRequest, selectSubmission);
+      appendEnginePromptEventLogRecord({ kind: 'Prompt', request: pendingHandTopLibrary.promptRequest, response: selectSubmission }, selectResponse);
       recordAuthorityUpdate(selectResponse.update);
       if (!selectResponse.ok || !selectResponse.state) {
         addMessage('system', selectResponse.message || `Could not resolve ${pendingHandTopLibrary.sourceName} card ordering.`);
@@ -5121,12 +5151,14 @@ export function useShelectorGame() {
     if (pendingStackSacrificeChoice) {
       const engineForChoice = engineRef.current;
       if (!engineForChoice) return;
-      const selectResponse = applySelectCardsPromptResponse(engineForChoice, pendingStackSacrificeChoice.promptRequest, {
+      const selectSubmission = {
         requestId: pendingStackSacrificeChoice.promptRequest.id,
-        kind: 'SelectCards',
+        kind: 'SelectCards' as const,
         playerId: humanIdRef.current,
         selectedCardInstanceIds: [cardInstanceId],
-      });
+      };
+      const selectResponse = applySelectCardsPromptResponse(engineForChoice, pendingStackSacrificeChoice.promptRequest, selectSubmission);
+      appendEnginePromptEventLogRecord({ kind: 'Prompt', request: pendingStackSacrificeChoice.promptRequest, response: selectSubmission }, selectResponse);
       recordAuthorityUpdate(selectResponse.update);
       if (!selectResponse.ok || !selectResponse.state) {
         addMessage('system', selectResponse.message || `Could not resolve ${pendingStackSacrificeChoice.sourceName} sacrifice choice.`);
@@ -5170,12 +5202,14 @@ export function useShelectorGame() {
         if (choiceMode === 'discardLand' && selectCardsPrompt) {
           const engineForChoice = engineRef.current;
           if (!engineForChoice) return;
-          const selectResponse = applySelectCardsPromptResponse(engineForChoice, selectCardsPrompt, {
+          const selectSubmission = {
             requestId: selectCardsPrompt.id,
-            kind: 'SelectCards',
+            kind: 'SelectCards' as const,
             playerId: humanIdRef.current,
             selectedCardInstanceIds: [cardInstanceId],
-          });
+          };
+          const selectResponse = applySelectCardsPromptResponse(engineForChoice, selectCardsPrompt, selectSubmission);
+          appendEnginePromptEventLogRecord({ kind: 'Prompt', request: selectCardsPrompt, response: selectSubmission }, selectResponse);
           recordAuthorityUpdate(selectResponse.update);
           if (!selectResponse.ok) {
             addMessage('system', selectResponse.message || 'That discard choice is not legal right now.');
@@ -5188,12 +5222,14 @@ export function useShelectorGame() {
           if (selectCardsPrompt) {
             const engineForChoice = engineRef.current;
             if (!engineForChoice) return;
-            const selectResponse = applySelectCardsPromptResponse(engineForChoice, selectCardsPrompt, {
+            const selectSubmission = {
               requestId: selectCardsPrompt.id,
-              kind: 'SelectCards',
+              kind: 'SelectCards' as const,
               playerId: humanIdRef.current,
               selectedCardInstanceIds: [cardInstanceId],
-            });
+            };
+            const selectResponse = applySelectCardsPromptResponse(engineForChoice, selectCardsPrompt, selectSubmission);
+            appendEnginePromptEventLogRecord({ kind: 'Prompt', request: selectCardsPrompt, response: selectSubmission }, selectResponse);
             recordAuthorityUpdate(selectResponse.update);
             if (!selectResponse.ok) {
               addMessage('system', selectResponse.message || 'That sacrifice choice is not legal right now.');
@@ -5262,14 +5298,16 @@ export function useShelectorGame() {
               sourceInstanceId: pendingEngineAction.cardInstanceId,
             },
           );
-          const replacementResponse = applyChooseReplacementPromptResponse(engineForReplacement, replacementRequest, {
+          const replacementSubmission = {
             requestId: replacementRequest.id,
-            kind: 'ChooseReplacement',
+            kind: 'ChooseReplacement' as const,
             playerId: humanIdRef.current,
-            selectedOptionId: cardInstanceId === 'pay-life'
+            selectedOptionId: (cardInstanceId === 'pay-life'
               ? 'pay_life_enter_untapped'
-              : 'enter_tapped',
-          });
+              : 'enter_tapped') as ReplacementOptionId,
+          };
+          const replacementResponse = applyChooseReplacementPromptResponse(engineForReplacement, replacementRequest, replacementSubmission);
+          appendEnginePromptEventLogRecord({ kind: 'Prompt', request: replacementRequest, response: replacementSubmission }, replacementResponse);
           recordAuthorityUpdate(replacementResponse.update);
           if (!replacementResponse.ok) {
             addMessage('system', replacementResponse.message || 'That replacement choice is not legal right now.');
@@ -5335,12 +5373,14 @@ export function useShelectorGame() {
           forceTapped: tutorTappedRef.current,
         },
       );
-      const replacementResponse = applyChooseReplacementPromptResponse(engine, replacementRequest, {
+      const replacementSubmission = {
         requestId: replacementRequest.id,
-        kind: 'ChooseReplacement',
+        kind: 'ChooseReplacement' as const,
         playerId: humanIdRef.current,
-        selectedOptionId: payLifeForSearchEntry ? 'pay_life_enter_untapped' : 'enter_tapped',
-      });
+        selectedOptionId: (payLifeForSearchEntry ? 'pay_life_enter_untapped' : 'enter_tapped') as ReplacementOptionId,
+      };
+      const replacementResponse = applyChooseReplacementPromptResponse(engine, replacementRequest, replacementSubmission);
+      appendEnginePromptEventLogRecord({ kind: 'Prompt', request: replacementRequest, response: replacementSubmission }, replacementResponse);
       recordAuthorityUpdate(replacementResponse.update);
       if (!replacementResponse.ok) {
         addMessage('system', replacementResponse.message || 'That replacement choice is not legal right now.');
@@ -5430,13 +5470,15 @@ export function useShelectorGame() {
       return;
     }
 
-    const promptResponse = applySearchLibraryPromptResponse(engine, activePrompt, {
+    const promptSubmission = {
       requestId: activePrompt.id,
-      kind: 'SearchLibrary',
+      kind: 'SearchLibrary' as const,
       playerId: humanIdRef.current,
       selectedCardInstanceIds: selectedSearchIds,
       payLifeToEnterUntapped: payLifeForSearchEntry,
-    });
+    };
+    const promptResponse = applySearchLibraryPromptResponse(engine, activePrompt, promptSubmission);
+    appendEnginePromptEventLogRecord({ kind: 'Prompt', request: activePrompt, response: promptSubmission }, promptResponse);
     if (!promptResponse.ok || !promptResponse.state) {
       recordAuthorityUpdate(promptResponse.update);
       const message = promptResponse.message || 'Could not resolve that search choice.';
@@ -5571,7 +5613,7 @@ export function useShelectorGame() {
     syncState();
     return;
 
-  }, [addMessage, appendLog, recordAuthorityUpdate, syncState, advanceGameLoop]);
+  }, [addMessage, appendEnginePromptEventLogRecord, appendLog, recordAuthorityUpdate, syncState, advanceGameLoop]);
 
   /** Cancel the active tutor — useful for "up to N" searches when the user wants
    * fewer than N picks, or to skip the search entirely. */
@@ -5667,12 +5709,14 @@ export function useShelectorGame() {
     }
 
     if (activeSearchPrompt) {
-      const promptResponse = applySearchLibraryPromptResponse(engineRef.current, activeSearchPrompt, {
+      const promptSubmission = {
         requestId: activeSearchPrompt.id,
-        kind: 'SearchLibrary',
+        kind: 'SearchLibrary' as const,
         playerId: humanIdRef.current,
         selectedCardInstanceIds: activeSearchSelectedIds,
-      });
+      };
+      const promptResponse = applySearchLibraryPromptResponse(engineRef.current, activeSearchPrompt, promptSubmission);
+      appendEnginePromptEventLogRecord({ kind: 'Prompt', request: activeSearchPrompt, response: promptSubmission }, promptResponse);
       if (promptResponse.ok && promptResponse.state) {
         recordAuthorityUpdate(promptResponse.update);
         engineRef.current = promptResponse.state as GameStateWithAI;
@@ -5701,7 +5745,7 @@ export function useShelectorGame() {
     for (const msg of loopMessages) addMessage(msg.role, msg.text);
     if (loopLogEntries.length > 0) setGameLog(prev => [...prev, ...loopLogEntries]);
     syncState();
-  }, [addMessage, recordAuthorityUpdate, syncState, advanceGameLoop]);
+  }, [addMessage, appendEnginePromptEventLogRecord, recordAuthorityUpdate, syncState, advanceGameLoop]);
 
   // Undo last human action
   const undoAction = useCallback(() => {
@@ -6785,12 +6829,14 @@ export function useShelectorGame() {
               proposedManaActions: manaActions,
             },
           );
-          const paymentResponse = applyPayCostsPromptResponse(state, paymentRequest, {
+          const paymentSubmission = {
             requestId: paymentRequest.id,
-            kind: 'PayCosts',
+            kind: 'PayCosts' as const,
             playerId: humanIdRef.current,
             selectedManaActions: manaActions,
-          });
+          };
+          const paymentResponse = applyPayCostsPromptResponse(state, paymentRequest, paymentSubmission);
+          appendEnginePromptEventLogRecord({ kind: 'Prompt', request: paymentRequest, response: paymentSubmission }, paymentResponse);
           recordAuthorityUpdate(paymentResponse.update);
           if (!paymentResponse.ok || !paymentResponse.state) {
             appendLog({
@@ -6834,12 +6880,14 @@ export function useShelectorGame() {
           const targetRequest = createSelectTargetPromptRequest(state, humanIdRef.current, spec, {
             sourceInstanceId,
           });
-          const targetResponse = applySelectTargetPromptResponse(state, targetRequest, {
+          const targetSubmission = {
             requestId: targetRequest.id,
-            kind: 'SelectTarget',
+            kind: 'SelectTarget' as const,
             playerId: humanIdRef.current,
             selectedTargetIds,
-          });
+          };
+          const targetResponse = applySelectTargetPromptResponse(state, targetRequest, targetSubmission);
+          appendEnginePromptEventLogRecord({ kind: 'Prompt', request: targetRequest, response: targetSubmission }, targetResponse);
           recordAuthorityUpdate(targetResponse.update);
           if (targetResponse.ok) return true;
 
@@ -6979,12 +7027,14 @@ export function useShelectorGame() {
               humanIdRef.current,
               engineAction.cardInstanceId,
             );
-            const modeResponse = applyChooseModePromptResponse(precastState, modeRequest, {
+            const modeSubmission = {
               requestId: modeRequest.id,
-              kind: 'ChooseMode',
+              kind: 'ChooseMode' as const,
               playerId: humanIdRef.current,
               selectedModeIndices: engineAction.chosenModes,
-            });
+            };
+            const modeResponse = applyChooseModePromptResponse(precastState, modeRequest, modeSubmission);
+            appendEnginePromptEventLogRecord({ kind: 'Prompt', request: modeRequest, response: modeSubmission }, modeResponse);
             recordAuthorityUpdate(modeResponse.update);
             if (!modeResponse.ok) {
               appendLog({
@@ -7430,7 +7480,7 @@ export function useShelectorGame() {
         syncState();
       }
     },
-    [gameState, addMessage, appendEngineEventLogRecord, appendLog, syncState, advanceGameLoop, advanceStepWithAuthority, applyActionThroughAuthority, applyEvents, damageAssignmentChoice, lastPlayedCard, optionalTriggerChoice, rememberLastPlayedCard, recordAuthorityUpdate, recordStateUpdate, skipEmptyPhases, skipRestOfTurn, taxPaymentChoice, triggerOrderChoice],
+    [gameState, addMessage, appendEngineEventLogRecord, appendEnginePromptEventLogRecord, appendLog, syncState, advanceGameLoop, advanceStepWithAuthority, applyActionThroughAuthority, applyEvents, damageAssignmentChoice, lastPlayedCard, optionalTriggerChoice, rememberLastPlayedCard, recordAuthorityUpdate, recordStateUpdate, skipEmptyPhases, skipRestOfTurn, taxPaymentChoice, triggerOrderChoice],
   );
   submitActionRef.current = submitAction;
 
