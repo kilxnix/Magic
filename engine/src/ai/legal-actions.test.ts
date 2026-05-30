@@ -772,6 +772,12 @@ describe('getLegalActions', () => {
         abilityIndex: 0,
         targets: ['friendly_bear', 'enemy_bear'],
       });
+      expect(actions).not.toContainEqual({
+        kind: 'ActivateAbility',
+        cardInstanceId: 'fight_device',
+        abilityIndex: 0,
+        targets: ['enemy_bear', 'friendly_bear'],
+      });
     });
   });
 

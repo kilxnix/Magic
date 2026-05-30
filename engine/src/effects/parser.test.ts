@@ -740,7 +740,10 @@ describe('parseOracleText', () => {
       expect(result.kind).toBe('Spell');
       if (result.kind !== 'Spell') return;
       expect(result.effects[0]).toMatchObject({ kind: 'Fight' });
-      expect(result.targets[0].type).toBe('Creature');
+      expect(result.targets[0]).toMatchObject({
+        type: 'Creature',
+        constraints: { controllerControls: true },
+      });
       expect(result.targets[1]).toMatchObject({
         type: 'Creature',
         constraints: { opponentControls: true },
@@ -884,7 +887,7 @@ describe('parseOracleText', () => {
       expect(result.effects[0].kind).toBe('ModifyPT');
       expect(result.targets[0]).toMatchObject({
         type: 'Creature',
-        constraints: { colors: ['G'] },
+        constraints: { colors: ['G'], controllerControls: true },
       });
     });
 
@@ -905,7 +908,7 @@ describe('parseOracleText', () => {
       expect(result.effects).toHaveLength(2);
       expect(result.effects[0].kind).toBe('ModifyPT');
       expect(result.effects[1].kind).toBe('Fight');
-      expect(result.targets[0]).toMatchObject({ type: 'Creature', constraints: { colors: ['G'] } });
+      expect(result.targets[0]).toMatchObject({ type: 'Creature', constraints: { colors: ['G'], controllerControls: true } });
       expect(result.targets[1]).toMatchObject({ type: 'Creature', constraints: { colors: ['G'], opponentControls: true } });
     });
 
@@ -1017,6 +1020,10 @@ describe('parseOracleText', () => {
       if (result.kind !== 'Triggered') return;
       expect(result.ability.trigger).toEqual({ kind: 'BeginningCombat', whose: 'yours' });
       expect(result.targets).toHaveLength(1);
+      expect(result.targets[0]).toMatchObject({
+        type: 'Creature',
+        constraints: { controllerControls: true, notSource: true },
+      });
       expect(result.ability.effects[0].kind).toBe('GrantKeyword');
       expect(result.ability.effects[1].kind).toBe('ModifyPT');
       if (result.ability.effects[1].kind !== 'ModifyPT') return;

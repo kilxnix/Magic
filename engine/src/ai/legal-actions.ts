@@ -87,6 +87,7 @@ export function getSpellTargetSpecs(
         id: target.id,
         type: target.type as TargetSpec['type'],
         count: (target as Partial<TargetSpec>).count ?? 1,
+        constraints: (target as TargetSpec).constraints,
       })));
     }
     return specs;
@@ -132,6 +133,8 @@ export function getLegalTargets(
 
       // Check opponentControls constraint
       if (spec.constraints?.opponentControls && card.ownerId === casterId) continue;
+      if (spec.constraints?.controllerControls && card.ownerId !== casterId) continue;
+      if (spec.constraints?.notSource && sourceInstanceId && card.instanceId === sourceInstanceId) continue;
 
       addIfValid(card.instanceId);
     }
@@ -146,6 +149,9 @@ export function getLegalTargets(
     for (const card of state.cards.values()) {
       if (card.zone !== 'battlefield') continue;
       if (!isEffectiveCreature(state, card.instanceId)) continue;
+      if (spec.constraints?.opponentControls && card.ownerId === casterId) continue;
+      if (spec.constraints?.controllerControls && card.ownerId !== casterId) continue;
+      if (spec.constraints?.notSource && sourceInstanceId && card.instanceId === sourceInstanceId) continue;
       addIfValid(card.instanceId);
     }
   } else if (
@@ -199,6 +205,8 @@ export function getLegalTargets(
         && !def.card_types.includes('land')
       ) continue;
       if (spec.constraints?.opponentControls && card.ownerId === casterId) continue;
+      if (spec.constraints?.controllerControls && card.ownerId !== casterId) continue;
+      if (spec.constraints?.notSource && sourceInstanceId && card.instanceId === sourceInstanceId) continue;
 
       addIfValid(card.instanceId);
     }
@@ -219,6 +227,8 @@ export function getLegalTargets(
         && !def.card_types.includes('enchantment')
       ) continue;
       if (spec.constraints?.opponentControls && card.ownerId === casterId) continue;
+      if (spec.constraints?.controllerControls && card.ownerId !== casterId) continue;
+      if (spec.constraints?.notSource && sourceInstanceId && card.instanceId === sourceInstanceId) continue;
       addIfValid(card.instanceId);
     }
   }
@@ -260,6 +270,7 @@ function generateModalActions(
           id: t.id,
           type: t.type as any,
           count: 1,
+          constraints: (t as TargetSpec).constraints,
         }));
         for (const targets of generateTargetCombinations(state, playerId, specs, card.instanceId)) {
           actions.push({
@@ -282,6 +293,7 @@ function generateModalActions(
           id: t.id,
           type: t.type as any,
           count: 1,
+          constraints: (t as TargetSpec).constraints,
         }));
         for (const targets of generateTargetCombinations(state, playerId, specs, card.instanceId)) {
           actions.push({
@@ -553,7 +565,8 @@ function generateActivateAbilityActions(state: GameState, playerId: string): Act
       const specs = abilityTargets.map((target): TargetSpec => ({
         id: target.id,
         type: target.type as TargetSpec['type'],
-        count: 1,
+        count: target.count ?? 1,
+        constraints: target.constraints,
       }));
       for (const targets of generateTargetCombinations(state, playerId, specs, card.instanceId)) {
         actions.push({

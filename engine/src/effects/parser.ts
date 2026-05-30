@@ -1847,11 +1847,13 @@ function matchFight(tokens: string[], startIndex: number): PatternResult {
 
   if (slice[0] !== 'target') return null;
   let idx = 1;
-  const yourConstraints = colorConstraintFromWord(slice[idx]);
-  if (yourConstraints) idx++;
+  const yourColorConstraints = colorConstraintFromWord(slice[idx]);
+  const yourConstraints: TargetSpec['constraints'] = { ...(yourColorConstraints || {}) };
+  if (yourColorConstraints) idx++;
   if (slice[idx] !== 'creature') return null;
   idx++;
   if (slice[idx] === 'you' && slice[idx + 1] === 'control') {
+    yourConstraints.controllerControls = true;
     idx += 2;
   }
   if (slice[idx] !== 'fights') return null;
@@ -1872,7 +1874,7 @@ function matchFight(tokens: string[], startIndex: number): PatternResult {
   let consumed = idx;
   if (tokens[startIndex + consumed] === '.') consumed++;
 
-  const yourCreature = makeTargetSpec('Creature', yourConstraints);
+  const yourCreature = makeTargetSpec('Creature', Object.keys(yourConstraints).length > 0 ? yourConstraints : undefined);
   const opposingCreature = makeTargetSpec('Creature', { ...opposingColorConstraints, opponentControls: true });
   const effect: Effect = {
     kind: 'Fight',
@@ -2144,6 +2146,7 @@ function matchModifyPT(tokens: string[], startIndex: number): PatternResult {
   idx++;
   const constraints: TargetSpec['constraints'] = { ...(colorConstraints || {}) };
   if (slice[idx] === 'you' && slice[idx + 1] === 'control') {
+    constraints.controllerControls = true;
     idx += 2;
   } else if (slice[idx] === 'an' && slice[idx + 1] === 'opponent' && slice[idx + 2] === 'controls') {
     constraints.opponentControls = true;
@@ -3446,8 +3449,11 @@ function matchBlink(tokens: string[], startIndex: number): PatternResult {
     return null;
   }
 
+  const constraints: TargetSpec['constraints'] = {};
+
   // Optional "you control"
   if (slice[idx] === 'you' && slice[idx + 1] === 'control') {
+    constraints.controllerControls = true;
     idx += 2;
   }
 
@@ -3497,7 +3503,7 @@ function matchBlink(tokens: string[], startIndex: number): PatternResult {
 
   if (slice[idx] === '.') idx++;
 
-  const spec = makeTargetSpec(targetType);
+  const spec = makeTargetSpec(targetType, Object.keys(constraints).length > 0 ? constraints : undefined);
   const effect: Effect = {
     kind: 'Blink',
     target: makeChosenRef(spec),
@@ -3654,9 +3660,11 @@ function matchGrantKeyword(tokens: string[], startIndex: number): PatternResult 
   if (slice[1] !== 'creature') return null;
 
   let idx = 2;
+  const constraints: TargetSpec['constraints'] = {};
 
   // Optional "you control"
   if (slice[idx] === 'you' && slice[idx + 1] === 'control') {
+    constraints.controllerControls = true;
     idx += 2;
   }
 
@@ -3686,7 +3694,7 @@ function matchGrantKeyword(tokens: string[], startIndex: number): PatternResult 
 
   if (slice[idx] === '.') idx++;
 
-  const spec = makeTargetSpec('Creature');
+  const spec = makeTargetSpec('Creature', Object.keys(constraints).length > 0 ? constraints : undefined);
   const effect: Effect = {
     kind: 'GrantKeyword',
     target: makeChosenRef(spec),
@@ -3719,6 +3727,7 @@ function matchTargetCombatRestriction(tokens: string[], startIndex: number): Pat
     constraints.opponentControls = true;
     idx += 3;
   } else if (slice[idx] === 'you' && slice[idx + 1] === 'control') {
+    constraints.controllerControls = true;
     idx += 2;
   }
 
@@ -3797,12 +3806,19 @@ function matchGrantKeywordAndDynamicPT(tokens: string[], startIndex: number): Pa
   if (slice.length < 15) return null;
 
   let idx = 0;
-  if (slice[idx] === 'another') idx++;
+  const constraints: TargetSpec['constraints'] = {};
+  if (slice[idx] === 'another') {
+    constraints.notSource = true;
+    idx++;
+  }
   if (slice[idx] !== 'target') return null;
   idx++;
   if (slice[idx] !== 'creature') return null;
   idx++;
-  if (slice[idx] === 'you' && slice[idx + 1] === 'control') idx += 2;
+  if (slice[idx] === 'you' && slice[idx + 1] === 'control') {
+    constraints.controllerControls = true;
+    idx += 2;
+  }
   if (slice[idx] !== 'gains') return null;
   idx++;
 
@@ -3845,7 +3861,7 @@ function matchGrantKeywordAndDynamicPT(tokens: string[], startIndex: number): Pa
 
   if (slice[idx] === '.') idx++;
 
-  const spec = makeTargetSpec('Creature');
+  const spec = makeTargetSpec('Creature', Object.keys(constraints).length > 0 ? constraints : undefined);
   const target = makeChosenRef(spec);
   const effects: Effect[] = [
     {

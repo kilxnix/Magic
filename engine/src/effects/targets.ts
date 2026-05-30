@@ -17,6 +17,8 @@ export interface TargetSpec {
   count: number;
   constraints?: {
     opponentControls?: boolean;
+    controllerControls?: boolean;
+    notSource?: boolean;
     colors?: Array<'W' | 'U' | 'B' | 'R' | 'G'>;
     notColors?: Array<'W' | 'U' | 'B' | 'R' | 'G'>;
   };
@@ -252,6 +254,20 @@ export function validateTargetChoices(
         if (card.ownerId === casterId) {
           throw new Error(`Invalid target for ${spec.id}: target must be controlled by an opponent`);
         }
+      }
+
+      if (spec.constraints?.controllerControls && spec.type !== 'Player') {
+        const card = state.cards.get(chosenId);
+        if (!card) {
+          throw new Error(`Invalid target for ${spec.id}: controllerControls requires a permanent, got ${chosenId}`);
+        }
+        if (card.ownerId !== casterId) {
+          throw new Error(`Invalid target for ${spec.id}: target must be controlled by you`);
+        }
+      }
+
+      if (spec.constraints?.notSource && sourceInstanceId && chosenId === sourceInstanceId) {
+        throw new Error(`Invalid target for ${spec.id}: target must be another object`);
       }
     }
   }
