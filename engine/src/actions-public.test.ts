@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { tryPlayLand, tryTapLandForMana, tryUntapManaSource, tryCastSpell, tryActivateAbility, tryPassPriority, tryDeclareAttackers, tryDeclareBlockers, tryEquip, tryAdjustCounters, tryAdjustPlayerCounter, tryMoveCardManually, tryCreateManualToken, resetLoopDetector } from './actions-public';
+import { tryPlayLand, tryTapLandForMana, tryUntapManaSource, tryCastSpell, tryActivateAbility, tryPassPriority, tryDeclareAttackers, tryDeclareBlockers, tryEquip, tryAdjustCounters, tryAdjustPlayerCounter, tryMoveCardManually, tryAdjustDamage, tryCreateManualToken, resetLoopDetector } from './actions-public';
 import { makeTestState } from './__tests__/test-helpers';
 import { populateParsedCache } from './cards/card-parser-cache';
 import type { CardDefinition, GameState } from './types';
@@ -577,6 +577,39 @@ describe('tryMoveCardManually', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.state.cards.get('vanilla_creature_0')?.zone).toBe('command');
+  });
+});
+
+describe('tryAdjustDamage', () => {
+  it('adds and removes marked damage on a battlefield permanent', () => {
+    const state = makeTestState({ battlefieldCreature: true });
+
+    const added = tryAdjustDamage(state, 'human', 'vanilla_creature_0', 3);
+    expect(added.ok).toBe(true);
+    if (!added.ok) return;
+    expect(added.state.cards.get('vanilla_creature_0')?.damage).toBe(3);
+    expect(added.events).toContainEqual(expect.objectContaining({
+      kind: 'CardDamageAdjusted',
+      cardId: 'vanilla_creature_0',
+      delta: 3,
+      previous: 0,
+      next: 3,
+      manual: true,
+    }));
+
+    const removed = tryAdjustDamage(added.state, 'human', 'vanilla_creature_0', -2);
+    expect(removed.ok).toBe(true);
+    if (!removed.ok) return;
+    expect(removed.state.cards.get('vanilla_creature_0')?.damage).toBe(1);
+  });
+
+  it('rejects removing absent marked damage', () => {
+    const state = makeTestState({ battlefieldCreature: true });
+
+    const result = tryAdjustDamage(state, 'human', 'vanilla_creature_0', -1);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe('illegal_target');
   });
 });
 

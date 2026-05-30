@@ -79,6 +79,12 @@ export interface ManualMoveCardAction {
   zone: 'hand' | 'battlefield' | 'graveyard' | 'exile' | 'command';
 }
 
+export interface ManualAdjustDamageAction {
+  kind: 'ManualAdjustDamage';
+  cardInstanceId: string;
+  delta: number;
+}
+
 export interface ManualCreateTokenAction {
   kind: 'ManualCreateToken';
   name: string;
@@ -144,6 +150,7 @@ export type AIAction =
   | ManualAdjustCountersAction
   | ManualAdjustPlayerCounterAction
   | ManualMoveCardAction
+  | ManualAdjustDamageAction
   | ManualCreateTokenAction
   | ActivateAbilityAction
   | DeclareAttackersAction

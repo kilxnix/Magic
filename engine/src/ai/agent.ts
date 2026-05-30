@@ -17,6 +17,7 @@ import {
   tryAdjustCounters,
   tryAdjustPlayerCounter,
   tryMoveCardManually,
+  tryAdjustDamage,
   tryCreateManualToken,
   tryCastSpell,
   tryActivateAbility,
@@ -83,6 +84,9 @@ export function dispatchAIAction(
 
     case 'ManualMoveCard':
       return tryMoveCardManually(state, playerId, action.cardInstanceId, action.zone);
+
+    case 'ManualAdjustDamage':
+      return tryAdjustDamage(state, playerId, action.cardInstanceId, action.delta);
 
     case 'ManualCreateToken':
       return tryCreateManualToken(state, playerId, action);

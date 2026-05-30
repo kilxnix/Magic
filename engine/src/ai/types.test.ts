@@ -8,6 +8,7 @@ import type {
   ManualAdjustCountersAction,
   ManualAdjustPlayerCounterAction,
   ManualMoveCardAction,
+  ManualAdjustDamageAction,
   ManualCreateTokenAction,
   ActivateAbilityAction,
   DeclareAttackersAction,
@@ -127,6 +128,18 @@ describe('AI Types', () => {
     expect(action.zone).toBe('graveyard');
   });
 
+  it('creates ManualAdjustDamageAction correctly', () => {
+    const action: ManualAdjustDamageAction = {
+      kind: 'ManualAdjustDamage',
+      cardInstanceId: 'creature_1',
+      delta: 2,
+    };
+
+    expect(action.kind).toBe('ManualAdjustDamage');
+    expect(action.cardInstanceId).toBe('creature_1');
+    expect(action.delta).toBe(2);
+  });
+
   it('creates DeclareAttackersAction correctly', () => {
     const action: DeclareAttackersAction = {
       kind: 'DeclareAttackers',
@@ -172,6 +185,7 @@ describe('AI Types', () => {
       { kind: 'ManualAdjustCounters', cardInstanceId: 'c1', counterType: '+1/+1', delta: 1 },
       { kind: 'ManualAdjustPlayerCounter', playerId: 'p1', counterType: 'experience', delta: 1 },
       { kind: 'ManualMoveCard', cardInstanceId: 'c1', zone: 'graveyard' },
+      { kind: 'ManualAdjustDamage', cardInstanceId: 'c1', delta: 2 },
       { kind: 'ManualCreateToken', name: 'Treasure', count: 1, power: 0, toughness: 0, colors: [], types: ['artifact'], subtypes: ['Treasure'] },
       { kind: 'ActivateAbility', cardInstanceId: 'c1', abilityIndex: 0, targets: [] },
       { kind: 'DeclareAttackers', attacks: [] },
@@ -180,7 +194,7 @@ describe('AI Types', () => {
       { kind: 'PassPriority' },
     ];
 
-    expect(actions).toHaveLength(13);
+    expect(actions).toHaveLength(14);
     expect(actions.map(a => a.kind)).toEqual([
       'CastSpell',
       'PlayLand',
@@ -189,6 +203,7 @@ describe('AI Types', () => {
       'ManualAdjustCounters',
       'ManualAdjustPlayerCounter',
       'ManualMoveCard',
+      'ManualAdjustDamage',
       'ManualCreateToken',
       'ActivateAbility',
       'DeclareAttackers',

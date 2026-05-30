@@ -14,6 +14,7 @@ export type {
   ManualAdjustCountersAction,
   ManualAdjustPlayerCounterAction,
   ManualMoveCardAction,
+  ManualAdjustDamageAction,
   ManualCreateTokenAction,
   ActivateAbilityAction,
   DeclareAttackersAction,

@@ -135,6 +135,7 @@ export interface SimpleCard {
   cardTypes: string[];
   isCommander: boolean;
   counters: Record<string, number>;
+  damage: number;
   isToken: boolean;
   attachedTo?: string;           // Instance ID of what this is attached to
   attachments?: SimpleCard[];    // Equipment/auras attached to this card
@@ -272,6 +273,7 @@ function isMeaningfulAutoSkipAction(action: AIAction): boolean {
     case 'ManualAdjustCounters':
     case 'ManualAdjustPlayerCounter':
     case 'ManualMoveCard':
+    case 'ManualAdjustDamage':
     case 'ManualCreateToken':
       return false;
     case 'DeclareAttackers':
@@ -583,6 +585,7 @@ function toSimpleCard(inst: CardInstance, def: CardDefinition): SimpleCard {
     cardTypes: def.card_types as string[],
     isCommander: inst.isCommander,
     counters: inst.counters,
+    damage: inst.damage || 0,
     isToken: inst.isToken === true || inst.instanceId.startsWith('token_inst_'),
     attachedTo: inst.attachedTo,
   };
@@ -1747,6 +1750,18 @@ function toSimpleLegalAction(action: AIAction, engineState: GameState): SimpleLe
         cardInstanceId: action.cardInstanceId,
         cardName: def?.name,
         label: `Move ${def?.name || 'card'} to ${action.zone}`,
+        _engineAction: action,
+      };
+    }
+    case 'ManualAdjustDamage': {
+      const inst = engineState.cards.get(action.cardInstanceId);
+      const def = inst ? getCardDefinition(engineState, inst) : undefined;
+      const sign = action.delta > 0 ? '+' : '';
+      return {
+        kind: 'ManualAdjustDamage',
+        cardInstanceId: action.cardInstanceId,
+        cardName: def?.name,
+        label: `${sign}${action.delta} damage on ${def?.name || 'permanent'}`,
         _engineAction: action,
       };
     }
@@ -5157,6 +5172,37 @@ export function useShelectorGame() {
     syncState();
   }, [addMessage, applyActionThroughAuthority, applyEvents, syncState]);
 
+  const adjustDamage = useCallback((cardInstanceId: string, delta: number) => {
+    const engine = engineRef.current;
+    if (!engine) return;
+
+    const card = engine.cards.get(cardInstanceId);
+    const def = card ? getCardDefinition(engine, card) : undefined;
+    const action: AIAction = {
+      kind: 'ManualAdjustDamage',
+      cardInstanceId,
+      delta,
+    };
+    const response = applyActionThroughAuthority(engine, humanIdRef.current, action, {
+      source: 'system',
+      label: toSimpleLegalAction(action, engine).label,
+    });
+    if (!response.ok || !response.state) {
+      const message = response.message || 'That damage correction was rejected.';
+      setActionError({ reason: response.reason || 'illegal_action', message });
+      addMessage('system', `Cannot adjust damage: ${message}`);
+      syncState();
+      return;
+    }
+
+    engineRef.current = response.state as GameStateWithAI;
+    applyEvents(response.events || [], response.state);
+
+    const sign = delta > 0 ? '+' : '';
+    addMessage('system', `Manual correction: ${def?.name || 'Permanent'} ${sign}${delta} marked damage.`);
+    syncState();
+  }, [addMessage, applyActionThroughAuthority, applyEvents, syncState]);
+
   const createManualToken = useCallback((token: {
     name: string;
     count: number;
@@ -6773,6 +6819,7 @@ export function useShelectorGame() {
     adjustCounters,
     adjustPlayerCounter,
     moveCardManually,
+    adjustDamage,
     createManualToken,
     clearActionError: () => setActionError(null),
   };

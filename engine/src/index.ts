@@ -63,6 +63,7 @@ export {
   tryAdjustCounters,
   tryAdjustPlayerCounter,
   tryMoveCardManually,
+  tryAdjustDamage,
   tryCreateManualToken,
   resetLoopDetector,
 } from './actions-public';

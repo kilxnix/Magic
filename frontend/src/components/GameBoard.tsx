@@ -138,6 +138,7 @@ interface GameBoardProps {
   onAdjustCounters?: (cardInstanceId: string, counterType: string, delta: number) => void;
   onAdjustPlayerCounter?: (playerId: string, counterType: string, delta: number) => void;
   onMoveCard?: (cardInstanceId: string, zone: ManualMoveZone) => void;
+  onAdjustDamage?: (cardInstanceId: string, delta: number) => void;
   onCreateToken?: (token: ManualTokenInput) => void;
   untappableCardIds?: string[];
   lastPlayedCard?: LastPlayedCard | null;
@@ -753,6 +754,7 @@ function CardInspectorModal({
   onSecondaryAction,
   onAdjustCounter,
   onMoveCard,
+  onAdjustDamage,
   onClose,
 }: {
   card: SimpleCard;
@@ -764,12 +766,14 @@ function CardInspectorModal({
   onSecondaryAction?: () => void;
   onAdjustCounter?: (counterType: string, delta: number) => void;
   onMoveCard?: (zone: ManualMoveZone) => void;
+  onAdjustDamage?: (delta: number) => void;
   onClose: () => void;
 }) {
   const isCreature = card.cardTypes.includes('creature');
   const counters = getCounterBadges(card.counters);
   const [customCounter, setCustomCounter] = useState('');
   const canAdjustCounters = card.zone === 'battlefield' && !!onAdjustCounter;
+  const canAdjustDamage = card.zone === 'battlefield' && !!onAdjustDamage;
   const canMoveCard = !!onMoveCard && card.zone !== 'stack' && card.zone !== 'library';
   const quickCounters = ['+1/+1', '-1/-1', 'loyalty', 'shield', 'stun'];
   const zoneChoices: { zone: ManualMoveZone; label: string; commanderOnly?: boolean }[] = [
@@ -974,6 +978,30 @@ function CardInspectorModal({
                   >
                     Add
                   </button>
+                </div>
+              </div>
+            )}
+
+            {canAdjustDamage && (
+              <div className="rounded border border-neutral-800 bg-neutral-900 p-3">
+                <div className="mb-2 text-[10px] font-bold uppercase tracking-wider text-stone-400">
+                  Manual Damage
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="rounded border border-red-800/60 bg-red-950/50 px-2 py-1 text-xs font-bold text-red-100">
+                    Marked: {card.damage || 0}
+                  </span>
+                  {[-5, -1, 1, 5].map(delta => (
+                    <button
+                      key={delta}
+                      type="button"
+                      onClick={() => onAdjustDamage(delta)}
+                      className="min-h-9 min-w-10 rounded border border-neutral-700 bg-neutral-950 px-2 text-sm font-black text-stone-200 transition-colors hover:bg-neutral-800"
+                      title={`${delta > 0 ? 'Add' : 'Remove'} ${Math.abs(delta)} damage`}
+                    >
+                      {delta > 0 ? `+${delta}` : delta}
+                    </button>
+                  ))}
                 </div>
               </div>
             )}
@@ -1958,6 +1986,7 @@ export function GameBoard({
   onAdjustCounters,
   onAdjustPlayerCounter,
   onMoveCard,
+  onAdjustDamage,
   onCreateToken,
   untappableCardIds,
   lastPlayedCard,
@@ -2359,6 +2388,11 @@ export function GameBoard({
           onMoveCard={
             onMoveCard
               ? zone => onMoveCard(inspectedCard.instanceId, zone)
+              : undefined
+          }
+          onAdjustDamage={
+            onAdjustDamage
+              ? delta => onAdjustDamage(inspectedCard.instanceId, delta)
               : undefined
           }
           onClose={() => setInspectedCard(null)}

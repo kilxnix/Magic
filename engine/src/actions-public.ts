@@ -83,6 +83,15 @@ export type GameEvent =
       manual: true;
     }
   | {
+      kind: 'CardDamageAdjusted';
+      playerId: string;
+      cardId: string;
+      delta: number;
+      previous: number;
+      next: number;
+      manual: true;
+    }
+  | {
       kind: 'TokenCreated';
       playerId: string;
       tokenName: string;
@@ -593,6 +602,44 @@ export function tryMoveCardManually(
       cardId: cardInstanceId,
       from,
       to: zone,
+      manual: true,
+    },
+    ...runWinCheck(next),
+  ]);
+}
+
+export function tryAdjustDamage(
+  state: GameState,
+  playerId: string,
+  cardInstanceId: string,
+  delta: number,
+): ActionResult {
+  if (!state.players.some(p => p.id === playerId)) return fail('card_not_found', 'Player not found');
+  const card = state.cards.get(cardInstanceId);
+  if (!card) return fail('card_not_found', 'Card not found');
+  if (card.zone !== 'battlefield') return fail('not_in_zone', 'Damage can only be adjusted on battlefield permanents');
+  if (!Number.isInteger(delta) || delta === 0 || Math.abs(delta) > 99) {
+    return fail('illegal_target', 'Damage adjustment must be a non-zero integer from -99 to 99');
+  }
+
+  const previous = Math.max(0, card.damage || 0);
+  const nextDamage = Math.max(0, previous + delta);
+  if (previous === nextDamage) {
+    return fail('illegal_target', 'No marked damage to remove');
+  }
+
+  const cards = new Map(state.cards);
+  cards.set(cardInstanceId, { ...card, damage: nextDamage });
+  const next = { ...state, cards };
+
+  return success(next, [
+    {
+      kind: 'CardDamageAdjusted',
+      playerId,
+      cardId: cardInstanceId,
+      delta,
+      previous,
+      next: nextDamage,
       manual: true,
     },
     ...runWinCheck(next),

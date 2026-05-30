@@ -1118,6 +1118,10 @@ function actionReferencesSameObject(legal: AIAction, requested: AIAction): boole
       return requested.kind === 'ManualMoveCard'
         && legal.cardInstanceId === requested.cardInstanceId
         && legal.zone === requested.zone;
+    case 'ManualAdjustDamage':
+      return requested.kind === 'ManualAdjustDamage'
+        && legal.cardInstanceId === requested.cardInstanceId
+        && legal.delta === requested.delta;
     case 'ManualCreateToken':
       return requested.kind === 'ManualCreateToken'
         && legal.name === requested.name
@@ -1189,6 +1193,10 @@ function illegalActionMessage(state: GameState, playerId: string, action: AIActi
     const result = dispatchAIAction(state, playerId, action);
     return result.ok ? 'That zone correction is not available now.' : result.message;
   }
+  if (action.kind === 'ManualAdjustDamage') {
+    const result = dispatchAIAction(state, playerId, action);
+    return result.ok ? 'That damage correction is not available now.' : result.message;
+  }
   if (action.kind === 'ManualCreateToken') {
     const result = dispatchAIAction(state, playerId, action);
     return result.ok ? 'That token correction is not available now.' : result.message;
@@ -1201,6 +1209,7 @@ function isValidatedOutOfBandAction(action: AIAction): boolean {
     || action.kind === 'ManualAdjustCounters'
     || action.kind === 'ManualAdjustPlayerCounter'
     || action.kind === 'ManualMoveCard'
+    || action.kind === 'ManualAdjustDamage'
     || action.kind === 'ManualCreateToken';
 }
 
@@ -1220,6 +1229,8 @@ export function labelForAction(state: GameState, action: AIAction): string {
       return `Adjust ${playerName(state, action.playerId) || 'player'} ${action.counterType} counters`;
     case 'ManualMoveCard':
       return `Move ${cardName(state, state.cards.get(action.cardInstanceId)) || 'card'} to ${action.zone}`;
+    case 'ManualAdjustDamage':
+      return `Adjust ${cardName(state, state.cards.get(action.cardInstanceId)) || 'permanent'} damage`;
     case 'ManualCreateToken':
       return `Create ${action.count} ${action.name} token${action.count === 1 ? '' : 's'}`;
     case 'ActivateAbility':
@@ -1283,6 +1294,7 @@ const ACTION_KIND_LABELS: Record<AIAction['kind'], string> = {
   ManualAdjustCounters: 'Special action',
   ManualAdjustPlayerCounter: 'Special action',
   ManualMoveCard: 'Special action',
+  ManualAdjustDamage: 'Special action',
   ManualCreateToken: 'Special action',
   ActivateAbility: 'Activated ability',
   DeclareAttackers: 'Attack/block',
@@ -1303,6 +1315,7 @@ function actionChoiceSummaryLabel(action: AIAction): string {
     case 'ManualAdjustCounters':
     case 'ManualAdjustPlayerCounter':
     case 'ManualMoveCard':
+    case 'ManualAdjustDamage':
     case 'ManualUntapManaSource':
     case 'ManualCreateToken':
       return 'Special action';
