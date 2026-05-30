@@ -98,6 +98,7 @@ export function PlayPage() {
     tutorCards,
     tutorTitle,
     libraryChoice,
+    optionalTriggerChoice,
     gameLog,
     authorityUpdates,
     lastStateUpdate,
@@ -115,6 +116,7 @@ export function PlayPage() {
     resolveTutor,
     cancelTutor,
     resolveLibraryChoice,
+    resolveOptionalTriggerChoice,
     undosRemaining,
     undoAction,
     coachMode,
@@ -750,6 +752,8 @@ export function PlayPage() {
             onTutorCancel={cancelTutor}
             libraryChoice={libraryChoice}
             onResolveLibraryChoice={resolveLibraryChoice}
+            optionalTriggerChoice={optionalTriggerChoice}
+            onResolveOptionalTrigger={resolveOptionalTriggerChoice}
             undosRemaining={undosRemaining}
             onUndo={undoAction}
             coachMode={coachMode}

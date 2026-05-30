@@ -7,7 +7,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import type { LibraryManipulationChoice, SimpleGameState, SimpleLegalAction, SimpleCard, LastPlayedCard } from '../hooks/useShelectorGame';
+import type { LibraryManipulationChoice, OptionalTriggerChoice, SimpleGameState, SimpleLegalAction, SimpleCard, LastPlayedCard } from '../hooks/useShelectorGame';
 import type { EnginePrompt, EngineStateUpdate } from 'commander-engine';
 import { Loader2, ChevronDown, ChevronRight, Search, X, Lightbulb, Menu } from 'lucide-react';
 import { CardPickerModal } from './CardPickerModal';
@@ -103,6 +103,8 @@ interface GameBoardProps {
   onTutorCancel?: () => void;
   libraryChoice?: LibraryManipulationChoice | null;
   onResolveLibraryChoice?: (topIds: string[], movedIds: string[]) => void;
+  optionalTriggerChoice?: OptionalTriggerChoice | null;
+  onResolveOptionalTrigger?: (use: boolean) => void;
   undosRemaining?: number;
   onUndo?: () => void;
   coachMode?: boolean;
@@ -1111,6 +1113,44 @@ function LibraryChoiceModal({
   );
 }
 
+function OptionalTriggerModal({
+  choice,
+  onResolve,
+}: {
+  choice: OptionalTriggerChoice;
+  onResolve: (use: boolean) => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-[86] flex items-center justify-center bg-black/75 p-3 backdrop-blur-sm">
+      <div className="w-full max-w-md overflow-hidden rounded-lg border border-amber-500/45 bg-neutral-950 shadow-2xl">
+        <div className="border-b border-neutral-800 px-4 py-3">
+          <div className="text-[10px] font-black uppercase tracking-wider text-amber-300">Optional Trigger</div>
+          <div className="mt-1 text-lg font-black text-stone-100">{choice.title}</div>
+          <div className="mt-1 text-xs text-stone-400">
+            {choice.triggerKind} trigger from {choice.sourceName}. Choose whether to use it.
+          </div>
+        </div>
+        <div className="grid gap-2 p-4 sm:grid-cols-2">
+          <button
+            type="button"
+            onClick={() => onResolve(false)}
+            className="min-h-12 rounded border border-stone-700 px-4 text-sm font-bold text-stone-200 transition-colors hover:bg-stone-900"
+          >
+            Decline
+          </button>
+          <button
+            type="button"
+            onClick={() => onResolve(true)}
+            className="min-h-12 rounded bg-amber-500 px-4 text-sm font-black text-neutral-950 transition-colors hover:bg-amber-400"
+          >
+            Use Trigger
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /** Expandable graveyard viewer */
 function GraveyardViewer({
   cards,
@@ -1186,6 +1226,8 @@ export function GameBoard({
   onTutorCancel,
   libraryChoice,
   onResolveLibraryChoice,
+  optionalTriggerChoice,
+  onResolveOptionalTrigger,
   undosRemaining,
   onUndo,
   coachMode,
@@ -1533,6 +1575,12 @@ export function GameBoard({
         <LibraryChoiceModal
           choice={libraryChoice}
           onResolve={onResolveLibraryChoice}
+        />
+      )}
+      {optionalTriggerChoice && onResolveOptionalTrigger && (
+        <OptionalTriggerModal
+          choice={optionalTriggerChoice}
+          onResolve={onResolveOptionalTrigger}
         />
       )}
       {inspectedCard && (

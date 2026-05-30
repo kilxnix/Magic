@@ -73,6 +73,8 @@ import {
   applySelectCardsPromptResponse,
   createLibraryManipulationPromptRequest,
   applyLibraryManipulationPromptResponse,
+  createOptionalTriggerPromptRequest,
+  applyOptionalTriggerPromptResponse,
   createChooseModePromptRequest,
   applyChooseModePromptResponse,
   type ActionPromptChoice,
@@ -82,6 +84,7 @@ import {
   type SearchLibraryPromptRequest,
   type SelectCardsPromptRequest,
   type LibraryManipulationPromptRequest,
+  type OptionalTriggerPromptRequest,
   type TargetSpec,
   summarizeActionPromptChoices,
   serializeGameState,
@@ -369,6 +372,7 @@ export interface ShelectorGameSaveSnapshot {
   tutorCards: TutorCardOption[];
   tutorTitle: string;
   libraryChoice?: LibraryManipulationChoice | null;
+  optionalTriggerChoice?: OptionalTriggerChoice | null;
   undosRemaining: number;
   coachMode: boolean;
   newPlayerMode: boolean;
@@ -616,6 +620,14 @@ export interface LibraryManipulationChoice {
   mode: 'scry' | 'surveil';
   title: string;
   cards: TutorCardOption[];
+}
+
+export interface OptionalTriggerChoice {
+  id: string;
+  triggerId: string;
+  sourceName: string;
+  triggerKind: string;
+  title: string;
 }
 
 type PendingPlayLandChoice = {
@@ -2004,6 +2016,8 @@ export function useShelectorGame() {
   const pendingTargetChoiceRef = useRef<PendingTargetChoice | null>(null);
   const pendingLibraryChoiceRef = useRef<{ stackItemId: string; mode: 'scry' | 'surveil' } | null>(null);
   const libraryManipulationPromptRequestRef = useRef<LibraryManipulationPromptRequest | null>(null);
+  const [optionalTriggerChoice, setOptionalTriggerChoice] = useState<OptionalTriggerChoice | null>(null);
+  const optionalTriggerPromptRequestRef = useRef<OptionalTriggerPromptRequest | null>(null);
   const submitActionRef = useRef<((action: SimpleLegalAction) => void) | null>(null);
   const [undosRemaining, setUndosRemaining] = useState(10);
 
@@ -2510,6 +2524,29 @@ export function useShelectorGame() {
    * Returns the updated state. This is the standard MTG post-action check:
    * SBAs first (creatures die, legend rule, etc.), then triggers queue up.
    */
+  const queueHumanOptionalTriggerChoice = useCallback((current: GameState): boolean => {
+    const trigger = current.pendingTriggers.find(candidate =>
+      candidate.controllerId === humanIdRef.current && candidate.ability.optional === true);
+    if (!trigger) {
+      optionalTriggerPromptRequestRef.current = null;
+      setOptionalTriggerChoice(null);
+      return false;
+    }
+
+    const sourceCard = current.cards.get(trigger.sourceInstanceId);
+    const sourceDef = sourceCard ? current.cardDefinitions.get(sourceCard.definitionId) : undefined;
+    const request = createOptionalTriggerPromptRequest(current, humanIdRef.current, trigger.id);
+    optionalTriggerPromptRequestRef.current = request;
+    setOptionalTriggerChoice({
+      id: request.id,
+      triggerId: trigger.id,
+      sourceName: request.sourceName || sourceDef?.name || 'Triggered ability',
+      triggerKind: request.triggerKind || trigger.ability.trigger.kind,
+      title: `${request.sourceName || sourceDef?.name || 'Triggered ability'} trigger`,
+    });
+    return true;
+  }, []);
+
   const runSBAAndTriggers = useCallback((s: GameState): GameState => {
     let current = s;
     // SBAs may produce triggers, and resolving triggers may cause more SBAs,
@@ -2518,6 +2555,9 @@ export function useShelectorGame() {
     while (rounds-- > 0) {
       current = checkStateBasedActions(current);
       if (current.pendingTriggers.length > 0) {
+        if (queueHumanOptionalTriggerChoice(current)) {
+          break;
+        }
         current = putTriggersOnStack(current);
         // New stack items mean we should check SBAs again after they resolve,
         // but we don't resolve here — the main loop handles that.
@@ -2527,7 +2567,7 @@ export function useShelectorGame() {
       break;
     }
     return current;
-  }, []);
+  }, [queueHumanOptionalTriggerChoice]);
 
   /**
    * Check if the top of the stack is a "tax" triggered ability (Rhystic Study,
@@ -2943,9 +2983,11 @@ export function useShelectorGame() {
         `${s.turnNumber}:${s.activePlayerIndex}:${s.step}:${suffix}`;
 
       state = runSBAAndTriggers(state);
+      if (optionalTriggerPromptRequestRef.current) return state;
       if (checkGameOver(state)) return state;
 
       while (safety-- > 0) {
+        if (optionalTriggerPromptRequestRef.current) break;
         // Check game over: human lost, or all AIs lost
         const humanLostCheck = state.players.find(p => p.id === humanIdRef.current)?.hasLost;
         const allAIsLostCheck = aiIdsRef.current.every(id => {
@@ -3485,6 +3527,49 @@ export function useShelectorGame() {
     syncState();
   }, [addMessage, advanceGameLoop, recordAuthorityUpdate, runSBAAndTriggers, syncState]);
 
+  const resolveOptionalTriggerChoice = useCallback((use: boolean) => {
+    const engine = engineRef.current;
+    const promptRequest = optionalTriggerPromptRequestRef.current;
+    if (!engine || !promptRequest) {
+      optionalTriggerPromptRequestRef.current = null;
+      setOptionalTriggerChoice(null);
+      syncState();
+      return;
+    }
+
+    const promptResponse = applyOptionalTriggerPromptResponse(engine, promptRequest, {
+      requestId: promptRequest.id,
+      kind: 'OptionalTrigger',
+      playerId: humanIdRef.current,
+      triggerId: promptRequest.triggerId,
+      use,
+    });
+    recordAuthorityUpdate(promptResponse.update);
+    if (!promptResponse.ok || !promptResponse.state) {
+      addMessage('system', promptResponse.message || 'Could not resolve optional trigger choice.');
+      syncState();
+      return;
+    }
+
+    optionalTriggerPromptRequestRef.current = null;
+    setOptionalTriggerChoice(null);
+
+    let state = promptResponse.state as GameStateWithAI;
+    if (!use) {
+      state = runSBAAndTriggers(state) as GameStateWithAI;
+    }
+
+    const loopMessages: { role: ChatMessage['role']; text: string }[] = [];
+    const loopLogEntries: GameLogEntry[] = [];
+    state = advanceGameLoop(state, loopMessages, loopLogEntries) as GameStateWithAI;
+
+    engineRef.current = state;
+    addMessage('player', `${use ? 'Used' : 'Declined'} ${promptRequest.sourceName || 'optional trigger'}.`);
+    for (const msg of loopMessages) addMessage(msg.role, msg.text);
+    if (loopLogEntries.length > 0) setGameLog(prev => [...prev, ...loopLogEntries]);
+    syncState();
+  }, [addMessage, advanceGameLoop, recordAuthorityUpdate, runSBAAndTriggers, syncState]);
+
   // Spawn opponent via the Shelector API
   const spawnOpponent = useCallback(async (options?: SpawnOptions) => {
     setIsLoading(true);
@@ -3592,10 +3677,12 @@ export function useShelectorGame() {
       tutorSourceInstanceIdRef.current = undefined;
       tutorPromptRequestRef.current = null;
       libraryManipulationPromptRequestRef.current = null;
+      optionalTriggerPromptRequestRef.current = null;
       setTutorPhase(false);
       setTutorCards([]);
       setTutorTitle('');
       setLibraryChoice(null);
+      setOptionalTriggerChoice(null);
       pendingLibraryChoiceRef.current = null;
       const format = options?.format ?? 'commander';
 
@@ -4566,6 +4653,8 @@ export function useShelectorGame() {
     pendingPlayLandChoiceRef.current = null;
     pendingSearchEntryChoiceRef.current = null;
     pendingTargetChoiceRef.current = null;
+    optionalTriggerPromptRequestRef.current = null;
+    setOptionalTriggerChoice(null);
     setDiscardPhase(false);
     setTutorPhase(false);
     setTutorCards([]);
@@ -4655,7 +4744,7 @@ export function useShelectorGame() {
 
   const skipEmptyPhases = useCallback(() => {
     let state = engineRef.current as GameState | null;
-    if (!state || gameState?.gameOver || mulliganPhase || discardPhase || tutorPhase || libraryChoice) return;
+    if (!state || gameState?.gameOver || mulliganPhase || discardPhase || tutorPhase || libraryChoice || optionalTriggerChoice) return;
 
     const humanId = humanIdRef.current;
     const loopMessages: { role: ChatMessage['role']; text: string }[] = [];
@@ -4746,6 +4835,7 @@ export function useShelectorGame() {
     gameState?.gameOver,
     libraryChoice,
     mulliganPhase,
+    optionalTriggerChoice,
     syncState,
     tutorPhase,
     applyActionThroughAuthority,
@@ -4753,7 +4843,7 @@ export function useShelectorGame() {
 
   const skipRestOfTurn = useCallback(() => {
     let state = engineRef.current as GameState | null;
-    if (!state || gameState?.gameOver || mulliganPhase || discardPhase || tutorPhase || libraryChoice) return;
+    if (!state || gameState?.gameOver || mulliganPhase || discardPhase || tutorPhase || libraryChoice || optionalTriggerChoice) return;
 
     const humanId = humanIdRef.current;
     if (state.players[state.activePlayerIndex]?.id !== humanId) {
@@ -4899,6 +4989,7 @@ export function useShelectorGame() {
     gameState?.gameOver,
     libraryChoice,
     mulliganPhase,
+    optionalTriggerChoice,
     runSBAAndTriggers,
     skipEmptyPhases,
     syncState,
@@ -4911,6 +5002,10 @@ export function useShelectorGame() {
     (action: SimpleLegalAction) => {
       const engine = engineRef.current;
       if (!engine || gameState?.gameOver) return;
+      if (optionalTriggerChoice) {
+        addMessage('system', 'Choose whether to use the pending optional trigger first.');
+        return;
+      }
 
       if (action.kind === 'SkipRestOfTurn') {
         skipRestOfTurn();
@@ -5835,7 +5930,7 @@ export function useShelectorGame() {
         syncState();
       }
     },
-    [gameState, addMessage, appendLog, syncState, advanceGameLoop, applyEvents, lastPlayedCard, rememberLastPlayedCard, recordAuthorityUpdate, recordStateUpdate, skipEmptyPhases, skipRestOfTurn],
+    [gameState, addMessage, appendLog, syncState, advanceGameLoop, applyEvents, lastPlayedCard, optionalTriggerChoice, rememberLastPlayedCard, recordAuthorityUpdate, recordStateUpdate, skipEmptyPhases, skipRestOfTurn],
   );
   submitActionRef.current = submitAction;
 
@@ -5869,6 +5964,7 @@ export function useShelectorGame() {
       tutorCards,
       tutorTitle,
       libraryChoice,
+      optionalTriggerChoice,
       undosRemaining,
       coachMode,
       newPlayerMode,
@@ -5895,6 +5991,7 @@ export function useShelectorGame() {
     tutorCards,
     tutorTitle,
     libraryChoice,
+    optionalTriggerChoice,
     undosRemaining,
     coachMode,
     newPlayerMode,
@@ -5975,6 +6072,13 @@ export function useShelectorGame() {
       setTutorCards(snapshot.tutorCards || []);
       setTutorTitle(snapshot.tutorTitle || '');
       setLibraryChoice(restoredLibraryChoice);
+      const restoredOptionalTriggerChoice = snapshot.optionalTriggerChoice || null;
+      optionalTriggerPromptRequestRef.current = restoredOptionalTriggerChoice
+        ? createOptionalTriggerPromptRequest(restored, humanIdRef.current, restoredOptionalTriggerChoice.triggerId, {
+            id: restoredOptionalTriggerChoice.id,
+          })
+        : null;
+      setOptionalTriggerChoice(restoredOptionalTriggerChoice);
       setUndosRemaining(snapshot.undosRemaining ?? 10);
       setCoachMode(Boolean(snapshot.coachMode));
       setNewPlayerMode(Boolean(snapshot.newPlayerMode));
@@ -6019,7 +6123,8 @@ export function useShelectorGame() {
     tutorPhase,
     tutorCards,
     tutorTitle,
-    libraryChoice,
+      libraryChoice,
+      optionalTriggerChoice,
       gameLog,
       authorityUpdates,
       lastStateUpdate,
@@ -6064,6 +6169,7 @@ export function useShelectorGame() {
     resolveTutor,
     cancelTutor,
     resolveLibraryChoice,
+    resolveOptionalTriggerChoice,
     undoAction,
     setCoachMode,
     setNewPlayerMode,
