@@ -3516,13 +3516,34 @@ export function useShelectorGame() {
                   return defB.cmc - defA.cmc; // highest CMC first
                 });
                 const toDiscard = sorted.slice(0, excess);
-                const newCards = new Map(state.cards);
-                for (const card of toDiscard) {
-                  newCards.set(card.instanceId, { ...card, zone: 'graveyard' as Zone });
-                  const def = getCardDefinition(state, card);
-                  messages.push({ role: 'shelector', text: `Discarded ${def.name}.` });
+                if (toDiscard.length > 0) {
+                  const discardRequest = createSelectCardsPromptRequest(state, activeId, {
+                    subject: 'DiscardToHandSize',
+                    zone: 'hand',
+                    destination: 'graveyard',
+                    minSelections: toDiscard.length,
+                    maxSelections: toDiscard.length,
+                  });
+                  const discardResponse = applySelectCardsPromptResponse(state, discardRequest, {
+                    requestId: discardRequest.id,
+                    kind: 'SelectCards',
+                    playerId: activeId,
+                    selectedCardInstanceIds: toDiscard.map(card => card.instanceId),
+                  });
+                  recordAuthorityUpdate(discardResponse.update);
+                  if (!discardResponse.ok || !discardResponse.state) {
+                    messages.push({
+                      role: 'system',
+                      text: discardResponse.message || `${activePlayer.name} could not discard to hand size.`,
+                    });
+                    break;
+                  }
+                  state = discardResponse.state;
+                  for (const card of toDiscard) {
+                    const def = getCardDefinition(state, card);
+                    messages.push({ role: 'shelector', text: `Discarded ${def.name}.` });
+                  }
                 }
-                state = { ...state, cards: newCards };
               }
             }
 
@@ -3566,7 +3587,7 @@ export function useShelectorGame() {
 
       return state;
     },
-    [applyActionThroughAuthority, narrateDecisions, queueHumanDamageAssignmentChoice, resolveTaxTrigger, runSBAAndTriggers],
+    [applyActionThroughAuthority, narrateDecisions, queueHumanDamageAssignmentChoice, recordAuthorityUpdate, resolveTaxTrigger, runSBAAndTriggers],
   );
 
   const resolveLibraryChoice = useCallback((topIds: string[], movedIds: string[]) => {
