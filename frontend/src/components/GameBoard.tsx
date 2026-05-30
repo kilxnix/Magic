@@ -2437,16 +2437,19 @@ export function GameBoard({
   const recentAuthorityUpdates = authorityUpdates.slice(-4).reverse();
 
   const handleCardClick = (card: SimpleCard) => {
-    // Find the first matching action for this card
-    const action = legalActions.find(a => a.cardInstanceId === card.instanceId)
-      || getTargetAction(card);
-    if (action) {
-      onAction(action);
-    }
+    setInspectedCard(card);
   };
 
   const getInspectAction = (card: SimpleCard) => {
     const isHumanHandCard = card.zone === 'hand' && card.ownerId === gameState.humanPlayer.id;
+    const targetAction = getTargetAction(card);
+    if (targetAction) {
+      return {
+        label: targetAction.label,
+        paymentPreview: targetAction.paymentPreview,
+        run: () => onAction(targetAction),
+      };
+    }
 
     if (discardPhase && isHumanHandCard && onDiscardCard) {
       return {
