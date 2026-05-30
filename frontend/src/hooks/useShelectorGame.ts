@@ -123,7 +123,7 @@ import {
 } from '../lib/turnReview';
 import { shelectorApiUrl } from '../lib/api';
 import { findUnsupportedEngineCards, formatUnsupportedEngineCards } from '../lib/enginePreflight';
-import { typeLineHasSupertype, typeLineHasType } from '../lib/typeLine';
+import { typeLineHasSupertype, typeLineHasType, typeLineSectionTerms } from '../lib/typeLine';
 
 // ========== End-Game Modal State (Task 27 — game-reliability-refactor) ==========
 
@@ -1058,11 +1058,15 @@ function getCreatureTypeChoices(state: GameState, playerId: string): string[] {
     if (card.ownerId !== playerId) continue;
     const def = getCardDefinition(state, card);
     if (!def.card_types.includes('creature')) continue;
-    const subtypeText = def.type_line.split(/[—-]/).slice(1).join(' ');
-    for (const rawType of subtypeText.split(/\s+/)) {
-      const clean = rawType.replace(/[^A-Za-z]/g, '');
+    const subtypeTerms = typeLineSectionTerms(def.type_line, 'subtypes');
+    for (const rawType of subtypeTerms) {
+      const clean = rawType.replace(/[^a-z ]/gi, '').trim();
       if (!clean || ignored.has(clean.toLowerCase())) continue;
-      counts.set(clean, (counts.get(clean) || 0) + 1);
+      const displayType = clean
+        .split(/\s+/)
+        .map(part => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+        .join(' ');
+      counts.set(displayType, (counts.get(displayType) || 0) + 1);
     }
   }
 

@@ -31,6 +31,24 @@ describe('card-parser-cache — equipmentBonus', () => {
   }
 });
 
+describe('card-parser-cache - equipment type detection', () => {
+  it('marks real Equipment by exact subtype only', () => {
+    const equipment = populateParsedCache(defFrom(
+      'Goblin Morningstar',
+      'Equipped creature gets +1/+0 and has trample. Equip {1}.',
+      'Artifact - Equipment',
+    ));
+    const fakeSubtype = populateParsedCache(defFrom(
+      'Equipmentalist',
+      'Equipped creature gets +1/+0 and has trample. Equip {1}.',
+      'Artifact - Equipmentalist',
+    ));
+
+    expect(equipment.isEquipment).toBe(true);
+    expect(fakeSubtype.isEquipment).toBe(false);
+  });
+});
+
 describe('card-parser-cache — manaProduction', () => {
   for (const f of PARSER_FIXTURES) {
     if (f.expected.manaProduction === undefined) continue;

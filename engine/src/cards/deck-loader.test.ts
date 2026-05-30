@@ -541,6 +541,47 @@ describe('convertGeneratedDeck', () => {
     expect(result.library.some(card => card.name === 'Tana, the Bloodsower')).toBe(false);
   });
 
+  it('does not treat subtype text as commander-eligible card types when splitting modal names', () => {
+    const testCards = create99Cards();
+    const front: ScryfallCard = {
+      id: 'legendary-land-front',
+      name: 'Legendary Island',
+      type_line: 'Legendary Land - Creature Island',
+      oracle_text: '',
+      mana_cost: '',
+      cmc: 0,
+      colors: [],
+      color_identity: ['U'],
+      keywords: [],
+    };
+    const back: ScryfallCard = {
+      id: 'back-face',
+      name: 'Back Face',
+      type_line: 'Artifact',
+      oracle_text: '',
+      mana_cost: '{2}',
+      cmc: 2,
+      colors: [],
+      color_identity: ['U'],
+      keywords: [],
+    };
+    const lookup = createCardLookup([front, back, ...testCards]);
+
+    const deck: GeneratedDeck = {
+      id: 'deck-exact-modal-types',
+      commander: 'Legendary Island // Back Face',
+      list: testCards.map(c => c.name),
+      colors: ['U'],
+      bracket: 3,
+      theme: 'Exact Types',
+    };
+
+    const result = convertGeneratedDeck(deck, lookup);
+
+    expect(result.commanders?.map(card => card.name)).toEqual(['Legendary Island', 'Back Face']);
+    expect(result.library).toHaveLength(98);
+  });
+
   it('throws for missing commander', () => {
     const testCards = create99Cards();
     const lookup = createCardLookup(testCards); // No commander

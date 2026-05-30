@@ -18,6 +18,7 @@ import { buildBattlefieldEntryPlan } from '../permanent-entry';
 import { parseOracleText } from './parser';
 import { getOverride } from './overrides';
 import type { TargetSpec } from './targets';
+import { typeLineHasSubtype, typeLineHasSupertype, typeLineHasType } from '../type-line';
 
 /**
  * Context for effect execution, includes X value from spell casting.
@@ -1264,31 +1265,7 @@ type CardFilterContext = {
 
 function isPermanentDefinition(def: CardDefinition): boolean {
   return ['artifact', 'battle', 'creature', 'enchantment', 'land', 'planeswalker']
-    .some(type => def.card_types.includes(type as any) || typeLineSectionHasTerm(def.type_line, 'types', type));
-}
-
-function normalizeTypeLineDashes(text: string): string {
-  return text.replace(/[\u2013\u2014]|\u00e2\u20ac[\u201c\u201d]/g, '-');
-}
-
-function normalizeTypeTerm(text: string): string {
-  return normalizeTypeLineDashes(text).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
-}
-
-function typeLineSections(typeLine: string): { types: string; subtypes: string } {
-  const normalized = normalizeTypeLineDashes(typeLine);
-  const [types, ...subtypes] = normalized.split(/\s+-\s+/);
-  return {
-    types: normalizeTypeTerm(types || ''),
-    subtypes: normalizeTypeTerm(subtypes.join(' ')),
-  };
-}
-
-function typeLineSectionHasTerm(typeLine: string, section: 'types' | 'subtypes', term: string): boolean {
-  const normalizedTerm = normalizeTypeTerm(term);
-  if (!normalizedTerm) return false;
-  const sections = typeLineSections(typeLine);
-  return ` ${sections[section]} `.includes(` ${normalizedTerm} `);
+    .some(type => def.card_types.includes(type as any) || typeLineHasType(def.type_line, type));
 }
 
 /**
@@ -1319,21 +1296,21 @@ export function matchesCardFilter(def: CardDefinition, filter: CardFilter, conte
   // Check card types
   if (filter.types) {
     const hasMatchingType = filter.types.some(t =>
-      def.card_types.includes(t as any) || typeLineSectionHasTerm(def.type_line, 'types', t)
+      def.card_types.includes(t as any) || typeLineHasType(def.type_line, t)
     );
     if (!hasMatchingType) return false;
   }
 
   if (filter.excludeTypes) {
     const hasExcludedType = filter.excludeTypes.some(t =>
-      def.card_types.includes(t as any) || typeLineSectionHasTerm(def.type_line, 'types', t)
+      def.card_types.includes(t as any) || typeLineHasType(def.type_line, t)
     );
     if (hasExcludedType) return false;
   }
 
   // Check subtypes
   if (filter.subtypes) {
-    const hasMatchingSubtype = filter.subtypes.some(st => typeLineSectionHasTerm(def.type_line, 'subtypes', st));
+    const hasMatchingSubtype = filter.subtypes.some(st => typeLineHasSubtype(def.type_line, st));
     if (!hasMatchingSubtype) return false;
   }
 
@@ -1342,17 +1319,17 @@ export function matchesCardFilter(def: CardDefinition, filter: CardFilter, conte
     const source = context.state.cards.get(context.sourceInstanceId);
     const chosenType = source?.choices?.chosenCreatureType?.trim().toLowerCase();
     if (!chosenType) return false;
-    if (!typeLineSectionHasTerm(def.type_line, 'subtypes', chosenType)) return false;
+    if (!typeLineHasSubtype(def.type_line, chosenType)) return false;
   }
 
   if (filter.excludeSubtypes) {
-    const hasExcludedSubtype = filter.excludeSubtypes.some(st => typeLineSectionHasTerm(def.type_line, 'subtypes', st));
+    const hasExcludedSubtype = filter.excludeSubtypes.some(st => typeLineHasSubtype(def.type_line, st));
     if (hasExcludedSubtype) return false;
   }
 
   // Check supertypes (e.g., "basic")
   if (filter.supertypes) {
-    const hasMatchingSupertype = filter.supertypes.some(st => typeLineSectionHasTerm(def.type_line, 'types', st));
+    const hasMatchingSupertype = filter.supertypes.some(st => typeLineHasSupertype(def.type_line, st));
     if (!hasMatchingSupertype) return false;
   }
 

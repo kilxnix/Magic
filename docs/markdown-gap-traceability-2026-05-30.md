@@ -194,6 +194,8 @@ Additional search-rule verification added after this audit: unrestricted tutor p
 
 Additional type-filter verification added after this audit: `matchesCardFilter` and search prompt failure reasons now separate type-line type/supertype terms from subtype terms before matching, so fetch/tutor filters no longer rely on broad substring checks.
 
+Additional shared type-line verification added after this audit: engine card import, prompt filter matching, Equipment detection, commander split handling, and frontend Cavern-style creature-type suggestions now share exact type/supertype/subtype parsing semantics, with targeted engine/frontend tests and both production builds passing.
+
 Additional commander-zone verification added after this audit: manual move corrections now call commander replacement before mutation, so a commander moved toward graveyard/exile/hand by correction lands in command zone and the manual event reports the final command-zone destination. The `/play` manual correction message now reads from the resulting state so it says command zone instead of the requested graveyard/exile destination.
 
 Additional priority-flow wording added after this audit: when the human has priority on someone else's turn and the stack is empty, the phase action is labelled `Yield Until My Turn`; the `Skip Rest of Turn` label is reserved for the human active player's turn.

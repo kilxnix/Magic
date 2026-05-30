@@ -16,6 +16,7 @@ import type {
   SearchAbilityInfo,
   CardFilter,
 } from '../effects/ast';
+import { typeLineHasSubtype } from '../type-line';
 
 /**
  * Parse all cached fields for a CardDefinition from its oracle text.
@@ -27,31 +28,13 @@ export function populateParsedCache(def: CardDefinition): CardDefinition {
 
   return {
     ...def,
-    isEquipment: typeLine.includes('equipment'),
+    isEquipment: typeLineHasSubtype(def.type_line, 'equipment'),
     equipCost: parseEquipCost(oracle),
     equipmentBonus: parseEquipmentBonus(oracle),
     manaProduction: parseManaProduction(oracle, typeLine),
     searchAbility: parseSearchAbility(oracle),
     unlessTax: parseUnlessTax(oracle),
   };
-}
-
-function normalizeTypeLineDashes(typeLine: string): string {
-  return typeLine
-    .replace(/\u2013|\u2014|-/g, ' -- ')
-    .replace(/\u00e2\u20ac[\u201c\u201d]/g, ' -- ');
-}
-
-function typeLineSubtypeText(typeLine: string): string {
-  const [, rightRaw = ''] = normalizeTypeLineDashes(typeLine).split(/\s+--\s+/);
-  return rightRaw.toLowerCase().replace(/\s+/g, ' ').trim();
-}
-
-function typeLineHasSubtype(typeLine: string, subtype: string): boolean {
-  const subtypeText = typeLineSubtypeText(typeLine);
-  const wanted = subtype.toLowerCase().replace(/\s+/g, ' ').trim();
-  if (!subtypeText || !wanted) return false;
-  return new RegExp(`(^|\\s)${wanted.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(\\s|$)`).test(subtypeText);
 }
 
 // ========== Equipment ==========

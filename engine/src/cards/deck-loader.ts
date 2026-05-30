@@ -6,6 +6,7 @@
 
 import type { CardDefinition, CardDefinitionFace, CardType, ManaColor } from '../types';
 import { populateParsedCache } from './card-parser-cache';
+import { parseCardTypesFromTypeLine, typeLineHasSupertype, typeLineHasType } from '../type-line';
 
 /**
  * Scryfall card face data format (from cards_min.jsonl card_faces).
@@ -102,11 +103,10 @@ function resolveCommanderNames(commander: string, lookup: CardLookup): string[] 
   const commanderEligibleFaces = parts.filter(name => {
     const card = lookup(name);
     if (!card) return false;
-    const typeLine = card.type_line.toLowerCase();
     const oracleText = (card.oracle_text || '').toLowerCase();
     return (
-      typeLine.includes('legendary')
-      && (typeLine.includes('creature') || typeLine.includes('planeswalker'))
+      typeLineHasSupertype(card.type_line, 'legendary')
+      && (typeLineHasType(card.type_line, 'creature') || typeLineHasType(card.type_line, 'planeswalker'))
     ) || oracleText.includes('can be your commander');
   });
   if (commanderEligibleFaces.length === 1 && commanderEligibleFaces[0] === parts[0]) {
@@ -127,25 +127,7 @@ function toManaColors(colors: string[]): ManaColor[] {
  * Parse card types from type line.
  */
 function parseCardTypes(typeLine: string): CardType[] {
-  const types: CardType[] = [];
-  const typeSection = typeLine
-    .replace(/\u2013|\u2014|-/g, ' — ')
-    .split('—')[0]
-    .toLowerCase()
-    .split(/\s+/)
-    .filter(Boolean);
-  const typeTerms = new Set(typeSection);
-
-  if (typeTerms.has('creature')) types.push('creature');
-  if (typeTerms.has('instant')) types.push('instant');
-  if (typeTerms.has('sorcery')) types.push('sorcery');
-  if (typeTerms.has('artifact')) types.push('artifact');
-  if (typeTerms.has('enchantment')) types.push('enchantment');
-  if (typeTerms.has('planeswalker')) types.push('planeswalker');
-  if (typeTerms.has('land')) types.push('land');
-  if (typeTerms.has('battle')) types.push('battle');
-
-  return types;
+  return parseCardTypesFromTypeLine(typeLine);
 }
 
 /**
