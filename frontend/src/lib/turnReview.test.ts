@@ -19,6 +19,21 @@ function def(id: string, name: string, oracleText: string, cmc: number): CardDef
   };
 }
 
+function landDef(id: string, name: string): CardDefinition {
+  return {
+    id,
+    name,
+    type_line: 'Basic Land - Forest',
+    oracle_text: '({T}: Add {G}.)',
+    mana_cost: '',
+    cmc: 0,
+    colors: [],
+    color_identity: ['G'],
+    keywords: [],
+    card_types: ['land'],
+  };
+}
+
 function card(instanceId: string, definitionId: string): CardInstance {
   return {
     instanceId,
@@ -82,5 +97,32 @@ describe('turn review coaching filters', () => {
     expect(review?.best?.label).toBe('Cast Normal Creature');
     expect(review?.alternatives.some(alternative => alternative.label === 'Cast Loop Engine')).toBe(false);
     expect(review?.confidenceReasons).toContain('Likely infinite-combo lines are excluded from general coaching suggestions.');
+  });
+
+  it('records a rules audit failure when a stale review action is no longer legal', () => {
+    const state = stateWithComboAndNormalSpell();
+    const forest = landDef('forest', 'Forest');
+    state.cardDefinitions.set(forest.id, forest);
+    state.cards.set('forest-1', card('forest-1', forest.id));
+    state.stack.push({
+      kind: 'Spell',
+      id: 'stack-normal',
+      cardInstanceId: 'normal-1',
+      casterId: 'p1',
+      targets: [],
+    });
+
+    const staleLandAction: AIAction = { kind: 'PlayLand', cardInstanceId: 'forest-1' };
+    const review = buildDecisionReview(
+      state,
+      'p1',
+      { kind: 'PlayLand', label: 'Play Forest', _engineAction: staleLandAction },
+      [{ kind: 'PlayLand', label: 'Play Forest', _engineAction: staleLandAction }],
+    );
+
+    expect(review?.rulesAudit.ok).toBe(false);
+    expect(review?.rulesAudit.message).toContain('The stack must be empty');
+    expect(review?.confidence).toBe('low');
+    expect(review?.confidenceReasons.some(reason => reason.includes('Rules audit rejected selected action'))).toBe(true);
   });
 });

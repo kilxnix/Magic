@@ -1,4 +1,6 @@
 import {
+  applyClientActionRequest,
+  createClientActionRequest,
   evaluateActions,
   getCardDefinition,
   type AIAction,
@@ -27,6 +29,11 @@ export interface DecisionReview {
   scoreDelta: number;
   confidence: DecisionConfidence;
   confidenceReasons: string[];
+  rulesAudit: {
+    ok: boolean;
+    reason?: string;
+    message?: string;
+  };
   elapsedMs: number;
 }
 
@@ -236,10 +243,19 @@ export function buildDecisionReview(
     confidenceReasons.push('Only one meaningful available action was visible to the current engine.');
   }
 
-  const confidence: DecisionConfidence = !selectedEval || confidenceReasons.length >= 2
+  const selectedRequest = createClientActionRequest(state, playerId, selectedAction._engineAction, {
+    source: 'system',
+    label: selectedAction.label || describeReviewAction(state, selectedAction._engineAction),
+  });
+  const selectedAudit = applyClientActionRequest(state, selectedRequest);
+  if (!selectedAudit.ok) {
+    confidenceReasons.push(`Rules audit rejected selected action: ${selectedAudit.message || selectedAudit.reason || 'illegal action'}.`);
+  }
+
+  const confidence: DecisionConfidence = !selectedEval || !selectedAudit.ok || confidenceReasons.length >= 2
     ? 'low'
     : confidenceReasons.length === 1
-    ? 'medium'
+      ? 'medium'
     : 'high';
 
   return {
@@ -255,6 +271,11 @@ export function buildDecisionReview(
     scoreDelta,
     confidence,
     confidenceReasons,
+    rulesAudit: {
+      ok: selectedAudit.ok,
+      reason: selectedAudit.reason,
+      message: selectedAudit.message,
+    },
     elapsedMs: Date.now() - started,
   };
 }
