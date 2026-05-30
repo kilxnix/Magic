@@ -1574,6 +1574,55 @@ describe('authority action boundary', () => {
     expect(libraryOrder.slice(0, 4)).toEqual(['opt-hand', 'ponder-hand', 'island-library', 'bolt-library']);
   });
 
+  it('limits stack top-library choice prompts to the revealed candidate cards', () => {
+    const state = stateWithForestInHand();
+    const cards = [
+      def('top-a', 'Top A', 'Instant', '{U}'),
+      def('top-b', 'Top B', 'Instant', '{U}'),
+      def('top-c', 'Top C', 'Instant', '{U}'),
+      def('hidden-d', 'Hidden D', 'Instant', '{U}'),
+    ];
+    for (const definition of cards) state.cardDefinitions.set(definition.id, definition);
+    state.cards.set('top-a', cardInstance('top-a', 'top-a', 'p1', 'library'));
+    state.cards.set('top-b', cardInstance('top-b', 'top-b', 'p1', 'library'));
+    state.cards.set('top-c', cardInstance('top-c', 'top-c', 'p1', 'library'));
+    state.cards.set('hidden-d', cardInstance('hidden-d', 'hidden-d', 'p1', 'library'));
+
+    const request = createSelectCardsPromptRequest(state, 'p1', {
+      id: 'prompt-top-library-choice',
+      subject: 'TopLibraryChoice',
+      zone: 'library',
+      destination: 'hand',
+      commitSelection: false,
+      candidateCardInstanceIds: ['top-a', 'top-b', 'top-c'],
+      preserveOrder: true,
+      minSelections: 1,
+      maxSelections: 3,
+      createdAt: 34,
+    });
+
+    expect(request.legalChoices.map(choice => choice.cardInstanceId)).toEqual(['top-a', 'top-b', 'top-c']);
+    expect(request.legalChoices.map(choice => choice.cardInstanceId)).not.toContain('hidden-d');
+
+    const accepted = applySelectCardsPromptResponse(state, request, {
+      requestId: request.id,
+      kind: 'SelectCards',
+      playerId: 'p1',
+      selectedCardInstanceIds: ['top-b', 'top-a'],
+    });
+    expect(accepted.ok).toBe(true);
+    expect((accepted.state!.stack[0] as { namedCardChoices?: Record<string, string> } | undefined)?.namedCardChoices).toBeUndefined();
+
+    const rejected = applySelectCardsPromptResponse(state, request, {
+      requestId: request.id,
+      kind: 'SelectCards',
+      playerId: 'p1',
+      selectedCardInstanceIds: ['hidden-d'],
+    });
+    expect(rejected.ok).toBe(false);
+    expect(rejected.reason).toBe('illegal_response');
+  });
+
   it('limits top-library search prompts and bottoms unselected looked-at cards', () => {
     const state = stateWithForestInHand();
     const cards = [

@@ -921,6 +921,12 @@ type PendingHandTopLibraryChoice = {
   count: number;
 };
 
+type PendingStackTopLibraryChoice = {
+  promptRequest: SelectCardsPromptRequest;
+  selectedIds: string[];
+  sourceName: string;
+};
+
 type PendingStackSacrificeChoice = {
   promptRequest: SelectCardsPromptRequest;
   stackItemId: string;
@@ -973,6 +979,30 @@ function handTopLibraryOptionsFromPrompt(
         : [];
     })
     .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function topLibraryChoiceOptionsFromPrompt(
+  state: GameState,
+  prompt: SelectCardsPromptRequest,
+  selectedIds: string[],
+): TutorCardOption[] {
+  const selected = new Set(selectedIds);
+  return prompt.legalChoices
+    .flatMap(choice => {
+      const card = state.cards.get(choice.cardInstanceId);
+      if (!card) return [];
+      const option = toTutorCardOption(state, card);
+      return option
+        ? [{
+            ...option,
+            legal: !selected.has(choice.cardInstanceId),
+            reason: selected.has(choice.cardInstanceId)
+              ? 'Already selected for this pile'
+              : 'Selectable top-library pile card',
+            destination: selected.has(choice.cardInstanceId) ? 'hand' as const : 'choice' as const,
+          }]
+        : [];
+    });
 }
 
 function topStackBrainstormInfo(state: GameState): { controllerId: string; sourceName: string; sourceInstanceId: string } | null {
@@ -1194,6 +1224,34 @@ function libraryChoiceInfoFromEffects(effects: unknown[] | undefined): { mode: '
     mode: effect.kind === 'Scry' ? 'scry' : 'surveil',
     count: amountRefToChoiceCount(effect.count),
   };
+}
+
+function topLibraryChoiceInfoFromEffects(
+  effects: unknown[] | undefined,
+  namedCardChoices: Record<string, string> | undefined,
+): { count: number; minSelections: number; maxSelections: number; choiceKey: string } | undefined {
+  if (!Array.isArray(effects)) return undefined;
+  for (const effect of effects) {
+    if (!effect || typeof effect !== 'object') continue;
+    const candidate = effect as {
+      kind?: string;
+      count?: unknown;
+      minSelections?: number;
+      maxSelections?: number;
+      selectedCardChoiceId?: string;
+    };
+    if (candidate.kind !== 'ChooseFromTopOfLibrary') continue;
+    const choiceKey = candidate.selectedCardChoiceId || 'topLibraryChoiceIds';
+    if (Object.prototype.hasOwnProperty.call(namedCardChoices || {}, choiceKey)) continue;
+    const count = amountRefToChoiceCount(candidate.count);
+    return {
+      count,
+      minSelections: Math.max(0, candidate.minSelections ?? 0),
+      maxSelections: Math.max(1, candidate.maxSelections ?? count),
+      choiceKey,
+    };
+  }
+  return undefined;
 }
 
 function namedCardChoiceInfoFromEffects(
@@ -2417,6 +2475,7 @@ export function useShelectorGame() {
   const pendingSearchEntryChoiceRef = useRef<PendingSearchEntryChoice | null>(null);
   const pendingTargetChoiceRef = useRef<PendingTargetChoice | null>(null);
   const pendingHandTopLibraryChoiceRef = useRef<PendingHandTopLibraryChoice | null>(null);
+  const pendingStackTopLibraryChoiceRef = useRef<PendingStackTopLibraryChoice | null>(null);
   const pendingStackSacrificeChoiceRef = useRef<PendingStackSacrificeChoice | null>(null);
   const pendingStackNamedCardChoiceRef = useRef<PendingStackNamedCardChoice | null>(null);
   const pendingLibraryChoiceRef = useRef<{ stackItemId: string; mode: 'scry' | 'surveil' } | null>(null);
@@ -3507,7 +3566,7 @@ export function useShelectorGame() {
     (currentState: GameState, messages: { role: ChatMessage['role']; text: string }[], logEntries: GameLogEntry[]): GameState => {
       let state = currentState;
       let safety = 200;
-      if (pendingHandTopLibraryChoiceRef.current) return state;
+      if (pendingHandTopLibraryChoiceRef.current || pendingStackTopLibraryChoiceRef.current) return state;
 
       // Run SBAs + triggers on entry (the action that preceded advanceGameLoop
       // may have caused creatures to die, etc.)
@@ -3706,6 +3765,86 @@ export function useShelectorGame() {
           cards,
         });
         messages.push({ role: 'system', text: `${sourceName} - choose cards for ${info.mode}.` });
+        return true;
+      };
+
+      const tryPauseForTopLibraryChoice = (): boolean => {
+        if (state.stack.length === 0) return false;
+        const top = state.stack[state.stack.length - 1] as StackItem & { namedCardChoices?: Record<string, string> };
+        if (!top) return false;
+
+        let controllerId: string | undefined;
+        let sourceName = 'Top-library choice';
+        let sourceInstanceId: string | undefined;
+        let effects: unknown[] | undefined;
+
+        if (top.kind === 'Spell') {
+          controllerId = top.casterId;
+          sourceInstanceId = top.cardInstanceId;
+          const spellCard = state.cards.get(top.cardInstanceId);
+          const spellDef = spellCard ? getCardDefinition(state, spellCard) : undefined;
+          sourceName = spellDef?.name || sourceName;
+          effects = spellEffectsForChoicePrompt(state, top);
+        } else if (top.kind === 'ActivatedAbility') {
+          controllerId = top.controllerId;
+          sourceInstanceId = top.sourceInstanceId;
+          const sourceCard = state.cards.get(top.sourceInstanceId);
+          const sourceDef = sourceCard ? getCardDefinition(state, sourceCard) : undefined;
+          sourceName = sourceDef?.name || sourceName;
+          effects = top.ability.effects;
+        } else if (top.kind === 'TriggeredAbility') {
+          controllerId = top.controllerId;
+          sourceInstanceId = top.sourceInstanceId;
+          const sourceCard = state.cards.get(top.sourceInstanceId);
+          const sourceDef = sourceCard ? getCardDefinition(state, sourceCard) : undefined;
+          sourceName = sourceDef?.name || sourceName;
+          effects = top.ability.effects;
+        }
+
+        if (controllerId !== humanIdRef.current) return false;
+        const info = topLibraryChoiceInfoFromEffects(effects, top.namedCardChoices);
+        if (!info || info.count <= 0) return false;
+
+        const candidateCardInstanceIds = [...state.cards.values()]
+          .filter(card => card.ownerId === humanIdRef.current && card.zone === 'library')
+          .slice(0, info.count)
+          .map(card => card.instanceId);
+        if (candidateCardInstanceIds.length === 0) return false;
+        const maxSelections = Math.min(info.maxSelections, candidateCardInstanceIds.length);
+        const minSelections = Math.min(info.minSelections, maxSelections);
+        const promptRequest = createSelectCardsPromptRequest(state, humanIdRef.current, {
+          subject: 'TopLibraryChoice',
+          zone: 'library',
+          destination: 'hand',
+          sourceInstanceId,
+          stackItemId: top.id,
+          choiceKey: info.choiceKey,
+          commitSelection: false,
+          candidateCardInstanceIds,
+          preserveOrder: true,
+          minSelections,
+          maxSelections,
+        });
+        if (promptRequest.legalChoices.length === 0) return false;
+
+        engineRef.current = state as GameStateWithAI;
+        pendingStackTopLibraryChoiceRef.current = {
+          promptRequest,
+          selectedIds: [],
+          sourceName,
+        };
+        tutorRemainingRef.current = 0;
+        tutorFilterRef.current = undefined;
+        tutorFilterSpecRef.current = undefined;
+        tutorTappedRef.current = false;
+        tutorShuffleRef.current = false;
+        tutorSourceNameRef.current = sourceName;
+        tutorSourceInstanceIdRef.current = sourceInstanceId;
+        tutorPromptRequestRef.current = null;
+        setTutorTitle(`${sourceName}: choose ${minSelections === maxSelections ? maxSelections : `${minSelections}-${maxSelections}`} card${maxSelections === 1 ? '' : 's'} from the revealed pile`);
+        setTutorCards(topLibraryChoiceOptionsFromPrompt(state, promptRequest, []));
+        setTutorPhase(true);
+        messages.push({ role: 'system', text: `${sourceName} - choose a pile from the revealed top cards.` });
         return true;
       };
 
@@ -3971,6 +4110,7 @@ export function useShelectorGame() {
               console.log(`  -> all passed, resolving stack (${state.stack.length} items)`);
               if (tryPauseForNamedCardChoice()) break;
               if (tryPauseForStackSacrificeChoice()) break;
+              if (tryPauseForTopLibraryChoice()) break;
               if (tryPauseForLibraryChoice()) break;
               if (tryResolveTutor()) break;
               { const taxResult = resolveTaxTrigger(state, messages); if (taxResult.pause) break; if (taxResult.handled) { state = taxResult.state; } else { const resolved = resolveTopOfStackAndPauseForFollowUp(state); state = resolved.state; if (resolved.pause) break; } }
@@ -4002,6 +4142,7 @@ export function useShelectorGame() {
                   console.log(`  -> all passed, resolving stack (${state.stack.length} items)`);
                   if (tryPauseForNamedCardChoice()) break;
                   if (tryPauseForStackSacrificeChoice()) break;
+                  if (tryPauseForTopLibraryChoice()) break;
                   if (tryPauseForLibraryChoice()) break;
                   if (tryResolveTutor()) break;
                   { const taxResult = resolveTaxTrigger(state, messages); if (taxResult.pause) break; if (taxResult.handled) { state = taxResult.state; } else { const resolved = resolveTopOfStackAndPauseForFollowUp(state); state = resolved.state; if (resolved.pause) break; } }
@@ -4037,6 +4178,7 @@ export function useShelectorGame() {
           console.log(`  -> resolving stack (${state.stack.length} items)`);
           if (tryPauseForNamedCardChoice()) break;
           if (tryPauseForStackSacrificeChoice()) break;
+          if (tryPauseForTopLibraryChoice()) break;
           if (tryPauseForLibraryChoice()) break;
           if (tryResolveTutor()) break;
           { const taxResult = resolveTaxTrigger(state, messages); if (taxResult.pause) break; if (taxResult.handled) { state = taxResult.state; } else { const resolved = resolveTopOfStackAndPauseForFollowUp(state); state = resolved.state; if (resolved.pause) break; } }
@@ -4813,6 +4955,7 @@ export function useShelectorGame() {
       pendingSearchEntryChoiceRef.current = null;
       pendingTargetChoiceRef.current = null;
       pendingHandTopLibraryChoiceRef.current = null;
+      pendingStackTopLibraryChoiceRef.current = null;
       pendingStackSacrificeChoiceRef.current = null;
       pendingStackNamedCardChoiceRef.current = null;
       tutorSourceInstanceIdRef.current = undefined;
@@ -5419,6 +5562,66 @@ export function useShelectorGame() {
       return;
     }
 
+    const pendingStackTopLibraryChoice = pendingStackTopLibraryChoiceRef.current;
+    if (pendingStackTopLibraryChoice) {
+      const engineForChoice = engineRef.current;
+      if (!engineForChoice) return;
+      if (pendingStackTopLibraryChoice.selectedIds.includes(cardInstanceId)) {
+        addMessage('system', `${pendingStackTopLibraryChoice.sourceName}: that card is already in the selected pile.`);
+        syncState();
+        return;
+      }
+      const selectedIds = [...pendingStackTopLibraryChoice.selectedIds, cardInstanceId];
+      if (selectedIds.length < pendingStackTopLibraryChoice.promptRequest.maxSelections) {
+        pendingStackTopLibraryChoiceRef.current = {
+          ...pendingStackTopLibraryChoice,
+          selectedIds,
+        };
+        const remaining = pendingStackTopLibraryChoice.promptRequest.maxSelections - selectedIds.length;
+        const canFinish = selectedIds.length >= pendingStackTopLibraryChoice.promptRequest.minSelections;
+        setTutorTitle(`${pendingStackTopLibraryChoice.sourceName}: choose up to ${remaining} more, or ${canFinish ? 'cancel to finish' : `choose ${pendingStackTopLibraryChoice.promptRequest.minSelections - selectedIds.length} more`}`);
+        setTutorCards(topLibraryChoiceOptionsFromPrompt(
+          engineForChoice,
+          pendingStackTopLibraryChoice.promptRequest,
+          selectedIds,
+        ));
+        addMessage('player', `Selected ${selectedIds.length} for ${pendingStackTopLibraryChoice.sourceName}.`);
+        syncState();
+        return;
+      }
+
+      const selectSubmission = {
+        requestId: pendingStackTopLibraryChoice.promptRequest.id,
+        kind: 'SelectCards' as const,
+        playerId: humanIdRef.current,
+        selectedCardInstanceIds: selectedIds,
+      };
+      const selectResponse = applySelectCardsPromptResponse(engineForChoice, pendingStackTopLibraryChoice.promptRequest, selectSubmission);
+      appendEnginePromptEventLogRecord({ kind: 'Prompt', request: pendingStackTopLibraryChoice.promptRequest, response: selectSubmission }, selectResponse);
+      recordAuthorityUpdate(selectResponse.update);
+      if (!selectResponse.ok || !selectResponse.state) {
+        addMessage('system', selectResponse.message || `Could not resolve ${pendingStackTopLibraryChoice.sourceName} pile choice.`);
+        syncState();
+        return;
+      }
+
+      pendingStackTopLibraryChoiceRef.current = null;
+      setTutorPhase(false);
+      setTutorCards([]);
+      setTutorTitle('');
+      engineRef.current = selectResponse.state as GameStateWithAI;
+      addMessage('player', `${pendingStackTopLibraryChoice.sourceName}: chose ${selectedIds.length} card${selectedIds.length === 1 ? '' : 's'} for the pile.`);
+
+      const loopMessages: { role: ChatMessage['role']; text: string }[] = [];
+      const loopLogEntries: GameLogEntry[] = [];
+      const state: GameState = advanceGameLoop(engineRef.current, loopMessages, loopLogEntries);
+      engineRef.current = state as GameStateWithAI;
+      for (const msg of loopMessages) addMessage(msg.role, msg.text);
+      if (loopLogEntries.length > 0) setGameLog(prev => [...prev, ...loopLogEntries]);
+      syncState();
+      return;
+    }
+
     const pendingStackSacrificeChoice = pendingStackSacrificeChoiceRef.current;
     const pendingStackNamedCardChoice = pendingStackNamedCardChoiceRef.current;
     if (pendingStackNamedCardChoice) {
@@ -5955,6 +6158,12 @@ export function useShelectorGame() {
       syncState();
       return;
     }
+    const pendingStackTopLibraryChoice = pendingStackTopLibraryChoiceRef.current;
+    if (pendingStackTopLibraryChoice && pendingStackTopLibraryChoice.selectedIds.length < pendingStackTopLibraryChoice.promptRequest.minSelections) {
+      addMessage('system', `${pendingStackTopLibraryChoice.sourceName} requires ${pendingStackTopLibraryChoice.promptRequest.minSelections} selected card${pendingStackTopLibraryChoice.promptRequest.minSelections === 1 ? '' : 's'} before it can finish.`);
+      syncState();
+      return;
+    }
     const pendingStackSacrificeChoice = pendingStackSacrificeChoiceRef.current;
     if (pendingStackSacrificeChoice?.mandatory) {
       addMessage('system', `${pendingStackSacrificeChoice.sourceName} requires choosing a permanent to sacrifice.`);
@@ -5983,6 +6192,32 @@ export function useShelectorGame() {
     tutorShuffleRef.current = true;
     tutorSourceInstanceIdRef.current = undefined;
     tutorPromptRequestRef.current = null;
+
+    if (pendingStackTopLibraryChoice) {
+      const selectedIds = [...pendingStackTopLibraryChoice.selectedIds];
+      const selectSubmission = {
+        requestId: pendingStackTopLibraryChoice.promptRequest.id,
+        kind: 'SelectCards' as const,
+        playerId: humanIdRef.current,
+        selectedCardInstanceIds: selectedIds,
+      };
+      const selectResponse = applySelectCardsPromptResponse(engineRef.current, pendingStackTopLibraryChoice.promptRequest, selectSubmission);
+      appendEnginePromptEventLogRecord({ kind: 'Prompt', request: pendingStackTopLibraryChoice.promptRequest, response: selectSubmission }, selectResponse);
+      recordAuthorityUpdate(selectResponse.update);
+      if (!selectResponse.ok || !selectResponse.state) {
+        tutorPromptRequestRef.current = null;
+        pendingStackTopLibraryChoiceRef.current = pendingStackTopLibraryChoice;
+        setTutorPhase(true);
+        setTutorTitle(`${pendingStackTopLibraryChoice.sourceName}: choose a pile from the revealed top cards`);
+        setTutorCards(topLibraryChoiceOptionsFromPrompt(engineRef.current, pendingStackTopLibraryChoice.promptRequest, selectedIds));
+        addMessage('system', selectResponse.message || `Could not resolve ${pendingStackTopLibraryChoice.sourceName} pile choice.`);
+        syncState();
+        return;
+      }
+      pendingStackTopLibraryChoiceRef.current = null;
+      engineRef.current = selectResponse.state as GameStateWithAI;
+      addMessage('player', `${pendingStackTopLibraryChoice.sourceName}: chose ${selectedIds.length} card${selectedIds.length === 1 ? '' : 's'} for the pile.`);
+    }
 
     if (pendingStackSacrificeChoice) {
       pendingStackSacrificeChoiceRef.current = null;
@@ -6097,6 +6332,7 @@ export function useShelectorGame() {
     pendingSearchEntryChoiceRef.current = null;
     pendingTargetChoiceRef.current = null;
     pendingHandTopLibraryChoiceRef.current = null;
+    pendingStackTopLibraryChoiceRef.current = null;
     pendingStackSacrificeChoiceRef.current = null;
     pendingStackNamedCardChoiceRef.current = null;
     optionalTriggerPromptRequestRef.current = null;
@@ -6751,6 +6987,10 @@ export function useShelectorGame() {
       }
       if (pendingHandTopLibraryChoiceRef.current) {
         addMessage('system', `Finish ${pendingHandTopLibraryChoiceRef.current.sourceName} card ordering first.`);
+        return;
+      }
+      if (pendingStackTopLibraryChoiceRef.current) {
+        addMessage('system', `Finish ${pendingStackTopLibraryChoiceRef.current.sourceName} pile choice first.`);
         return;
       }
       if (pendingStackSacrificeChoiceRef.current) {
@@ -7966,6 +8206,7 @@ export function useShelectorGame() {
       pendingSearchEntryChoiceRef.current = snapshot.pendingSearchEntryChoice || null;
       pendingTargetChoiceRef.current = snapshot.pendingTargetChoice || null;
       pendingHandTopLibraryChoiceRef.current = null;
+      pendingStackTopLibraryChoiceRef.current = null;
       pendingStackSacrificeChoiceRef.current = null;
       pendingStackNamedCardChoiceRef.current = null;
       tutorPromptRequestRef.current = snapshot.tutorPromptRequest || null;

@@ -315,6 +315,7 @@ export type SelectCardsSubject =
   | 'OpeningMulligan'
   | 'OpeningMulliganBottom'
   | 'PutOnTopOfLibrary'
+  | 'TopLibraryChoice'
   | 'SacrificeChoice';
 
 export interface SelectCardsChoice {
@@ -350,6 +351,8 @@ export interface CreateSelectCardsPromptOptions {
   sourceInstanceId?: string;
   stackItemId?: string;
   choiceKey?: string;
+  candidateCardInstanceIds?: string[];
+  preserveOrder?: boolean;
   subject?: SelectCardsSubject;
   zone?: Zone;
   destination?: Zone;
@@ -3170,7 +3173,12 @@ export function createSelectCardsPromptRequest(
   const commitSelection = options.commitSelection ?? true;
   const minSelections = options.minSelections ?? 1;
   const maxSelections = options.maxSelections ?? minSelections;
-  const choices = [...state.cards.values()]
+  const sourceCards = options.candidateCardInstanceIds
+    ? options.candidateCardInstanceIds!
+      .map(id => state.cards.get(id))
+      .filter((card): card is CardInstance => Boolean(card))
+    : [...state.cards.values()];
+  const choices = sourceCards
     .filter(card => card.ownerId === playerId)
     .map(card => {
       const def = getCardDefinition(state, card);
@@ -3192,10 +3200,12 @@ export function createSelectCardsPromptRequest(
             : 'Card does not match the required selection filter',
       };
     })
-    .sort((a, b) => {
+  if (!options.preserveOrder) {
+    choices.sort((a, b) => {
       if (a.legal !== b.legal) return a.legal ? -1 : 1;
       return a.cardName.localeCompare(b.cardName);
     });
+  }
 
   return {
     id: options.id || `select_cards_${expectedStateId}_${hashText(`${playerId}:${subject}:${zone}:${destination}:${createdAt}`)}`,
