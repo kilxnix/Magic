@@ -11,7 +11,7 @@ import {
   getAvailableManaColors,
   type PlayLandOptions,
 } from './actions';
-import { castSpell, canCastSpell, getEffectiveCastCost, type CastSpellOptions } from './stack';
+import { castSpell, canCastSpell, getCastSpellDefinition, getEffectiveCastCost, type CastSpellOptions } from './stack';
 import { canPaySpellCost, canPayUnrestrictedCost, parseManaString } from './mana';
 import { getCardDefinition } from './game-state';
 import { passPriority } from './priority';
@@ -250,7 +250,7 @@ export function tryCastSpell(
   if (playerIndex === -1) return fail('card_not_found', 'Player not found');
   const player = state.players[playerIndex];
 
-  const def = getCardDefinition(state, card);
+  const def = getCastSpellDefinition(state, cardInstanceId, options);
   if (!def) return fail('card_not_found', 'Card definition missing');
   const castRestriction = findCastZoneRestriction(state, playerId, card);
   if (castRestriction) {

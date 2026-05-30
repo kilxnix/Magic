@@ -12,6 +12,7 @@ import { initGameFromDecks, resetInstanceCounter } from '../game-init';
 import { getCardsInZone } from '../game-state';
 import { putTriggersOnStack, registerBattlefieldAbilities, resolveTopOfStack } from '../stack';
 import { tryCastSpell, tryTapLandForMana } from '../actions-public';
+import { getLegalActions } from '../ai/legal-actions';
 import { createPlayer, emptyManaPool, type CardDefinition, type CardInstance, type GameState, type ManaCost, type Zone } from '../types';
 
 const RAW_VIVI_DECK = `
@@ -303,6 +304,8 @@ describe('submitted Vivi tournament playtest', () => {
     const expansion = converted.library.find(card => card.name === 'Expansion // Explosion');
     expect(expansion?.card_types).toContain('instant');
     expect(expansion?.oracle_text).toContain('Copy target instant or sorcery spell');
+    expect(expansion?.faces?.map(face => face.name)).toEqual(['Expansion', 'Explosion']);
+    expect(expansion?.faces?.[1].mana_cost).toBe('{X}{U}{U}{R}{R}');
   });
 
   it('initializes a four-player pod with Vivi in the command zone', () => {
@@ -434,6 +437,33 @@ describe('submitted Vivi tournament playtest', () => {
     expect(state.players[1].life).toBe(opponentLife - 6);
     expect(state.cards.get(ids.expansion)?.zone).toBe('graveyard');
     expect(state.cards.get(ids['lightning-bolt'])?.zone).toBe('graveyard');
+  });
+
+  it('lets the Explosion face be chosen, paid with X, targeted, and resolved from the shared split card', () => {
+    let { state, ids } = makeState();
+    state = giveMana(state);
+
+    const actions = getLegalActions(state, 'p1')
+      .filter((action): action is Extract<ReturnType<typeof getLegalActions>[number], { kind: 'CastSpell' }> =>
+        action.kind === 'CastSpell'
+        && action.cardInstanceId === ids.expansion
+        && action.faceName === 'Explosion'
+      );
+    expect(actions.some(action => action.xValue === 3 && action.targets[0] === 'p2' && action.targets[1] === 'p1')).toBe(true);
+
+    const opponentLife = state.players[1].life;
+    const libraryBefore = getCardsInZone(state, 'p1', 'library').length;
+    const castExplosion = tryCastSpell(state, 'p1', ids.expansion, ['p2', 'p1'], NO_PAYMENT, {
+      faceName: 'Explosion',
+      xValue: 3,
+    });
+    expect(castExplosion.ok, castExplosion.ok ? undefined : castExplosion.message).toBe(true);
+    expect(castExplosion.state.stack.at(-1)).toMatchObject({ faceName: 'Explosion', xValue: 3 });
+
+    state = resolveTopOfStack(castExplosion.state);
+    expect(state.players[1].life).toBe(opponentLife - 3);
+    expect(getCardsInZone(state, 'p1', 'library')).toHaveLength(libraryBefore - 3);
+    expect(state.cards.get(ids.expansion)?.zone).toBe('graveyard');
   });
 
   it("copies red instant and sorcery spells cast with Pyromancer's Goggles mana", () => {

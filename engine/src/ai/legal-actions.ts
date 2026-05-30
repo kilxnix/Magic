@@ -6,7 +6,7 @@
 
 import { GameState, CardInstance, AttackerDeclaration, BlockerDeclaration, isSpellStackItem } from '../types';
 import { getCardsInZone, getCardDefinition } from '../game-state';
-import { canCastSpell, getEffectiveCastCost } from '../stack';
+import { canCastSpell, getCastSpellDefinition, getEffectiveCastCost, type CastSpellOptions } from '../stack';
 import { canPlayLand, getActivatedAbilities, canActivateAbility, isBlockedBySummoningSicknessForTap, getAvailableManaColors } from '../actions';
 import { canDeclareAttacker, canDeclareBlocker, hasPlayerDeclaredBlockers } from '../combat';
 import { canPaySpellCost, canPayUnrestrictedCost } from '../mana';
@@ -44,8 +44,12 @@ export function hasPriority(state: GameState, playerId: string): boolean {
 /**
  * Get the required targets for a card spell.
  */
-export function getSpellTargetSpecs(state: GameState, card: CardInstance): TargetSpec[] {
-  const def = getCardDefinition(state, card);
+export function getSpellTargetSpecs(
+  state: GameState,
+  card: CardInstance,
+  options: CastSpellOptions = {},
+): TargetSpec[] {
+  const def = getCastSpellDefinition(state, card.instanceId, options) ?? getCardDefinition(state, card);
 
   // Check for override first
   const override = getOverride(def.id, def.name);
@@ -120,7 +124,7 @@ export function getLegalTargets(
     for (const item of state.stack) {
       if (!isSpellStackItem(item)) continue;
       const card = state.cards.get(item.cardInstanceId);
-      const def = card ? state.cardDefinitions.get(card.definitionId) : undefined;
+      const def = card ? getCastSpellDefinition(state, item.cardInstanceId, { faceName: item.faceName }) : undefined;
       if (!card || !def) continue;
       if (spec.type === 'NoncreatureSpell' && def.card_types.includes('creature')) continue;
       if (spec.type === 'CreatureSpell' && !def.card_types.includes('creature')) continue;
@@ -180,6 +184,7 @@ function generateModalActions(
   card: CardInstance,
   actions: CastSpellAction[],
   parsed: ReturnType<typeof parseOracleText>,
+  baseOptions: CastSpellOptions = {},
 ): boolean {
   if (parsed.kind !== 'Modal') return false;
   const startingActionCount = actions.length;
@@ -196,6 +201,7 @@ function generateModalActions(
           cardInstanceId: card.instanceId,
           targets: [],
           chosenModes: [i],
+          ...baseOptions,
         });
       } else {
         // Mode with targets — get legal targets for each target spec
@@ -212,6 +218,7 @@ function generateModalActions(
               cardInstanceId: card.instanceId,
               targets: [target],
               chosenModes: [i],
+              ...baseOptions,
             });
           }
         }
@@ -230,6 +237,7 @@ function generateModalActions(
             cardInstanceId: card.instanceId,
             targets: [],
             chosenModes: [i, j],
+            ...baseOptions,
           });
         }
       }
@@ -237,6 +245,32 @@ function generateModalActions(
   }
 
   return actions.length > startingActionCount;
+}
+
+function generateTargetCombinations(
+  state: GameState,
+  playerId: string,
+  specs: TargetSpec[],
+): string[][] {
+  if (specs.length === 0) return [[]];
+  if (specs.some(spec => spec.count !== 1)) return [];
+
+  let combinations: string[][] = [[]];
+  for (const spec of specs) {
+    const legalTargets = getLegalTargets(state, playerId, spec);
+    const next: string[][] = [];
+    for (const existing of combinations) {
+      for (const target of legalTargets) {
+        next.push([...existing, target]);
+      }
+    }
+    combinations = next;
+    if (combinations.length > 100) {
+      combinations = combinations.slice(0, 100);
+      break;
+    }
+  }
+  return combinations;
 }
 
 function hasXCost(def: ReturnType<typeof getCardDefinition>): boolean {
@@ -248,13 +282,14 @@ function legalXValuesForSpell(
   playerId: string,
   card: CardInstance,
   def: ReturnType<typeof getCardDefinition>,
+  baseOptions: CastSpellOptions = {},
 ): number[] {
   if (!hasXCost(def)) return [0];
   const player = state.players.find(p => p.id === playerId);
   if (!player) return [];
   const values: number[] = [];
   for (let xValue = 0; xValue <= 20; xValue++) {
-    const cost = getEffectiveCastCost(state, playerId, card.instanceId, { xValue });
+    const cost = getEffectiveCastCost(state, playerId, card.instanceId, { ...baseOptions, xValue });
     if (cost && canPaySpellCost(player, cost, def, card)) values.push(xValue);
   }
   return values;
@@ -268,10 +303,29 @@ function withXValues(
   baseAction: Omit<CastSpellAction, 'xValue'>,
 ): CastSpellAction[] {
   if (!hasXCost(def)) return [baseAction];
-  return legalXValuesForSpell(state, playerId, card, def).map(xValue => ({
+  return legalXValuesForSpell(state, playerId, card, def, {
+    faceName: baseAction.faceName,
+  }).map(xValue => ({
     ...baseAction,
     xValue,
   }));
+}
+
+function castFacesForCard(
+  state: GameState,
+  card: CardInstance,
+): Array<{ def: ReturnType<typeof getCardDefinition>; options: CastSpellOptions }> {
+  const baseDef = getCardDefinition(state, card);
+  if (!baseDef.faces || baseDef.faces.length === 0) {
+    return [{ def: baseDef, options: {} }];
+  }
+  const casts: Array<{ def: ReturnType<typeof getCardDefinition>; options: CastSpellOptions }> = [];
+  for (const face of baseDef.faces) {
+    const options: CastSpellOptions = { faceName: face.name };
+    const def = getCastSpellDefinition(state, card.instanceId, options);
+    if (def) casts.push({ def, options });
+  }
+  return casts;
 }
 
 function generateCastSpellActions(state: GameState, playerId: string): CastSpellAction[] {
@@ -280,17 +334,18 @@ function generateCastSpellActions(state: GameState, playerId: string): CastSpell
   // Check hand
   const hand = getCardsInZone(state, playerId, 'hand');
   for (const card of hand) {
-    if (canCastSpell(state, playerId, card.instanceId)) {
+    for (const faceCast of castFacesForCard(state, card)) {
+      if (!canCastSpell(state, playerId, card.instanceId, faceCast.options)) continue;
       // Check for modal spells first
-      const def = getCardDefinition(state, card);
+      const def = faceCast.def;
       const parsed = parseOracleText(normalizeOracleForParser(def.oracle_text, def.name), def.mana_cost);
 
-      if (generateModalActions(state, playerId, card, actions, parsed)) {
+      if (generateModalActions(state, playerId, card, actions, parsed, faceCast.options)) {
         continue; // Skip normal spell handling for modal spells
       }
 
       // Get target specs for this spell
-      const specs = getSpellTargetSpecs(state, card);
+      const specs = getSpellTargetSpecs(state, card, faceCast.options);
 
       if (specs.length === 0) {
         // No targets needed
@@ -298,21 +353,17 @@ function generateCastSpellActions(state: GameState, playerId: string): CastSpell
             kind: 'CastSpell',
             cardInstanceId: card.instanceId,
             targets: [],
+            ...faceCast.options,
           }));
       } else {
-        // Generate actions for each valid target combination
-        // For v0, handle single-target spells only
-        if (specs.length === 1 && specs[0].count === 1) {
-          const legalTargets = getLegalTargets(state, playerId, specs[0]);
-          for (const target of legalTargets) {
-            actions.push(...withXValues(state, playerId, card, def, {
-                kind: 'CastSpell',
-                cardInstanceId: card.instanceId,
-                targets: [target],
-              }));
-          }
+        for (const targets of generateTargetCombinations(state, playerId, specs)) {
+          actions.push(...withXValues(state, playerId, card, def, {
+              kind: 'CastSpell',
+              cardInstanceId: card.instanceId,
+              targets,
+              ...faceCast.options,
+            }));
         }
-        // Multi-target spells would need combinatorial expansion (future)
       }
     }
   }
@@ -320,21 +371,23 @@ function generateCastSpellActions(state: GameState, playerId: string): CastSpell
   // Check command zone (for commander)
   const commandZone = getCardsInZone(state, playerId, 'command');
   for (const card of commandZone) {
-    if (canCastSpell(state, playerId, card.instanceId)) {
+    for (const faceCast of castFacesForCard(state, card)) {
+      if (!canCastSpell(state, playerId, card.instanceId, faceCast.options)) continue;
       // Check for modal spells first
-      const def = getCardDefinition(state, card);
+      const def = faceCast.def;
       const parsed = parseOracleText(normalizeOracleForParser(def.oracle_text, def.name), def.mana_cost);
 
-      if (generateModalActions(state, playerId, card, actions, parsed)) {
+      if (generateModalActions(state, playerId, card, actions, parsed, faceCast.options)) {
         continue; // Skip normal spell handling for modal commanders
       }
 
-      const specs = getSpellTargetSpecs(state, card);
+      const specs = getSpellTargetSpecs(state, card, faceCast.options);
       if (specs.length === 0) {
         actions.push(...withXValues(state, playerId, card, def, {
             kind: 'CastSpell',
             cardInstanceId: card.instanceId,
             targets: [],
+            ...faceCast.options,
           }));
       }
       // Commanders with targets would follow same pattern as above

@@ -4,7 +4,7 @@
  * Converts deck generator output to game engine format.
  */
 
-import type { CardDefinition, CardType, ManaColor } from '../types';
+import type { CardDefinition, CardDefinitionFace, CardType, ManaColor } from '../types';
 import { populateParsedCache } from './card-parser-cache';
 
 /**
@@ -151,12 +151,57 @@ function parsePT(value: string | null | undefined): number | undefined {
   return isNaN(num) ? 0 : num;
 }
 
+function colorsFromManaCost(manaCost: string | null | undefined): ManaColor[] {
+  if (!manaCost) return [];
+  const colors = new Set<ManaColor>();
+  for (const match of manaCost.matchAll(/\{([^}]+)\}/g)) {
+    const symbol = match[1].toUpperCase();
+    for (const color of ['W', 'U', 'B', 'R', 'G'] as ManaColor[]) {
+      if (symbol.split('/').includes(color)) colors.add(color);
+    }
+  }
+  return [...colors];
+}
+
+function manaValueFromManaCost(manaCost: string | null | undefined): number {
+  if (!manaCost) return 0;
+  let value = 0;
+  for (const match of manaCost.matchAll(/\{([^}]+)\}/g)) {
+    const symbol = match[1].toUpperCase();
+    if (symbol === 'X') continue;
+    if (/^\d+$/.test(symbol)) {
+      value += parseInt(symbol, 10);
+    } else {
+      value += 1;
+    }
+  }
+  return value;
+}
+
+function convertFace(card: ScryfallCard, face: ScryfallCardFace, faceIndex: number): CardDefinitionFace {
+  const manaCost = face.mana_cost || '';
+  return {
+    id: `${card.id}:face:${faceIndex}`,
+    name: face.name,
+    type_line: face.type_line || card.type_line,
+    oracle_text: face.oracle_text || '',
+    mana_cost: manaCost,
+    cmc: manaValueFromManaCost(manaCost),
+    colors: toManaColors(face.colors || colorsFromManaCost(manaCost)),
+    keywords: card.keywords || [],
+    card_types: parseCardTypes(face.type_line || card.type_line),
+    power: parsePT(face.power),
+    toughness: parsePT(face.toughness),
+  };
+}
+
 /**
  * Convert a Scryfall card to an engine CardDefinition.
  */
 export function convertCard(card: ScryfallCard): CardDefinition {
   const firstFace = !card.oracle_text && card.card_faces?.[0] ? card.card_faces[0] : null;
   const cmc = typeof card.cmc === 'string' ? parseFloat(card.cmc) : card.cmc;
+  const faces = card.card_faces?.map((face, index) => convertFace(card, face, index)) ?? [];
 
   const baseDef: CardDefinition = {
     id: card.id,
@@ -171,6 +216,7 @@ export function convertCard(card: ScryfallCard): CardDefinition {
     card_types: parseCardTypes(firstFace?.type_line || card.type_line),
     power: parsePT(firstFace?.power ?? card.power),
     toughness: parsePT(firstFace?.toughness ?? card.toughness),
+    ...(faces.length > 0 ? { faces } : {}),
   };
 
   return populateParsedCache(baseDef);

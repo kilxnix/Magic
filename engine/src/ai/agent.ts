@@ -87,6 +87,7 @@ export function dispatchAIAction(
         namedCardChoices: action.namedCardChoices,
         cardChoices: action.cardChoices,
         xValue: action.xValue,
+        faceName: action.faceName,
         delveCardIds: action.delveCardIds,
         convokeCreatureIds: action.convokeCreatureIds,
         improviseArtifactIds: action.improviseArtifactIds,

@@ -138,7 +138,7 @@ export type RealGameAction =
   | { kind: 'pass_priority' }
   | { kind: 'play_land'; payload: { card_instance_id: string } }
   | { kind: 'tap_mana'; payload: { card_instance_id: string; color: 'W' | 'U' | 'B' | 'R' | 'G' | 'C' } }
-  | { kind: 'cast_spell'; payload: { card_instance_id: string; targets?: string[] } }
+  | { kind: 'cast_spell'; payload: { card_instance_id: string; targets?: string[]; face_name?: string; x_value?: number } }
   | { kind: 'declare_attackers'; payload: { attackers: Array<{ cardInstanceId: string; defendingPlayerId: string }> } }
   | { kind: 'declare_blockers'; payload: { blockers: Array<{ cardInstanceId: string; blockingAttackerId: string }> } }
   | { kind: 'adjust_counters'; payload: { card_instance_id: string; counter_type: string; delta: number } };

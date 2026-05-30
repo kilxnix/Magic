@@ -22,6 +22,7 @@ export interface CastSpellOptions {
   namedCardChoices?: Record<string, string>;
   cardChoices?: CardInstance['choices'];
   xValue?: number;
+  faceName?: string;
   delveCardIds?: string[];
   convokeCreatureIds?: string[];
   improviseArtifactIds?: string[];
@@ -36,6 +37,47 @@ function normalizeCastOptions(options?: number[] | CastSpellOptions): CastSpellO
 
 function normalizedXValue(options: CastSpellOptions): number {
   return Math.max(0, Math.floor(options.xValue ?? 0));
+}
+
+function normalizeFaceName(name: string): string {
+  return name.trim().toLowerCase();
+}
+
+function applyFaceToDefinition(def: CardDefinition, faceName?: string): CardDefinition {
+  if (!faceName || !def.faces?.length) return def;
+  const normalized = normalizeFaceName(faceName);
+  const face = def.faces.find(candidate => normalizeFaceName(candidate.name) === normalized);
+  if (!face) return def;
+  return {
+    ...def,
+    id: face.id,
+    name: face.name,
+    type_line: face.type_line,
+    oracle_text: face.oracle_text,
+    mana_cost: face.mana_cost,
+    cmc: face.cmc,
+    colors: face.colors,
+    keywords: face.keywords,
+    card_types: face.card_types,
+    power: face.power,
+    toughness: face.toughness,
+    isEquipment: undefined,
+    equipCost: undefined,
+    equipmentBonus: undefined,
+    manaProduction: undefined,
+    searchAbility: undefined,
+    unlessTax: undefined,
+  };
+}
+
+export function getCastSpellDefinition(
+  state: GameState,
+  cardInstanceId: string,
+  options: CastSpellOptions = {},
+): CardDefinition | null {
+  const card = state.cards.get(cardInstanceId);
+  if (!card) return null;
+  return applyFaceToDefinition(getCardDefinition(state, card), options.faceName);
 }
 
 function copyCardChoices(choices?: CardInstance['choices']): CardInstance['choices'] {
@@ -490,6 +532,10 @@ function findSpellStackItem(state: GameState, id: string): SpellStackItem | unde
   ) as SpellStackItem | undefined;
 }
 
+function getStackSpellDefinition(state: GameState, item: SpellStackItem): CardDefinition | null {
+  return getCastSpellDefinition(state, item.cardInstanceId, { faceName: item.faceName });
+}
+
 function createSpellCopyOnStack(
   state: GameState,
   sourceItem: SpellStackItem,
@@ -553,7 +599,7 @@ function applyCopySpellEffects(
     const targetItem = findSpellStackItem(resultState, targetId);
     if (!targetItem) continue;
     const targetCard = resultState.cards.get(targetItem.cardInstanceId);
-    const targetDef = targetCard ? resultState.cardDefinitions.get(targetCard.definitionId) : undefined;
+    const targetDef = targetCard ? getStackSpellDefinition(resultState, targetItem) : undefined;
     if (!targetDef) continue;
     if (effect.maxManaValue !== undefined && targetDef.cmc > effect.maxManaValue) continue;
 
@@ -813,7 +859,8 @@ export function getEffectiveCastCost(
 ): ReturnType<typeof parseManaString> | null {
   const card = state.cards.get(cardInstanceId);
   if (!card) return null;
-  const def = getCardDefinition(state, card);
+  const def = getCastSpellDefinition(state, cardInstanceId, options);
+  if (!def) return null;
   const baseCost = parseManaString(def.mana_cost);
   const xCost = /\{X\}/i.test(def.mana_cost) ? normalizedXValue(options) : 0;
   const taxAmount = card.zone === 'command' ? getCommanderTaxForCast(state, playerId, cardInstanceId) : 0;
@@ -821,7 +868,12 @@ export function getEffectiveCastCost(
   return buildCostMechanicPlan(state, playerId, card, def, reducedCost, options).cost;
 }
 
-export function canCastSpell(state: GameState, playerId: string, cardInstanceId: string): boolean {
+export function canCastSpell(
+  state: GameState,
+  playerId: string,
+  cardInstanceId: string,
+  options: CastSpellOptions = {},
+): boolean {
   const card = state.cards.get(cardInstanceId);
   if (!card) return false;
   if (card.ownerId !== playerId) return false;
@@ -833,7 +885,8 @@ export function canCastSpell(state: GameState, playerId: string, cardInstanceId:
   if (!validZone) return false;
   if (findCastZoneRestriction(state, playerId, card)) return false;
 
-  const def = getCardDefinition(state, card);
+  const def = getCastSpellDefinition(state, cardInstanceId, options);
+  if (!def) return false;
 
   // Lands are not cast
   if (def.card_types.includes('land')) return false;
@@ -850,7 +903,7 @@ export function canCastSpell(state: GameState, playerId: string, cardInstanceId:
   }
 
   // Check mana (including commander tax for command zone casts)
-  const totalCost = getEffectiveCastCost(state, playerId, cardInstanceId);
+  const totalCost = getEffectiveCastCost(state, playerId, cardInstanceId, options);
   if (!totalCost) return false;
 
   if (!canPaySpellCost(player!, totalCost, def, card)) return false;
@@ -865,13 +918,13 @@ export function castSpell(
   targets: string[] = [],
   options?: number[] | CastSpellOptions,
 ): GameState {
-  if (!canCastSpell(state, playerId, cardInstanceId)) {
+  const castOptions = normalizeCastOptions(options);
+  if (!canCastSpell(state, playerId, cardInstanceId, castOptions)) {
     throw new Error('Cannot cast spell');
   }
 
-  const castOptions = normalizeCastOptions(options);
   const card = state.cards.get(cardInstanceId)!;
-  const def = getCardDefinition(state, card);
+  const def = getCastSpellDefinition(state, cardInstanceId, castOptions)!;
   const castFromZone = card.zone;
   const castTargetSpecs = getCastTargetSpecs(def, castOptions);
   if (castTargetSpecs) {
@@ -940,6 +993,7 @@ export function castSpell(
     ...(castOptions.namedCardChoices ? { namedCardChoices: castOptions.namedCardChoices } : {}),
     ...(castOptions.cardChoices ? { cardChoices: copyCardChoices(castOptions.cardChoices) } : {}),
     ...(/\{X\}/i.test(def.mana_cost) ? { xValue: normalizedXValue(castOptions) } : {}),
+    ...(castOptions.faceName ? { faceName: castOptions.faceName } : {}),
     ...(paymentMakesSpellUncounterable(state, usedRestrictedMana) || hasCantBeCounteredText(def.oracle_text)
       ? { cantBeCountered: true }
       : {}),
@@ -1200,7 +1254,7 @@ export function resolveTopOfStack(state: GameState): GameState {
   // Handle spell resolution (existing logic)
   const spellItem = topItem as SpellStackItem;
   const card = state.cards.get(spellItem.cardInstanceId)!;
-  const def = state.cardDefinitions.get(card.definitionId)!;
+  const def = getStackSpellDefinition(state, spellItem)!;
 
   let newCards = new Map(state.cards);
   const isPermanent = def.card_types.some(t => PERMANENT_TYPES.includes(t));

@@ -245,6 +245,10 @@ export function applyPendingRoomAction(
       pending.action.payload.card_instance_id,
       pending.action.payload.targets || [],
       ZERO_MANA_COST,
+      {
+        faceName: pending.action.payload.face_name,
+        xValue: pending.action.payload.x_value,
+      },
     );
     if (!result.ok) return { state, ok: false, error: result.message };
     return {

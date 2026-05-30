@@ -42,6 +42,7 @@ export interface CardDefinition {
   power?: number;
   toughness?: number;
   card_types: CardType[];
+  faces?: CardDefinitionFace[];
 
   // Cached parse data — populated at card load time
   isEquipment?: boolean;
@@ -74,6 +75,20 @@ export interface CardInstance {
     imprintedCardIds?: string[];
     discardedCardIds?: string[];
   };
+}
+
+export interface CardDefinitionFace {
+  id: string;
+  name: string;
+  type_line: string;
+  oracle_text: string;
+  mana_cost: string;
+  cmc: number;
+  colors: ManaColor[];
+  keywords: string[];
+  card_types: CardType[];
+  power?: number;
+  toughness?: number;
 }
 
 // Import TriggeredAbility from effects/ast (forward declaration for type safety)
@@ -126,6 +141,7 @@ export interface SpellStackItem {
   namedCardChoices?: Record<string, string>;
   cardChoices?: CardInstance['choices'];
   xValue?: number;
+  faceName?: string;
   cantBeCountered?: boolean;
   isCopy?: boolean;
   copyOfCardInstanceId?: string;

@@ -17,6 +17,7 @@ export interface CastSpellAction {
   namedCardChoices?: Record<string, string>;
   cardChoices?: CardInstance['choices'];
   xValue?: number;
+  faceName?: string;
   delveCardIds?: string[];
   convokeCreatureIds?: string[];
   improviseArtifactIds?: string[];

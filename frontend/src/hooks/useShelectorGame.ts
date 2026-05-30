@@ -11,6 +11,7 @@ import {
   initGameFromDecks,
   getCardsInZone,
   getCardDefinition,
+  getCastSpellDefinition,
   getPlayer,
   getLegalActions,
   getActivatedAbilities,
@@ -961,7 +962,8 @@ function definitionLooksPermanent(def: CardDefinition): boolean {
 
 function spellEffectsForChoicePrompt(state: GameState, item: Extract<StackItem, { kind: 'Spell' }>): Effect[] {
   const card = state.cards.get(item.cardInstanceId);
-  const def = card ? state.cardDefinitions.get(card.definitionId) : undefined;
+  const def = getCastSpellDefinition(state, item.cardInstanceId, { faceName: item.faceName })
+    || (card ? state.cardDefinitions.get(card.definitionId) : undefined);
   if (!def) return [];
 
   const override = getOverride(def.id, def.name);
@@ -1040,13 +1042,25 @@ function couldCastWithLands(state: GameState, playerId: string, manaCost: ManaCo
   return findLandsToTap(state, playerId, manaCost, manaActions) !== null;
 }
 
-function enumerateVirtualCastTargets(state: GameState, playerId: string, card: CardInstance): string[][] {
-  const specs = getSpellTargetSpecs(state, card);
+function enumerateVirtualCastTargets(
+  state: GameState,
+  playerId: string,
+  card: CardInstance,
+  faceName?: string,
+): string[][] {
+  const specs = getSpellTargetSpecs(state, card, { faceName });
   if (specs.length === 0) return [[]];
-  if (specs.length === 1 && specs[0].count === 1) {
-    return getLegalTargets(state, playerId, specs[0]).map(target => [target]);
+  if (specs.some(spec => spec.count !== 1)) return [];
+  let combinations: string[][] = [[]];
+  for (const spec of specs) {
+    const legalTargets = getLegalTargets(state, playerId, spec);
+    combinations = combinations.flatMap(existing => legalTargets.map(target => [...existing, target]));
+    if (combinations.length > 100) {
+      combinations = combinations.slice(0, 100);
+      break;
+    }
   }
-  return [];
+  return combinations;
 }
 
 function enumerateVirtualActivatedAbilityTargets(state: GameState, playerId: string, ability: ActivatedAbility): string[][] {
@@ -1116,11 +1130,12 @@ function describeManaPaymentPlan(state: GameState, playerId: string, actions: AI
   return `Auto-pay: ${shown}${extra}`;
 }
 
-function reducedSpellCost(state: GameState, playerId: string, def: CardDefinition, extraGeneric = 0): ManaCost {
+function reducedSpellCost(state: GameState, playerId: string, def: CardDefinition, extraGeneric = 0, xValue = 0): ManaCost {
   const baseCost = parseManaString(def.mana_cost);
+  const xCost = /\{X\}/i.test(def.mana_cost) ? Math.max(0, Math.floor(xValue)) : 0;
   const totalCost: ManaCost = {
     ...baseCost,
-    generic: baseCost.generic + extraGeneric,
+    generic: baseCost.generic + extraGeneric + xCost,
     hybrid: baseCost.hybrid?.map(options => [...options]),
   };
   const reduction = Math.min(totalCost.generic, getCostReduction(state, playerId, def));
@@ -1464,7 +1479,8 @@ function deriveSimpleState(
     if (item.kind === 'Spell') {
       const inst = engine.cards.get(item.cardInstanceId);
       if (inst) {
-        const def = engine.cardDefinitions.get(inst.definitionId);
+        const def = getCastSpellDefinition(engine, item.cardInstanceId, { faceName: item.faceName })
+          || engine.cardDefinitions.get(inst.definitionId);
         name = def?.name || '(unknown spell)';
         if (def) card = toSimpleCard(inst, def);
       }
@@ -1643,7 +1659,7 @@ function toSimpleLegalAction(action: AIAction, engineState: GameState): SimpleLe
     }
     case 'CastSpell': {
       const inst = engineState.cards.get(action.cardInstanceId);
-      const def = inst ? engineState.cardDefinitions.get(inst.definitionId) : undefined;
+      const def = getCastSpellDefinition(engineState, action.cardInstanceId, { faceName: action.faceName }) || (inst ? engineState.cardDefinitions.get(inst.definitionId) : undefined);
       const xSuffix = typeof action.xValue === 'number' ? ` for X=${action.xValue}` : '';
       return {
         kind: 'CastSpell',
@@ -1781,7 +1797,7 @@ function toSimpleLegalAction(action: AIAction, engineState: GameState): SimpleLe
 function targetGroupKey(action: SimpleLegalAction): string | null {
   const engineAction = action._engineAction;
   if (engineAction.kind === 'CastSpell' && engineAction.targets.length === 1) {
-    return `cast:${engineAction.cardInstanceId}:${(engineAction.chosenModes || []).join(',')}`;
+    return `cast:${engineAction.cardInstanceId}:${engineAction.faceName || ''}:${(engineAction.chosenModes || []).join(',')}:${engineAction.xValue ?? ''}`;
   }
   if (engineAction.kind === 'ActivateAbility' && engineAction.targets.length === 1) {
     return `ability:${engineAction.cardInstanceId}:${engineAction.abilityIndex}`;
@@ -1807,7 +1823,8 @@ function baseLabelForTargetGroup(engineState: GameState, action: SimpleLegalActi
   const engineAction = action._engineAction;
   if (engineAction.kind === 'CastSpell') {
     const card = engineState.cards.get(engineAction.cardInstanceId);
-    const def = card ? engineState.cardDefinitions.get(card.definitionId) : undefined;
+    const def = getCastSpellDefinition(engineState, engineAction.cardInstanceId, { faceName: engineAction.faceName })
+      || (card ? engineState.cardDefinitions.get(card.definitionId) : undefined);
     const xSuffix = typeof engineAction.xValue === 'number' ? ` for X=${engineAction.xValue}` : '';
     return `Cast ${def?.name || action.cardName || 'spell'}${xSuffix}`;
   }
@@ -2189,39 +2206,56 @@ export function useShelectorGame() {
         const hand = getCardsInZone(engine, humanId, 'hand');
         for (const card of hand) {
           if (existingCastIds.has(card.instanceId)) continue; // Already has CastSpell action
-          const def = getCardDefinition(engine, card);
-          if (def.card_types.includes('land')) continue; // Lands aren't cast
+          const baseDef = getCardDefinition(engine, card);
+          const castFaces = baseDef.faces?.length
+            ? baseDef.faces.map(face => ({
+                def: getCastSpellDefinition(engine, card.instanceId, { faceName: face.name }) || baseDef,
+                faceName: face.name,
+              }))
+            : [{ def: baseDef, faceName: undefined }];
 
-          // Check timing: instants/flash can be cast anytime with priority,
-          // sorcery-speed needs main phase + active player + empty stack
-          const isInstant = def.card_types.includes('instant');
-          const hasFlash = def.keywords.includes('Flash');
-          if (!isInstant && !hasFlash) {
-            if (engine.activePlayerIndex !== playerIndex) continue;
-            if (!isMainPhase) continue;
-            if (engine.stack.length > 0) continue;
-          }
+          for (const faceCast of castFaces) {
+            const def = faceCast.def;
+            if (def.card_types.includes('land')) continue; // Lands aren't cast
 
-          // Check if player could pay the reduced cost with available lands.
-          const totalCost = reducedSpellCost(engine, humanId, def);
-          const paymentPlan = findLandsToTap(engine, humanId, totalCost, availableManaActions);
-          if (paymentPlan) {
-            // Create synthetic cast actions with required targets, including stack targets.
-            const targetSets = enumerateVirtualCastTargets(engine, humanId, card);
-            for (const targets of targetSets) {
-              const castAction: AIAction = {
-                kind: 'CastSpell',
-                cardInstanceId: card.instanceId,
-                targets,
-              };
-              simpleActions.push({
-                kind: 'CastSpell',
-                cardInstanceId: card.instanceId,
-                cardName: def.name,
-                label: `Cast ${def.name}${targetLabelSuffix(engine, targets)}`,
-                paymentPreview: describeManaPaymentPlan(engine, humanId, paymentPlan),
-                _engineAction: castAction,
-              });
+            // Check timing: instants/flash can be cast anytime with priority,
+            // sorcery-speed needs main phase + active player + empty stack
+            const isInstant = def.card_types.includes('instant');
+            const hasFlash = def.keywords.includes('Flash');
+            if (!isInstant && !hasFlash) {
+              if (engine.activePlayerIndex !== playerIndex) continue;
+              if (!isMainPhase) continue;
+              if (engine.stack.length > 0) continue;
+            }
+
+            const xValues = /\{X\}/i.test(def.mana_cost)
+              ? Array.from({ length: 21 }, (_value, index) => index)
+              : [undefined];
+            for (const xValue of xValues) {
+              // Check if player could pay the reduced cost with available lands.
+              const totalCost = reducedSpellCost(engine, humanId, def, 0, xValue ?? 0);
+              const paymentPlan = findLandsToTap(engine, humanId, totalCost, availableManaActions);
+              if (!paymentPlan) continue;
+              // Create synthetic cast actions with required targets, including stack targets.
+              const targetSets = enumerateVirtualCastTargets(engine, humanId, card, faceCast.faceName);
+              for (const targets of targetSets) {
+                const castAction: AIAction = {
+                  kind: 'CastSpell',
+                  cardInstanceId: card.instanceId,
+                  targets,
+                  ...(faceCast.faceName ? { faceName: faceCast.faceName } : {}),
+                  ...(typeof xValue === 'number' ? { xValue } : {}),
+                };
+                const xSuffix = typeof xValue === 'number' ? ` for X=${xValue}` : '';
+                simpleActions.push({
+                  kind: 'CastSpell',
+                  cardInstanceId: card.instanceId,
+                  cardName: def.name,
+                  label: `Cast ${def.name}${xSuffix}${targetLabelSuffix(engine, targets)}`,
+                  paymentPreview: describeManaPaymentPlan(engine, humanId, paymentPlan),
+                  _engineAction: castAction,
+                });
+              }
             }
           }
         }
@@ -2232,36 +2266,53 @@ export function useShelectorGame() {
           if (existingCastIds.has(card.instanceId)) continue;
           const isCommander = card.isCommander || player.commanderInstanceIds?.includes(card.instanceId) || player.commanderInstanceId === card.instanceId;
           if (!isCommander) continue;
-          const def = getCardDefinition(engine, card);
-          if (def.card_types.includes('land')) continue;
+          const baseDef = getCardDefinition(engine, card);
+          const castFaces = baseDef.faces?.length
+            ? baseDef.faces.map(face => ({
+                def: getCastSpellDefinition(engine, card.instanceId, { faceName: face.name }) || baseDef,
+                faceName: face.name,
+              }))
+            : [{ def: baseDef, faceName: undefined }];
 
-          const isInstant = def.card_types.includes('instant');
-          const hasFlash = def.keywords.includes('Flash');
-          if (!isInstant && !hasFlash) {
-            if (engine.activePlayerIndex !== playerIndex) continue;
-            if (!isMainPhase) continue;
-            if (engine.stack.length > 0) continue;
-          }
+          for (const faceCast of castFaces) {
+            const def = faceCast.def;
+            if (def.card_types.includes('land')) continue;
 
-          const taxAmount = getCommanderCastCount(player, card.instanceId) * 2;
-          const totalCost = reducedSpellCost(engine, humanId, def, taxAmount);
-          const paymentPlan = findLandsToTap(engine, humanId, totalCost, availableManaActions);
-          if (paymentPlan) {
-            const targetSets = enumerateVirtualCastTargets(engine, humanId, card);
-            for (const targets of targetSets) {
-              const castAction: AIAction = {
-                kind: 'CastSpell',
-                cardInstanceId: card.instanceId,
-                targets,
-              };
-              simpleActions.push({
-                kind: 'CastSpell',
-                cardInstanceId: card.instanceId,
-                cardName: def.name,
-                label: `Cast ${def.name}${targetLabelSuffix(engine, targets)}`,
-                paymentPreview: describeManaPaymentPlan(engine, humanId, paymentPlan),
-                _engineAction: castAction,
-              });
+            const isInstant = def.card_types.includes('instant');
+            const hasFlash = def.keywords.includes('Flash');
+            if (!isInstant && !hasFlash) {
+              if (engine.activePlayerIndex !== playerIndex) continue;
+              if (!isMainPhase) continue;
+              if (engine.stack.length > 0) continue;
+            }
+
+            const taxAmount = getCommanderCastCount(player, card.instanceId) * 2;
+            const xValues = /\{X\}/i.test(def.mana_cost)
+              ? Array.from({ length: 21 }, (_value, index) => index)
+              : [undefined];
+            for (const xValue of xValues) {
+              const totalCost = reducedSpellCost(engine, humanId, def, taxAmount, xValue ?? 0);
+              const paymentPlan = findLandsToTap(engine, humanId, totalCost, availableManaActions);
+              if (!paymentPlan) continue;
+              const targetSets = enumerateVirtualCastTargets(engine, humanId, card, faceCast.faceName);
+              for (const targets of targetSets) {
+                const castAction: AIAction = {
+                  kind: 'CastSpell',
+                  cardInstanceId: card.instanceId,
+                  targets,
+                  ...(faceCast.faceName ? { faceName: faceCast.faceName } : {}),
+                  ...(typeof xValue === 'number' ? { xValue } : {}),
+                };
+                const xSuffix = typeof xValue === 'number' ? ` for X=${xValue}` : '';
+                simpleActions.push({
+                  kind: 'CastSpell',
+                  cardInstanceId: card.instanceId,
+                  cardName: def.name,
+                  label: `Cast ${def.name}${xSuffix}${targetLabelSuffix(engine, targets)}`,
+                  paymentPreview: describeManaPaymentPlan(engine, humanId, paymentPlan),
+                  _engineAction: castAction,
+                });
+              }
             }
           }
         }
@@ -5611,6 +5662,7 @@ export function useShelectorGame() {
           const player = engine.players.find(p => p.id === humanId);
 
           let precastState: GameState = engine as GameState;
+          const faceName = engineAction.faceName;
 
           if (engineAction.chosenModes?.length) {
             const modeRequest = createChooseModePromptRequest(
@@ -5654,7 +5706,7 @@ export function useShelectorGame() {
           }
 
           if (card && player) {
-            const targetSpecs = getSpellTargetSpecs(engine as GameState, card);
+            const targetSpecs = getSpellTargetSpecs(engine as GameState, card, { faceName });
             if (
               targetSpecs.length === 1
               && !validateTargetPromptResponse(
@@ -5668,7 +5720,7 @@ export function useShelectorGame() {
               return;
             }
 
-            const def = getCardDefinition(engine, card);
+            const def = getCastSpellDefinition(engine, card.instanceId, { faceName }) || getCardDefinition(engine, card);
             const isFromCommandZone = card.zone === 'command';
             const taxAmount = isFromCommandZone ? getCommanderCastCount(player, card.instanceId) * 2 : 0;
             const totalCost = reducedSpellCost(engine, humanId, def, taxAmount);
