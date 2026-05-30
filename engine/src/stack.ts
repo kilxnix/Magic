@@ -859,7 +859,10 @@ export function registerBattlefieldAbilities(state: GameState, instanceId: strin
   // Check for override first (ETB overrides)
   const override = getOverride(def.id, def.name);
   if (override && override.kind === 'ETB') {
-    abilitiesToAdd.push(override.ability as TriggeredAbilityRef);
+    abilitiesToAdd.push({
+      ...(override.ability as TriggeredAbilityRef),
+      targets: override.targets,
+    });
   }
 
   // Parse oracle text — may contain multiple abilities across sentences
@@ -875,16 +878,23 @@ export function registerBattlefieldAbilities(state: GameState, instanceId: strin
     if (parsed.kind === 'ETB') {
       // Only add if we didn't already get an override for ETB
       if (!override || override.kind !== 'ETB') {
-        abilitiesToAdd.push(parsed.ability as TriggeredAbilityRef);
+        abilitiesToAdd.push({
+          ...(parsed.ability as TriggeredAbilityRef),
+          targets: parsed.targets,
+        });
       }
       if (/^whenever\s+~\s+enters\s+or\s+attacks\b/i.test(normalizedLine)) {
         abilitiesToAdd.push({
           ...(parsed.ability as TriggeredAbilityRef),
           trigger: { kind: 'Attacks', who: 'self' },
+          targets: parsed.targets,
         });
       }
     } else if (parsed.kind === 'Dies') {
-      abilitiesToAdd.push(parsed.ability as TriggeredAbilityRef);
+      abilitiesToAdd.push({
+        ...(parsed.ability as TriggeredAbilityRef),
+        targets: parsed.targets,
+      });
     } else if (parsed.kind === 'Triggered') {
       // This covers: Attacks, Upkeep, EndStep, AnotherCreatureETB,
       // CreatureYouControlDies, YouCastSpell, OpponentCastSpell,
@@ -893,7 +903,10 @@ export function registerBattlefieldAbilities(state: GameState, instanceId: strin
       const parsedTriggerKind = (parsed.ability as TriggeredAbilityRef).trigger.kind;
       const alreadyRegistered = abilitiesToAdd.some(a => a.trigger.kind === parsedTriggerKind);
       if (!alreadyRegistered) {
-        abilitiesToAdd.push(parsed.ability as TriggeredAbilityRef);
+        abilitiesToAdd.push({
+          ...(parsed.ability as TriggeredAbilityRef),
+          targets: parsed.targets,
+        });
       }
     }
   }
@@ -939,12 +952,13 @@ export function createETBTriggers(state: GameState, instanceId: string): GameSta
 
   for (const ability of abilities) {
     if (ability.trigger.kind === 'ETB' && ability.trigger.who === 'self') {
+      const abilityTargets = (ability.targets as TargetSpec[] | undefined) || targetSpecs;
       newPendingTriggers.push({
         id: `trigger_${Date.now()}_${Math.random().toString(36).slice(2)}`,
         sourceInstanceId: instanceId,
         controllerId: card.ownerId,
         ability,
-        requiredTargets: targetSpecs,
+        requiredTargets: abilityTargets,
       });
     }
   }
@@ -1197,7 +1211,7 @@ export function putTriggersOnStack(
     sourceInstanceId: trigger.sourceInstanceId,
     controllerId: trigger.controllerId,
     ability: trigger.ability,
-    targets: triggerTargets[trigger.id] || [],
+    targets: triggerTargets[trigger.id] || defaultTriggerTargets(state, trigger.controllerId, trigger.requiredTargets as TargetSpec[]),
     targetSpecs: trigger.requiredTargets,
     eventContext: trigger.eventContext,
   }));
@@ -1207,6 +1221,43 @@ export function putTriggersOnStack(
     stack: [...state.stack, ...newStackItems],
     pendingTriggers: [],
   };
+}
+
+function defaultTriggerTargets(state: GameState, controllerId: string, specs: TargetSpec[] = []): string[] {
+  const targets: string[] = [];
+  for (const spec of specs) {
+    for (let i = 0; i < spec.count; i++) {
+      const target = defaultTargetForSpec(state, controllerId, spec, targets);
+      if (!target) return targets;
+      targets.push(target);
+    }
+  }
+  return targets;
+}
+
+function defaultTargetForSpec(
+  state: GameState,
+  controllerId: string,
+  spec: TargetSpec,
+  existingTargets: string[],
+): string | null {
+  if (spec.type === 'Player') {
+    return state.players.find(player =>
+      !player.hasLost
+      && !existingTargets.includes(player.id)
+      && (!spec.constraints?.opponentControls || player.id !== controllerId)
+    )?.id ?? null;
+  }
+  if (spec.type === 'Creature') {
+    return [...state.cards.values()].find(card => {
+      if (card.zone !== 'battlefield') return false;
+      if (existingTargets.includes(card.instanceId)) return false;
+      if (spec.constraints?.opponentControls && card.ownerId === controllerId) return false;
+      const def = state.cardDefinitions.get(card.definitionId);
+      return def?.card_types.includes('creature') ?? false;
+    })?.instanceId ?? null;
+  }
+  return null;
 }
 
 export function putPendingTriggerOnStack(
@@ -1527,9 +1578,9 @@ export function checkTriggersForEvent(state: GameState, event: GameEvent): GameS
 
       if (shouldFire) {
         // Get target specs for this ability from parsing
-        let targetSpecs: TargetSpec[] = [];
+        let targetSpecs: TargetSpec[] = (ability.targets as TargetSpec[] | undefined) || [];
         const cardDef = state.cardDefinitions.get(card.definitionId);
-        if (cardDef) {
+        if (cardDef && targetSpecs.length === 0) {
           // Parse the specific line that matches this trigger
           const lines = cardDef.oracle_text.split('\n');
           for (const line of lines) {

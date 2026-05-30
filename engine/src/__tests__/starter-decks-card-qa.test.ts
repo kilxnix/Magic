@@ -971,6 +971,10 @@ describe('starter deck full-card QA', () => {
     green = resolveRuntimeStack(cast.state);
     expect(green.cards.get(goreclawId)?.zone).toBe('battlefield');
 
+    const reducedDreadmawId = moveRuntimeCard(green, 'human', 'Colossal Dreadmaw', 'hand');
+    green = castLegalRuntimeSpell(green, 'Colossal Dreadmaw', { G: 4 });
+    expect(green.cards.get(reducedDreadmawId)?.zone).toBe('battlefield');
+
     const dreadmawId = moveRuntimeCard(green, 'human', 'Colossal Dreadmaw', 'battlefield', { summoningSick: false });
     moveRuntimeCard(green, 'human', 'Rancor', 'hand');
     green = castLegalRuntimeSpell(green, 'Rancor', { G: 1 }, dreadmawId);

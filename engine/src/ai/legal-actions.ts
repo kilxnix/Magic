@@ -89,6 +89,7 @@ export function getLegalTargets(
   if (spec.type === 'Player') {
     for (const player of state.players) {
       if (!player.hasLost) {
+        if (spec.constraints?.opponentControls && player.id === casterId) continue;
         targets.push(player.id);
       }
     }

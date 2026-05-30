@@ -96,6 +96,7 @@ export interface TriggeredAbilityRef {
     | { kind: 'CastOrCopyInstantOrSorcery' }
     | { kind: 'Landfall' };
   effects: unknown[]; // Effect[] from ast.ts
+  targets?: unknown[]; // TargetSpec[] from targets.ts
   optional?: boolean;
 }
 

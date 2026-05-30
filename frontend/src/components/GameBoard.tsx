@@ -464,7 +464,20 @@ function CardTile({
         type="button"
         onClick={onClick}
         disabled={!playable && !onClick}
-        title={targetable ? targetLabel || 'Choose as target' : playable ? 'Use card' : inspectable ? 'Inspect card' : card.name}
+        aria-pressed={selected ? true : undefined}
+        title={
+          selected
+            ? selectedLabel
+              ? `${card.name} selected for ${selectedLabel.toLowerCase()}`
+              : `${card.name} selected`
+            : targetable
+            ? targetLabel || 'Choose as target'
+            : playable
+            ? 'Use card'
+            : inspectable
+            ? 'Inspect card'
+            : card.name
+        }
         className={`
           absolute inset-0 flex h-full w-full flex-col justify-between
           overflow-hidden rounded-lg border text-left transition-all
@@ -2647,11 +2660,18 @@ export function GameBoard({
                 disabled={!needsMulliganCardSelection || selectedMulliganCount === 0}
                 className="px-3 md:px-4 py-1.5 rounded bg-amber-700 hover:bg-amber-600 text-white text-xs font-semibold transition-colors min-h-[44px] disabled:cursor-not-allowed disabled:opacity-45"
               >
-                {selectedMulliganCount > 0 ? `Mulligan ${selectedMulliganCount}` : 'Select Cards'}
+                {selectedMulliganCount > 0 ? `Mulligan ${selectedMulliganCount}` : 'Pick Cards First'}
               </button>
             </div>
           )}
         </div>
+        {mulliganPhase && (
+          <div className="-mt-0.5 mb-1 rounded border border-amber-500/20 bg-amber-950/25 px-2 py-1 text-[10px] font-semibold leading-snug text-amber-100/85">
+            {needsMulliganBottomSelection
+              ? 'Tap cards in your hand to choose what goes on the bottom, then keep selected.'
+              : 'Tap one or more cards in your hand to mark them for mulligan. Inspect stays on the small card button.'}
+          </div>
+        )}
 
         <div className="-mx-1 flex gap-1.5 overflow-x-auto px-1 py-1 md:gap-2">
           {gameState.humanHand.length === 0 ? (

@@ -16,6 +16,7 @@ export type Effect =
   | PutIntoLibraryEffect
   | ReturnToHandEffect
   | SacrificeEffect
+  | SacrificeSelfUnlessPlayerSacrificesEffect
   | MillEffect
   | AddCountersEffect
   | RemoveCountersEffect
@@ -126,6 +127,13 @@ export interface ReturnToHandEffect {
 
 export interface SacrificeEffect {
   kind: 'Sacrifice';
+  player: TargetRef;
+  filter?: CardFilter;
+  count: AmountRef;
+}
+
+export interface SacrificeSelfUnlessPlayerSacrificesEffect {
+  kind: 'SacrificeSelfUnlessPlayerSacrifices';
   player: TargetRef;
   filter?: CardFilter;
   count: AmountRef;

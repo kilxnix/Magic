@@ -975,6 +975,50 @@ describe('parseOracleText', () => {
         destination: 'hand',
       });
     });
+
+    it('parses arbitrary subtype card searches without forcing creature type', () => {
+      const result = parseOracleText('Search your library for a Shrine card, reveal it, put it into your hand, then shuffle.');
+      expect(result.kind).toBe('Spell');
+      if (result.kind !== 'Spell') return;
+      expect(result.effects[0]).toMatchObject({
+        kind: 'SearchLibrary',
+        filter: { subtypes: ['Shrine'] },
+        destination: 'hand',
+      });
+    });
+
+    it('parses known noncreature and supertype search filters', () => {
+      const auraResult = parseOracleText('Search your library for an Aura card, put it into your hand, then shuffle.');
+      expect(auraResult.kind).toBe('Spell');
+      if (auraResult.kind !== 'Spell') return;
+      expect(auraResult.effects[0]).toMatchObject({
+        kind: 'SearchLibrary',
+        filter: { subtypes: ['Aura'] },
+      });
+
+      const permanentResult = parseOracleText('Search your library for a permanent card, put it into your hand, then shuffle.');
+      expect(permanentResult.kind).toBe('Spell');
+      if (permanentResult.kind !== 'Spell') return;
+      expect(permanentResult.effects[0]).toMatchObject({
+        kind: 'SearchLibrary',
+        filter: { permanent: true },
+      });
+    });
+  });
+
+  describe('unless sacrifice ETB patterns', () => {
+    it('parses sacrifice-self unless target opponent sacrifices a creature', () => {
+      const result = parseOracleText('When Brain Gorgers enters the battlefield, sacrifice it unless target opponent sacrifices a creature.');
+      expect(result.kind).toBe('ETB');
+      if (result.kind !== 'ETB') return;
+      expect(result.targets).toHaveLength(1);
+      expect(result.targets[0]).toMatchObject({ type: 'Player', constraints: { opponentControls: true } });
+      expect(result.ability.effects[0]).toMatchObject({
+        kind: 'SacrificeSelfUnlessPlayerSacrifices',
+        filter: { types: ['creature'] },
+        count: 1,
+      });
+    });
   });
 
   // 5. "Sacrifice" as an effect

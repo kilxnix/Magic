@@ -965,6 +965,18 @@ export function executeSacrificeSpecific(state: GameState, cardInstanceId: strin
  */
 function executeSacrifice(state: GameState, playerId: string, count: number, filter?: CardFilter): GameState {
   // Find matching permanents on the player's battlefield
+  const candidates = getSacrificeCandidates(state, playerId, filter);
+
+  let newState = state;
+  const toSacrifice = Math.min(count, candidates.length);
+  for (let i = 0; i < toSacrifice; i++) {
+    newState = executeSacrificeSpecific(newState, candidates[i].instanceId);
+  }
+
+  return newState;
+}
+
+function getSacrificeCandidates(state: GameState, playerId: string, filter?: CardFilter): CardInstance[] {
   const candidates: CardInstance[] = [];
   for (const [, card] of state.cards) {
     if (card.ownerId !== playerId || card.zone !== 'battlefield') continue;
@@ -974,14 +986,26 @@ function executeSacrifice(state: GameState, playerId: string, count: number, fil
     }
     candidates.push(card);
   }
+  return candidates;
+}
 
-  let newState = state;
-  const toSacrifice = Math.min(count, candidates.length);
-  for (let i = 0; i < toSacrifice; i++) {
-    newState = executeSacrificeSpecific(newState, candidates[i].instanceId);
+function executeSacrificeSelfUnlessPlayerSacrifices(
+  state: GameState,
+  sourceInstanceId: string | undefined,
+  playerId: string,
+  count: number,
+  filter?: CardFilter,
+): GameState {
+  if (!sourceInstanceId) return state;
+  const candidates = getSacrificeCandidates(state, playerId, filter);
+  if (candidates.length >= count && count > 0) {
+    let next = state;
+    for (let i = 0; i < count; i++) {
+      next = executeSacrificeSpecific(next, candidates[i].instanceId);
+    }
+    return next;
   }
-
-  return newState;
+  return executeSacrificeSpecific(state, sourceInstanceId);
 }
 
 /**
@@ -1933,6 +1957,17 @@ function executeEffect(
       const sacrificePlayerId = resolveTargetRef(effect.player, casterId, chosenTargets);
       const sacrificeCount = resolveAmount(effect.count, xValue, state, casterId);
       return executeSacrifice(state, sacrificePlayerId, sacrificeCount, effect.filter);
+    }
+    case 'SacrificeSelfUnlessPlayerSacrifices': {
+      const sacrificePlayerId = resolveTargetRef(effect.player, casterId, chosenTargets);
+      const sacrificeCount = resolveAmount(effect.count, xValue, state, casterId);
+      return executeSacrificeSelfUnlessPlayerSacrifices(
+        state,
+        sourceInstanceId,
+        sacrificePlayerId,
+        sacrificeCount,
+        effect.filter,
+      );
     }
     case 'Mill': {
       const millPlayerId = resolveTargetRef(effect.player, casterId, chosenTargets);

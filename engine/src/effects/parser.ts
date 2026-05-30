@@ -1981,8 +1981,11 @@ function matchSearchLibraryGeneric(tokens: string[], startIndex: number): Patter
     const filterWord = slice[idx];
     const parsedFilter = parseStaticFilterType(filterWord);
     const subtype = singularizeSubtypeWord(filterWord);
+    // Unknown "a/an <word> card" searches are almost always subtype searches
+    // (Shrine, Gate, Aura, Equipment, Background, etc.). Do not force them
+    // through creature-only filtering; the authority prompt validates against
+    // the card type line at response time.
     filter = parsedFilter ?? {
-      types: ['creature'],
       subtypes: [subtype.charAt(0).toUpperCase() + subtype.slice(1)],
     };
     idx += 2;
@@ -2255,6 +2258,42 @@ function matchEachOpponentSacrifice(tokens: string[], startIndex: number): Patte
   };
 
   return { effects: [effect], targets: [], consumed: idx };
+}
+
+/**
+ * Match: "sacrifice it unless target opponent sacrifices a creature"
+ * Match: "sacrifice ~ unless target opponent sacrifices an artifact"
+ */
+function matchSacrificeSelfUnlessTargetOpponentSacrifices(tokens: string[], startIndex: number): PatternResult {
+  const slice = tokens.slice(startIndex);
+
+  if (slice.length < 8) return null;
+  if (slice[0] !== 'sacrifice') return null;
+  if (slice[1] !== 'it' && slice[1] !== '~') return null;
+  if (slice[2] !== 'unless') return null;
+  if (slice[3] !== 'target') return null;
+  if (slice[4] !== 'opponent') return null;
+  if (slice[5] !== 'sacrifices') return null;
+  if (slice[6] !== 'a' && slice[6] !== 'an') return null;
+
+  let idx = 7;
+  const parsedFilter = parseStaticFilterType(slice[idx]);
+  if (!parsedFilter) return null;
+  const filter = parsedFilter.permanent ? undefined : parsedFilter;
+  idx++;
+
+  if (slice[idx] === 'card') idx++;
+  if (slice[idx] === '.') idx++;
+
+  const spec = makeTargetSpec('Player', { opponentControls: true });
+  const effect: Effect = {
+    kind: 'SacrificeSelfUnlessPlayerSacrifices',
+    player: makeChosenRef(spec),
+    filter,
+    count: 1,
+  };
+
+  return { effects: [effect], targets: [spec], consumed: idx };
 }
 
 /**
@@ -3095,8 +3134,13 @@ function parseStaticFilterType(word: string): CardFilter | null {
   if (word === 'instants' || word === 'instant') return { types: ['instant'] };
   if (word === 'sorceries' || word === 'sorcery') return { types: ['sorcery'] };
   if (word === 'lands' || word === 'land') return { types: ['land'] };
-  if (word === 'permanents' || word === 'permanent') return {};
+  if (word === 'planeswalkers' || word === 'planeswalker') return { types: ['planeswalker'] };
+  if (word === 'battles' || word === 'battle') return { types: ['battle'] };
+  if (word === 'permanents' || word === 'permanent') return { permanent: true };
   if (word === 'spells' || word === 'spell') return {};
+  if (word === 'legendary') return { supertypes: ['Legendary'] };
+  if (word === 'basic') return { supertypes: ['Basic'] };
+  if (word === 'snow') return { supertypes: ['Snow'] };
   if (colorMap[word]) return { colors: [colorMap[word]] };
   if (creatureSubtypes.includes(word)) return { types: ['creature'], subtypes: [singular] };
   return null;
@@ -3115,6 +3159,8 @@ function mergeStaticFilters(a: CardFilter, b: CardFilter): CardFilter {
     colors: merge(a.colors, b.colors),
     cmc: b.cmc || a.cmc,
     power: b.power || a.power,
+    permanent: a.permanent || b.permanent || undefined,
+    manaValueLessThanSourcePower: a.manaValueLessThanSourcePower || b.manaValueLessThanSourcePower || undefined,
   };
 }
 
@@ -3308,7 +3354,7 @@ function parseEffectClauseInternal(tokens: string[], startIndex: number): Patter
     matchWinGame, matchLoseGame,
     matchBlink, matchCopyThatSpell, matchCopySpell, matchCopyCreature, matchGrantKeywordAndDynamicPT, matchGrantKeyword, matchPhaseOut,
     matchDealDamageForEach, matchForEachDraw, matchCreateTokenForEach,
-    matchExileFromLibraryTop, matchSearchLibraryGeneric, matchEachOpponentSacrifice,
+    matchExileFromLibraryTop, matchSearchLibraryGeneric, matchSacrificeSelfUnlessTargetOpponentSacrifices, matchEachOpponentSacrifice,
     matchEachPlayerEffect, matchTargetPlayerSacrifice, matchSacrificeAsEffect,
     matchGainControl, matchReturnAllToHand, matchExileAll, matchDestroyAllExpanded,
     matchDealXDamage, matchDrawX, matchEachOpponentLosesLife,
@@ -3365,6 +3411,7 @@ function parseEffectClause(tokens: string[], startIndex: number): PatternResult 
     matchCreateTokenForEach,      // "create a 1/1 ... token for each ..."
     matchExileFromLibraryTop,     // "exile the top N cards of your library"
     matchSearchLibraryGeneric,    // "search your library for a card" (generic tutor)
+    matchSacrificeSelfUnlessTargetOpponentSacrifices, // "sacrifice it unless target opponent sacrifices a creature"
     matchEachOpponentSacrifice,   // "each opponent sacrifices a creature"
     matchEachPlayerEffect,        // "each player draws/sacrifices/discards"
     matchTargetPlayerSacrifice,   // "target player sacrifices a creature"

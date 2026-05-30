@@ -83,6 +83,9 @@ export function validateTargetChoices(
         if (!isPlayerId(state, chosenId)) {
           throw new Error(`Invalid target for ${spec.id}: expected player, got ${chosenId}`);
         }
+        if (spec.constraints?.opponentControls && chosenId === casterId) {
+          throw new Error(`Invalid target for ${spec.id}: expected opponent, got controller`);
+        }
       } else if (spec.type === 'Creature') {
         if (!isCreatureOnBattlefield(state, chosenId)) {
           throw new Error(`Invalid target for ${spec.id}: expected creature on battlefield, got ${chosenId}`);
@@ -174,7 +177,7 @@ export function validateTargetChoices(
       }
 
       // Constraints
-      if (spec.constraints?.opponentControls) {
+      if (spec.constraints?.opponentControls && spec.type !== 'Player') {
         const card = state.cards.get(chosenId);
         if (!card) {
           // opponentControls only makes sense for permanents; be strict.

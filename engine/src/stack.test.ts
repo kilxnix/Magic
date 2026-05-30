@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { canCastSpell, castSpell, resolveTopOfStack } from './stack';
+import { canCastSpell, castSpell, putTriggersOnStack, resolveTopOfStack } from './stack';
 import { tryTapLandForMana } from './actions-public';
 import { initGameState, getCardsInZone } from './game-state';
 import { CardDefinition, StackItem } from './types';
@@ -401,6 +401,90 @@ describe('Stack', () => {
       expect(next.cards.get(victim.instanceId)?.zone).toBe('graveyard');
       expect(next.cards.get(brain.instanceId)?.zone).toBe('graveyard');
       expect(next.stack.some(item => item.cardInstanceId === brain.instanceId)).toBe(false);
+    });
+
+    it('resolves sacrifice-this-unless-target-opponent-sacrifices ETB triggers', () => {
+      const brainGorgers: CardDefinition = {
+        id: 'brain-gorgers-etb',
+        name: 'Brain Gorgers',
+        type_line: 'Creature - Zombie',
+        oracle_text: 'When Brain Gorgers enters the battlefield, sacrifice it unless target opponent sacrifices a creature.',
+        mana_cost: '{3}{B}',
+        cmc: 4,
+        colors: ['B'],
+        color_identity: ['B'],
+        keywords: [],
+        card_types: ['creature'],
+        power: 4,
+        toughness: 2,
+      };
+      const victimDef: CardDefinition = {
+        ...makeCreature(),
+        id: 'victim-etb',
+        name: 'Opponent Creature',
+      };
+      const decks = [
+        { playerId: 'p1', name: 'Alice', cards: [brainGorgers], commanderId: 'cmd1' },
+        { playerId: 'p2', name: 'Bob', cards: [victimDef], commanderId: 'cmd2' },
+      ];
+      let state = initGameState(decks);
+      const brain = getCardsInZone(state, 'p1', 'library')[0];
+      const victim = getCardsInZone(state, 'p2', 'library')[0];
+      state.cards.set(brain.instanceId, { ...brain, zone: 'hand' });
+      state.cards.set(victim.instanceId, { ...victim, zone: 'battlefield' });
+      state = { ...state, phase: 'precombat_main' as any };
+      state.players[0].manaPool = { W: 0, U: 0, B: 4, R: 0, G: 0, C: 0 };
+
+      state = castSpell(state, 'p1', brain.instanceId);
+      state = resolveTopOfStack(state);
+      expect(state.cards.get(brain.instanceId)?.zone).toBe('battlefield');
+      expect(state.pendingTriggers).toHaveLength(1);
+      expect(state.pendingTriggers[0].ability.effects[0]).toMatchObject({
+        kind: 'SacrificeSelfUnlessPlayerSacrifices',
+      });
+
+      state = putTriggersOnStack(state);
+      expect(state.stack[0].ability.effects[0]).toMatchObject({
+        kind: 'SacrificeSelfUnlessPlayerSacrifices',
+      });
+      expect((state.stack[0].targetSpecs?.[0] as { id?: string }).id)
+        .toBe(((state.stack[0].ability.effects[0] as { player?: { targetId?: string } }).player)?.targetId);
+      expect(state.stack[0].targets).toEqual(['p2']);
+      state = resolveTopOfStack(state);
+      expect(state.cards.get(victim.instanceId)?.zone).toBe('graveyard');
+      expect(state.cards.get(brain.instanceId)?.zone).toBe('battlefield');
+    });
+
+    it('sacrifices the source when the target opponent cannot sacrifice for the ETB unless trigger', () => {
+      const brainGorgers: CardDefinition = {
+        id: 'brain-gorgers-etb-no-victim',
+        name: 'Brain Gorgers',
+        type_line: 'Creature - Zombie',
+        oracle_text: 'When Brain Gorgers enters the battlefield, sacrifice it unless target opponent sacrifices a creature.',
+        mana_cost: '{3}{B}',
+        cmc: 4,
+        colors: ['B'],
+        color_identity: ['B'],
+        keywords: [],
+        card_types: ['creature'],
+        power: 4,
+        toughness: 2,
+      };
+      const decks = [
+        { playerId: 'p1', name: 'Alice', cards: [brainGorgers], commanderId: 'cmd1' },
+        { playerId: 'p2', name: 'Bob', cards: [], commanderId: 'cmd2' },
+      ];
+      let state = initGameState(decks);
+      const brain = getCardsInZone(state, 'p1', 'library')[0];
+      state.cards.set(brain.instanceId, { ...brain, zone: 'hand' });
+      state = { ...state, phase: 'precombat_main' as any };
+      state.players[0].manaPool = { W: 0, U: 0, B: 4, R: 0, G: 0, C: 0 };
+
+      state = castSpell(state, 'p1', brain.instanceId);
+      state = resolveTopOfStack(state);
+      state = putTriggersOnStack(state);
+      state = resolveTopOfStack(state);
+      expect(state.cards.get(brain.instanceId)?.zone).toBe('graveyard');
     });
 
     it('multiple spells stack in LIFO order', () => {
