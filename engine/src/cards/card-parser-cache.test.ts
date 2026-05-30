@@ -39,6 +39,26 @@ describe('card-parser-cache — manaProduction', () => {
       expect(parsed.manaProduction).toEqual(f.expected.manaProduction);
     });
   }
+
+  it('does not infer land-subtype mana from subtype substrings', () => {
+    const parsed = populateParsedCache(defFrom(
+      'Islander Scout',
+      '',
+      'Creature - Islander Scout',
+    ));
+
+    expect(parsed.manaProduction).toBeUndefined();
+  });
+
+  it('infers basic land-subtype mana from exact subtype terms', () => {
+    const parsed = populateParsedCache(defFrom(
+      'Breeding Pool',
+      '',
+      'Land - Forest Island',
+    ));
+
+    expect(parsed.manaProduction?.colors).toEqual(['U', 'G']);
+  });
 });
 
 describe('card-parser-cache — searchAbility', () => {
