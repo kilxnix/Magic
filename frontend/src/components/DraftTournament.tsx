@@ -136,7 +136,7 @@ function isRemoval(card: DraftCard): boolean {
 }
 
 function isCreature(card: DraftCard): boolean {
-  return card.type_line.toLowerCase().includes('creature');
+  return typeLineHasType(card.type_line, 'creature');
 }
 
 function scoreDraftCard(card: DraftCard, picks: DraftCard[]): number {
