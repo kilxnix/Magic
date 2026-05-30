@@ -15,6 +15,7 @@ export type ParsedOracle =
   | { kind: 'Modal'; modal: ModalSpell; xCost?: boolean }
   | { kind: 'Dies'; ability: TriggeredAbility; targets: TargetSpec[] }
   | { kind: 'Triggered'; ability: TriggeredAbility; targets: TargetSpec[] }
+  | { kind: 'Activated'; abilities: ActivatedAbility[] }
   | { kind: 'StaticAbility'; ability: StaticAbilityEffect }
   | { kind: 'Unparsed'; reason: string };
 
@@ -3927,6 +3928,38 @@ function matchWinGame(tokens: string[], startIndex: number): PatternResult {
 }
 
 /**
+ * Match: "add {R}{R}{R}"
+ * Match: "add {C}{G}"
+ */
+function matchAddMana(tokens: string[], startIndex: number): PatternResult {
+  const slice = tokens.slice(startIndex);
+  if (slice.length < 2) return null;
+  if (slice[0] !== 'add') return null;
+
+  const symbols = [...slice[1].matchAll(/\{([wubrgc])\}/gi)];
+  if (symbols.length === 0) return null;
+
+  const mana: { W?: number; U?: number; B?: number; R?: number; G?: number; C?: number } = {};
+  for (const symbol of symbols) {
+    const color = symbol[1].toUpperCase() as keyof typeof mana;
+    mana[color] = (mana[color] || 0) + 1;
+  }
+
+  let consumed = 2;
+  if (slice[consumed] === '.') consumed++;
+
+  return {
+    effects: [{
+      kind: 'AddMana',
+      player: { kind: 'Controller' },
+      mana,
+    }],
+    targets: [],
+    consumed,
+  };
+}
+
+/**
  * Match: "you lose the game"
  * Match: "target player loses the game"
  */
@@ -4278,7 +4311,7 @@ function parseEffectClauseInternal(tokens: string[], startIndex: number): Patter
   }
 
   const patterns = [
-    matchWinGame, matchLoseGame,
+    matchWinGame, matchLoseGame, matchAddMana,
     matchBlink, matchCopyThatSpell, matchCopySpell, matchCopyCreature, matchModifyPTAndLoseKeyword, matchGrantKeywordAndDynamicPT, matchTargetCombatRestriction, matchGrantKeyword, matchPhaseOut,
     matchPreventDamage, matchDealDamageGreatestManaValue, matchDealDamageForEach, matchForEachDraw, matchCreateTokenForEach,
     matchExileFromLibraryTop, matchSearchLibraryGeneric, matchSacrificeSelfUnlessTargetOpponentSacrifices, matchEachOpponentSacrifice,
@@ -4319,6 +4352,7 @@ function parseEffectClause(tokens: string[], startIndex: number): PatternResult 
     // Win/lose game effects (simple patterns, high priority)
     matchWinGame,                 // "you win the game"
     matchLoseGame,                // "you lose the game" / "target player loses the game"
+    matchAddMana,                 // "add {R}{R}{R}"
 
     // Phase 15: Conditional effects (before other patterns)
     matchConditionalEffect,       // "if you control a [type], [effect]"
@@ -5432,6 +5466,11 @@ export function parseOracleText(oracleText: string, manaCost?: string): ParsedOr
     return { kind: 'Unparsed', reason: 'Could not parse trigger effect clause' };
   }
 
+  const activatedAbilities = parseActivatedAbilities(oracleText);
+  if (activatedAbilities.length > 0) {
+    return { kind: 'Activated', abilities: activatedAbilities };
+  }
+
   // Try to parse as a spell effect (with multi-effect support)
   const effectResult = parseMultipleEffects(tokens, 0);
   if (effectResult) {
@@ -5643,9 +5682,7 @@ function matchSearchLibrary(tokens: string[], startIndex: number): PatternResult
  * Check if a set of effects contains any mana-producing effect.
  */
 function containsManaEffect(effects: Effect[]): boolean {
-  // For now, mana abilities are only detected from overrides or explicit patterns.
-  // No AddMana effect type yet, so no parsed abilities are mana abilities.
-  return false;
+  return effects.some(effect => effect.kind === 'AddMana');
 }
 
 /**
@@ -5689,10 +5726,6 @@ export function parseActivatedAbilities(oracleText: string): ActivatedAbility[] 
     // Parse cost
     const cost = parseCostTokens(costTokens);
     if (!cost) continue;
-
-    // Skip mana-only tap abilities like "{T}: Add {G}" — already handled by tapLandForMana
-    const effectLower = effectPart.toLowerCase();
-    if (effectLower.startsWith('add {') && cost.tap && !cost.sacrifice && !cost.mana) continue;
 
     // Try to parse effects (SearchLibrary first, then standard patterns)
     let result = matchSearchLibrary(effectTokens, 0);

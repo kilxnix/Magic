@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { parseActivatedAbilities } from './parser';
+import { parseActivatedAbilities, parseOracleText } from './parser';
 import {
   matchesCardFilter,
   executeSacrificeSpecific,
@@ -196,10 +196,37 @@ describe('parseActivatedAbilities', () => {
     expect(abilities[0].effects[0].untilEndOfTurn).toBe(true);
   });
 
-  it('skips mana abilities like "{T}: Add {G}"', () => {
+  it('parses mana abilities like "{T}: Add {G}" as mana abilities', () => {
     const text = '{T}: Add {G}.';
     const abilities = parseActivatedAbilities(text);
-    expect(abilities).toHaveLength(0);
+    expect(abilities).toHaveLength(1);
+    expect(abilities[0].cost.tap).toBe(true);
+    expect(abilities[0].isManaAbility).toBe(true);
+    expect(abilities[0].effects[0]).toEqual({
+      kind: 'AddMana',
+      player: { kind: 'Controller' },
+      mana: { G: 1 },
+    });
+  });
+
+  it('parses bundled explicit mana abilities like Nantuko Elder', () => {
+    const text = '{T}: Add {C}{G}.';
+    const abilities = parseActivatedAbilities(text);
+    expect(abilities).toHaveLength(1);
+    expect(abilities[0].isManaAbility).toBe(true);
+    expect(abilities[0].effects[0]).toEqual({
+      kind: 'AddMana',
+      player: { kind: 'Controller' },
+      mana: { C: 1, G: 1 },
+    });
+  });
+
+  it('exposes activated-only oracle text through parseOracleText coverage', () => {
+    const result = parseOracleText('{T}: Add {C}{G}.');
+    expect(result.kind).toBe('Activated');
+    if (result.kind !== 'Activated') return;
+    expect(result.abilities).toHaveLength(1);
+    expect(result.abilities[0].isManaAbility).toBe(true);
   });
 
   it('skips basic land mana pattern "({T}: Add {W}.)"', () => {
