@@ -46,7 +46,6 @@ import {
   type TriggeredAbilityStackItem,
   getCostReduction,
   getOverride,
-  getEffectivePower,
   resetLoopDetector,
   type Effect,
   type ActivatedAbility,
@@ -880,44 +879,6 @@ function cardFilterFromSearchInfo(search: StackSearchInfo): CardFilter {
   if (/\bpermanent\b/.test(text)) filter.permanent = true;
 
   return filter;
-}
-
-function searchInfoFromEffects(
-  effects: unknown[] | undefined,
-  state?: GameState,
-  sourceInstanceId?: string,
-): StackSearchInfo | undefined {
-  if (!Array.isArray(effects)) return undefined;
-  const searchEffect = effects.find((effect): effect is {
-    kind: 'SearchLibrary';
-    filter?: SearchFilterSpec;
-    destination?: SearchDestination;
-    tapped?: boolean;
-    shuffle?: boolean;
-    count?: number;
-  } => typeof effect === 'object' && effect !== null && (effect as { kind?: string }).kind === 'SearchLibrary');
-
-  if (!searchEffect) return undefined;
-
-  const hasShuffleEffect = effects.some(effect =>
-    typeof effect === 'object' && effect !== null && (effect as { kind?: string }).kind === 'ShuffleLibrary'
-  );
-
-  const filterSpec = searchEffect.filter
-    ? { ...searchEffect.filter }
-    : undefined;
-  if (filterSpec?.manaValueLessThanSourcePower && state && sourceInstanceId) {
-    filterSpec.sourcePowerLimit = getEffectivePower(state, sourceInstanceId);
-  }
-
-  return {
-    filter: humanizeSearchFilter(filterSpec),
-    filterSpec,
-    destination: searchEffect.destination || 'hand',
-    tapped: searchEffect.tapped,
-    shuffle: searchEffect.shuffle ?? hasShuffleEffect,
-    count: searchEffect.count,
-  };
 }
 
 function amountRefToChoiceCount(count: unknown): number {
@@ -2743,83 +2704,33 @@ export function useShelectorGame() {
         const top = state.stack[state.stack.length - 1];
         if (!top) return false;
 
-        // Determine if this is a human-controlled search effect
-        let controllerId: string | undefined;
-        let sourceName = 'Search';
-        let sourceInstanceId: string | undefined;
-        let searchInfo: StackSearchInfo | undefined;
+        const controllerId = top.kind === 'Spell' ? top.casterId : top.controllerId;
+        if (controllerId !== humanIdRef.current) return false;
 
-        if (top.kind === 'Spell' && top.casterId === humanIdRef.current) {
-          // Spell with search (Demonic Tutor, etc.)
-          controllerId = top.casterId;
-          sourceInstanceId = top.cardInstanceId;
-          const tc = state.cards.get(top.cardInstanceId);
-          const td = tc ? state.cardDefinitions.get(tc.definitionId) : undefined;
-          sourceName = td?.name || sourceName;
-          const effectSearch = searchInfoFromEffects(spellEffectsForChoicePrompt(state, top), state, top.cardInstanceId);
-          if (effectSearch) {
-            searchInfo = effectSearch;
-          } else if (td?.searchAbility && !definitionLooksPermanent(td)) {
-            const ability = td.searchAbility as {
-              filter?: string;
-              destination: SearchDestination;
-              tapped?: boolean;
-              shuffle: boolean;
-              count?: number;
-            };
-            searchInfo = ability;
-          }
-        } else if (top.kind === 'ActivatedAbility' && top.controllerId === humanIdRef.current) {
-          // Activated ability with search (fetch lands, Sakura-Tribe Elder, etc.)
-          controllerId = top.controllerId;
-          sourceInstanceId = top.sourceInstanceId;
-          const sourceCard = state.cards.get(top.sourceInstanceId);
-          const sourceDef = sourceCard ? state.cardDefinitions.get(sourceCard.definitionId) : undefined;
-          sourceName = sourceDef?.name || sourceName;
-          // Prefer the actual stack ability effects. Cached searchAbility is a
-          // coarse card-level hint and can lose subtype filters such as
-          // "Mountain or Plains" on typed fetch lands.
-          if (top.ability) {
-            const effectSearch = searchInfoFromEffects(top.ability.effects, state, top.sourceInstanceId);
-            if (effectSearch) {
-              searchInfo = effectSearch;
-            }
-          }
-          if (!searchInfo && sourceDef?.searchAbility) {
-            const ability = sourceDef.searchAbility as {
-              filter?: string;
-              destination: SearchDestination;
-              tapped?: boolean;
-              shuffle: boolean;
-              count?: number;
-            };
-            searchInfo = ability;
-          }
-        }
-
-        if (!controllerId || !searchInfo) return false;
         const resolvedSearch = resolveTopStackSearchPrompt(state, {
           id: `search-${top.id}`,
           playerId: humanIdRef.current,
-          revealPolicy: searchInfo.filter || searchInfo.filterSpec ? 'reveal' : 'hidden',
           minSelections: 0,
           maxSelections: 1,
         });
         if (!resolvedSearch.ok) {
-          messages.push({ role: 'system', text: resolvedSearch.message });
           return false;
         }
 
-        const search = {
-          ...searchInfo,
-          destination: resolvedSearch.request.destination,
-          tapped: resolvedSearch.request.tapped,
-          shuffle: resolvedSearch.request.shuffle,
-        };
         state = resolvedSearch.state;
         engineRef.current = state as GameStateWithAI;
         recordAuthorityUpdate(resolvedSearch.update);
         const promptRequest = resolvedSearch.request;
+        const sourceName = resolvedSearch.sourceName;
+        const filterLabel = humanizeSearchFilter(promptRequest.filter as SearchFilterSpec);
+        const search: StackSearchInfo = {
+          filter: filterLabel,
+          filterSpec: promptRequest.filter as SearchFilterSpec,
+          destination: promptRequest.destination,
+          tapped: promptRequest.tapped,
+          shuffle: promptRequest.shuffle,
+          count: promptRequest.maxSelections,
+        };
         const pickerMetadata = searchPickerMetadata(search);
         const pickerCards = [...promptRequest.legalChoices, ...promptRequest.invalidChoices]
           .map((choice): TutorCardOption | null => {
@@ -2850,12 +2761,12 @@ export function useShelectorGame() {
         const totalCount = Math.max(1, search.count ?? 1);
         tutorRemainingRef.current = totalCount - 1;
         tutorFilterRef.current = search.filter;
-        tutorSourceNameRef.current = sourceName;
-        tutorSourceInstanceIdRef.current = sourceInstanceId;
+        tutorSourceNameRef.current = resolvedSearch.sourceName;
+        tutorSourceInstanceIdRef.current = promptRequest.sourceInstanceId;
         tutorPromptRequestRef.current = promptRequest;
         const filterDesc = search.filter ? ` for ${search.filter}` : '';
         const countSuffix = totalCount > 1 ? ` (pick 1 of up to ${totalCount})` : '';
-        setTutorTitle(`${sourceName}: Search your library${filterDesc}${countSuffix}`);
+        setTutorTitle(`${resolvedSearch.sourceName}: Search your library${filterDesc}${countSuffix}`);
         setTutorCards(pickerCards);
         setTutorPhase(true);
         messages.push({ role: 'system', text: `${sourceName} — search your library${filterDesc}${countSuffix}.` });

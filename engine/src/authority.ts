@@ -1659,6 +1659,8 @@ export function resolveTopStackSearchPrompt(
   const nextState = removeTopStackItemForPrompt(state, item);
   const sourceInstanceId = stackItemSourceInstanceId(item);
   const createdAt = options.createdAt ?? Date.now();
+  const revealPolicy = options.revealPolicy
+    || (Object.keys(effect.filter || {}).length > 0 ? 'reveal' : 'hidden');
   const request = createSearchLibraryPromptRequest(
     nextState,
     playerId,
@@ -1670,6 +1672,7 @@ export function resolveTopStackSearchPrompt(
       sourceInstanceId,
       tapped: options.tapped ?? effect.tapped,
       shuffle: options.shuffle ?? effect.shuffle,
+      revealPolicy,
       createdAt,
     },
   );

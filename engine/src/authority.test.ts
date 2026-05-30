@@ -703,6 +703,7 @@ describe('authority action boundary', () => {
     expect(result.state.cards.get('arcane_signet_1')?.zone).toBe('library');
     expect(result.request.kind).toBe('SearchLibrary');
     expect(result.request.sourceInstanceId).toBe('sisay_1');
+    expect(result.request.revealPolicy).toBe('reveal');
     expect(result.request.legalChoices.map(choice => choice.cardName)).toEqual(['Yoshimaru, Ever Faithful']);
     expect(result.request.invalidChoices.find(choice => choice.cardName === 'Arcane Signet')?.reason)
       .toBe('Not Legendary');
