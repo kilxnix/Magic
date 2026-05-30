@@ -269,6 +269,7 @@ export interface ReturnFromGraveyardEffect {
   kind: 'ReturnFromGraveyard';
   target: TargetRef;
   destination: 'hand' | 'battlefield';
+  counters?: string[];
 }
 
 export interface ModifyPTEffect {

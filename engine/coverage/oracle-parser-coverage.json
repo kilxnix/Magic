@@ -1,16 +1,16 @@
 {
-  "generatedAt": "2026-05-30T12:48:33.307Z",
+  "generatedAt": "2026-05-30T12:50:38.927Z",
   "source": "mtg_data/cards_min.jsonl",
   "commanderLegalOnly": true,
   "includedCards": 30969,
   "totalOracleFaces": 31420,
-  "parsedFaces": 16111,
-  "unparsedFaces": 15309,
-  "parsedPercent": 51.28,
+  "parsedFaces": 16117,
+  "unparsedFaces": 15303,
+  "parsedPercent": 51.3,
   "parsedKindCounts": {
-    "Unparsed": 15309,
-    "Spell": 10465,
-    "ETB": 2533,
+    "Unparsed": 15303,
+    "Spell": 10469,
+    "ETB": 2535,
     "Triggered": 1307,
     "KeywordOnly": 876,
     "StaticAbility": 340,
@@ -21,11 +21,11 @@
   "unparsedReasons": [
     {
       "reason": "No recognized pattern",
-      "count": 12887
+      "count": 12883
     },
     {
       "reason": "Could not parse ETB effect clause",
-      "count": 1359
+      "count": 1357
     },
     {
       "reason": "Could not parse trigger effect clause",
@@ -40,7 +40,7 @@
     {
       "id": "trigger-timing",
       "reason": "Triggered or delayed triggered abilities need event registration and APNAP ordering.",
-      "count": 6395,
+      "count": 6393,
       "samples": [
         {
           "name": "Mindlink Mech",
@@ -150,7 +150,7 @@
     {
       "id": "continuous-layers",
       "reason": "Continuous effects need layer/timestamp/dependency handling.",
-      "count": 3254,
+      "count": 3253,
       "samples": [
         {
           "name": "Sensory Deprivation",
@@ -205,7 +205,7 @@
     {
       "id": "combat-multiplayer",
       "reason": "Combat or multiplayer-defender text needs combat/defender-aware execution.",
-      "count": 2377,
+      "count": 2376,
       "samples": [
         {
           "name": "Marang River Prowler",
@@ -260,7 +260,7 @@
     {
       "id": "tokens-counters",
       "reason": "Token/counter wording needs typed objects, counters, and downstream interactions.",
-      "count": 1786,
+      "count": 1785,
       "samples": [
         {
           "name": "Sagu Pummeler",
@@ -279,12 +279,6 @@
           "set": "ltr",
           "reason": "No recognized pattern",
           "text": "(As this Saga enters and after your draw step, add a lore counter. Sacrifice after VI.) I, II, III, IV, V, VI — Note a creature type that hasn't been noted for this Saga. When you next cast a creature spell of that type this turn, that creature enters with an additional +1/+1 counter on it."
-        },
-        {
-          "name": "Metamorphosis Fanatic",
-          "set": "dsc",
-          "reason": "Could not parse ETB effect clause",
-          "text": "Lifelink When this creature enters, return up to one target creature card from your graveyard to the battlefield with a lifelink counter on it. Miracle {1}{B} (You may cast this card for its miracle cost when you draw it if it's the first card you drew this turn.)"
         },
         {
           "name": "Gix's Caress",
@@ -309,6 +303,12 @@
           "set": "soc",
           "reason": "No recognized pattern",
           "text": "This creature enters with X +1/+1 counters on it. If one or more +1/+1 counters would be put on another creature you control, that many plus one +1/+1 counters are put on it instead. {T}, Remove a +1/+1 counter from this creature: Put a +1/+1 counter on another target creature you control."
+        },
+        {
+          "name": "Sword-Swallowing Seraph",
+          "set": "unf",
+          "reason": "Could not parse ETB effect clause",
+          "text": "Flying, vigilance When this creature enters, you may put a name sticker on a nonland permanent you own. {1}{W}, {T}: Put a +1/+1 counter on another target creature with a name sticker on it. Activate only as a sorcery."
         }
       ]
     },
@@ -370,7 +370,7 @@
     {
       "id": "non-hand-zones",
       "reason": "Non-hand zone casting/movement needs zone permission and visibility checks.",
-      "count": 1500,
+      "count": 1494,
       "samples": [
         {
           "name": "Road of Return",
@@ -645,7 +645,7 @@
     {
       "id": "special-mechanics",
       "reason": "Special mechanics need dedicated state and UI presentation.",
-      "count": 286,
+      "count": 285,
       "samples": [
         {
           "name": "Sword-Swallowing Seraph",

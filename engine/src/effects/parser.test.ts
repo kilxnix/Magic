@@ -761,6 +761,18 @@ describe('parseOracleText', () => {
   });
 
   describe('graveyard recursion patterns', () => {
+    it('parses up-to-one graveyard reanimation with a keyword counter', () => {
+      const result = parseOracleText('Lifelink When this creature enters, return up to one target creature card from your graveyard to the battlefield with a lifelink counter on it.');
+      expect(result.kind).toBe('ETB');
+      if (result.kind !== 'ETB') return;
+      expect(result.ability.effects[0]).toMatchObject({
+        kind: 'ReturnFromGraveyard',
+        destination: 'battlefield',
+        counters: ['lifelink'],
+      });
+      expect(result.targets[0].type).toBe('CreatureCardInGraveyard');
+    });
+
     it('parses ETB graveyard exile triggers like Disposal Mummy', () => {
       const result = parseOracleText("When this creature enters, exile target card from an opponent's graveyard.");
       expect(result.kind).toBe('ETB');

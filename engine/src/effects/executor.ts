@@ -1522,11 +1522,19 @@ function executeReturnFromGraveyard(
   state: GameState,
   targetId: string,
   destination: 'hand' | 'battlefield',
+  counters: string[] = [],
 ): GameState {
   const card = state.cards.get(targetId);
   if (!card) return state;
 
   if (card.zone !== 'graveyard') return state;
+
+  const nextCounters = { ...card.counters };
+  if (destination === 'battlefield') {
+    for (const counter of counters) {
+      nextCounters[counter] = (nextCounters[counter] || 0) + 1;
+    }
+  }
 
   const newCards = new Map(state.cards);
   newCards.set(targetId, {
@@ -1534,7 +1542,7 @@ function executeReturnFromGraveyard(
     zone: destination,
     tapped: false,
     damage: 0,
-    counters: {},
+    counters: destination === 'battlefield' ? nextCounters : {},
     summoningSick: destination === 'battlefield',
   });
 
@@ -2238,7 +2246,7 @@ function executeEffect(
     }
     case 'ReturnFromGraveyard': {
       const rfgTargetId = resolveTargetRef(effect.target, casterId, chosenTargets);
-      return executeReturnFromGraveyard(state, rfgTargetId, effect.destination);
+      return executeReturnFromGraveyard(state, rfgTargetId, effect.destination, effect.counters);
     }
     case 'ModifyPT': {
       if (effect.target.kind === 'AllCreaturesYouControl') {

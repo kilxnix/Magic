@@ -597,6 +597,37 @@ describe('ETB Trigger Pipeline', () => {
     expect(instanceHasKeyword(state, targetInst.instanceId, 'Haste')).toBe(true);
   });
 
+  it('ETB reanimation can return your graveyard creature with a keyword counter', () => {
+    const fanatic = makeCreatureWithETB(
+      'metamorphosis-fanatic',
+      'Metamorphosis Fanatic',
+      'Lifelink When this creature enters, return up to one target creature card from your graveyard to the battlefield with a lifelink counter on it.',
+    );
+    const targetCreature = makeVanillaCreature('graveyard-bear', 'Graveyard Bear', '{1}{G}');
+    const island = makeLand('island', 'Island');
+
+    let state = createTestGame(
+      [fanatic, targetCreature, island],
+      [island],
+    );
+
+    const fanaticInst = findCard(state, 'metamorphosis-fanatic')!;
+    const targetInst = findCard(state, 'graveyard-bear')!;
+    state = moveToZone(state, fanaticInst.instanceId, 'battlefield');
+    state = moveToZone(state, targetInst.instanceId, 'graveyard');
+    state = registerBattlefieldAbilities(state, fanaticInst.instanceId);
+    state = createETBTriggers(state, fanaticInst.instanceId);
+
+    const triggerId = state.pendingTriggers[0].id;
+    state = putTriggersOnStack(state, { [triggerId]: [targetInst.instanceId] });
+    state = resolveTopOfStack(state);
+
+    const returned = state.cards.get(targetInst.instanceId)!;
+    expect(returned.zone).toBe('battlefield');
+    expect(returned.counters.lifelink).toBe(1);
+    expect(instanceHasKeyword(state, targetInst.instanceId, 'Lifelink')).toBe(true);
+  });
+
   it('playing a bounce land creates and resolves its return-a-land ETB trigger', () => {
     const sanctuary: CardDefinition = {
       ...makeLand('selesnya-sanctuary', 'Selesnya Sanctuary'),

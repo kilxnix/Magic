@@ -142,6 +142,16 @@ export function getKeywordsForInstance(state: GameState, instanceId: string): Se
     }
   }
 
+  for (const [counterName, count] of Object.entries(card.counters || {})) {
+    if (count <= 0) continue;
+    const normalized = normalizeKeyword(counterName);
+    if (!KEYWORD_COUNTER_NAMES.has(normalized)) continue;
+    const canonical = KEYWORD_MAP[normalized];
+    if (canonical) {
+      keywords.add(canonical);
+    }
+  }
+
   // Phase 15: Add keywords granted by continuous effects
   if (state.continuousEffects) {
     for (const ce of state.continuousEffects) {

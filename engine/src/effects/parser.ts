@@ -1819,8 +1819,12 @@ function matchReturnFromGraveyard(tokens: string[], startIndex: number): Pattern
 
   if (slice.length < 9) return null;
   if (slice[0] !== 'return') return null;
-  if (slice[1] !== 'target') return null;
-  let idx = 2;
+  let idx = 1;
+  if (slice[idx] === 'up' && slice[idx + 1] === 'to' && slice[idx + 2] === 'one') {
+    idx += 3;
+  }
+  if (slice[idx] !== 'target') return null;
+  idx++;
   let targetType: TargetType = 'CreatureCardInGraveyard';
   if (slice[idx] === 'creature' && slice[idx + 1] === 'card') {
     idx += 2;
@@ -1860,13 +1864,28 @@ function matchReturnFromGraveyard(tokens: string[], startIndex: number): Pattern
     return null;
   }
 
-  if (tokens[startIndex + consumed] === '.') consumed++;
+  const counters: string[] = [];
+  let next = startIndex + consumed;
+  if (
+    tokens[next] === 'with'
+    && (tokens[next + 1] === 'a' || tokens[next + 1] === 'an')
+    && tokens[next + 3] === 'counter'
+    && tokens[next + 4] === 'on'
+    && tokens[next + 5] === 'it'
+  ) {
+    counters.push(tokens[next + 2]);
+    consumed += 6;
+    next = startIndex + consumed;
+  }
+
+  if (tokens[next] === '.') consumed++;
 
   const spec = makeTargetSpec(targetType);
   const effect: Effect = {
     kind: 'ReturnFromGraveyard',
     target: makeChosenRef(spec),
     destination,
+    ...(counters.length > 0 ? { counters } : {}),
   };
 
   return { effects: [effect], targets: [spec], consumed };
