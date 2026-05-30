@@ -170,6 +170,19 @@ describe('parseActivatedAbilities', () => {
     expect(abilities[0].effects[0].kind).toBe('Draw');
   });
 
+  it('parses self pump activated abilities that say this creature gets +N/+N', () => {
+    const text = '{B}: This creature gets +1/+1 until end of turn.';
+    const abilities = parseActivatedAbilities(text);
+    expect(abilities).toHaveLength(1);
+    expect(abilities[0].cost.mana).toBe('{b}');
+    expect(abilities[0].effects[0].kind).toBe('ModifyPT');
+    if (abilities[0].effects[0].kind !== 'ModifyPT') return;
+    expect(abilities[0].effects[0].target.kind).toBe('Source');
+    expect(abilities[0].effects[0].power).toBe(1);
+    expect(abilities[0].effects[0].toughness).toBe(1);
+    expect(abilities[0].effects[0].untilEndOfTurn).toBe(true);
+  });
+
   it('skips mana abilities like "{T}: Add {G}"', () => {
     const text = '{T}: Add {G}.';
     const abilities = parseActivatedAbilities(text);

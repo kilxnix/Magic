@@ -1,41 +1,41 @@
 {
-  "generatedAt": "2026-05-30T11:29:13.451Z",
+  "generatedAt": "2026-05-30T11:30:57.795Z",
   "source": "mtg_data/cards_min.jsonl",
   "commanderLegalOnly": true,
   "includedCards": 30969,
   "totalOracleFaces": 31420,
-  "parsedFaces": 14587,
-  "unparsedFaces": 16833,
-  "parsedPercent": 46.43,
+  "parsedFaces": 15153,
+  "unparsedFaces": 16267,
+  "parsedPercent": 48.23,
   "parsedKindCounts": {
-    "Unparsed": 16833,
-    "Spell": 10915,
-    "ETB": 1202,
-    "KeywordOnly": 909,
-    "Triggered": 625,
-    "EntryCounters": 367,
+    "Unparsed": 16267,
+    "Spell": 11474,
+    "ETB": 1210,
+    "KeywordOnly": 887,
+    "Triggered": 650,
+    "EntryCounters": 363,
     "StaticAbility": 339,
     "Modal": 230
   },
   "unparsedReasons": [
     {
       "reason": "No recognized pattern",
-      "count": 15349
+      "count": 14816
     },
     {
       "reason": "Could not parse ETB effect clause",
-      "count": 801
+      "count": 793
     },
     {
       "reason": "Could not parse trigger effect clause",
-      "count": 683
+      "count": 658
     }
   ],
   "syntaxClusters": [
     {
       "id": "trigger-timing",
       "reason": "Triggered or delayed triggered abilities need event registration and APNAP ordering.",
-      "count": 7314,
+      "count": 7055,
       "samples": [
         {
           "name": "Nissa, Worldsoul Speaker",
@@ -68,12 +68,6 @@
           "text": "Whenever this creature becomes tapped, create a Lander token. (It's an artifact with \"{2}, {T}, Sacrifice this token: Search your library for a basic land card, put it onto the battlefield tapped, then shuffle.\") Landfall — Whenever a land you control enters, put a +1/+1 counter on this creature."
         },
         {
-          "name": "High-Rise Sawjack",
-          "set": "snc",
-          "reason": "No recognized pattern",
-          "text": "Reach (This creature can block creatures with flying.) Whenever this creature blocks a creature with flying, this creature gets +2/+0 until end of turn."
-        },
-        {
           "name": "Harald, King of Skemfar",
           "set": "khm",
           "reason": "No recognized pattern",
@@ -84,61 +78,12 @@
           "set": "dmc",
           "reason": "No recognized pattern",
           "text": "{T}: Add one mana of any color. {T}: Put a charge counter on this artifact. At the beginning of your first main phase, remove all charge counters from this artifact. Add one mana of any color for each charge counter removed this way."
-        }
-      ]
-    },
-    {
-      "id": "continuous-layers",
-      "reason": "Continuous effects need layer/timestamp/dependency handling.",
-      "count": 3925,
-      "samples": [
-        {
-          "name": "Sensory Deprivation",
-          "set": "m14",
-          "reason": "No recognized pattern",
-          "text": "Enchant creature Enchanted creature gets -3/-0."
         },
         {
-          "name": "Murk Dwellers",
-          "set": "5ed",
-          "reason": "Could not parse trigger effect clause",
-          "text": "Whenever this creature attacks and isn't blocked, it gets +2/+0 until end of combat."
-        },
-        {
-          "name": "Whispering Shade",
-          "set": "ody",
-          "reason": "No recognized pattern",
-          "text": "Swampwalk (This creature can't be blocked as long as defending player controls a Swamp.) {B}: This creature gets +1/+1 until end of turn."
-        },
-        {
-          "name": "Seedship Agrarian",
-          "set": "eoe",
-          "reason": "No recognized pattern",
-          "text": "Whenever this creature becomes tapped, create a Lander token. (It's an artifact with \"{2}, {T}, Sacrifice this token: Search your library for a basic land card, put it onto the battlefield tapped, then shuffle.\") Landfall — Whenever a land you control enters, put a +1/+1 counter on this creature."
-        },
-        {
-          "name": "High-Rise Sawjack",
-          "set": "snc",
-          "reason": "No recognized pattern",
-          "text": "Reach (This creature can block creatures with flying.) Whenever this creature blocks a creature with flying, this creature gets +2/+0 until end of turn."
-        },
-        {
-          "name": "Behemoth Sledge",
-          "set": "afc",
-          "reason": "No recognized pattern",
-          "text": "Equipped creature gets +2/+2 and has trample and lifelink. Equip {3}"
-        },
-        {
-          "name": "Strength of Unity",
-          "set": "inv",
-          "reason": "No recognized pattern",
-          "text": "Enchant creature Domain — Enchanted creature gets +1/+1 for each basic land type among lands you control."
-        },
-        {
-          "name": "Warden of the First Tree",
-          "set": "frf",
-          "reason": "No recognized pattern",
-          "text": "{1}{W/B}: This creature becomes a Human Warrior with base power and toughness 3/3. {2}{W/B}{W/B}: If this creature is a Warrior, it becomes a Human Spirit Warrior with trample and lifelink. {3}{W/B}{W/B}{W/B}: If this creature is a Spirit, put five +1/+1 counters on it."
+          "name": "Courageous Outrider",
+          "set": "emn",
+          "reason": "Could not parse ETB effect clause",
+          "text": "When this creature enters, look at the top four cards of your library. You may reveal a Human card from among them and put it into your hand. Put the rest on the bottom of your library in any order."
         }
       ]
     },
@@ -198,27 +143,70 @@
       ]
     },
     {
+      "id": "continuous-layers",
+      "reason": "Continuous effects need layer/timestamp/dependency handling.",
+      "count": 3360,
+      "samples": [
+        {
+          "name": "Sensory Deprivation",
+          "set": "m14",
+          "reason": "No recognized pattern",
+          "text": "Enchant creature Enchanted creature gets -3/-0."
+        },
+        {
+          "name": "Murk Dwellers",
+          "set": "5ed",
+          "reason": "Could not parse trigger effect clause",
+          "text": "Whenever this creature attacks and isn't blocked, it gets +2/+0 until end of combat."
+        },
+        {
+          "name": "Seedship Agrarian",
+          "set": "eoe",
+          "reason": "No recognized pattern",
+          "text": "Whenever this creature becomes tapped, create a Lander token. (It's an artifact with \"{2}, {T}, Sacrifice this token: Search your library for a basic land card, put it onto the battlefield tapped, then shuffle.\") Landfall — Whenever a land you control enters, put a +1/+1 counter on this creature."
+        },
+        {
+          "name": "Behemoth Sledge",
+          "set": "afc",
+          "reason": "No recognized pattern",
+          "text": "Equipped creature gets +2/+2 and has trample and lifelink. Equip {3}"
+        },
+        {
+          "name": "Strength of Unity",
+          "set": "inv",
+          "reason": "No recognized pattern",
+          "text": "Enchant creature Domain — Enchanted creature gets +1/+1 for each basic land type among lands you control."
+        },
+        {
+          "name": "Warden of the First Tree",
+          "set": "frf",
+          "reason": "No recognized pattern",
+          "text": "{1}{W/B}: This creature becomes a Human Warrior with base power and toughness 3/3. {2}{W/B}{W/B}: If this creature is a Warrior, it becomes a Human Spirit Warrior with trample and lifelink. {3}{W/B}{W/B}{W/B}: If this creature is a Spirit, put five +1/+1 counters on it."
+        },
+        {
+          "name": "Mindlink Mech",
+          "set": "neo",
+          "reason": "No recognized pattern",
+          "text": "Flying Whenever this Vehicle becomes crewed for the first time each turn, until end of turn, this Vehicle becomes a copy of target nonlegendary creature that crewed it this turn, except it's 4/3, it's a Vehicle artifact in addition to its other types, and it has flying. Crew 1"
+        },
+        {
+          "name": "Hunt the Hunter",
+          "set": "ths",
+          "reason": "No recognized pattern",
+          "text": "Target green creature you control gets +2/+2 until end of turn. It fights target green creature an opponent controls."
+        }
+      ]
+    },
+    {
       "id": "combat-multiplayer",
       "reason": "Combat or multiplayer-defender text needs combat/defender-aware execution.",
-      "count": 2512,
+      "count": 2445,
       "samples": [
         {
           "name": "Marang River Prowler",
           "set": "znc",
           "reason": "No recognized pattern",
           "text": "This creature can't block and can't be blocked. You may cast this card from your graveyard as long as you control a black or green permanent."
-        },
-        {
-          "name": "Whispering Shade",
-          "set": "ody",
-          "reason": "No recognized pattern",
-          "text": "Swampwalk (This creature can't be blocked as long as defending player controls a Swamp.) {B}: This creature gets +1/+1 until end of turn."
-        },
-        {
-          "name": "High-Rise Sawjack",
-          "set": "snc",
-          "reason": "No recognized pattern",
-          "text": "Reach (This creature can block creatures with flying.) Whenever this creature blocks a creature with flying, this creature gets +2/+0 until end of turn."
         },
         {
           "name": "Labyrinth Adversary",
@@ -249,13 +237,25 @@
           "set": "mh1",
           "reason": "No recognized pattern",
           "text": "{R}: You may put a planeswalker card from your hand onto the battlefield. Sacrifice it at the beginning of the next end step."
+        },
+        {
+          "name": "Welkin Tern",
+          "set": "gs1",
+          "reason": "No recognized pattern",
+          "text": "Flying (This creature can't be blocked except by creatures with flying or reach.) This creature can block only creatures with flying."
+        },
+        {
+          "name": "Goblin Flotilla",
+          "set": "fem",
+          "reason": "No recognized pattern",
+          "text": "Islandwalk (This creature can't be blocked as long as defending player controls an Island.) At the beginning of each combat, unless you pay {R}, whenever this creature blocks or becomes blocked by a creature this combat, that creature gains first strike until end of turn."
         }
       ]
     },
     {
       "id": "tokens-counters",
       "reason": "Token/counter wording needs typed objects, counters, and downstream interactions.",
-      "count": 2391,
+      "count": 2362,
       "samples": [
         {
           "name": "Seedship Agrarian",
@@ -310,7 +310,7 @@
     {
       "id": "replacement-prevention",
       "reason": "Replacement/prevention effects require replacement-layer handling.",
-      "count": 1660,
+      "count": 1641,
       "samples": [
         {
           "name": "Sodden Verdure",
@@ -365,7 +365,7 @@
     {
       "id": "non-hand-zones",
       "reason": "Non-hand zone casting/movement needs zone permission and visibility checks.",
-      "count": 1567,
+      "count": 1554,
       "samples": [
         {
           "name": "Road of Return",
@@ -420,7 +420,7 @@
     {
       "id": "cost-system",
       "reason": "Alternative/additional/reduced costs need prompt-backed payment and legality.",
-      "count": 1269,
+      "count": 1248,
       "samples": [
         {
           "name": "Nissa, Worldsoul Speaker",
@@ -475,7 +475,7 @@
     {
       "id": "library-selection",
       "reason": "Library search/look/reveal effects need legal choices, destinations, reveal policy, and ordering.",
-      "count": 893,
+      "count": 890,
       "samples": [
         {
           "name": "Safewright Quest",
@@ -530,7 +530,7 @@
     {
       "id": "choice-modal",
       "reason": "Choice/modal/naming text should be prompt-backed instead of deterministic.",
-      "count": 843,
+      "count": 841,
       "samples": [
         {
           "name": "Road of Return",
@@ -585,7 +585,7 @@
     {
       "id": "copy-stack",
       "reason": "Copy/stack mechanics need stack-object identity and trigger multiplication.",
-      "count": 617,
+      "count": 613,
       "samples": [
         {
           "name": "Mindlink Mech",
@@ -640,7 +640,7 @@
     {
       "id": "special-mechanics",
       "reason": "Special mechanics need dedicated state and UI presentation.",
-      "count": 304,
+      "count": 299,
       "samples": [
         {
           "name": "Sword-Swallowing Seraph",

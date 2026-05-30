@@ -1655,18 +1655,22 @@ function matchModifyPT(tokens: string[], startIndex: number): PatternResult {
 
   // "~ gets +N/+N until end of turn"
   // "it gets +N/+N until end of turn"
+  // "this creature gets +N/+N until end of turn"
   if (
     slice.length >= 7 &&
-    (slice[0] === '~' || slice[0] === 'it') &&
-    slice[1] === 'gets'
+    (
+      ((slice[0] === '~' || slice[0] === 'it') && slice[1] === 'gets')
+      || (slice[0] === 'this' && ['creature', 'permanent', 'card'].includes(slice[1]) && slice[2] === 'gets')
+    )
   ) {
-    const ptMatch = slice[2]?.match(/^([+-]\d+)\/([+-]\d+)$/);
+    const ptIndex = slice[0] === 'this' ? 3 : 2;
+    const ptMatch = slice[ptIndex]?.match(/^([+-]\d+)\/([+-]\d+)$/);
     if (!ptMatch) return null;
     const power = parseInt(ptMatch[1], 10);
     const toughness = parseInt(ptMatch[2], 10);
-    if (slice[3] !== 'until' || slice[4] !== 'end' || slice[5] !== 'of' || slice[6] !== 'turn') return null;
+    if (slice[ptIndex + 1] !== 'until' || slice[ptIndex + 2] !== 'end' || slice[ptIndex + 3] !== 'of' || slice[ptIndex + 4] !== 'turn') return null;
 
-    let consumed = 7;
+    let consumed = ptIndex + 5;
     if (tokens[startIndex + consumed] === '.') consumed++;
 
     const effect: Effect = {
