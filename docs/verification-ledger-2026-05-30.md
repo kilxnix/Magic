@@ -7,7 +7,7 @@ Scope: recent `game-reliability-refactor` work from `88e54bb..597d918`, with Sis
 | Area | Command | Result |
 | --- | --- | --- |
 | Backend + agent | `pytest backend/tests backend/agent/tests` | 187 passed, 13 skipped |
-| Engine | `cd engine && npm.cmd test -- --run` | 1393 passed, 1 skipped |
+| Engine | `cd engine && npm.cmd test -- --run` | 1418 passed, 1 skipped |
 | Starter deck card QA | `cd engine && npm.cmd test -- --run src/__tests__/starter-decks-card-qa.test.ts` | 16 passed |
 | Frontend | `cd frontend && npm.cmd test -- --run` | 30 passed |
 | Engine build | `cd engine && npm.cmd run build` | Passed |
