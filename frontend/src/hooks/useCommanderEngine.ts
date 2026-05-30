@@ -23,6 +23,7 @@ import {
   type BlockerDeclaration,
   // Game state
   getCardsInZone,
+  applyFaceToCardDefinition,
   // Actions
   canPlayLand,
   playLand,
@@ -88,6 +89,14 @@ import {
 export type { CardDefinition, ManaColor, ManaPool, Phase, Step, Zone };
 export type CardInstance = FrontendCardInstance;
 export type { FrontendStackItem as StackItem };
+
+function getActiveCardDefinition(
+  state: { cardDefinitions: Map<string, CardDefinition> },
+  card: { definitionId: string; activeFaceName?: string },
+): CardDefinition | undefined {
+  const definition = state.cardDefinitions.get(card.definitionId);
+  return definition ? applyFaceToCardDefinition(definition, card.activeFaceName) : undefined;
+}
 export type { AttackerDeclaration, BlockerDeclaration };
 
 // ===== Types matching the original hook's interface =====
@@ -207,7 +216,7 @@ export interface GameEngine {
 function getManaColorsFromCard(state: EngineGameState, cardId: string): ManaColor[] {
   const card = state.cards.get(cardId);
   if (!card) return [];
-  const def = state.cardDefinitions.get(card.definitionId);
+  const def = getActiveCardDefinition(state, card);
   if (!def) return [];
   const colors: ManaColor[] = [];
   // Match both "{T}: Add {X}" and basic land "({T}: Add {X}.)"
@@ -222,7 +231,7 @@ function getManaColorsFromCard(state: EngineGameState, cardId: string): ManaColo
 function getEffectiveManaCost(state: EngineGameState, playerId: string, cardId: string): ManaCost {
   const card = state.cards.get(cardId);
   if (!card) return parseManaString('');
-  const def = state.cardDefinitions.get(card.definitionId);
+  const def = getActiveCardDefinition(state, card);
   if (!def) return parseManaString('');
   const cost = parseManaString(def.mana_cost);
   if (card.zone === 'command' && card.isCommander) {
@@ -239,7 +248,7 @@ function canCastTiming(state: EngineGameState, playerId: string, cardId: string)
   if (!card) return { ok: false, reason: 'Card not found' };
   const validZone = card.zone === 'hand' || (card.zone === 'command' && card.isCommander);
   if (!validZone) return { ok: false, reason: 'Card not in hand or command zone' };
-  const def = state.cardDefinitions.get(card.definitionId);
+  const def = getActiveCardDefinition(state, card);
   if (!def || def.card_types.includes('land')) return { ok: false, reason: 'Not a castable spell' };
   const isInstant = def.card_types.includes('instant');
   const hasFlash = def.keywords.includes('Flash');
@@ -280,7 +289,7 @@ function autoTapForCost(state: EngineGameState, playerId: string, cardId: string
   state.cards.forEach((card) => {
     if (card.zone === 'battlefield' && card.ownerId === playerId && !card.tapped) {
       // Skip summoning-sick creatures (but not lands)
-      const def = state.cardDefinitions.get(card.definitionId);
+      const def = getActiveCardDefinition(state, card);
       if (card.summoningSick && def && !def.card_types.includes('land')) return;
       const colors = getManaColorsFromCard(state, card.instanceId);
       if (colors.length > 0) {
@@ -646,7 +655,7 @@ export function useCommanderEngine(): GameEngine {
     const es = engineStateRef.current;
     if (!es) return { canCast: false, timingOk: false, cost: '', deficit: null };
     const card = es.cards.get(cardId);
-    const def = card ? es.cardDefinitions.get(card.definitionId) : null;
+    const def = card ? getActiveCardDefinition(es, card) : null;
     if (!card || !def) return { canCast: false, timingOk: false, cost: '', deficit: null };
     const timing = canCastTiming(es, 'human', cardId);
     const canCast = canCastWithAutoTapCheck(es, 'human', cardId);
@@ -677,7 +686,7 @@ export function useCommanderEngine(): GameEngine {
     if (targetType === 'creature' || targetType === 'any' || targetType === 'permanent') {
       state.cards.forEach(c => {
         if (c.zone === 'battlefield') {
-          const cDef = state.cardDefinitions.get(c.definitionId);
+          const cDef = getActiveCardDefinition(state, c);
           if (cDef && (targetType === 'permanent' || cDef.card_types.includes('creature'))) {
             valid.push(c.instanceId);
           }
@@ -702,7 +711,7 @@ export function useCommanderEngine(): GameEngine {
     if (targetType === 'creature' || targetType === 'any' || targetType === 'permanent') {
       es.cards.forEach(c => {
         if (c.zone === 'battlefield') {
-          const cDef = es.cardDefinitions.get(c.definitionId);
+          const cDef = getActiveCardDefinition(es, c);
           if (cDef && (targetType === 'permanent' || cDef.card_types.includes('creature'))) {
             validTargets.push(c.instanceId);
           }
@@ -742,7 +751,7 @@ export function useCommanderEngine(): GameEngine {
 
     try {
       const card = es.cards.get(targeting.sourceCardId);
-      const def = card ? es.cardDefinitions.get(card.definitionId) : null;
+      const def = card ? getActiveCardDefinition(es, card) : null;
       let stateForCast = es;
       let tappedNames: string[] = [];
 
@@ -791,7 +800,7 @@ export function useCommanderEngine(): GameEngine {
     }
 
     const card = es.cards.get(cardId);
-    const def = card ? es.cardDefinitions.get(card.definitionId) : null;
+    const def = card ? getActiveCardDefinition(es, card) : null;
 
     try {
       const newState = playLand(es, 'human', cardId);
@@ -808,7 +817,7 @@ export function useCommanderEngine(): GameEngine {
     if (!es) return;
     const card = es.cards.get(cardId);
     if (!card || card.tapped) return;
-    const def = es.cardDefinitions.get(card.definitionId);
+    const def = getActiveCardDefinition(es, card);
     // Summoning sick creatures can't tap for mana (lands are unaffected)
     if (card.summoningSick && def && !def.card_types.includes('land')) {
       addLog(`${def.name} has summoning sickness and can't tap yet.`, 'info');
@@ -851,7 +860,7 @@ export function useCommanderEngine(): GameEngine {
     const sources: { instanceId: string; name: string; colors: ManaColor[] }[] = [];
     state.cards.forEach((card) => {
       if (card.zone === 'battlefield' && card.ownerId === playerId && !card.tapped) {
-        const def = state.cardDefinitions.get(card.definitionId);
+        const def = getActiveCardDefinition(state, card);
         if (card.summoningSick && def && !def.card_types.includes('land')) return;
         const colors = getManaColorsFromCard(state, card.instanceId);
         if (colors.length > 0) sources.push({ instanceId: card.instanceId, name: def?.name || 'Unknown', colors });
@@ -902,7 +911,7 @@ export function useCommanderEngine(): GameEngine {
     const es = engineStateRef.current;
     if (!es) return;
     const card = es.cards.get(cardId);
-    const def = card ? es.cardDefinitions.get(card.definitionId) : null;
+    const def = card ? getActiveCardDefinition(es, card) : null;
     if (!card || !def) return;
 
     // Check if this is a non-mana activated ability handled by the engine
@@ -975,7 +984,7 @@ export function useCommanderEngine(): GameEngine {
     const es = engineStateRef.current;
     if (!es) return;
     const card = es.cards.get(cardId);
-    const def = card ? es.cardDefinitions.get(card.definitionId) : null;
+    const def = card ? getActiveCardDefinition(es, card) : null;
 
     const timing = canCastTiming(es, 'human', cardId);
     if (!timing.ok) {
@@ -1548,7 +1557,7 @@ export function useCommanderEngine(): GameEngine {
       addLog(`Turn 1 - Your turn. Main Phase 1.`, 'info');
       const commanderCards = getCardsInZone(advancedState, 'human', 'command');
       if (commanderCards.length > 0) {
-        const def = advancedState.cardDefinitions.get(commanderCards[0].definitionId);
+        const def = getActiveCardDefinition(advancedState, commanderCards[0]);
         addLog(`Your commander is ${def?.name}`, 'info');
       }
     }
@@ -1569,7 +1578,7 @@ export function useCommanderEngine(): GameEngine {
 
     const remaining = putBackCount - 1;
     setPutBackCount(remaining);
-    const def = card ? es.cardDefinitions.get(card.definitionId) : null;
+    const def = card ? getActiveCardDefinition(es, card) : null;
     addLog(`Put ${def?.name ?? 'card'} on bottom of library`, 'action');
 
     if (remaining === 0) {
@@ -1582,7 +1591,7 @@ export function useCommanderEngine(): GameEngine {
       addLog(`Turn 1 - Your turn. Main Phase 1.`, 'info');
       const commanderCards = getCardsInZone(advancedState, 'human', 'command');
       if (commanderCards.length > 0) {
-        const cDef = advancedState.cardDefinitions.get(commanderCards[0].definitionId);
+        const cDef = getActiveCardDefinition(advancedState, commanderCards[0]);
         addLog(`Your commander is ${cDef?.name}`, 'info');
       }
     }

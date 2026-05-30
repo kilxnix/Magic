@@ -3,6 +3,7 @@ import { useSearchParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Play, SkipForward, Hand, Layers, Heart, Zap, RefreshCw, BookOpen, Skull, Sparkles, Eye, EyeOff, ChevronDown, ChevronUp, Swords, Shield, Trophy, Save, FolderOpen, X, Target, Menu, Check } from 'lucide-react';
 import { useCommanderEngine as useGameEngine } from '../hooks/useCommanderEngine';
 import { CardDetailModal } from '../components/CardDetailModal';
+import { applyFaceToCardDefinition } from 'commander-engine';
 
 // Phase display names
 const PHASE_NAMES: Record<string, string> = {
@@ -54,6 +55,14 @@ function ZoneBox({ children, className = '' }: { children: React.ReactNode; clas
       {children}
     </div>
   );
+}
+
+function getActiveCardDefinition(
+  gameState: { cardDefinitions: Map<string, ReturnType<typeof applyFaceToCardDefinition>> },
+  card: { definitionId: string; activeFaceName?: string },
+) {
+  const definition = gameState.cardDefinitions.get(card.definitionId);
+  return definition ? applyFaceToCardDefinition(definition, card.activeFaceName) : undefined;
 }
 
 // Save/Load types
@@ -229,7 +238,7 @@ export function GamePage() {
     if (!gameState || !humanPlayer) return set;
     const hand = gameState ? Array.from(gameState.cards.values()).filter(c => c.ownerId === 'human' && (c.zone === 'hand' || c.zone === 'command')) : [];
     for (const card of hand) {
-      const def = gameState.cardDefinitions.get(card.definitionId);
+      const def = getActiveCardDefinition(gameState, card);
       if (!def) continue;
       if (def.card_types.includes('land')) {
         if (!humanPlayer.hasPlayedLand &&
@@ -252,7 +261,7 @@ export function GamePage() {
     if (!selectedCard || !gameState) return null;
     const inst = gameState.cards.get(selectedCard);
     if (!inst || (inst.zone !== 'hand' && inst.zone !== 'command')) return null;
-    const def = gameState.cardDefinitions.get(inst.definitionId);
+    const def = getActiveCardDefinition(gameState, inst);
     if (!def || def.card_types.includes('land')) return null;
     return getManaInfo(selectedCard);
   }, [selectedCard, gameState, getManaInfo]);

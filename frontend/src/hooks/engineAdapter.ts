@@ -51,6 +51,7 @@ export interface FrontendCardInstance {
   counters: Record<string, number>;
   damage: number;
   isCommander: boolean;
+  activeFaceName?: string;
   isAttacking: boolean;   // Derived from combat state
   isBlocking: string | null; // Derived from combat state (attackerId being blocked)
   blockedBy: string[];    // Derived from combat state
@@ -131,6 +132,7 @@ export function adaptCardInstance(
     counters: card.counters,
     damage: card.damage,
     isCommander: card.isCommander,
+    activeFaceName: card.activeFaceName,
     isAttacking,
     isBlocking,
     blockedBy,
