@@ -1,16 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import {
   applyClientActionRequest,
+  applySearchLibraryPromptResponse,
   auditActionReplay,
+  auditSearchPromptReplay,
   buildActionPrompt,
   createClientActionRequest,
+  createSearchLibraryPromptRequest,
   diffGameStates,
   labelForAction,
   stateFingerprint,
 } from './authority';
 import { initGameState } from './game-state';
-import type { CardDefinition, GameState } from './types';
+import type { CardDefinition, CardInstance, GameState } from './types';
 import type { AIAction } from './ai/types';
+import type { CardFilter } from './effects/ast';
 
 function def(
   id: string,
@@ -62,6 +66,113 @@ function stateWithForestInHand(): GameState {
   };
 }
 
+function cardInstance(
+  instanceId: string,
+  definitionId: string,
+  ownerId: string,
+  zone: CardInstance['zone'],
+): CardInstance {
+  return {
+    instanceId,
+    definitionId,
+    ownerId,
+    zone,
+    tapped: false,
+    summoningSick: false,
+    counters: {},
+    damage: 0,
+    isCommander: false,
+  };
+}
+
+function stateWithSisaySearchChoices(): GameState {
+  const sisay: CardDefinition = {
+    ...def('sisay', 'Sisay, Weatherlight Captain', 'Legendary Creature - Human Soldier', '{2}{W}'),
+    cmc: 3,
+    power: 2,
+    toughness: 2,
+  };
+  const yoshimaru: CardDefinition = {
+    ...def('yoshimaru', 'Yoshimaru, Ever Faithful', 'Legendary Creature - Dog', '{W}'),
+    cmc: 1,
+  };
+  const arcaneSignet: CardDefinition = {
+    ...def('arcane_signet', 'Arcane Signet', 'Artifact', '{2}'),
+    cmc: 2,
+  };
+  const akromasMemorial: CardDefinition = {
+    ...def('akromas_memorial', "Akroma's Memorial", 'Legendary Artifact', '{7}'),
+    cmc: 7,
+  };
+  const counterspell: CardDefinition = {
+    ...def('counterspell', 'Counterspell', 'Instant', '{U}{U}'),
+    cmc: 2,
+  };
+  const bloodCrypt: CardDefinition = {
+    ...def('blood_crypt', 'Blood Crypt', 'Land - Swamp Mountain'),
+    cmc: 0,
+  };
+
+  return {
+    players: [
+      {
+        id: 'p1',
+        name: 'Player One',
+        life: 40,
+        poisonCounters: 0,
+        commanderDamage: {},
+        commanderTax: 0,
+        commanderInstanceId: null,
+        commanderCastCount: 0,
+        manaPool: { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 },
+        hasPlayedLand: false,
+        hasPriority: true,
+        hasLost: false,
+      },
+      {
+        id: 'p2',
+        name: 'Player Two',
+        life: 40,
+        poisonCounters: 0,
+        commanderDamage: {},
+        commanderTax: 0,
+        commanderInstanceId: null,
+        commanderCastCount: 0,
+        manaPool: { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 },
+        hasPlayedLand: false,
+        hasPriority: false,
+        hasLost: false,
+      },
+    ],
+    cards: new Map<string, CardInstance>([
+      ['sisay_1', cardInstance('sisay_1', sisay.id, 'p1', 'battlefield')],
+      ['yoshimaru_1', cardInstance('yoshimaru_1', yoshimaru.id, 'p1', 'library')],
+      ['arcane_signet_1', cardInstance('arcane_signet_1', arcaneSignet.id, 'p1', 'library')],
+      ['akromas_memorial_1', cardInstance('akromas_memorial_1', akromasMemorial.id, 'p1', 'library')],
+      ['counterspell_1', cardInstance('counterspell_1', counterspell.id, 'p1', 'library')],
+      ['blood_crypt_1', cardInstance('blood_crypt_1', bloodCrypt.id, 'p1', 'library')],
+    ]),
+    cardDefinitions: new Map<string, CardDefinition>([
+      [sisay.id, sisay],
+      [yoshimaru.id, yoshimaru],
+      [arcaneSignet.id, arcaneSignet],
+      [akromasMemorial.id, akromasMemorial],
+      [counterspell.id, counterspell],
+      [bloodCrypt.id, bloodCrypt],
+    ]),
+    activePlayerIndex: 0,
+    priorityPlayerIndex: 0,
+    phase: 'precombat_main',
+    step: 'upkeep',
+    turnNumber: 1,
+    hasPriorityPassed: [false, false],
+    stack: [],
+    combat: null,
+    battlefieldAbilities: new Map(),
+    pendingTriggers: [],
+  };
+}
+
 describe('authority action boundary', () => {
   it('builds typed prompts from canonical legal actions', () => {
     const state = stateWithForestInHand();
@@ -79,6 +190,179 @@ describe('authority action boundary', () => {
     ]));
     expect(prompt?.legalChoices.some(choice => choice.kind === 'PlayLand' && choice.label === 'Play Forest')).toBe(true);
     expect(prompt?.legalChoices.some(choice => choice.kind === 'PassPriority')).toBe(true);
+  });
+
+  it('creates typed Sisay search prompts from canonical legality and rejects forced illegal choices', () => {
+    const state = stateWithSisaySearchChoices();
+    const filter: CardFilter = {
+      supertypes: ['Legendary'],
+      permanent: true,
+      manaValueLessThanSourcePower: true,
+    };
+    const request = createSearchLibraryPromptRequest(state, 'p1', filter, 'battlefield', {
+      id: 'prompt-sisay',
+      sourceInstanceId: 'sisay_1',
+      shuffle: true,
+      minSelections: 1,
+      maxSelections: 1,
+      createdAt: 11,
+    });
+
+    expect(request.kind).toBe('SearchLibrary');
+    expect(request.expectedStateId).toBe(stateFingerprint(state));
+    expect(request.legalChoices.map(choice => choice.cardName)).toEqual(['Yoshimaru, Ever Faithful']);
+    expect(request.invalidChoices).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        cardInstanceId: 'arcane_signet_1',
+        cardName: 'Arcane Signet',
+        legal: false,
+        reason: 'Not Legendary',
+      }),
+      expect.objectContaining({
+        cardInstanceId: 'counterspell_1',
+        cardName: 'Counterspell',
+        legal: false,
+        reason: 'Not a permanent card',
+      }),
+      expect.objectContaining({
+        cardInstanceId: 'akromas_memorial_1',
+        cardName: "Akroma's Memorial",
+        legal: false,
+        reason: 'Mana value 7 is not less than source power 2',
+      }),
+    ]));
+
+    const rejected = applySearchLibraryPromptResponse(state, request, {
+      requestId: request.id,
+      kind: 'SearchLibrary',
+      playerId: 'p1',
+      selectedCardInstanceIds: ['arcane_signet_1'],
+    });
+
+    expect(rejected.ok).toBe(false);
+    expect(rejected.reason).toBe('illegal_response');
+    expect(rejected.message).toContain('Not Legendary');
+    expect(rejected.state).toBeUndefined();
+    expect(rejected.update?.visibleDiffs).toEqual([]);
+    expect(rejected.update?.rulesEvents).toEqual([{
+      kind: 'PromptResponseRejected',
+      requestId: request.id,
+      playerId: 'p1',
+      promptKind: 'SearchLibrary',
+      reason: 'illegal_response',
+      message: 'Illegal search selection: Not Legendary',
+    }]);
+    expect(state.cards.get('arcane_signet_1')?.zone).toBe('library');
+    expect(state.cards.get('yoshimaru_1')?.zone).toBe('library');
+
+    const accepted = applySearchLibraryPromptResponse(state, request, {
+      requestId: request.id,
+      kind: 'SearchLibrary',
+      playerId: 'p1',
+      selectedCardInstanceIds: ['yoshimaru_1'],
+    });
+
+    expect(accepted.ok).toBe(true);
+    expect(accepted.state?.cards.get('yoshimaru_1')?.zone).toBe('battlefield');
+    expect(accepted.update?.visibleDiffs).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        kind: 'CardZoneChanged',
+        cardName: 'Yoshimaru, Ever Faithful',
+        from: 'library',
+        to: 'battlefield',
+      }),
+    ]));
+    expect(accepted.update?.rulesEvents).toEqual([{
+      kind: 'PromptResponseAccepted',
+      requestId: request.id,
+      playerId: 'p1',
+      promptKind: 'SearchLibrary',
+    }]);
+  });
+
+  it('rejects stale typed search responses after canonical state changes', () => {
+    const state = stateWithSisaySearchChoices();
+    const filter: CardFilter = {
+      supertypes: ['Legendary'],
+      permanent: true,
+      manaValueLessThanSourcePower: true,
+    };
+    const request = createSearchLibraryPromptRequest(state, 'p1', filter, 'battlefield', {
+      id: 'prompt-stale-sisay',
+      sourceInstanceId: 'sisay_1',
+      minSelections: 1,
+      maxSelections: 1,
+      createdAt: 12,
+    });
+    const changedState: GameState = { ...state, turnNumber: 2 };
+
+    const response = applySearchLibraryPromptResponse(changedState, request, {
+      requestId: request.id,
+      kind: 'SearchLibrary',
+      playerId: 'p1',
+      selectedCardInstanceIds: ['yoshimaru_1'],
+    });
+
+    expect(response.ok).toBe(false);
+    expect(response.reason).toBe('stale_state');
+    expect(response.state).toBeUndefined();
+    expect(response.update?.visibleDiffs).toEqual([]);
+    expect(changedState.cards.get('yoshimaru_1')?.zone).toBe('library');
+  });
+
+  it('audits typed search prompt responses by replaying legality and invariants', () => {
+    const state = stateWithSisaySearchChoices();
+    const filter: CardFilter = {
+      supertypes: ['Legendary'],
+      permanent: true,
+      manaValueLessThanSourcePower: true,
+    };
+    const request = createSearchLibraryPromptRequest(state, 'p1', filter, 'battlefield', {
+      id: 'prompt-audit-sisay',
+      sourceInstanceId: 'sisay_1',
+      minSelections: 1,
+      maxSelections: 1,
+      createdAt: 13,
+    });
+    const report = auditSearchPromptReplay(state, [{
+      request,
+      response: {
+        requestId: request.id,
+        kind: 'SearchLibrary',
+        playerId: 'p1',
+        selectedCardInstanceIds: ['yoshimaru_1'],
+      },
+    }]);
+
+    expect(report.ok).toBe(true);
+    expect(report.steps).toEqual([expect.objectContaining({
+      index: 0,
+      requestId: request.id,
+      playerId: 'p1',
+      promptKind: 'SearchLibrary',
+      stateBeforeId: stateFingerprint(state),
+      ok: true,
+    })]);
+    expect(report.finalState?.cards.get('yoshimaru_1')?.zone).toBe('battlefield');
+
+    const illegalReport = auditSearchPromptReplay(state, [{
+      request,
+      response: {
+        requestId: request.id,
+        kind: 'SearchLibrary',
+        playerId: 'p1',
+        selectedCardInstanceIds: ['arcane_signet_1'],
+      },
+    }]);
+
+    expect(illegalReport.ok).toBe(false);
+    expect(illegalReport.finalState).toBeUndefined();
+    expect(illegalReport.steps).toEqual([expect.objectContaining({
+      requestId: request.id,
+      ok: false,
+      reason: 'illegal_response',
+      message: 'Illegal search selection: Not Legendary',
+    })]);
   });
 
   it('includes selected target names in command labels', () => {
@@ -170,6 +454,38 @@ describe('authority action boundary', () => {
         message: 'That action is not legal in the current game state.',
       },
     ]);
+  });
+
+  it('rejects direct land-play requests while the stack is non-empty', () => {
+    const state = stateWithForestInHand();
+    const forest = [...state.cards.values()].find(card => card.definitionId === 'forest' && card.ownerId === 'p1');
+    const commander = [...state.cards.values()].find(card => card.definitionId === 'commander' && card.ownerId === 'p1');
+    expect(forest).toBeDefined();
+    expect(commander).toBeDefined();
+    const stackedState: GameState = {
+      ...state,
+      cards: new Map(state.cards).set(commander!.instanceId, { ...commander!, zone: 'stack' }),
+      stack: [{
+        kind: 'Spell',
+        id: 'stack-commander',
+        cardInstanceId: commander!.instanceId,
+        casterId: 'p1',
+        targets: [],
+      }],
+    };
+
+    const response = applyClientActionRequest(stackedState, createClientActionRequest(
+      stackedState,
+      'p1',
+      { kind: 'PlayLand', cardInstanceId: forest!.instanceId },
+      { id: 'req-illegal-land-stack', createdAt: 14 },
+    ));
+
+    expect(response.ok).toBe(false);
+    expect(response.reason).toBe('illegal_action');
+    expect(response.message).toBe('The stack must be empty');
+    expect(response.state).toBeUndefined();
+    expect(stackedState.cards.get(forest!.instanceId)?.zone).toBe('hand');
   });
 
   it('audits committed action requests by replaying legality and state invariants', () => {

@@ -64,15 +64,18 @@ import {
   actionKey,
   buildActionPrompt,
   buildStateUpdate,
+  createSearchLibraryPromptRequest,
+  applySearchLibraryPromptResponse,
   type ActionPromptChoice,
   type ClientActionResponse,
   type EnginePrompt,
   type EngineStateUpdate,
+  type SearchLibraryPromptRequest,
   summarizeActionPromptChoices,
   serializeGameState,
   deserializeGameState,
-  executeSearchLibrary,
   type SerializedGameStateV1,
+  type CardFilter,
 } from 'commander-engine';
 import {
   buildDecisionReview,
@@ -805,6 +808,52 @@ function searchPickerMetadata(search: StackSearchInfo): Pick<TutorCardOption, 'l
     // "any card" tutors should not expose the pick in live play.
     mustReveal: Boolean(search.filter || search.filterSpec),
   };
+}
+
+function cardFilterFromSearchInfo(search: StackSearchInfo): CardFilter {
+  if (search.filterSpec) {
+    const { sourcePowerLimit: _sourcePowerLimit, ...filter } = search.filterSpec;
+    return filter as CardFilter;
+  }
+
+  const text = (search.filter || '').toLowerCase();
+  const filter: CardFilter = {};
+
+  if (/\bbasic\b/.test(text)) filter.supertypes = ['basic'];
+
+  const types = [
+    'artifact',
+    'battle',
+    'creature',
+    'enchantment',
+    'instant',
+    'land',
+    'planeswalker',
+    'sorcery',
+  ].filter(type => new RegExp(`\\b${type}\\b`).test(text));
+  if (types.length) filter.types = types;
+
+  const subtypePairs: Array<[RegExp, string]> = [
+    [/\bplains\b/, 'Plains'],
+    [/\bisland\b/, 'Island'],
+    [/\bswamp\b/, 'Swamp'],
+    [/\bmountain\b/, 'Mountain'],
+    [/\bforest\b/, 'Forest'],
+    [/\bgoblin\b/, 'Goblin'],
+    [/\bdragon\b/, 'Dragon'],
+    [/\bwizard\b/, 'Wizard'],
+    [/\belf\b/, 'Elf'],
+    [/\bhuman\b/, 'Human'],
+  ];
+  const subtypes = subtypePairs
+    .filter(([pattern]) => pattern.test(text))
+    .map(([, subtype]) => subtype);
+  if (subtypes.length) filter.subtypes = subtypes;
+
+  if (/\blegendary\b/.test(text)) filter.supertypes = [...new Set([...(filter.supertypes || []), 'Legendary'])];
+  if (/\bpermanent\b/.test(text)) filter.permanent = true;
+
+  return filter;
 }
 
 function searchInfoFromEffects(
@@ -1821,6 +1870,7 @@ export function useShelectorGame() {
   const tutorFilterRef = useRef<string | undefined>(undefined);
   const tutorSourceNameRef = useRef<string>('Search');
   const tutorSourceInstanceIdRef = useRef<string | undefined>(undefined);
+  const tutorPromptRequestRef = useRef<SearchLibraryPromptRequest | null>(null);
   const pendingCastChoiceActionRef = useRef<SimpleLegalAction | null>(null);
   const pendingCastChoiceModeRef = useRef<PendingCastChoiceMode | null>(null);
   const pendingPlayLandChoiceRef = useRef<PendingPlayLandChoice | null>(null);
@@ -2551,24 +2601,43 @@ export function useShelectorGame() {
         };
         engineRef.current = state as GameStateWithAI;
 
-        // Build filtered library card list
-        const libraryCards = getCardsInZone(state, humanIdRef.current, 'library');
+        const searchFilter = cardFilterFromSearchInfo(search);
+        const promptRequest = createSearchLibraryPromptRequest(
+          state,
+          humanIdRef.current,
+          searchFilter,
+          search.destination,
+          {
+            id: `search-${top.id}`,
+            sourceInstanceId,
+            tapped: search.tapped,
+            shuffle: search.shuffle,
+            revealPolicy: search.filter || search.filterSpec ? 'reveal' : 'hidden',
+            minSelections: 0,
+            maxSelections: 1,
+          },
+        );
         const pickerMetadata = searchPickerMetadata(search);
-        const pickerCards = libraryCards.map(c => {
-          const d = getCardDefinition(state, c);
-          return {
-            instanceId: c.instanceId,
-            name: d.name,
-            typeLine: d.type_line,
-            manaCost: d.mana_cost,
-            oracleText: d.oracle_text,
-            colors: d.colors,
-            cmc: d.cmc,
-            ...pickerMetadata,
-          };
-        }).filter(c => {
-          return cardMatchesSearch(c, search.filterSpec, search.filter);
-        }).sort((a, b) => a.name.localeCompare(b.name));
+        const pickerCards = [...promptRequest.legalChoices, ...promptRequest.invalidChoices]
+          .map((choice): TutorCardOption | null => {
+            const c = state.cards.get(choice.cardInstanceId);
+            if (!c) return null;
+            const d = getCardDefinition(state, c);
+            return {
+              instanceId: c.instanceId,
+              name: d.name,
+              typeLine: d.type_line,
+              manaCost: d.mana_cost,
+              oracleText: d.oracle_text,
+              colors: d.colors,
+              cmc: d.cmc,
+              ...pickerMetadata,
+              legal: choice.legal,
+              reason: choice.legal ? pickerMetadata.reason : choice.reason,
+              destination: choice.destination,
+            };
+          })
+          .filter((option): option is TutorCardOption => Boolean(option));
 
         tutorDestinationRef.current = search.destination;
         tutorFilterSpecRef.current = search.filterSpec;
@@ -2580,6 +2649,7 @@ export function useShelectorGame() {
         tutorFilterRef.current = search.filter;
         tutorSourceNameRef.current = sourceName;
         tutorSourceInstanceIdRef.current = sourceInstanceId;
+        tutorPromptRequestRef.current = promptRequest;
         const filterDesc = search.filter ? ` for ${search.filter}` : '';
         const countSuffix = totalCount > 1 ? ` (pick 1 of up to ${totalCount})` : '';
         setTutorTitle(`${sourceName}: Search your library${filterDesc}${countSuffix}`);
@@ -3319,6 +3389,7 @@ export function useShelectorGame() {
       pendingPlayLandChoiceRef.current = null;
       pendingSearchEntryChoiceRef.current = null;
       tutorSourceInstanceIdRef.current = undefined;
+      tutorPromptRequestRef.current = null;
       setTutorPhase(false);
       setTutorCards([]);
       setTutorTitle('');
@@ -3808,14 +3879,17 @@ export function useShelectorGame() {
     const dest = tutorDestinationRef.current;
     const filterSpec = tutorFilterSpecRef.current;
     const filter = tutorFilterRef.current;
+    const promptRequest = tutorPromptRequestRef.current;
     const option = toTutorCardOption(engine, card);
-    const isLegalLibraryChoice = Boolean(
-      option
-      && card.ownerId === humanIdRef.current
-      && card.zone === 'library'
-      && cardMatchesSearch(option, filterSpec, filter)
-      && (dest !== 'battlefield' || isPermanentTypeLine(option.typeLine))
-    );
+    const isLegalLibraryChoice = promptRequest
+      ? promptRequest.legalChoices.some(choice => choice.cardInstanceId === selectedCardInstanceId)
+      : Boolean(
+        option
+        && card.ownerId === humanIdRef.current
+        && card.zone === 'library'
+        && cardMatchesSearch(option, filterSpec, filter)
+        && (dest !== 'battlefield' || isPermanentTypeLine(option.typeLine))
+      );
     if (!isLegalLibraryChoice) {
       const sourceName = tutorSourceNameRef.current || 'this search';
       addMessage('system', `${cardName} is not a legal choice for ${sourceName}. Choose a legal card.`);
@@ -3871,27 +3945,39 @@ export function useShelectorGame() {
       }
     }
 
-    let movedEngine: GameStateWithAI;
-    try {
-      movedEngine = executeSearchLibrary(
-        engine,
-        humanIdRef.current,
-        (filterSpec || {}) as never,
-        dest,
-        tutorTappedRef.current,
-        tutorShuffleRef.current,
-        {
-          selectedCardInstanceId,
-          sourceInstanceId: tutorSourceInstanceIdRef.current,
-          payLifeToEnterUntapped: payLifeForSearchEntry,
-        },
-      ) as GameStateWithAI;
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Could not resolve that search choice.';
+    const activePrompt = promptRequest || createSearchLibraryPromptRequest(
+      engine,
+      humanIdRef.current,
+      cardFilterFromSearchInfo({
+        filter,
+        filterSpec,
+        destination: dest,
+        tapped: tutorTappedRef.current,
+        shuffle: tutorShuffleRef.current,
+      }),
+      dest,
+      {
+        sourceInstanceId: tutorSourceInstanceIdRef.current,
+        tapped: tutorTappedRef.current,
+        shuffle: tutorShuffleRef.current,
+        minSelections: 0,
+        maxSelections: 1,
+      },
+    );
+    const promptResponse = applySearchLibraryPromptResponse(engine, activePrompt, {
+      requestId: activePrompt.id,
+      kind: 'SearchLibrary',
+      playerId: humanIdRef.current,
+      selectedCardInstanceIds: [selectedCardInstanceId],
+      payLifeToEnterUntapped: payLifeForSearchEntry,
+    });
+    if (!promptResponse.ok || !promptResponse.state) {
+      const message = promptResponse.message || 'Could not resolve that search choice.';
       addMessage('system', message);
       syncState();
       return;
     }
+    const movedEngine = promptResponse.state as GameStateWithAI;
 
     let resolvedEngine = movedEngine;
     if (dest === 'battlefield') {
@@ -3954,7 +4040,26 @@ export function useShelectorGame() {
       const activeFilterSpec = tutorFilterSpecRef.current;
       const sourceName = tutorSourceNameRef.current;
       const updatedEngine = engineRef.current!;
-      const libraryCards = getCardsInZone(updatedEngine, humanIdRef.current, 'library');
+      const nextPromptRequest = createSearchLibraryPromptRequest(
+        updatedEngine,
+        humanIdRef.current,
+        cardFilterFromSearchInfo({
+          filter: activeFilter,
+          filterSpec: activeFilterSpec,
+          destination: tutorDestinationRef.current,
+          tapped: tutorTappedRef.current,
+          shuffle: tutorShuffleRef.current,
+        }),
+        tutorDestinationRef.current,
+        {
+          sourceInstanceId: tutorSourceInstanceIdRef.current,
+          tapped: tutorTappedRef.current,
+          shuffle: tutorShuffleRef.current,
+          revealPolicy: activeFilter || activeFilterSpec ? 'reveal' : 'hidden',
+          minSelections: 0,
+          maxSelections: 1,
+        },
+      );
       const pickerMetadata: Pick<TutorCardOption, 'legal' | 'reason' | 'destination' | 'entersTapped' | 'mustReveal'> = {
         legal: true,
         reason: activeFilter ? `Matches ${activeFilter}` : 'Legal library choice',
@@ -3962,19 +4067,27 @@ export function useShelectorGame() {
         entersTapped: tutorDestinationRef.current === 'battlefield' ? tutorTappedRef.current : undefined,
         mustReveal: Boolean(activeFilter || activeFilterSpec),
       };
-      const pickerCards = libraryCards.map(c => {
-        const d = getCardDefinition(updatedEngine, c);
-        return {
-          instanceId: c.instanceId,
-          name: d.name,
-          typeLine: d.type_line,
-          manaCost: d.mana_cost,
-          oracleText: d.oracle_text,
-          colors: d.colors,
-          cmc: d.cmc,
-          ...pickerMetadata,
-        };
-      }).filter(c => cardMatchesSearch(c, activeFilterSpec, activeFilter)).sort((a, b) => a.name.localeCompare(b.name));
+      const pickerCards = [...nextPromptRequest.legalChoices, ...nextPromptRequest.invalidChoices]
+        .map((choice): TutorCardOption | null => {
+          const c = updatedEngine.cards.get(choice.cardInstanceId);
+          if (!c) return null;
+          const d = getCardDefinition(updatedEngine, c);
+          return {
+            instanceId: c.instanceId,
+            name: d.name,
+            typeLine: d.type_line,
+            manaCost: d.mana_cost,
+            oracleText: d.oracle_text,
+            colors: d.colors,
+            cmc: d.cmc,
+            ...pickerMetadata,
+            legal: choice.legal,
+            reason: choice.legal ? pickerMetadata.reason : choice.reason,
+            destination: choice.destination,
+          };
+        })
+        .filter((option): option is TutorCardOption => Boolean(option));
+      tutorPromptRequestRef.current = nextPromptRequest;
 
       const filterDesc = activeFilter ? ` for ${activeFilter}` : '';
       const countSuffix = ` (${remaining} more - Cancel to stop here)`;
@@ -3993,6 +4106,7 @@ export function useShelectorGame() {
     tutorTappedRef.current = false;
     tutorShuffleRef.current = true;
     tutorSourceInstanceIdRef.current = undefined;
+    tutorPromptRequestRef.current = null;
 
     const loopMessages: { role: ChatMessage['role']; text: string }[] = [];
     const loopLogEntries: GameLogEntry[] = [];
@@ -4013,6 +4127,8 @@ export function useShelectorGame() {
     const pendingCastChoice = pendingCastChoiceActionRef.current;
     const pendingLandChoice = pendingPlayLandChoiceRef.current;
     const choiceMode = pendingCastChoiceModeRef.current;
+    const activeSearchPrompt = tutorPromptRequestRef.current;
+    const activeSearchSourceName = tutorSourceNameRef.current;
     setTutorPhase(false);
     setTutorCards([]);
     setTutorTitle('');
@@ -4022,6 +4138,7 @@ export function useShelectorGame() {
     tutorTappedRef.current = false;
     tutorShuffleRef.current = true;
     tutorSourceInstanceIdRef.current = undefined;
+    tutorPromptRequestRef.current = null;
 
     if (pendingCastChoice) {
       pendingCastChoiceActionRef.current = null;
@@ -4050,7 +4167,23 @@ export function useShelectorGame() {
       return;
     }
 
-    addMessage('player', `Stopped searching${tutorSourceNameRef.current ? ` (${tutorSourceNameRef.current})` : ''}.`);
+    if (activeSearchPrompt) {
+      const promptResponse = applySearchLibraryPromptResponse(engineRef.current, activeSearchPrompt, {
+        requestId: activeSearchPrompt.id,
+        kind: 'SearchLibrary',
+        playerId: humanIdRef.current,
+        selectedCardInstanceIds: [],
+      });
+      if (promptResponse.ok && promptResponse.state) {
+        engineRef.current = promptResponse.state as GameStateWithAI;
+      } else {
+        addMessage('system', promptResponse.message || 'Could not stop this search cleanly.');
+        syncState();
+        return;
+      }
+    }
+
+    addMessage('player', `Stopped searching${activeSearchSourceName ? ` (${activeSearchSourceName})` : ''}.`);
 
     // Resume game loop after the tutor ends
     const loopMessages: { role: ChatMessage['role']; text: string }[] = [];
@@ -4432,6 +4565,7 @@ export function useShelectorGame() {
           tutorShuffleRef.current = false;
           tutorSourceNameRef.current = def?.name || 'Cast choice';
           tutorSourceInstanceIdRef.current = undefined;
+          tutorPromptRequestRef.current = null;
           setTutorTitle(`${def?.name || 'Mox Diamond'}: discard a land card`);
           setTutorCards(discardOptions);
           setTutorPhase(true);
@@ -4468,6 +4602,7 @@ export function useShelectorGame() {
           tutorShuffleRef.current = false;
           tutorSourceNameRef.current = def?.name || 'Cast choice';
           tutorSourceInstanceIdRef.current = undefined;
+          tutorPromptRequestRef.current = null;
           setTutorTitle(`${def?.name || 'Cast trigger'}: choose a creature to sacrifice, or cancel to decline`);
           setTutorCards(sacrificeOptions);
           setTutorPhase(true);
@@ -4502,6 +4637,7 @@ export function useShelectorGame() {
           tutorShuffleRef.current = false;
           tutorSourceNameRef.current = def.name;
           tutorSourceInstanceIdRef.current = undefined;
+          tutorPromptRequestRef.current = null;
           setTutorTitle(`${def.name}: choose a creature type`);
           setTutorCards(typeOptions);
           setTutorPhase(true);
@@ -4520,6 +4656,7 @@ export function useShelectorGame() {
           tutorShuffleRef.current = false;
           tutorSourceNameRef.current = def.name;
           tutorSourceInstanceIdRef.current = undefined;
+          tutorPromptRequestRef.current = null;
           setTutorTitle(`${def.name}: enter untapped?`);
           setTutorCards([
             {

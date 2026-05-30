@@ -1,4 +1,5 @@
 import type {
+  CardDefinition,
   CardInstance,
   GameState,
   ManaColor,
@@ -11,9 +12,12 @@ import type {
 import { getLegalActions } from './ai/legal-actions';
 import { dispatchAIAction } from './ai/agent';
 import { canPlayLandDetailed } from './actions';
+import { executeSearchLibrary, executeShuffleLibrary, matchesCardFilter } from './effects/executor';
+import { getEffectivePower } from './effects/continuous';
 import { validateStateInvariants } from './invariants';
 import type { AIAction } from './ai/types';
 import type { ActionFailure, GameEvent as ActionGameEvent } from './actions-public';
+import type { CardFilter } from './effects/ast';
 
 export type ClientActionSource = 'ui' | 'ai' | 'system';
 
@@ -39,6 +43,73 @@ export interface ClientActionResponse {
   update?: EngineStateUpdate;
 }
 
+export type EnginePromptKind = 'SearchLibrary';
+
+export type ClientPromptFailure =
+  | 'invalid_request'
+  | 'wrong_player'
+  | 'stale_state'
+  | 'illegal_response'
+  | 'invariant_violation';
+
+export type SearchLibraryDestination = 'battlefield' | 'hand' | 'top' | 'graveyard';
+
+export type PromptRevealPolicy = 'hidden' | 'reveal' | 'public';
+
+export interface SearchLibraryChoice {
+  cardInstanceId: string;
+  cardName: string;
+  legal: boolean;
+  reason?: string;
+  destination: SearchLibraryDestination;
+}
+
+export interface SearchLibraryPromptRequest {
+  id: string;
+  kind: 'SearchLibrary';
+  playerId: string;
+  sourceInstanceId?: string;
+  expectedStateId: string;
+  filter: CardFilter;
+  destination: SearchLibraryDestination;
+  tapped?: boolean;
+  shuffle: boolean;
+  revealPolicy: PromptRevealPolicy;
+  minSelections: number;
+  maxSelections: number;
+  legalChoices: SearchLibraryChoice[];
+  invalidChoices: SearchLibraryChoice[];
+  createdAt: number;
+}
+
+export interface CreateSearchLibraryPromptOptions {
+  id?: string;
+  sourceInstanceId?: string;
+  tapped?: boolean;
+  shuffle?: boolean;
+  revealPolicy?: PromptRevealPolicy;
+  minSelections?: number;
+  maxSelections?: number;
+  createdAt?: number;
+}
+
+export interface SearchLibraryPromptResponse {
+  requestId: string;
+  kind: 'SearchLibrary';
+  playerId: string;
+  selectedCardInstanceIds: string[];
+  payLifeToEnterUntapped?: boolean;
+}
+
+export interface ClientPromptResponse {
+  requestId: string;
+  ok: boolean;
+  reason?: ClientPromptFailure;
+  message?: string;
+  state?: GameState;
+  update?: EngineStateUpdate;
+}
+
 export interface ActionReplayAuditStep {
   index: number;
   requestId: string;
@@ -55,6 +126,29 @@ export interface ActionReplayAuditReport {
   ok: boolean;
   finalState?: GameState;
   steps: ActionReplayAuditStep[];
+}
+
+export interface SearchPromptReplayRecord {
+  request: SearchLibraryPromptRequest;
+  response: SearchLibraryPromptResponse;
+}
+
+export interface PromptReplayAuditStep {
+  index: number;
+  requestId: string;
+  playerId: string;
+  promptKind: EnginePromptKind;
+  stateBeforeId: string;
+  stateAfterId?: string;
+  ok: boolean;
+  reason?: ClientPromptFailure | 'missing_state' | 'invariant_violation';
+  message?: string;
+}
+
+export interface PromptReplayAuditReport {
+  ok: boolean;
+  finalState?: GameState;
+  steps: PromptReplayAuditStep[];
 }
 
 export type PromptType =
@@ -260,6 +354,20 @@ export type EngineEvent =
       playerId: string;
       actionKind: AIAction['kind'];
       reason: ClientActionFailure;
+      message: string;
+    }
+  | {
+      kind: 'PromptResponseAccepted';
+      requestId: string;
+      playerId: string;
+      promptKind: EnginePromptKind;
+    }
+  | {
+      kind: 'PromptResponseRejected';
+      requestId: string;
+      playerId: string;
+      promptKind: EnginePromptKind;
+      reason: ClientPromptFailure;
       message: string;
     }
   | {
@@ -688,6 +796,377 @@ export function createClientActionRequest(
     label: options.label || labelForAction(state, action),
     expectedStateId,
     createdAt,
+  };
+}
+
+function isPermanentDefinitionForPrompt(cardDef: CardDefinition): boolean {
+  return ['artifact', 'battle', 'creature', 'enchantment', 'land', 'planeswalker']
+    .some(type => (
+      cardDef.card_types.includes(type as CardDefinition['card_types'][number])
+      || cardDef.type_line.toLowerCase().includes(type)
+    ));
+}
+
+function matchesNumericPromptFilter(
+  value: number,
+  filter?: { op: 'eq' | 'lte' | 'gte'; value: number },
+): boolean {
+  if (!filter) return true;
+  switch (filter.op) {
+    case 'eq':
+      return value === filter.value;
+    case 'lte':
+      return value <= filter.value;
+    case 'gte':
+      return value >= filter.value;
+    default: {
+      const _never: never = filter.op;
+      return Boolean(_never);
+    }
+  }
+}
+
+function searchFilterFailureReason(
+  state: GameState,
+  def: CardDefinition,
+  filter: CardFilter,
+  sourceInstanceId?: string,
+): string {
+  const typeLine = def.type_line.toLowerCase();
+
+  if (filter.permanent && !isPermanentDefinitionForPrompt(def)) {
+    return 'Not a permanent card';
+  }
+
+  if (filter.types?.length) {
+    const hasMatchingType = filter.types.some(type =>
+      def.card_types.includes(type as CardDefinition['card_types'][number])
+      || typeLine.includes(type.toLowerCase()),
+    );
+    if (!hasMatchingType) return `Not a ${filter.types.join(' or ')} card`;
+  }
+
+  if (filter.subtypes?.length) {
+    const hasMatchingSubtype = filter.subtypes.some(subtype => typeLine.includes(subtype.toLowerCase()));
+    if (!hasMatchingSubtype) return `Missing subtype ${filter.subtypes.join(' or ')}`;
+  }
+
+  if (filter.excludeSubtypes?.length) {
+    const hasExcludedSubtype = filter.excludeSubtypes.some(subtype => typeLine.includes(subtype.toLowerCase()));
+    if (hasExcludedSubtype) return `Has excluded subtype ${filter.excludeSubtypes.join(' or ')}`;
+  }
+
+  if (filter.supertypes?.length) {
+    const hasMatchingSupertype = filter.supertypes.some(supertype => typeLine.includes(supertype.toLowerCase()));
+    if (!hasMatchingSupertype) return `Not ${filter.supertypes.join(' or ')}`;
+  }
+
+  if (filter.colors?.length) {
+    const hasMatchingColor = filter.colors.some(color => def.colors.includes(color));
+    if (!hasMatchingColor) return `Not ${filter.colors.join(' or ')}`;
+  }
+
+  if (filter.cmc && !matchesNumericPromptFilter(def.cmc, filter.cmc)) {
+    return `Mana value ${def.cmc} does not satisfy ${filter.cmc.op} ${filter.cmc.value}`;
+  }
+
+  if (filter.manaValueLessThanSourcePower) {
+    if (!sourceInstanceId) return 'Missing source for mana value comparison';
+    const source = state.cards.get(sourceInstanceId);
+    if (!source) return 'Source is no longer available';
+    const sourcePower = getEffectivePower(state, sourceInstanceId);
+    if (def.cmc >= sourcePower) {
+      return `Mana value ${def.cmc} is not less than source power ${sourcePower}`;
+    }
+  }
+
+  if (filter.power && !matchesNumericPromptFilter(def.power ?? 0, filter.power)) {
+    return `Power ${def.power ?? 0} does not satisfy ${filter.power.op} ${filter.power.value}`;
+  }
+
+  return 'Does not match this search effect';
+}
+
+function evaluateSearchLibraryChoice(
+  state: GameState,
+  playerId: string,
+  filter: CardFilter,
+  destination: SearchLibraryDestination,
+  card: CardInstance,
+  sourceInstanceId?: string,
+): SearchLibraryChoice {
+  const def = state.cardDefinitions.get(card.definitionId);
+  const cardName = def?.name || card.instanceId;
+  if (card.ownerId !== playerId || card.zone !== 'library') {
+    return {
+      cardInstanceId: card.instanceId,
+      cardName,
+      legal: false,
+      reason: 'Card is not in your library',
+      destination,
+    };
+  }
+  if (!def) {
+    return {
+      cardInstanceId: card.instanceId,
+      cardName,
+      legal: false,
+      reason: 'Card definition missing',
+      destination,
+    };
+  }
+
+  const legal = matchesCardFilter(def, filter, { state, sourceInstanceId });
+  return {
+    cardInstanceId: card.instanceId,
+    cardName,
+    legal,
+    reason: legal ? undefined : searchFilterFailureReason(state, def, filter, sourceInstanceId),
+    destination,
+  };
+}
+
+export function createSearchLibraryPromptRequest(
+  state: GameState,
+  playerId: string,
+  filter: CardFilter,
+  destination: SearchLibraryDestination,
+  options: CreateSearchLibraryPromptOptions = {},
+): SearchLibraryPromptRequest {
+  const expectedStateId = stateFingerprint(state);
+  const createdAt = options.createdAt ?? Date.now();
+  const choices = [...state.cards.values()]
+    .filter(card => card.ownerId === playerId && card.zone === 'library')
+    .map(card => evaluateSearchLibraryChoice(
+      state,
+      playerId,
+      filter,
+      destination,
+      card,
+      options.sourceInstanceId,
+    ))
+    .sort((a, b) => {
+      if (a.legal !== b.legal) return a.legal ? -1 : 1;
+      return a.cardName.localeCompare(b.cardName);
+    });
+
+  const legalChoices = choices.filter(choice => choice.legal);
+  const invalidChoices = choices.filter(choice => !choice.legal);
+  const minSelections = options.minSelections ?? 0;
+  const maxSelections = options.maxSelections ?? 1;
+
+  return {
+    id: options.id || `prompt_${expectedStateId}_${hashText(`${playerId}:SearchLibrary:${createdAt}`)}`,
+    kind: 'SearchLibrary',
+    playerId,
+    sourceInstanceId: options.sourceInstanceId,
+    expectedStateId,
+    filter,
+    destination,
+    tapped: options.tapped,
+    shuffle: options.shuffle ?? false,
+    revealPolicy: options.revealPolicy || 'hidden',
+    minSelections,
+    maxSelections,
+    legalChoices,
+    invalidChoices,
+    createdAt,
+  };
+}
+
+function promptRejectUpdate(
+  state: GameState,
+  request: SearchLibraryPromptRequest,
+  response: SearchLibraryPromptResponse,
+  reason: ClientPromptFailure,
+  message: string,
+): EngineStateUpdate {
+  const currentStateId = stateFingerprint(state);
+  return {
+    oldStateId: request.expectedStateId,
+    newStateId: currentStateId,
+    activePlayerId: activePlayerId(state),
+    priorityPlayerId: priorityPlayerId(state),
+    phase: state.phase,
+    step: state.step,
+    turnNumber: state.turnNumber,
+    priority: prioritySnapshot(state),
+    visibleDiffs: [],
+    rulesEvents: [{
+      kind: 'PromptResponseRejected',
+      requestId: response.requestId,
+      playerId: response.playerId,
+      promptKind: request.kind,
+      reason,
+      message,
+    }],
+    prompt: buildActionPrompt(state),
+  };
+}
+
+function selectedPromptChoiceReason(
+  state: GameState,
+  request: SearchLibraryPromptRequest,
+  selectedCardInstanceId: string,
+): string {
+  const card = state.cards.get(selectedCardInstanceId);
+  if (!card) return 'Card no longer exists';
+  return evaluateSearchLibraryChoice(
+    state,
+    request.playerId,
+    request.filter,
+    request.destination,
+    card,
+    request.sourceInstanceId,
+  ).reason || 'Selection is not legal for this search';
+}
+
+export function applySearchLibraryPromptResponse(
+  state: GameState,
+  request: SearchLibraryPromptRequest,
+  response: SearchLibraryPromptResponse,
+): ClientPromptResponse {
+  if (request.kind !== 'SearchLibrary' || response.kind !== 'SearchLibrary' || request.id !== response.requestId) {
+    const message = 'Prompt response does not match the active search request.';
+    return {
+      requestId: response.requestId,
+      ok: false,
+      reason: 'invalid_request',
+      message,
+      update: promptRejectUpdate(state, request, response, 'invalid_request', message),
+    };
+  }
+
+  if (request.playerId !== response.playerId) {
+    const message = 'This search prompt belongs to another player.';
+    return {
+      requestId: response.requestId,
+      ok: false,
+      reason: 'wrong_player',
+      message,
+      update: promptRejectUpdate(state, request, response, 'wrong_player', message),
+    };
+  }
+
+  const currentStateId = stateFingerprint(state);
+  if (request.expectedStateId !== currentStateId) {
+    const message = 'The game state changed before this search response reached the engine.';
+    return {
+      requestId: response.requestId,
+      ok: false,
+      reason: 'stale_state',
+      message,
+      update: promptRejectUpdate(state, request, response, 'stale_state', message),
+    };
+  }
+
+  const selectedIds = [...new Set(response.selectedCardInstanceIds)];
+  if (
+    selectedIds.length !== response.selectedCardInstanceIds.length
+    || selectedIds.length < request.minSelections
+    || selectedIds.length > request.maxSelections
+  ) {
+    const message = `Search response must choose between ${request.minSelections} and ${request.maxSelections} card(s).`;
+    return {
+      requestId: response.requestId,
+      ok: false,
+      reason: 'illegal_response',
+      message,
+      update: promptRejectUpdate(state, request, response, 'illegal_response', message),
+    };
+  }
+
+  const legalChoiceIds = new Set(request.legalChoices.map(choice => choice.cardInstanceId));
+  for (const selectedId of selectedIds) {
+    if (!legalChoiceIds.has(selectedId)) {
+      const message = `Illegal search selection: ${selectedPromptChoiceReason(state, request, selectedId)}`;
+      return {
+        requestId: response.requestId,
+        ok: false,
+        reason: 'illegal_response',
+        message,
+        update: promptRejectUpdate(state, request, response, 'illegal_response', message),
+      };
+    }
+
+    const currentCard = state.cards.get(selectedId);
+    if (!currentCard) {
+      const message = 'Illegal search selection: card no longer exists';
+      return {
+        requestId: response.requestId,
+        ok: false,
+        reason: 'illegal_response',
+        message,
+        update: promptRejectUpdate(state, request, response, 'illegal_response', message),
+      };
+    }
+    const currentChoice = evaluateSearchLibraryChoice(
+      state,
+      request.playerId,
+      request.filter,
+      request.destination,
+      currentCard,
+      request.sourceInstanceId,
+    );
+    if (!currentChoice.legal) {
+      const message = `Illegal search selection: ${currentChoice.reason || 'selection no longer matches this search'}`;
+      return {
+        requestId: response.requestId,
+        ok: false,
+        reason: 'illegal_response',
+        message,
+        update: promptRejectUpdate(state, request, response, 'illegal_response', message),
+      };
+    }
+  }
+
+  let nextState = state;
+  if (selectedIds.length === 0) {
+    nextState = request.shuffle ? executeShuffleLibrary(state, request.playerId) : state;
+  } else {
+    for (const selectedId of selectedIds) {
+      nextState = executeSearchLibrary(
+        nextState,
+        request.playerId,
+        request.filter,
+        request.destination,
+        request.tapped,
+        false,
+        {
+          selectedCardInstanceId: selectedId,
+          sourceInstanceId: request.sourceInstanceId,
+          payLifeToEnterUntapped: response.payLifeToEnterUntapped,
+        },
+      );
+    }
+    if (request.shuffle) nextState = executeShuffleLibrary(nextState, request.playerId);
+  }
+
+  const invariantReport = validateStateInvariants(nextState);
+  if (!invariantReport.ok) {
+    const message = `Engine invariant failed: ${invariantReport.violations[0]?.message || 'invalid state'}`;
+    return {
+      requestId: response.requestId,
+      ok: false,
+      reason: 'invariant_violation',
+      message,
+      update: promptRejectUpdate(state, request, response, 'invariant_violation', message),
+    };
+  }
+
+  return {
+    requestId: response.requestId,
+    ok: true,
+    state: nextState,
+    update: {
+      ...buildStateUpdate(state, nextState),
+      rulesEvents: [{
+        kind: 'PromptResponseAccepted',
+        requestId: response.requestId,
+        playerId: response.playerId,
+        promptKind: 'SearchLibrary',
+      }],
+    },
   };
 }
 
@@ -1204,6 +1683,55 @@ export function auditActionReplay(
     }
 
     state = response.state;
+  }
+
+  return {
+    ok: true,
+    finalState: state,
+    steps,
+  };
+}
+
+export function auditSearchPromptReplay(
+  initialState: GameState,
+  records: SearchPromptReplayRecord[],
+): PromptReplayAuditReport {
+  let state = initialState;
+  const steps: PromptReplayAuditStep[] = [];
+
+  for (let index = 0; index < records.length; index += 1) {
+    const { request, response } = records[index];
+    const stateBeforeId = stateFingerprint(state);
+    const result = applySearchLibraryPromptResponse(state, request, response);
+    const step: PromptReplayAuditStep = {
+      index,
+      requestId: request.id,
+      playerId: request.playerId,
+      promptKind: request.kind,
+      stateBeforeId,
+      stateAfterId: result.update?.newStateId,
+      ok: result.ok,
+      reason: result.reason,
+      message: result.message,
+    };
+    steps.push(step);
+
+    if (!result.ok || !result.state) {
+      return { ok: false, steps };
+    }
+
+    const invariantReport = validateStateInvariants(result.state);
+    if (!invariantReport.ok) {
+      steps[steps.length - 1] = {
+        ...step,
+        ok: false,
+        reason: 'invariant_violation',
+        message: invariantReport.violations[0]?.message || 'invalid state',
+      };
+      return { ok: false, steps };
+    }
+
+    state = result.state;
   }
 
   return {
