@@ -377,8 +377,11 @@ describe('Shelector MTGGoldfish Duel: Precon vs Precon (stubbed)', () => {
       if (p1Lost || p2Lost) break;
     }
 
-    // Provide a tiny smoke assertion and surface log on failure.
-    expect(halfTurnsPlayed).toBeGreaterThanOrEqual(20);
+    // Provide a tiny smoke assertion and surface log on failure. A stronger
+    // engine can end this precon duel before 20 half-turns, which is still a
+    // valid non-crashing outcome as long as a player actually lost.
+    const gameEnded = state.players.some(p => p.hasLost);
+    expect(halfTurnsPlayed >= 20 || gameEnded).toBe(true);
     expect(log.length).toBeGreaterThan(0);
   });
 });
