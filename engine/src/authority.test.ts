@@ -1640,6 +1640,37 @@ describe('authority action boundary', () => {
       .toBe('battlefield');
   });
 
+  it('replays validated manual mana untap corrections after a mana action', () => {
+    const state = stateWithForestInHand();
+    const forest = [...state.cards.values()].find(card => card.ownerId === 'p1' && card.definitionId === 'forest');
+    expect(forest).toBeDefined();
+    state.cards.set(forest!.instanceId, { ...forest!, zone: 'battlefield', tapped: true });
+    state.players = state.players.map(player =>
+      player.id === 'p1'
+        ? { ...player, manaPool: { ...player.manaPool, G: 1 } }
+        : player,
+    );
+
+    const untapRequest = createClientActionRequest(state, 'p1', {
+      kind: 'ManualUntapManaSource',
+      cardInstanceId: forest!.instanceId,
+      color: 'G',
+      amount: 1,
+    }, {
+      id: 'req-replay-manual-untap',
+      source: 'system',
+      createdAt: 36,
+    });
+    const untapped = applyClientActionRequest(state, untapRequest);
+    expect(untapped.ok).toBe(true);
+    expect(untapped.state?.cards.get(forest!.instanceId)?.tapped).toBe(false);
+    expect(untapped.state?.players.find(player => player.id === 'p1')?.manaPool.G).toBe(0);
+
+    const report = auditActionReplay(state, [untapRequest]);
+    expect(report.ok).toBe(true);
+    expect(report.finalState?.cards.get(forest!.instanceId)?.tapped).toBe(false);
+  });
+
   it('fails replay audit when a committed request no longer matches the previous state', () => {
     const state = stateWithForestInHand();
     const prompt = buildActionPrompt(state, 'p1');

@@ -1117,6 +1117,9 @@ function actionReferencesSameObject(legal: AIAction, requested: AIAction): boole
 }
 
 function isLegalRequestedAction(state: GameState, playerId: string, action: AIAction): boolean {
+  if (action.kind === 'ManualUntapManaSource') {
+    return dispatchAIAction(state, playerId, action).ok;
+  }
   const requestedKey = actionKey(action);
   return getLegalActions(state, playerId).some(legal =>
     actionKey(legal) === requestedKey || actionReferencesSameObject(legal, action),
@@ -1130,7 +1133,15 @@ function illegalActionMessage(state: GameState, playerId: string, action: AIActi
       ? 'That land play is not available from the current prompt.'
       : legality.reason;
   }
+  if (action.kind === 'ManualUntapManaSource') {
+    const result = dispatchAIAction(state, playerId, action);
+    return result.ok ? 'That mana correction is not available now.' : result.message;
+  }
   return 'That action is not legal in the current game state.';
+}
+
+function isValidatedOutOfBandAction(action: AIAction): boolean {
+  return action.kind === 'ManualUntapManaSource';
 }
 
 export function labelForAction(state: GameState, action: AIAction): string {
@@ -4214,6 +4225,7 @@ export function applyClientActionRequest(
 
   if (
     request.actionId
+    && !isValidatedOutOfBandAction(request.action)
     && (!currentPrompt || !currentPrompt.legalChoices.some(choice => choice.id === request.actionId))
   ) {
     const message = 'That action was not offered by the current engine prompt.';
