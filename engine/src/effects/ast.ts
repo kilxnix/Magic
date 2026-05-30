@@ -5,6 +5,8 @@
 // Phase 16: Blink/flicker, copy effects, keyword granting, phasing
 // Phase 17: Planeswalker loyalty abilities and additional trigger types
 
+import type { TargetSpec } from './targets';
+
 export type Effect =
   | DrawEffect
   | DestroyEffect
@@ -495,7 +497,7 @@ export interface ActivatedAbility {
   cost: ActivatedAbilityCost;
   effects: Effect[];
   isManaAbility: boolean;
-  targets: { id: string; type: string }[];
+  targets: TargetSpec[];
 }
 
 // ============================================================================

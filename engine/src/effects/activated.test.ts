@@ -242,6 +242,17 @@ describe('parseActivatedAbilities', () => {
     expect(abilities[0].effects[0].kind).toBe('Destroy');
   });
 
+  it('preserves target counts and constraints on activated abilities', () => {
+    const text = '{T}: Destroy target creature an opponent controls.';
+    const abilities = parseActivatedAbilities(text);
+    expect(abilities).toHaveLength(1);
+    expect(abilities[0].targets).toEqual([expect.objectContaining({
+      type: 'Creature',
+      count: 1,
+      constraints: { opponentControls: true },
+    })]);
+  });
+
   it('skips triggered ability lines', () => {
     const text = 'When ~ enters the battlefield, draw a card.\n{T}: Gain 3 life.';
     const abilities = parseActivatedAbilities(text);
@@ -343,6 +354,50 @@ describe('executeSacrificeSpecific', () => {
 
     const result = executeSacrificeSpecific(state, 'inst_1');
     expect(result.cards.get('inst_1')!.zone).toBe('hand');
+  });
+});
+
+describe('activateAbility target constraints', () => {
+  it('rejects own permanents for opponent-controls activated ability targets', () => {
+    const pinger = createTestDef({
+      id: 'pinger',
+      name: 'Pinger',
+      type_line: 'Creature - Wizard',
+      oracle_text: '{T}: Destroy target creature an opponent controls.',
+      mana_cost: '{1}{B}',
+      card_types: ['creature'],
+      power: 1,
+      toughness: 1,
+    });
+    const ownBear = createTestDef({
+      id: 'own-bear',
+      name: 'Own Bear',
+      type_line: 'Creature - Bear',
+      card_types: ['creature'],
+      power: 2,
+      toughness: 2,
+    });
+    const enemyBear = createTestDef({
+      id: 'enemy-bear',
+      name: 'Enemy Bear',
+      type_line: 'Creature - Bear',
+      card_types: ['creature'],
+      power: 2,
+      toughness: 2,
+    });
+    let state = createTestState([
+      { def: pinger, zone: 'battlefield', ownerId: 'p1', summoningSick: false },
+      { def: ownBear, zone: 'battlefield', ownerId: 'p1' },
+      { def: enemyBear, zone: 'battlefield', ownerId: 'p2' },
+    ]);
+
+    expect(() => activateAbility(state, 'p1', 'inst_1', 0, ['inst_2'])).toThrow(/opponent/);
+    state = activateAbility(state, 'p1', 'inst_1', 0, ['inst_3']);
+    expect(state.stack).toHaveLength(1);
+    expect(state.stack[0]).toMatchObject({
+      kind: 'ActivatedAbility',
+      targets: ['inst_3'],
+    });
   });
 });
 

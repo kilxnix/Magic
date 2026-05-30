@@ -5744,7 +5744,7 @@ export function parseActivatedAbilities(oracleText: string): ActivatedAbility[] 
       cost,
       effects: result.effects,
       isManaAbility,
-      targets: result.targets.map(t => ({ id: t.id, type: t.type })),
+      targets: result.targets,
     });
   }
 

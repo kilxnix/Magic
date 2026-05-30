@@ -175,7 +175,7 @@ export interface ActivatedAbilityStackItem {
   controllerId: string;
   ability: {
     effects: unknown[]; // Effect[] from ast.ts
-    targets: { id: string; type: string }[];
+    targets: unknown[]; // TargetSpec[] from targets.ts
   };
   targets: string[];
   namedCardChoices?: Record<string, string>;
