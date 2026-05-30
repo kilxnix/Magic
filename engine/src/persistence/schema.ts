@@ -93,6 +93,7 @@ export interface SerializedCardInstanceV1 {
   deathtouchDamage?: boolean;
   isCommander: boolean;
   fromSideboard?: boolean;
+  activeFaceName?: string;
   choices?: {
     chosenCreatureType?: string;
     imprintedCardIds?: string[];
@@ -116,6 +117,19 @@ export interface SerializedCardDefinitionV1 {
   power?: number;
   toughness?: number;
   card_types: string[];
+  faces?: Array<{
+    id: string;
+    name: string;
+    type_line: string;
+    oracle_text: string;
+    mana_cost: string;
+    cmc: number;
+    colors: string[];
+    keywords: string[];
+    card_types: string[];
+    power?: number;
+    toughness?: number;
+  }>;
 }
 
 /**
@@ -137,6 +151,8 @@ export interface SerializedStackItemV1 {
     imprintedCardIds?: string[];
     discardedCardIds?: string[];
   };
+  xValue?: number;
+  faceName?: string;
   cantBeCountered?: boolean;
   isCopy?: boolean;
   copyOfCardInstanceId?: string;

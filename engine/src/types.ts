@@ -70,6 +70,8 @@ export interface CardInstance {
   isToken?: boolean; // Phase 16: true for token copies / token creatures
   copiedFromDefinitionId?: string; // Phase 16: original definition for copy tokens
   fromSideboard?: boolean; // True when an outside-the-game effect brought this card in.
+  /** Chosen face for a spell on the stack or a permanent cast as a non-front face. */
+  activeFaceName?: string;
   choices?: {
     chosenCreatureType?: string;
     imprintedCardIds?: string[];

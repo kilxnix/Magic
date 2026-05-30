@@ -193,7 +193,38 @@ export function returnSideboardCardsToSideboard(state: GameState): GameState {
 export function getCardDefinition(state: GameState, card: CardInstance): CardDefinition {
   const def = state.cardDefinitions.get(card.definitionId);
   if (!def) throw new Error(`Card definition not found: ${card.definitionId}`);
-  return def;
+  return applyFaceToCardDefinition(def, card.activeFaceName);
+}
+
+function normalizeFaceName(name: string): string {
+  return name.trim().toLowerCase();
+}
+
+export function applyFaceToCardDefinition(def: CardDefinition, faceName?: string): CardDefinition {
+  if (!faceName || !def.faces?.length) return def;
+  const normalized = normalizeFaceName(faceName);
+  const face = def.faces.find(candidate => normalizeFaceName(candidate.name) === normalized);
+  if (!face) return def;
+  return {
+    ...def,
+    id: face.id,
+    name: face.name,
+    type_line: face.type_line,
+    oracle_text: face.oracle_text,
+    mana_cost: face.mana_cost,
+    cmc: face.cmc,
+    colors: face.colors,
+    keywords: face.keywords,
+    card_types: face.card_types,
+    power: face.power,
+    toughness: face.toughness,
+    isEquipment: undefined,
+    equipCost: undefined,
+    equipmentBonus: undefined,
+    manaProduction: undefined,
+    searchAbility: undefined,
+    unlessTax: undefined,
+  };
 }
 
 export function pruneDetachedEffects(state: GameState): GameState {

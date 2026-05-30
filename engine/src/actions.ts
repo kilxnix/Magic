@@ -92,8 +92,7 @@ function countControlledLands(state: GameState, playerId: string): number {
   let count = 0;
   for (const card of state.cards.values()) {
     if (card.ownerId !== playerId || card.zone !== 'battlefield') continue;
-    const def = state.cardDefinitions.get(card.definitionId);
-    if (def?.card_types.includes('land')) count++;
+    if (getCardDefinition(state, card).card_types.includes('land')) count++;
   }
   return count;
 }
@@ -126,8 +125,7 @@ function manaProductionMultiplier(state: GameState, playerId: string, sourceInst
   let multiplier = 1;
   for (const permanent of state.cards.values()) {
     if (permanent.ownerId !== playerId || permanent.zone !== 'battlefield') continue;
-    const def = state.cardDefinitions.get(permanent.definitionId);
-    if (!def) continue;
+    const def = getCardDefinition(state, permanent);
     const text = def.oracle_text;
     if (/\bif you tap a permanent(?: you control)? for mana,\s*it produces three times as much/i.test(text)) {
       multiplier *= 3;
@@ -416,8 +414,8 @@ export function isBlockedBySummoningSicknessForTap(
   const card = state.cards.get(cardInstanceId);
   if (!card || card.zone !== 'battlefield' || !card.summoningSick) return false;
 
-  const def = state.cardDefinitions.get(card.definitionId);
-  if (!def?.card_types.includes('creature')) return false;
+  const def = getCardDefinition(state, card);
+  if (!def.card_types.includes('creature')) return false;
 
   return !instanceHasKeyword(state, cardInstanceId, 'Haste');
 }

@@ -1,5 +1,5 @@
 import { GameState, Phase, StackItem, SpellStackItem, TriggeredAbilityStackItem, isSpellStackItem, isTriggeredAbilityStackItem, isActivatedAbilityStackItem, TriggeredAbilityRef, CardInstance, CardDefinition } from './types';
-import { getCardDefinition } from './game-state';
+import { applyFaceToCardDefinition, getCardDefinition } from './game-state';
 import { parseManaString, canPaySpellCost, paySpellCost, getSpellPaymentRestrictedMana, getSpellPaymentConditionalMana } from './mana';
 import { getOverride } from './effects/overrides';
 import { parseOracleText } from './effects/parser';
@@ -39,35 +39,8 @@ function normalizedXValue(options: CastSpellOptions): number {
   return Math.max(0, Math.floor(options.xValue ?? 0));
 }
 
-function normalizeFaceName(name: string): string {
-  return name.trim().toLowerCase();
-}
-
 function applyFaceToDefinition(def: CardDefinition, faceName?: string): CardDefinition {
-  if (!faceName || !def.faces?.length) return def;
-  const normalized = normalizeFaceName(faceName);
-  const face = def.faces.find(candidate => normalizeFaceName(candidate.name) === normalized);
-  if (!face) return def;
-  return {
-    ...def,
-    id: face.id,
-    name: face.name,
-    type_line: face.type_line,
-    oracle_text: face.oracle_text,
-    mana_cost: face.mana_cost,
-    cmc: face.cmc,
-    colors: face.colors,
-    keywords: face.keywords,
-    card_types: face.card_types,
-    power: face.power,
-    toughness: face.toughness,
-    isEquipment: undefined,
-    equipCost: undefined,
-    equipmentBonus: undefined,
-    manaProduction: undefined,
-    searchAbility: undefined,
-    unlessTax: undefined,
-  };
+  return applyFaceToCardDefinition(def, faceName);
 }
 
 export function getCastSpellDefinition(
@@ -822,8 +795,7 @@ function additionalStaticKeywordFromLine(line: string): string | null {
 export function registerContinuousAbilitiesForPermanent(state: GameState, instanceId: string): GameState {
   const card = state.cards.get(instanceId);
   if (!card) return state;
-  const def = state.cardDefinitions.get(card.definitionId);
-  if (!def) return state;
+  const def = getCardDefinition(state, card);
 
   let resultState = state;
   for (const line of def.oracle_text.split('\n')) {
@@ -979,7 +951,11 @@ export function castSpell(
     const exiledCard = newCards.get(exileId);
     if (exiledCard) newCards.set(exileId, { ...exiledCard, zone: 'exile', tapped: false, damage: 0 });
   }
-  newCards.set(cardInstanceId, { ...card, zone: 'stack' as const });
+  newCards.set(cardInstanceId, {
+    ...card,
+    zone: 'stack' as const,
+    ...(castOptions.faceName ? { activeFaceName: castOptions.faceName } : {}),
+  });
 
   // Add to stack
   const stackItem: SpellStackItem = {
@@ -1053,8 +1029,7 @@ export function registerBattlefieldAbilities(state: GameState, instanceId: strin
   const card = state.cards.get(instanceId);
   if (!card) return state;
 
-  const def = state.cardDefinitions.get(card.definitionId);
-  if (!def) return state;
+  const def = getCardDefinition(state, card);
 
   const abilitiesToAdd: TriggeredAbilityRef[] = [];
 
@@ -1144,8 +1119,7 @@ export function createETBTriggers(state: GameState, instanceId: string): GameSta
   const card = state.cards.get(instanceId);
   if (!card) return state;
 
-  const def = state.cardDefinitions.get(card.definitionId);
-  if (!def) return state;
+  const def = getCardDefinition(state, card);
 
   // Get target specs from parsing
   const override = getOverride(def.id, def.name);
@@ -1299,7 +1273,8 @@ export function resolveTopOfStack(state: GameState): GameState {
     // Instants and sorceries: execute effects, then originals go to graveyard.
     // Spell copies are stack objects only; the physical card stays where it is.
     if (!spellItem.isCopy) {
-      newCards.set(card.instanceId, { ...card, zone: 'graveyard' });
+      const { activeFaceName: _activeFaceName, ...graveyardCard } = card;
+      newCards.set(card.instanceId, { ...graveyardCard, zone: 'graveyard' });
     }
 
     let intermediateState: GameState = {
@@ -1474,7 +1449,7 @@ function defaultTargetForSpec(
       if (card.zone !== 'battlefield') return false;
       if (existingTargets.includes(card.instanceId)) return false;
       if (spec.constraints?.opponentControls && card.ownerId === controllerId) return false;
-      const def = state.cardDefinitions.get(card.definitionId);
+      const def = getCardDefinition(state, card);
       return def?.card_types.includes('creature') ?? false;
     })?.instanceId ?? null;
   }
@@ -1534,7 +1509,7 @@ function getSpellEventController(event: GameEvent): string | null {
 function spellEventIsInstantOrSorcery(state: GameState, event: GameEvent): boolean {
   if (event.kind !== 'SpellCast' && event.kind !== 'SpellCopied') return false;
   const spellCard = state.cards.get(event.cardInstanceId);
-  const spellDef = spellCard ? state.cardDefinitions.get(spellCard.definitionId) : undefined;
+  const spellDef = spellCard ? getCardDefinition(state, spellCard) : undefined;
   return !!spellDef && isInstantOrSorcery(spellDef);
 }
 
@@ -1544,8 +1519,7 @@ function additionalTriggerMultiplierCount(state: GameState, controllerId: string
   let count = 0;
   for (const card of state.cards.values()) {
     if (card.zone !== 'battlefield' || card.ownerId !== controllerId) continue;
-    const def = state.cardDefinitions.get(card.definitionId);
-    if (!def) continue;
+    const def = getCardDefinition(state, card);
     if (/triggered ability of a permanent you control[^.]*triggers an additional time/i.test(def.oracle_text)) {
       count++;
     }

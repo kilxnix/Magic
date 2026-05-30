@@ -42,7 +42,7 @@ function addCard(
   ownerId: string,
   zone: 'hand' | 'battlefield' | 'library' | 'graveyard' | 'command' | 'stack',
   def: Partial<CardDefinition>,
-  options: { tapped?: boolean; isCommander?: boolean; damage?: number; choices?: CardInstance['choices'] } = {},
+  options: { tapped?: boolean; isCommander?: boolean; damage?: number; choices?: CardInstance['choices']; activeFaceName?: string } = {},
 ): void {
   const fullDef: CardDefinition = {
     id: def.id ?? instanceId,
@@ -57,6 +57,7 @@ function addCard(
     card_types: def.card_types ?? ['creature'],
     power: def.power ?? 2,
     toughness: def.toughness ?? 2,
+    faces: def.faces,
   };
 
   state.cardDefinitions.set(fullDef.id, fullDef);
@@ -71,6 +72,7 @@ function addCard(
     damage: options.damage ?? 0,
     isCommander: options.isCommander ?? false,
     choices: options.choices,
+    activeFaceName: options.activeFaceName,
   });
 }
 
@@ -283,6 +285,59 @@ describe('serializeGameState / deserializeGameState', () => {
         sourceInstanceId: 'cavern1',
       },
     ]);
+  });
+
+  it('round-trips multi-face definitions, active permanent faces, and split-face stack choices', () => {
+    const state = createTestState();
+    addCard(state, 'modal1', 'p1', 'battlefield', {
+      id: 'modal-def',
+      name: 'Front // Back',
+      type_line: 'Creature // Artifact',
+      oracle_text: 'Front text',
+      card_types: ['creature'],
+      faces: [
+        {
+          id: 'modal-def:face:0',
+          name: 'Front',
+          type_line: 'Creature',
+          oracle_text: 'Front text',
+          mana_cost: '{1}{G}',
+          cmc: 2,
+          colors: ['G'],
+          keywords: [],
+          card_types: ['creature'],
+          power: 2,
+          toughness: 2,
+        },
+        {
+          id: 'modal-def:face:1',
+          name: 'Back',
+          type_line: 'Artifact',
+          oracle_text: 'Back text',
+          mana_cost: '{2}',
+          cmc: 2,
+          colors: [],
+          keywords: [],
+          card_types: ['artifact'],
+        },
+      ],
+    }, { activeFaceName: 'Back' });
+    state.stack.push({
+      kind: 'Spell',
+      id: 'stack-modal',
+      cardInstanceId: 'modal1',
+      casterId: 'p1',
+      targets: [],
+      faceName: 'Back',
+      xValue: 2,
+    });
+
+    const serialized = serializeGameState(state);
+    const deserialized = deserializeGameState(serialized);
+    const def = deserialized.cardDefinitions.get('modal-def');
+    expect(def?.faces?.map(face => face.name)).toEqual(['Front', 'Back']);
+    expect(deserialized.cards.get('modal1')?.activeFaceName).toBe('Back');
+    expect(deserialized.stack[0]).toMatchObject({ kind: 'Spell', faceName: 'Back', xValue: 2 });
   });
 });
 

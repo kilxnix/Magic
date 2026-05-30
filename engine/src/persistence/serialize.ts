@@ -108,6 +108,7 @@ function serializeCardInstance(card: CardInstance): SerializedCardInstanceV1 {
     deathtouchDamage: card.deathtouchDamage,
     isCommander: card.isCommander,
     fromSideboard: card.fromSideboard,
+    activeFaceName: card.activeFaceName,
     choices: serializeCardChoices(card.choices),
   };
 }
@@ -145,6 +146,7 @@ function deserializeCardInstance(data: SerializedCardInstanceV1): CardInstance {
     deathtouchDamage: data.deathtouchDamage,
     isCommander: data.isCommander,
     fromSideboard: data.fromSideboard,
+    activeFaceName: data.activeFaceName,
     choices: deserializeCardChoices(data.choices),
   };
 }
@@ -166,6 +168,19 @@ function serializeCardDefinition(def: CardDefinition): SerializedCardDefinitionV
     power: def.power,
     toughness: def.toughness,
     card_types: [...def.card_types],
+    faces: def.faces?.map(face => ({
+      id: face.id,
+      name: face.name,
+      type_line: face.type_line,
+      oracle_text: face.oracle_text,
+      mana_cost: face.mana_cost,
+      cmc: face.cmc,
+      colors: [...face.colors],
+      keywords: [...face.keywords],
+      card_types: [...face.card_types],
+      power: face.power,
+      toughness: face.toughness,
+    })),
   };
 }
 
@@ -186,6 +201,19 @@ function deserializeCardDefinition(data: SerializedCardDefinitionV1): CardDefini
     power: data.power,
     toughness: data.toughness,
     card_types: data.card_types as CardDefinition['card_types'],
+    faces: data.faces?.map(face => ({
+      id: face.id,
+      name: face.name,
+      type_line: face.type_line,
+      oracle_text: face.oracle_text,
+      mana_cost: face.mana_cost,
+      cmc: face.cmc,
+      colors: face.colors as CardDefinition['colors'],
+      keywords: [...face.keywords],
+      card_types: face.card_types as CardDefinition['card_types'],
+      power: face.power,
+      toughness: face.toughness,
+    })),
   };
 }
 
@@ -204,6 +232,8 @@ function serializeStackItem(item: StackItem): SerializedStackItemV1 {
       chosenModes: item.chosenModes ? [...item.chosenModes] : undefined,
       namedCardChoices: item.namedCardChoices ? { ...item.namedCardChoices } : undefined,
       cardChoices: serializeCardChoices(item.cardChoices),
+      xValue: item.xValue,
+      faceName: item.faceName,
       cantBeCountered: item.cantBeCountered,
       isCopy: item.isCopy,
       copyOfCardInstanceId: item.copyOfCardInstanceId,
@@ -238,6 +268,8 @@ function deserializeStackItem(data: SerializedStackItemV1): StackItem {
       chosenModes: data.chosenModes ? [...data.chosenModes] : undefined,
       namedCardChoices: data.namedCardChoices ? { ...data.namedCardChoices } : undefined,
       cardChoices: deserializeCardChoices(data.cardChoices),
+      xValue: data.xValue,
+      faceName: data.faceName,
       cantBeCountered: data.cantBeCountered,
       isCopy: data.isCopy,
       copyOfCardInstanceId: data.copyOfCardInstanceId,
