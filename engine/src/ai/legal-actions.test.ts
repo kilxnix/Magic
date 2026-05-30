@@ -7,6 +7,7 @@ import {
 } from './legal-actions';
 import { GameState, CardDefinition, emptyManaPool, createPlayer, Phase, Step } from '../types';
 import { populateParsedCache } from '../cards/card-parser-cache';
+import { registerContinuousAbilitiesForPermanent } from '../stack';
 
 // Helper to create minimal game state
 function createTestState(overrides: Partial<GameState> = {}): GameState {
@@ -221,6 +222,42 @@ describe('getLegalActions', () => {
       const castActions = actions.filter(a => a.kind === 'CastSpell');
 
       expect(castActions).toHaveLength(0);
+    });
+
+    it('uses registered cost reducers when generating cast actions', () => {
+      let state = createTestState({
+        priorityPlayerIndex: 0,
+        activePlayerIndex: 0,
+        phase: 'precombat_main',
+      });
+      state.players[0].manaPool = { W: 0, U: 1, B: 0, R: 0, G: 0, C: 0 };
+
+      addCard(state, 'mentor1', 'p1', 'battlefield', {
+        name: 'Stormcatch Mentor',
+        type_line: 'Creature - Otter Wizard',
+        oracle_text: 'Instant and sorcery spells you cast cost {1} less to cast.',
+        mana_cost: '{U}{R}',
+        cmc: 2,
+        colors: ['U', 'R'],
+        card_types: ['creature'],
+        power: 1,
+        toughness: 1,
+      });
+      addCard(state, 'draw1', 'p1', 'hand', {
+        name: 'Impulse',
+        type_line: 'Instant',
+        oracle_text: 'Look at the top four cards of your library. Put one of them into your hand and the rest on the bottom of your library.',
+        mana_cost: '{1}{U}',
+        cmc: 2,
+        colors: ['U'],
+        card_types: ['instant'],
+      });
+
+      expect(getLegalActions(state, 'p1').some(a => a.kind === 'CastSpell' && a.cardInstanceId === 'draw1')).toBe(false);
+
+      state = registerContinuousAbilitiesForPermanent(state, 'mentor1');
+
+      expect(getLegalActions(state, 'p1').some(a => a.kind === 'CastSpell' && a.cardInstanceId === 'draw1')).toBe(true);
     });
 
     it('generates counterspell actions targeting spells on the stack', () => {
