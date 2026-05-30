@@ -645,6 +645,82 @@ describe('Phase 10 effects', () => {
     });
   });
 
+  describe('ReturnFromGraveyard effect', () => {
+    it('applies battlefield entry replacement when reanimating a tapped-entry permanent', () => {
+      const state = createTestState();
+      const cards = new Map(state.cards);
+      const cardDefinitions = new Map(state.cardDefinitions);
+      cardDefinitions.set('def-shock', {
+        id: 'def-shock',
+        name: 'Temple Garden',
+        type_line: 'Land - Forest Plains',
+        oracle_text: "As Temple Garden enters the battlefield, you may pay 2 life. If you don't, it enters tapped.",
+        mana_cost: '',
+        cmc: 0,
+        colors: [],
+        color_identity: ['G', 'W'],
+        keywords: [],
+        card_types: ['land'],
+      });
+      cards.set('grave-shock', {
+        instanceId: 'grave-shock',
+        definitionId: 'def-shock',
+        ownerId: 'player-1',
+        zone: 'graveyard',
+        tapped: false,
+        summoningSick: false,
+        counters: {},
+        damage: 0,
+        isCommander: false,
+      });
+      const modifiedState = { ...state, cards, cardDefinitions };
+      const effects: Effect[] = [
+        { kind: 'ReturnFromGraveyard', target: { kind: 'Chosen', targetId: 'target_1' }, destination: 'battlefield' },
+      ];
+
+      const newState = executeEffects(
+        modifiedState,
+        effects,
+        'player-1',
+        ['grave-shock'],
+        [{ id: 'target_1' }],
+      );
+
+      expect(newState.cards.get('grave-shock')?.zone).toBe('battlefield');
+      expect(newState.cards.get('grave-shock')?.tapped).toBe(true);
+      expect(newState.players.find(player => player.id === 'player-1')?.life).toBe(40);
+    });
+
+    it('moves commanders returned from graveyard to hand into command zone by default', () => {
+      const state = createTestState();
+      const cards = new Map(state.cards);
+      const commander = cards.get('creature-1')!;
+      cards.set('creature-1', { ...commander, zone: 'graveyard', isCommander: true });
+      const modifiedState = {
+        ...state,
+        cards,
+        players: state.players.map(player =>
+          player.id === 'player-1'
+            ? { ...player, commanderInstanceId: 'creature-1', commanderInstanceIds: ['creature-1'] }
+            : player,
+        ),
+      };
+      const effects: Effect[] = [
+        { kind: 'ReturnFromGraveyard', target: { kind: 'Chosen', targetId: 'target_1' }, destination: 'hand' },
+      ];
+
+      const newState = executeEffects(
+        modifiedState,
+        effects,
+        'player-1',
+        ['creature-1'],
+        [{ id: 'target_1' }],
+      );
+
+      expect(newState.cards.get('creature-1')?.zone).toBe('command');
+    });
+  });
+
   describe('Mill effect', () => {
     it('moves cards from library to graveyard', () => {
       const state = createTestState();

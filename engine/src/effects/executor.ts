@@ -1692,22 +1692,35 @@ function executeReturnFromGraveyard(
   if (!card) return state;
 
   if (card.zone !== 'graveyard') return state;
+  const finalDestination = getCommanderDestinationZone(state, targetId, destination);
 
   const nextCounters = { ...card.counters };
-  if (destination === 'battlefield') {
+  if (finalDestination === 'battlefield') {
     for (const counter of counters) {
       nextCounters[counter] = (nextCounters[counter] || 0) + 1;
     }
   }
 
   const newCards = new Map(state.cards);
+  if (finalDestination === 'battlefield') {
+    const def = getCardDefinition(state, card);
+    const entry = buildBattlefieldEntryPlan(state, card.ownerId, card, def, {
+      summoningSick: true,
+    });
+    newCards.set(targetId, {
+      ...entry.card,
+      counters: nextCounters,
+    });
+    return { ...state, cards: newCards, players: entry.players };
+  }
+
   newCards.set(targetId, {
     ...card,
-    zone: destination,
+    zone: finalDestination,
     tapped: false,
     damage: 0,
-    counters: destination === 'battlefield' ? nextCounters : {},
-    summoningSick: destination === 'battlefield',
+    counters: {},
+    summoningSick: false,
   });
 
   return { ...state, cards: newCards };
