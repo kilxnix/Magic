@@ -7,6 +7,7 @@ import { advanceStep, performUntapStep } from '../turn-manager';
 import { allPlayersPassed } from '../priority';
 import { putTriggersOnStack, resolveTopOfStack } from '../stack';
 import { drawCards } from '../actions';
+import { validateStateInvariants } from '../invariants';
 import type { AIAction } from '../ai/types';
 import type { GameState, ManaColor, PendingTrigger, Zone } from '../types';
 import type { TargetSpec } from '../effects/targets';
@@ -177,6 +178,12 @@ function finiteNumber(value: unknown): boolean {
 }
 
 function assertStateInvariants(state: GameState, label: string): void {
+  const invariantReport = validateStateInvariants(state);
+  expect(
+    invariantReport.ok,
+    `${label}: ${invariantReport.violations.map(violation => `${violation.code}: ${violation.message}`).join('; ')}`,
+  ).toBe(true);
+
   expect(state.players.length, label).toBeGreaterThanOrEqual(2);
   expect(state.activePlayerIndex, label).toBeGreaterThanOrEqual(0);
   expect(state.activePlayerIndex, label).toBeLessThan(state.players.length);

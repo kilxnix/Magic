@@ -132,4 +132,81 @@ describe('validateStateInvariants', () => {
       code: 'duplicate_spell_stack_card',
     }));
   });
+
+  it('rejects non-finite player/card numeric state', () => {
+    const cmd = commander();
+    const state = initGameState([
+      { playerId: 'p1', name: 'Alice', cards: [cmd], commanderId: cmd.id },
+      { playerId: 'p2', name: 'Bob', cards: [cmd], commanderId: cmd.id },
+    ]);
+    state.players[0].manaPool.G = Number.NaN;
+    const creature = [...state.cards.values()].find(card => card.ownerId === 'p1')!;
+    state.cards.set(creature.instanceId, {
+      ...creature,
+      counters: { '+1/+1': Number.POSITIVE_INFINITY },
+    });
+
+    const report = validateStateInvariants(state);
+    expect(report.ok).toBe(false);
+    expect(report.violations).toContainEqual(expect.objectContaining({
+      code: 'invalid_mana_pool',
+    }));
+    expect(report.violations).toContainEqual(expect.objectContaining({
+      code: 'invalid_card_counter',
+    }));
+  });
+
+  it('rejects stale pending trigger and battlefield ability references', () => {
+    const cmd = commander();
+    const state = initGameState([
+      { playerId: 'p1', name: 'Alice', cards: [cmd], commanderId: cmd.id },
+      { playerId: 'p2', name: 'Bob', cards: [cmd], commanderId: cmd.id },
+    ]);
+    state.pendingTriggers = [{
+      id: 'trigger-missing',
+      sourceInstanceId: 'missing-source',
+      controllerId: 'p1',
+      ability: {
+        kind: 'TriggeredAbility',
+        trigger: { kind: 'ETB', who: 'self' },
+        effects: [],
+      },
+      requiredTargets: [],
+    }];
+    state.battlefieldAbilities.set('missing-ability-source', []);
+
+    const report = validateStateInvariants(state);
+    expect(report.ok).toBe(false);
+    expect(report.violations).toContainEqual(expect.objectContaining({
+      code: 'missing_pending_trigger_source',
+    }));
+    expect(report.violations).toContainEqual(expect.objectContaining({
+      code: 'missing_battlefield_ability_source',
+    }));
+  });
+
+  it('rejects malformed combat references', () => {
+    const cmd = commander();
+    const state = initGameState([
+      { playerId: 'p1', name: 'Alice', cards: [cmd], commanderId: cmd.id },
+      { playerId: 'p2', name: 'Bob', cards: [cmd], commanderId: cmd.id },
+    ]);
+    state.combat = {
+      attackers: [{ cardInstanceId: 'missing-attacker', defendingPlayerId: 'p2' }],
+      blockers: [{ cardInstanceId: 'missing-blocker', blockingAttackerId: 'other-attacker' }],
+      damageAssignment: new Map([['other-attacker', 1]]),
+    };
+
+    const report = validateStateInvariants(state);
+    expect(report.ok).toBe(false);
+    expect(report.violations).toContainEqual(expect.objectContaining({
+      code: 'missing_combat_attacker',
+    }));
+    expect(report.violations).toContainEqual(expect.objectContaining({
+      code: 'blocker_missing_attacker',
+    }));
+    expect(report.violations).toContainEqual(expect.objectContaining({
+      code: 'damage_assignment_missing_attacker',
+    }));
+  });
 });
