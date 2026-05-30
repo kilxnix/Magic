@@ -322,6 +322,7 @@ describe('Trigger Parsing', () => {
     const result = parseOracleText('When this creature enters, you may search your library for a Goblin card, reveal that card, put it into your hand, then shuffle.');
     expect(result.kind).toBe('ETB');
     if (result.kind !== 'ETB') return;
+    expect(result.ability.optional).toBe(true);
     expect(result.ability.effects[0]).toMatchObject({
       kind: 'SearchLibrary',
       filter: { types: ['creature'], subtypes: ['goblin'] },

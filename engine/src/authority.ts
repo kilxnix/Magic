@@ -5,6 +5,7 @@ import type {
   ManaCost,
   ManaColor,
   ManaPool,
+  PendingTrigger,
   Phase,
   StackItem,
   Step,
@@ -15,7 +16,7 @@ import { getLegalTargets } from './ai/legal-actions';
 import { dispatchAIAction } from './ai/agent';
 import { canPlayLandDetailed } from './actions';
 import { canPayCost } from './mana';
-import { putTriggersOnStack } from './stack';
+import { putPendingTriggerOnStack, putTriggersOnStack } from './stack';
 import { executeSearchLibrary, executeShuffleLibrary, matchesCardFilter } from './effects/executor';
 import { getEffectivePower, getEffectiveToughness } from './effects/continuous';
 import { parseOracleText } from './effects/parser';
@@ -60,6 +61,7 @@ export type EnginePromptKind =
   | 'PayCosts'
   | 'SelectCards'
   | 'LibraryManipulation'
+  | 'OptionalTrigger'
   | 'OrderTriggers'
   | 'DamageAssignment'
   | 'ChooseMode';
@@ -133,6 +135,8 @@ export interface ClientPromptResponse {
   selectedCardInstanceIds?: string[];
   libraryManipulationChoices?: Record<string, string>;
   orderedTriggerIds?: string[];
+  optionalTriggerId?: string;
+  useOptionalTrigger?: boolean;
   damageAssignmentOrders?: DamageAssignmentOrder[];
   selectedModeIndices?: number[];
 }
@@ -367,6 +371,31 @@ export interface OrderTriggersPromptResponse {
   orderedTriggerIds: string[];
 }
 
+export interface OptionalTriggerPromptRequest {
+  id: string;
+  kind: 'OptionalTrigger';
+  playerId: string;
+  expectedStateId: string;
+  triggerId: string;
+  sourceInstanceId: string;
+  sourceName: string;
+  triggerKind: string;
+  createdAt: number;
+}
+
+export interface CreateOptionalTriggerPromptOptions {
+  id?: string;
+  createdAt?: number;
+}
+
+export interface OptionalTriggerPromptResponse {
+  requestId: string;
+  kind: 'OptionalTrigger';
+  playerId: string;
+  triggerId: string;
+  use: boolean;
+}
+
 export interface DamageAssignmentBlockerChoice {
   blockerId: string;
   blockerName: string;
@@ -513,6 +542,11 @@ export interface OrderTriggersPromptReplayRecord {
   response: OrderTriggersPromptResponse;
 }
 
+export interface OptionalTriggerPromptReplayRecord {
+  request: OptionalTriggerPromptRequest;
+  response: OptionalTriggerPromptResponse;
+}
+
 export type PromptReplayRecord =
   | SearchPromptReplayRecord
   | TargetPromptReplayRecord
@@ -520,6 +554,7 @@ export type PromptReplayRecord =
   | PayCostsPromptReplayRecord
   | SelectCardsPromptReplayRecord
   | LibraryManipulationPromptReplayRecord
+  | OptionalTriggerPromptReplayRecord
   | OrderTriggersPromptReplayRecord
   | DamageAssignmentPromptReplayRecord
   | ChooseModePromptReplayRecord;
@@ -782,6 +817,8 @@ export type EngineEvent =
       selectedReplacementOptionId?: ReplacementOptionId;
       selectedManaActions?: ManaPaymentAction[];
       orderedTriggerIds?: string[];
+      optionalTriggerId?: string;
+      useOptionalTrigger?: boolean;
       damageAssignmentOrders?: DamageAssignmentOrder[];
       destination?: SearchLibraryDestination;
     }
@@ -797,6 +834,8 @@ export type EngineEvent =
       selectedReplacementOptionId?: ReplacementOptionId;
       selectedManaActions?: ManaPaymentAction[];
       orderedTriggerIds?: string[];
+      optionalTriggerId?: string;
+      useOptionalTrigger?: boolean;
       damageAssignmentOrders?: DamageAssignmentOrder[];
     }
   | {
@@ -2711,6 +2750,163 @@ export function createOrderTriggersPromptRequest(
   };
 }
 
+function optionalTriggerChoice(
+  state: GameState,
+  triggerId: string,
+): PendingTrigger | undefined {
+  return (state.pendingTriggers || []).find(trigger => trigger.id === triggerId);
+}
+
+export function createOptionalTriggerPromptRequest(
+  state: GameState,
+  playerId: string,
+  triggerId: string,
+  options: CreateOptionalTriggerPromptOptions = {},
+): OptionalTriggerPromptRequest {
+  const expectedStateId = stateFingerprint(state);
+  const createdAt = options.createdAt ?? Date.now();
+  const trigger = optionalTriggerChoice(state, triggerId);
+
+  return {
+    id: options.id || `optional_trigger_${expectedStateId}_${hashText(`${playerId}:${triggerId}:${createdAt}`)}`,
+    kind: 'OptionalTrigger',
+    playerId,
+    expectedStateId,
+    triggerId,
+    sourceInstanceId: trigger?.sourceInstanceId || '',
+    sourceName: trigger ? cardName(state, state.cards.get(trigger.sourceInstanceId)) || trigger.sourceInstanceId : '',
+    triggerKind: trigger?.ability.trigger.kind || '',
+    createdAt,
+  };
+}
+
+function optionalTriggerRejectUpdate(
+  state: GameState,
+  request: OptionalTriggerPromptRequest,
+  response: OptionalTriggerPromptResponse,
+  reason: ClientPromptFailure,
+  message: string,
+): EngineStateUpdate {
+  const currentStateId = stateFingerprint(state);
+  return {
+    oldStateId: request.expectedStateId,
+    newStateId: currentStateId,
+    activePlayerId: activePlayerId(state),
+    priorityPlayerId: priorityPlayerId(state),
+    phase: state.phase,
+    step: state.step,
+    turnNumber: state.turnNumber,
+    priority: prioritySnapshot(state),
+    visibleDiffs: [],
+    rulesEvents: [{
+      kind: 'PromptResponseRejected',
+      requestId: response.requestId,
+      playerId: response.playerId,
+      promptKind: request.kind,
+      reason,
+      message,
+      optionalTriggerId: response.triggerId,
+      useOptionalTrigger: response.use,
+    }],
+    prompt: buildActionPrompt(state),
+  };
+}
+
+export function applyOptionalTriggerPromptResponse(
+  state: GameState,
+  request: OptionalTriggerPromptRequest,
+  response: OptionalTriggerPromptResponse,
+): ClientPromptResponse {
+  if (request.kind !== 'OptionalTrigger' || response.kind !== 'OptionalTrigger' || request.id !== response.requestId) {
+    const message = 'Prompt response does not match the active optional-trigger request.';
+    return {
+      requestId: response.requestId,
+      ok: false,
+      reason: 'invalid_request',
+      message,
+      update: optionalTriggerRejectUpdate(state, request, response, 'invalid_request', message),
+    };
+  }
+
+  if (request.playerId !== response.playerId) {
+    const message = 'This optional-trigger prompt belongs to another player.';
+    return {
+      requestId: response.requestId,
+      ok: false,
+      reason: 'wrong_player',
+      message,
+      update: optionalTriggerRejectUpdate(state, request, response, 'wrong_player', message),
+    };
+  }
+
+  const currentStateId = stateFingerprint(state);
+  if (request.expectedStateId !== currentStateId) {
+    const message = 'The game state changed before this optional-trigger response reached the engine.';
+    return {
+      requestId: response.requestId,
+      ok: false,
+      reason: 'stale_state',
+      message,
+      update: optionalTriggerRejectUpdate(state, request, response, 'stale_state', message),
+    };
+  }
+
+  if (request.triggerId !== response.triggerId) {
+    const message = 'Optional-trigger response must answer the requested trigger.';
+    return {
+      requestId: response.requestId,
+      ok: false,
+      reason: 'illegal_response',
+      message,
+      update: optionalTriggerRejectUpdate(state, request, response, 'illegal_response', message),
+    };
+  }
+
+  const trigger = optionalTriggerChoice(state, request.triggerId);
+  if (!trigger || trigger.controllerId !== response.playerId || trigger.ability.optional !== true) {
+    const message = 'Optional-trigger response must reference one of your pending optional triggers.';
+    return {
+      requestId: response.requestId,
+      ok: false,
+      reason: 'illegal_response',
+      message,
+      update: optionalTriggerRejectUpdate(state, request, response, 'illegal_response', message),
+    };
+  }
+
+  const nextState = response.use
+    ? putPendingTriggerOnStack(state, request.triggerId)
+    : { ...state, pendingTriggers: state.pendingTriggers.filter(candidate => candidate.id !== request.triggerId) };
+  const invariantReport = validateStateInvariants(nextState);
+  if (!invariantReport.ok) {
+    const message = `Engine invariant failed: ${invariantReport.violations[0]?.message || 'invalid state'}`;
+    return {
+      requestId: response.requestId,
+      ok: false,
+      reason: 'invariant_violation',
+      message,
+      update: optionalTriggerRejectUpdate(state, request, response, 'invariant_violation', message),
+    };
+  }
+
+  return {
+    requestId: response.requestId,
+    ok: true,
+    state: nextState,
+    update: {
+      ...buildStateUpdate(state, nextState),
+      rulesEvents: [{
+        kind: 'PromptResponseAccepted',
+        requestId: response.requestId,
+        playerId: response.playerId,
+        promptKind: 'OptionalTrigger',
+        optionalTriggerId: response.triggerId,
+        useOptionalTrigger: response.use,
+      }],
+    },
+  };
+}
+
 function orderTriggersRejectUpdate(
   state: GameState,
   request: OrderTriggersPromptRequest,
@@ -3824,13 +4020,15 @@ export function auditPromptReplay(
           ? applyPayCostsPromptResponse(state, request, response as PayCostsPromptResponse)
           : request.kind === 'SelectCards'
             ? applySelectCardsPromptResponse(state, request, response as SelectCardsPromptResponse)
-            : request.kind === 'LibraryManipulation'
-              ? applyLibraryManipulationPromptResponse(state, request, response as LibraryManipulationPromptResponse)
-              : request.kind === 'OrderTriggers'
-                ? applyOrderTriggersPromptResponse(state, request, response as OrderTriggersPromptResponse)
-                : request.kind === 'DamageAssignment'
-                  ? applyDamageAssignmentPromptResponse(state, request, response as DamageAssignmentPromptResponse)
-                  : applyChooseModePromptResponse(state, request, response as ChooseModePromptResponse);
+              : request.kind === 'LibraryManipulation'
+                ? applyLibraryManipulationPromptResponse(state, request, response as LibraryManipulationPromptResponse)
+                : request.kind === 'OptionalTrigger'
+                  ? applyOptionalTriggerPromptResponse(state, request, response as OptionalTriggerPromptResponse)
+                  : request.kind === 'OrderTriggers'
+                    ? applyOrderTriggersPromptResponse(state, request, response as OrderTriggersPromptResponse)
+                    : request.kind === 'DamageAssignment'
+                      ? applyDamageAssignmentPromptResponse(state, request, response as DamageAssignmentPromptResponse)
+                      : applyChooseModePromptResponse(state, request, response as ChooseModePromptResponse);
     const step: PromptReplayAuditStep = {
       index,
       requestId: request.id,
@@ -3893,11 +4091,13 @@ export function auditEngineReplay(
                 ? applySelectCardsPromptResponse(state, record.request, record.response as SelectCardsPromptResponse)
                 : record.request.kind === 'LibraryManipulation'
                   ? applyLibraryManipulationPromptResponse(state, record.request, record.response as LibraryManipulationPromptResponse)
-                  : record.request.kind === 'OrderTriggers'
-                    ? applyOrderTriggersPromptResponse(state, record.request, record.response as OrderTriggersPromptResponse)
-                    : record.request.kind === 'DamageAssignment'
-                      ? applyDamageAssignmentPromptResponse(state, record.request, record.response as DamageAssignmentPromptResponse)
-                      : applyChooseModePromptResponse(state, record.request, record.response as ChooseModePromptResponse);
+                  : record.request.kind === 'OptionalTrigger'
+                    ? applyOptionalTriggerPromptResponse(state, record.request, record.response as OptionalTriggerPromptResponse)
+                    : record.request.kind === 'OrderTriggers'
+                      ? applyOrderTriggersPromptResponse(state, record.request, record.response as OrderTriggersPromptResponse)
+                      : record.request.kind === 'DamageAssignment'
+                        ? applyDamageAssignmentPromptResponse(state, record.request, record.response as DamageAssignmentPromptResponse)
+                        : applyChooseModePromptResponse(state, record.request, record.response as ChooseModePromptResponse);
 
     const step: EngineReplayAuditStep = {
       index,

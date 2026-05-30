@@ -6,6 +6,7 @@ import {
   applyPayCostsPromptResponse,
   applyDamageAssignmentPromptResponse,
   applyOrderTriggersPromptResponse,
+  applyOptionalTriggerPromptResponse,
   applyLibraryManipulationPromptResponse,
   applySearchLibraryPromptResponse,
   applySelectCardsPromptResponse,
@@ -20,6 +21,7 @@ import {
   createChooseModePromptRequest,
   createDamageAssignmentPromptRequest,
   createOrderTriggersPromptRequest,
+  createOptionalTriggerPromptRequest,
   createLibraryManipulationPromptRequest,
   createSearchLibraryPromptRequest,
   createSelectCardsPromptRequest,
@@ -1200,6 +1202,91 @@ describe('authority action boundary', () => {
     expect(accepted.ok).toBe(true);
     expect(accepted.state?.pendingTriggers).toHaveLength(0);
     expect(accepted.state?.stack.map(item => item.id)).toEqual(['trigger-b', 'trigger-a', 'trigger-c']);
+  });
+
+  it('lets players accept or decline pending optional triggers explicitly', () => {
+    const source = def('source_optional', 'Goblin Matron', 'Creature - Goblin');
+    const base = stateWithSisaySearchChoices();
+    const optionalTrigger = {
+      id: 'trigger-optional',
+      sourceInstanceId: 'source_optional_1',
+      controllerId: 'p1',
+      ability: {
+        kind: 'TriggeredAbility' as const,
+        trigger: { kind: 'ETB' as const, who: 'self' as const },
+        effects: [{ kind: 'Draw', player: { kind: 'Controller' }, count: 1 }],
+        optional: true,
+      },
+      requiredTargets: [],
+    };
+    const mandatoryTrigger = {
+      ...optionalTrigger,
+      id: 'trigger-mandatory',
+      ability: {
+        ...optionalTrigger.ability,
+        optional: false,
+      },
+    };
+    const state: GameState = {
+      ...base,
+      cards: new Map<string, CardInstance>([
+        ['source_optional_1', cardInstance('source_optional_1', source.id, 'p1', 'battlefield')],
+      ]),
+      cardDefinitions: new Map<string, CardDefinition>([[source.id, source]]),
+      pendingTriggers: [optionalTrigger, mandatoryTrigger],
+    };
+
+    const request = createOptionalTriggerPromptRequest(state, 'p1', 'trigger-optional', {
+      id: 'prompt-optional-trigger',
+      createdAt: 245,
+    });
+    expect(request).toMatchObject({
+      kind: 'OptionalTrigger',
+      triggerId: 'trigger-optional',
+      sourceName: 'Goblin Matron',
+      triggerKind: 'ETB',
+    });
+
+    const rejected = applyOptionalTriggerPromptResponse(state, request, {
+      requestId: request.id,
+      kind: 'OptionalTrigger',
+      playerId: 'p1',
+      triggerId: 'trigger-mandatory',
+      use: false,
+    });
+    expect(rejected.ok).toBe(false);
+    expect(rejected.reason).toBe('illegal_response');
+    expect(state.pendingTriggers).toHaveLength(2);
+
+    const declined = applyOptionalTriggerPromptResponse(state, request, {
+      requestId: request.id,
+      kind: 'OptionalTrigger',
+      playerId: 'p1',
+      triggerId: 'trigger-optional',
+      use: false,
+    });
+    expect(declined.ok).toBe(true);
+    expect(declined.state?.pendingTriggers.map(trigger => trigger.id)).toEqual(['trigger-mandatory']);
+    expect(declined.state?.stack).toHaveLength(0);
+    expect(declined.update?.rulesEvents).toEqual([{
+      kind: 'PromptResponseAccepted',
+      requestId: request.id,
+      playerId: 'p1',
+      promptKind: 'OptionalTrigger',
+      optionalTriggerId: 'trigger-optional',
+      useOptionalTrigger: false,
+    }]);
+
+    const accepted = applyOptionalTriggerPromptResponse(state, request, {
+      requestId: request.id,
+      kind: 'OptionalTrigger',
+      playerId: 'p1',
+      triggerId: 'trigger-optional',
+      use: true,
+    });
+    expect(accepted.ok).toBe(true);
+    expect(accepted.state?.pendingTriggers.map(trigger => trigger.id)).toEqual(['trigger-mandatory']);
+    expect(accepted.state?.stack.map(item => item.id)).toEqual(['trigger-optional']);
   });
 
   it('validates additional-cost land selections without committing the discard early', () => {

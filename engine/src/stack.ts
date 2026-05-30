@@ -1209,6 +1209,32 @@ export function putTriggersOnStack(
   };
 }
 
+export function putPendingTriggerOnStack(
+  state: GameState,
+  triggerId: string,
+  triggerTargets: string[] = [],
+): GameState {
+  const trigger = state.pendingTriggers.find(candidate => candidate.id === triggerId);
+  if (!trigger) return state;
+
+  const newStackItem: TriggeredAbilityStackItem = {
+    kind: 'TriggeredAbility' as const,
+    id: trigger.id,
+    sourceInstanceId: trigger.sourceInstanceId,
+    controllerId: trigger.controllerId,
+    ability: trigger.ability,
+    targets: triggerTargets,
+    targetSpecs: trigger.requiredTargets,
+    eventContext: trigger.eventContext,
+  };
+
+  return {
+    ...state,
+    stack: [...state.stack, newStackItem],
+    pendingTriggers: state.pendingTriggers.filter(candidate => candidate.id !== triggerId),
+  };
+}
+
 // ============================================================================
 // Event-driven trigger checking
 // ============================================================================

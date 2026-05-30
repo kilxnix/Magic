@@ -381,6 +381,7 @@ export interface TriggeredAbility {
   kind: 'TriggeredAbility';
   trigger: Trigger;
   effects: Effect[];
+  optional?: boolean; // "you may" triggered abilities need an explicit player choice.
 }
 
 export type Trigger =

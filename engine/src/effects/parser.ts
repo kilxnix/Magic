@@ -4155,6 +4155,14 @@ function parseMultipleEffects(tokens: string[], startIndex: number): PatternResu
   };
 }
 
+function isOptionalEffectClause(tokens: string[], startIndex: number): boolean {
+  let pos = startIndex;
+  while (pos < tokens.length && (tokens[pos] === ',' || tokens[pos] === '.')) {
+    pos += 1;
+  }
+  return tokens[pos] === 'you' && tokens[pos + 1] === 'may';
+}
+
 /**
  * Check if mana cost contains X.
  */
@@ -4271,12 +4279,14 @@ export function parseOracleText(oracleText: string, manaCost?: string): ParsedOr
   // Check for ETB trigger
   const etbIndex = matchETBPrefix(tokens);
   if (etbIndex > 0) {
+    const optional = isOptionalEffectClause(tokens, etbIndex);
     const effectResult = parseMultipleEffects(tokens, etbIndex);
     if (effectResult) {
       const ability: TriggeredAbility = {
         kind: 'TriggeredAbility',
         trigger: { kind: 'ETB', who: 'self' },
         effects: effectResult.effects,
+        ...(optional ? { optional: true } : {}),
       };
       return {
         kind: 'ETB',
@@ -4290,12 +4300,14 @@ export function parseOracleText(oracleText: string, manaCost?: string): ParsedOr
   // Check for dies trigger
   const diesIndex = matchDiesPrefix(tokens);
   if (diesIndex > 0) {
+    const optional = isOptionalEffectClause(tokens, diesIndex);
     const effectResult = parseMultipleEffects(tokens, diesIndex);
     if (effectResult) {
       const ability: TriggeredAbility = {
         kind: 'TriggeredAbility',
         trigger: { kind: 'Dies', who: 'self' },
         effects: effectResult.effects,
+        ...(optional ? { optional: true } : {}),
       };
       return {
         kind: 'Dies',
@@ -4309,12 +4321,14 @@ export function parseOracleText(oracleText: string, manaCost?: string): ParsedOr
   // Check for new trigger types (attacks, upkeep, end step, etc.)
   const triggerMatch = matchTriggerPrefix(tokens);
   if (triggerMatch) {
+    const optional = isOptionalEffectClause(tokens, triggerMatch.effectStart);
     const effectResult = parseMultipleEffects(tokens, triggerMatch.effectStart);
     if (effectResult) {
       const ability: TriggeredAbility = {
         kind: 'TriggeredAbility',
         trigger: triggerMatch.trigger,
         effects: effectResult.effects,
+        ...(optional ? { optional: true } : {}),
       };
       return {
         kind: 'Triggered',
