@@ -11,6 +11,8 @@ export type {
   PlayLandAction,
   ActivateManaAbilityAction,
   ManualUntapManaSourceAction,
+  ManualAdjustCountersAction,
+  ManualCreateTokenAction,
   ActivateAbilityAction,
   DeclareAttackersAction,
   DeclareBlockersAction,

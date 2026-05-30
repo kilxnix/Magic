@@ -112,6 +112,7 @@ export function ShelectorGamePage() {
     setHoldPriority,
     untapManaSource,
     adjustCounters,
+    createManualToken,
     untappableCardIds,
     endGame,
     closeEndGame,
@@ -791,6 +792,7 @@ export function ShelectorGamePage() {
           onToggleHoldPriority={setHoldPriority}
           onUntapMana={untapManaSource}
           onAdjustCounters={adjustCounters}
+          onCreateToken={createManualToken}
           untappableCardIds={untappableCardIds}
           lastPlayedCard={lastPlayedCard}
           authorityUpdates={authorityUpdates}

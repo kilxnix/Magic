@@ -79,6 +79,17 @@ const ROW_LABELS: Record<BattlefieldRowKey, string> = {
 const HUMAN_ROW_ORDER: BattlefieldRowKey[] = ['creatures', 'artifacts', 'enchantments', 'lands', 'other'];
 const AI_ROW_ORDER: BattlefieldRowKey[] = ['lands', 'artifacts', 'enchantments', 'creatures', 'other'];
 
+interface ManualTokenInput {
+  name: string;
+  count: number;
+  power: number;
+  toughness: number;
+  colors: string[];
+  types: string[];
+  subtypes: string[];
+  keywords?: string[];
+}
+
 interface GameBoardProps {
   gameState: SimpleGameState;
   legalActions: SimpleLegalAction[];
@@ -123,6 +134,7 @@ interface GameBoardProps {
   collapseModeControlsOnMobile?: boolean;
   onUntapMana?: (cardInstanceId: string) => void;
   onAdjustCounters?: (cardInstanceId: string, counterType: string, delta: number) => void;
+  onCreateToken?: (token: ManualTokenInput) => void;
   untappableCardIds?: string[];
   lastPlayedCard?: LastPlayedCard | null;
   authorityUpdates?: EngineStateUpdate[];
@@ -948,6 +960,246 @@ function CardInspectorModal({
   );
 }
 
+const TOKEN_PRESETS: { label: string; token: ManualTokenInput }[] = [
+  {
+    label: 'Treasure',
+    token: { name: 'Treasure', count: 1, power: 0, toughness: 0, colors: [], types: ['artifact'], subtypes: ['Treasure'], keywords: [] },
+  },
+  {
+    label: 'Goblin',
+    token: { name: 'Goblin', count: 1, power: 1, toughness: 1, colors: ['R'], types: ['creature'], subtypes: ['Goblin'], keywords: [] },
+  },
+  {
+    label: 'Drake',
+    token: { name: 'Drake', count: 1, power: 2, toughness: 2, colors: ['U'], types: ['creature'], subtypes: ['Drake'], keywords: ['flying'] },
+  },
+  {
+    label: 'Beast',
+    token: { name: 'Beast', count: 1, power: 3, toughness: 3, colors: ['G'], types: ['creature'], subtypes: ['Beast'], keywords: [] },
+  },
+];
+
+function splitTokenWords(value: string, fallback: string[]): string[] {
+  const words = value
+    .split(',')
+    .map(part => part.trim().replace(/\s+/g, ' '))
+    .filter(Boolean);
+  return words.length > 0 ? words : fallback;
+}
+
+function ManualTokenModal({
+  onCreate,
+  onCancel,
+}: {
+  onCreate: (token: ManualTokenInput) => void;
+  onCancel: () => void;
+}) {
+  const [name, setName] = useState('Goblin');
+  const [count, setCount] = useState(1);
+  const [power, setPower] = useState(1);
+  const [toughness, setToughness] = useState(1);
+  const [colors, setColors] = useState<string[]>(['R']);
+  const [types, setTypes] = useState('creature');
+  const [subtypes, setSubtypes] = useState('Goblin');
+  const [keywords, setKeywords] = useState('');
+
+  const applyPreset = (preset: ManualTokenInput) => {
+    setName(preset.name);
+    setCount(preset.count);
+    setPower(preset.power);
+    setToughness(preset.toughness);
+    setColors(preset.colors);
+    setTypes(preset.types.join(', '));
+    setSubtypes(preset.subtypes.join(', '));
+    setKeywords((preset.keywords || []).join(', '));
+  };
+  const toggleColor = (color: string) => {
+    setColors(prev => prev.includes(color) ? prev.filter(value => value !== color) : [...prev, color]);
+  };
+  const createToken = () => {
+    const cleanName = name.trim().replace(/\s+/g, ' ');
+    if (!cleanName) return;
+    onCreate({
+      name: cleanName,
+      count: Math.max(1, Math.min(99, Math.floor(count || 1))),
+      power: Math.trunc(power || 0),
+      toughness: Math.trunc(toughness || 0),
+      colors,
+      types: splitTokenWords(types, ['creature']),
+      subtypes: splitTokenWords(subtypes, [cleanName]),
+      keywords: splitTokenWords(keywords, []),
+    });
+  };
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onCancel();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onCancel]);
+
+  return (
+    <div
+      className="fixed inset-0 z-[74] flex items-center justify-center bg-black/75 p-3 backdrop-blur-sm"
+      onClick={onCancel}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Create token"
+        className="w-[min(34rem,calc(100vw-1rem))] overflow-hidden rounded-lg border border-amber-500/35 bg-neutral-950 shadow-2xl shadow-black/70"
+        onClick={event => event.stopPropagation()}
+      >
+        <div className="flex items-center justify-between gap-3 border-b border-neutral-800 px-4 py-3">
+          <div>
+            <div className="text-[10px] font-bold uppercase tracking-wider text-amber-400">Manual Correction</div>
+            <div className="text-lg font-black text-stone-100">Create Token</div>
+          </div>
+          <button
+            type="button"
+            onClick={onCancel}
+            className="flex h-9 w-9 items-center justify-center rounded border border-neutral-700 bg-neutral-900 text-stone-300 transition-colors hover:bg-neutral-800 hover:text-white"
+            aria-label="Close token creator"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="max-h-[76vh] space-y-4 overflow-y-auto p-4">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {TOKEN_PRESETS.map(preset => (
+              <button
+                key={preset.label}
+                type="button"
+                onClick={() => applyPreset(preset.token)}
+                className="min-h-10 rounded border border-neutral-700 bg-neutral-900 px-3 text-sm font-bold text-stone-100 transition-colors hover:border-amber-400/70 hover:bg-neutral-800"
+              >
+                {preset.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="space-y-1 text-xs font-bold uppercase tracking-wider text-stone-500">
+              <span>Name</span>
+              <input
+                value={name}
+                onChange={event => setName(event.target.value)}
+                className="min-h-11 w-full rounded border border-neutral-700 bg-neutral-900 px-3 text-sm normal-case tracking-normal text-stone-100 focus:border-amber-400 focus:outline-none"
+              />
+            </label>
+            <label className="space-y-1 text-xs font-bold uppercase tracking-wider text-stone-500">
+              <span>Count</span>
+              <input
+                type="number"
+                min={1}
+                max={99}
+                value={count}
+                onChange={event => setCount(Number(event.target.value))}
+                className="min-h-11 w-full rounded border border-neutral-700 bg-neutral-900 px-3 text-sm normal-case tracking-normal text-stone-100 focus:border-amber-400 focus:outline-none"
+              />
+            </label>
+            <label className="space-y-1 text-xs font-bold uppercase tracking-wider text-stone-500">
+              <span>Power</span>
+              <input
+                type="number"
+                value={power}
+                onChange={event => setPower(Number(event.target.value))}
+                className="min-h-11 w-full rounded border border-neutral-700 bg-neutral-900 px-3 text-sm normal-case tracking-normal text-stone-100 focus:border-amber-400 focus:outline-none"
+              />
+            </label>
+            <label className="space-y-1 text-xs font-bold uppercase tracking-wider text-stone-500">
+              <span>Toughness</span>
+              <input
+                type="number"
+                value={toughness}
+                onChange={event => setToughness(Number(event.target.value))}
+                className="min-h-11 w-full rounded border border-neutral-700 bg-neutral-900 px-3 text-sm normal-case tracking-normal text-stone-100 focus:border-amber-400 focus:outline-none"
+              />
+            </label>
+          </div>
+
+          <div className="space-y-2">
+            <div className="text-xs font-bold uppercase tracking-wider text-stone-500">Colors</div>
+            <div className="flex flex-wrap gap-2">
+              {['W', 'U', 'B', 'R', 'G'].map(color => (
+                <button
+                  key={color}
+                  type="button"
+                  onClick={() => toggleColor(color)}
+                  className={`flex h-10 w-10 items-center justify-center rounded-full border text-sm font-black transition-colors ${
+                    colors.includes(color)
+                      ? 'border-amber-300 bg-amber-400 text-neutral-950'
+                      : 'border-neutral-700 bg-neutral-900 text-stone-300 hover:border-neutral-500'
+                  }`}
+                >
+                  {color}
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={() => setColors([])}
+                className="min-h-10 rounded border border-neutral-700 bg-neutral-900 px-3 text-xs font-bold text-stone-300 transition-colors hover:border-neutral-500"
+              >
+                Colorless
+              </button>
+            </div>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-3">
+            <label className="space-y-1 text-xs font-bold uppercase tracking-wider text-stone-500">
+              <span>Types</span>
+              <input
+                value={types}
+                onChange={event => setTypes(event.target.value)}
+                placeholder="creature, artifact"
+                className="min-h-11 w-full rounded border border-neutral-700 bg-neutral-900 px-3 text-sm normal-case tracking-normal text-stone-100 placeholder:text-stone-600 focus:border-amber-400 focus:outline-none"
+              />
+            </label>
+            <label className="space-y-1 text-xs font-bold uppercase tracking-wider text-stone-500">
+              <span>Subtypes</span>
+              <input
+                value={subtypes}
+                onChange={event => setSubtypes(event.target.value)}
+                placeholder="Goblin"
+                className="min-h-11 w-full rounded border border-neutral-700 bg-neutral-900 px-3 text-sm normal-case tracking-normal text-stone-100 placeholder:text-stone-600 focus:border-amber-400 focus:outline-none"
+              />
+            </label>
+            <label className="space-y-1 text-xs font-bold uppercase tracking-wider text-stone-500">
+              <span>Keywords</span>
+              <input
+                value={keywords}
+                onChange={event => setKeywords(event.target.value)}
+                placeholder="flying, haste"
+                className="min-h-11 w-full rounded border border-neutral-700 bg-neutral-900 px-3 text-sm normal-case tracking-normal text-stone-100 placeholder:text-stone-600 focus:border-amber-400 focus:outline-none"
+              />
+            </label>
+          </div>
+
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <button
+              type="button"
+              onClick={onCancel}
+              className="min-h-11 rounded border border-neutral-700 bg-neutral-950 px-4 text-sm font-bold text-stone-200 transition-colors hover:bg-neutral-800"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={createToken}
+              disabled={!name.trim()}
+              className="min-h-11 rounded bg-amber-400 px-4 text-sm font-black text-neutral-950 transition-colors hover:bg-amber-300 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Create Token
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function LibraryChoiceModal({
   choice,
   onResolve,
@@ -1507,6 +1759,7 @@ export function GameBoard({
   onToggleHoldPriority,
   onUntapMana,
   onAdjustCounters,
+  onCreateToken,
   untappableCardIds,
   lastPlayedCard,
   authorityUpdates = [],
@@ -1521,6 +1774,7 @@ export function GameBoard({
   const [stackLands, setStackLands] = useState(true);
   const [selectedOpponentId, setSelectedOpponentId] = useState<string | null>(null);
   const [showUtilityMenu, setShowUtilityMenu] = useState(false);
+  const [showTokenCreator, setShowTokenCreator] = useState(false);
 
   const handleCardHover = (card: SimpleCard | null) => {
     setHoveredCard(card);
@@ -1870,6 +2124,15 @@ export function GameBoard({
           onResolve={onResolveTriggerOrder}
         />
       )}
+      {showTokenCreator && onCreateToken && (
+        <ManualTokenModal
+          onCreate={token => {
+            onCreateToken(token);
+            setShowTokenCreator(false);
+          }}
+          onCancel={() => setShowTokenCreator(false)}
+        />
+      )}
       {inspectedCard && (
         <CardInspectorModal
           card={inspectedCard}
@@ -2047,6 +2310,22 @@ export function GameBoard({
                 >
                   <span className="flex items-center gap-2"><Lightbulb className="h-4 w-4" /> Guide</span>
                   <span className="text-[10px] font-black uppercase tracking-wider">{newPlayerMode ? 'On' : 'Off'}</span>
+                </button>
+              )}
+
+              {onCreateToken && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowTokenCreator(true);
+                    setShowUtilityMenu(false);
+                  }}
+                  className="flex min-h-11 w-full items-center justify-between rounded border border-neutral-800 bg-neutral-900 px-3 text-left text-sm font-bold text-stone-100 transition-colors hover:border-amber-400/60 hover:bg-neutral-800"
+                >
+                  <span>Create token</span>
+                  <span className="rounded bg-neutral-800 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-stone-400">
+                    Manual
+                  </span>
                 </button>
               )}
 

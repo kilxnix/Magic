@@ -1901,6 +1901,40 @@ describe('authority action boundary', () => {
     expect(report.finalState?.cards.get('sisay_1')?.counters['+1/+1']).toBe(2);
   });
 
+  it('replays validated manual token corrections through the authority boundary', () => {
+    const state = stateWithForestInHand();
+    const request = createClientActionRequest(state, 'p1', {
+      kind: 'ManualCreateToken',
+      name: 'Treasure',
+      count: 1,
+      power: 0,
+      toughness: 0,
+      colors: [],
+      types: ['artifact'],
+      subtypes: ['Treasure'],
+      keywords: [],
+    }, {
+      id: 'req-replay-manual-token',
+      source: 'system',
+      createdAt: 38,
+    });
+
+    const created = applyClientActionRequest(state, request);
+    expect(created.ok).toBe(true);
+    const token = [...(created.state?.cards.values() || [])].find(card => {
+      const def = created.state?.cardDefinitions.get(card.definitionId);
+      return card.ownerId === 'p1' && card.zone === 'battlefield' && card.isToken && def?.name === 'Treasure';
+    });
+    expect(token).toBeDefined();
+
+    const report = auditActionReplay(state, [request]);
+    expect(report.ok).toBe(true);
+    expect([...(report.finalState?.cards.values() || [])].some(card => {
+      const def = report.finalState?.cardDefinitions.get(card.definitionId);
+      return card.ownerId === 'p1' && card.zone === 'battlefield' && card.isToken && def?.name === 'Treasure';
+    })).toBe(true);
+  });
+
   it('fails replay audit when a committed request no longer matches the previous state', () => {
     const state = stateWithForestInHand();
     const prompt = buildActionPrompt(state, 'p1');

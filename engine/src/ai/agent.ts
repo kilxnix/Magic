@@ -15,6 +15,7 @@ import {
   tryTapLandForMana,
   tryUntapManaSource,
   tryAdjustCounters,
+  tryCreateManualToken,
   tryCastSpell,
   tryActivateAbility,
   tryPassPriority,
@@ -74,6 +75,9 @@ export function dispatchAIAction(
 
     case 'ManualAdjustCounters':
       return tryAdjustCounters(state, playerId, action.cardInstanceId, action.counterType, action.delta);
+
+    case 'ManualCreateToken':
+      return tryCreateManualToken(state, playerId, action);
 
     case 'CastSpell':
       // CastSpell in the AIAction doesn't carry a manaPayment — the mana pool

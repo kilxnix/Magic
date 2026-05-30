@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { tryPlayLand, tryTapLandForMana, tryUntapManaSource, tryCastSpell, tryActivateAbility, tryPassPriority, tryDeclareAttackers, tryDeclareBlockers, tryEquip, tryAdjustCounters, resetLoopDetector } from './actions-public';
+import { tryPlayLand, tryTapLandForMana, tryUntapManaSource, tryCastSpell, tryActivateAbility, tryPassPriority, tryDeclareAttackers, tryDeclareBlockers, tryEquip, tryAdjustCounters, tryCreateManualToken, resetLoopDetector } from './actions-public';
 import { makeTestState } from './__tests__/test-helpers';
 import { populateParsedCache } from './cards/card-parser-cache';
 import type { CardDefinition, GameState } from './types';
@@ -452,6 +452,68 @@ describe('tryAdjustCounters', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.state.cards.get('vanilla_creature_0')?.counters['shield counter']).toBe(1);
+  });
+});
+
+describe('tryCreateManualToken', () => {
+  it('creates manual creature tokens on the battlefield', () => {
+    const state = makeTestState({});
+
+    const result = tryCreateManualToken(state, 'human', {
+      name: 'Goblin',
+      count: 2,
+      power: 1,
+      toughness: 1,
+      colors: ['R'],
+      types: ['creature'],
+      subtypes: ['Goblin'],
+      keywords: ['haste'],
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const goblins = [...result.state.cards.values()].filter(card => {
+      const def = result.state.cardDefinitions.get(card.definitionId);
+      return card.ownerId === 'human'
+        && card.zone === 'battlefield'
+        && card.isToken
+        && def?.name === 'Goblin';
+    });
+    expect(goblins).toHaveLength(2);
+    for (const token of goblins) {
+      const def = result.state.cardDefinitions.get(token.definitionId);
+      expect(def?.card_types).toContain('creature');
+      expect(def?.type_line).toContain('Goblin');
+      expect(def?.power).toBe(1);
+      expect(def?.toughness).toBe(1);
+      expect(def?.keywords).toContain('haste');
+    }
+    expect(result.events).toContainEqual(
+      expect.objectContaining({
+        kind: 'TokenCreated',
+        playerId: 'human',
+        tokenName: 'Goblin',
+        count: 2,
+        manual: true,
+      }),
+    );
+  });
+
+  it('rejects impossible manual token counts', () => {
+    const state = makeTestState({});
+
+    const result = tryCreateManualToken(state, 'human', {
+      name: 'Goblin',
+      count: 0,
+      power: 1,
+      toughness: 1,
+      colors: ['R'],
+      types: ['creature'],
+      subtypes: ['Goblin'],
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe('illegal_target');
   });
 });
 

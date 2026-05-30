@@ -268,6 +268,7 @@ function isMeaningfulAutoSkipAction(action: AIAction): boolean {
     case 'ActivateManaAbility':
     case 'ManualUntapManaSource':
     case 'ManualAdjustCounters':
+    case 'ManualCreateToken':
       return false;
     case 'DeclareAttackers':
       return action.attacks.length > 0;
@@ -1718,6 +1719,13 @@ function toSimpleLegalAction(action: AIAction, engineState: GameState): SimpleLe
         cardInstanceId: action.cardInstanceId,
         cardName: def?.name,
         label: `${sign}${action.delta} ${action.counterType} counter on ${def?.name || 'permanent'}`,
+        _engineAction: action,
+      };
+    }
+    case 'ManualCreateToken': {
+      return {
+        kind: 'ManualCreateToken',
+        label: `Create ${action.count} ${action.name} token${action.count === 1 ? '' : 's'}`,
         _engineAction: action,
       };
     }
@@ -5053,6 +5061,51 @@ export function useShelectorGame() {
     syncState();
   }, [addMessage, applyActionThroughAuthority, applyEvents, syncState]);
 
+  const createManualToken = useCallback((token: {
+    name: string;
+    count: number;
+    power: number;
+    toughness: number;
+    colors: string[];
+    types: string[];
+    subtypes: string[];
+    keywords?: string[];
+  }) => {
+    const engine = engineRef.current;
+    if (!engine) return;
+
+    const action: AIAction = {
+      kind: 'ManualCreateToken',
+      name: token.name,
+      count: token.count,
+      power: token.power,
+      toughness: token.toughness,
+      colors: token.colors,
+      types: token.types,
+      subtypes: token.subtypes,
+      keywords: token.keywords,
+    };
+    const response = applyActionThroughAuthority(engine, humanIdRef.current, action, {
+      source: 'system',
+      label: toSimpleLegalAction(action, engine).label,
+    });
+    if (!response.ok || !response.state) {
+      const message = response.message || 'That token correction was rejected.';
+      setActionError({ reason: response.reason || 'illegal_action', message });
+      addMessage('system', `Cannot create token: ${message}`);
+      syncState();
+      return;
+    }
+
+    engineRef.current = response.state as GameStateWithAI;
+    applyEvents(response.events || [], response.state);
+    addMessage(
+      'system',
+      `Manual correction: created ${action.count} ${action.name} token${action.count === 1 ? '' : 's'}.`,
+    );
+    syncState();
+  }, [addMessage, applyActionThroughAuthority, applyEvents, syncState]);
+
   // Deep-clone engine state for undo snapshots (Maps need special handling)
   const cloneEngineState = useCallback((s: GameStateWithAI): GameStateWithAI => {
     return {
@@ -6617,6 +6670,7 @@ export function useShelectorGame() {
     setHoldPriority,
     untapManaSource,
     adjustCounters,
+    createManualToken,
     clearActionError: () => setActionError(null),
   };
 }

@@ -54,6 +54,12 @@ export function actionIdentity(action: AIAction): string {
       return `${action.kind}:${action.blocks.map(b => `${b.cardInstanceId}>${b.blockingAttackerId}`).join(',')}`;
     case 'Equip':
       return `${action.kind}:${action.equipmentInstanceId}>${action.targetCreatureId}`;
+    case 'ManualUntapManaSource':
+      return `${action.kind}:${action.cardInstanceId}:${action.color}:${action.amount}`;
+    case 'ManualAdjustCounters':
+      return `${action.kind}:${action.cardInstanceId}:${action.counterType}:${action.delta}`;
+    case 'ManualCreateToken':
+      return `${action.kind}:${action.name}:${action.count}:${action.power}/${action.toughness}:${action.colors.join(',')}:${action.types.join(',')}:${action.subtypes.join(',')}:${action.keywords?.join(',') || ''}`;
     case 'PassPriority':
       return action.kind;
     default:
@@ -98,6 +104,19 @@ export function describeReviewAction(state: GameState, action: AIAction): string
       const targetDef = target ? getCardDefinition(state, target) : undefined;
       return `Equip ${equipmentDef?.name || 'equipment'} to ${targetDef?.name || 'creature'}`;
     }
+    case 'ManualUntapManaSource': {
+      const inst = state.cards.get(action.cardInstanceId);
+      const def = inst ? getCardDefinition(state, inst) : undefined;
+      return `Undo ${action.color} mana from ${def?.name || 'a mana source'}`;
+    }
+    case 'ManualAdjustCounters': {
+      const inst = state.cards.get(action.cardInstanceId);
+      const def = inst ? getCardDefinition(state, inst) : undefined;
+      const sign = action.delta > 0 ? '+' : '';
+      return `${sign}${action.delta} ${action.counterType} counter on ${def?.name || 'a permanent'}`;
+    }
+    case 'ManualCreateToken':
+      return `Create ${action.count} ${action.name} token${action.count === 1 ? '' : 's'}`;
     case 'PassPriority':
       return 'Pass priority';
     default:

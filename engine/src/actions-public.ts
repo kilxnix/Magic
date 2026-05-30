@@ -20,6 +20,8 @@ import { LoopDetector, checkWinConditions } from './win-conditions';
 import { findCastZoneRestriction, getCommanderTaxForCast } from './casting-restrictions';
 import { populateParsedCache } from './cards/card-parser-cache';
 import { getCostReduction } from './effects/continuous';
+import { executeEffects } from './effects/executor';
+import type { Effect } from './effects/ast';
 
 export type ActionFailure =
   | 'not_your_turn'
@@ -60,6 +62,13 @@ export type GameEvent =
       delta: number;
       previous: number;
       next: number;
+      manual: true;
+    }
+  | {
+      kind: 'TokenCreated';
+      playerId: string;
+      tokenName: string;
+      count: number;
       manual: true;
     }
   | { kind: 'CreatureDied'; cardId: string; ownerId: string }
@@ -450,6 +459,73 @@ export function tryAdjustCounters(
       delta,
       previous,
       next: nextCount,
+      manual: true,
+    },
+    ...runWinCheck(next),
+  ]);
+}
+
+export function tryCreateManualToken(
+  state: GameState,
+  playerId: string,
+  token: {
+    name: string;
+    count: number;
+    power: number;
+    toughness: number;
+    colors: string[];
+    types: string[];
+    subtypes: string[];
+    keywords?: string[];
+  },
+): ActionResult {
+  if (!state.players.some(p => p.id === playerId)) return fail('card_not_found', 'Player not found');
+
+  const name = token.name.trim().replace(/\s+/g, ' ');
+  if (name.length === 0 || name.length > 80) return fail('illegal_target', 'Token name must be 1-80 characters');
+  const count = Math.floor(token.count);
+  if (!Number.isInteger(count) || count < 1 || count > 99) return fail('illegal_target', 'Token count must be 1-99');
+  const power = Math.trunc(token.power);
+  const toughness = Math.trunc(token.toughness);
+  if (!Number.isFinite(power) || !Number.isFinite(toughness) || Math.abs(power) > 99 || Math.abs(toughness) > 99) {
+    return fail('illegal_target', 'Token power/toughness must be between -99 and 99');
+  }
+
+  const cleanWords = (values: string[], fallback: string[]) => {
+    const cleaned = values
+      .map(value => value.trim().replace(/[^A-Za-z0-9' -]/g, '').replace(/\s+/g, ' '))
+      .filter(value => value.length > 0 && value.length <= 40);
+    return cleaned.length > 0 ? [...new Set(cleaned)] : fallback;
+  };
+  const types = cleanWords(token.types, ['creature']).map(value => value.toLowerCase());
+  const subtypes = cleanWords(token.subtypes, [name]);
+  const colors = token.colors
+    .map(color => color.toUpperCase())
+    .filter((color): color is 'W' | 'U' | 'B' | 'R' | 'G' => ['W', 'U', 'B', 'R', 'G'].includes(color));
+  const keywords = cleanWords(token.keywords || [], []);
+
+  const effect: Effect = {
+    kind: 'CreateToken',
+    controller: { kind: 'Controller' },
+    token: {
+      name,
+      colors,
+      types,
+      subtypes,
+      power,
+      toughness,
+      keywords,
+    },
+    count,
+  };
+
+  const next = executeEffects(state, [effect], playerId, [], []);
+  return success(next, [
+    {
+      kind: 'TokenCreated',
+      playerId,
+      tokenName: name,
+      count,
       manual: true,
     },
     ...runWinCheck(next),

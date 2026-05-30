@@ -66,6 +66,18 @@ export interface ManualAdjustCountersAction {
   delta: number;
 }
 
+export interface ManualCreateTokenAction {
+  kind: 'ManualCreateToken';
+  name: string;
+  count: number;
+  power: number;
+  toughness: number;
+  colors: string[];
+  types: string[];
+  subtypes: string[];
+  keywords?: string[];
+}
+
 /**
  * An action to declare attackers during the declare attackers step.
  */
@@ -117,6 +129,7 @@ export type AIAction =
   | ActivateManaAbilityAction
   | ManualUntapManaSourceAction
   | ManualAdjustCountersAction
+  | ManualCreateTokenAction
   | ActivateAbilityAction
   | DeclareAttackersAction
   | DeclareBlockersAction
