@@ -5,6 +5,7 @@ import {
   applyChooseReplacementPromptResponse,
   applyPayCostsPromptResponse,
   applyDamageAssignmentPromptResponse,
+  applyOrderTriggersPromptResponse,
   applyLibraryManipulationPromptResponse,
   applySearchLibraryPromptResponse,
   applySelectCardsPromptResponse,
@@ -18,6 +19,7 @@ import {
   createBattlefieldEntryReplacementPromptRequest,
   createChooseModePromptRequest,
   createDamageAssignmentPromptRequest,
+  createOrderTriggersPromptRequest,
   createLibraryManipulationPromptRequest,
   createSearchLibraryPromptRequest,
   createSelectCardsPromptRequest,
@@ -1129,6 +1131,75 @@ describe('authority action boundary', () => {
     const damaged = resolveCombatDamage(accepted.state!);
     expect(damaged.cards.get('large_blocker_1')?.damage).toBe(3);
     expect(damaged.cards.get('small_blocker_1')?.damage).toBe(0);
+  });
+
+  it('validates APNAP trigger ordering before moving pending triggers to the stack', () => {
+    const sourceA = def('source_a', 'Source A', 'Creature');
+    const sourceB = def('source_b', 'Source B', 'Creature');
+    const sourceC = def('source_c', 'Source C', 'Creature');
+    const base = stateWithSisaySearchChoices();
+    const state: GameState = {
+      ...base,
+      cards: new Map<string, CardInstance>([
+        ['source_a_1', cardInstance('source_a_1', sourceA.id, 'p1', 'battlefield')],
+        ['source_b_1', cardInstance('source_b_1', sourceB.id, 'p1', 'battlefield')],
+        ['source_c_1', cardInstance('source_c_1', sourceC.id, 'p2', 'battlefield')],
+      ]),
+      cardDefinitions: new Map<string, CardDefinition>([
+        [sourceA.id, sourceA],
+        [sourceB.id, sourceB],
+        [sourceC.id, sourceC],
+      ]),
+      pendingTriggers: [
+        {
+          id: 'trigger-a',
+          sourceInstanceId: 'source_a_1',
+          controllerId: 'p1',
+          ability: { kind: 'TriggeredAbility', trigger: { kind: 'ETB', who: 'self' }, effects: [] },
+          requiredTargets: [],
+        },
+        {
+          id: 'trigger-c',
+          sourceInstanceId: 'source_c_1',
+          controllerId: 'p2',
+          ability: { kind: 'TriggeredAbility', trigger: { kind: 'ETB', who: 'self' }, effects: [] },
+          requiredTargets: [],
+        },
+        {
+          id: 'trigger-b',
+          sourceInstanceId: 'source_b_1',
+          controllerId: 'p1',
+          ability: { kind: 'TriggeredAbility', trigger: { kind: 'ETB', who: 'self' }, effects: [] },
+          requiredTargets: [],
+        },
+      ],
+    };
+
+    const request = createOrderTriggersPromptRequest(state, 'p1', {
+      id: 'prompt-order-triggers',
+      createdAt: 240,
+    });
+    expect(request.triggers.map(trigger => trigger.triggerId)).toEqual(['trigger-a', 'trigger-b', 'trigger-c']);
+
+    const rejected = applyOrderTriggersPromptResponse(state, request, {
+      requestId: request.id,
+      kind: 'OrderTriggers',
+      playerId: 'p1',
+      orderedTriggerIds: ['trigger-c', 'trigger-b', 'trigger-a'],
+    });
+    expect(rejected.ok).toBe(false);
+    expect(rejected.reason).toBe('illegal_response');
+    expect(state.pendingTriggers).toHaveLength(3);
+
+    const accepted = applyOrderTriggersPromptResponse(state, request, {
+      requestId: request.id,
+      kind: 'OrderTriggers',
+      playerId: 'p1',
+      orderedTriggerIds: ['trigger-b', 'trigger-a', 'trigger-c'],
+    });
+    expect(accepted.ok).toBe(true);
+    expect(accepted.state?.pendingTriggers).toHaveLength(0);
+    expect(accepted.state?.stack.map(item => item.id)).toEqual(['trigger-b', 'trigger-a', 'trigger-c']);
   });
 
   it('validates additional-cost land selections without committing the discard early', () => {

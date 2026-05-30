@@ -15,6 +15,7 @@ import { getLegalTargets } from './ai/legal-actions';
 import { dispatchAIAction } from './ai/agent';
 import { canPlayLandDetailed } from './actions';
 import { canPayCost } from './mana';
+import { putTriggersOnStack } from './stack';
 import { executeSearchLibrary, executeShuffleLibrary, matchesCardFilter } from './effects/executor';
 import { getEffectivePower, getEffectiveToughness } from './effects/continuous';
 import { parseOracleText } from './effects/parser';
@@ -59,6 +60,7 @@ export type EnginePromptKind =
   | 'PayCosts'
   | 'SelectCards'
   | 'LibraryManipulation'
+  | 'OrderTriggers'
   | 'DamageAssignment'
   | 'ChooseMode';
 
@@ -130,6 +132,7 @@ export interface ClientPromptResponse {
   selectedManaActions?: ManaPaymentAction[];
   selectedCardInstanceIds?: string[];
   libraryManipulationChoices?: Record<string, string>;
+  orderedTriggerIds?: string[];
   damageAssignmentOrders?: DamageAssignmentOrder[];
   selectedModeIndices?: number[];
 }
@@ -335,6 +338,35 @@ export interface LibraryManipulationPromptResponse {
   movedCardInstanceIds: string[];
 }
 
+export interface TriggerOrderChoice {
+  triggerId: string;
+  controllerId: string;
+  sourceInstanceId: string;
+  sourceName: string;
+  triggerKind: string;
+}
+
+export interface OrderTriggersPromptRequest {
+  id: string;
+  kind: 'OrderTriggers';
+  playerId: string;
+  expectedStateId: string;
+  triggers: TriggerOrderChoice[];
+  createdAt: number;
+}
+
+export interface CreateOrderTriggersPromptOptions {
+  id?: string;
+  createdAt?: number;
+}
+
+export interface OrderTriggersPromptResponse {
+  requestId: string;
+  kind: 'OrderTriggers';
+  playerId: string;
+  orderedTriggerIds: string[];
+}
+
 export interface DamageAssignmentBlockerChoice {
   blockerId: string;
   blockerName: string;
@@ -476,6 +508,11 @@ export interface DamageAssignmentPromptReplayRecord {
   response: DamageAssignmentPromptResponse;
 }
 
+export interface OrderTriggersPromptReplayRecord {
+  request: OrderTriggersPromptRequest;
+  response: OrderTriggersPromptResponse;
+}
+
 export type PromptReplayRecord =
   | SearchPromptReplayRecord
   | TargetPromptReplayRecord
@@ -483,6 +520,7 @@ export type PromptReplayRecord =
   | PayCostsPromptReplayRecord
   | SelectCardsPromptReplayRecord
   | LibraryManipulationPromptReplayRecord
+  | OrderTriggersPromptReplayRecord
   | DamageAssignmentPromptReplayRecord
   | ChooseModePromptReplayRecord;
 
@@ -743,6 +781,7 @@ export type EngineEvent =
       selectedTargetIds?: string[];
       selectedReplacementOptionId?: ReplacementOptionId;
       selectedManaActions?: ManaPaymentAction[];
+      orderedTriggerIds?: string[];
       damageAssignmentOrders?: DamageAssignmentOrder[];
       destination?: SearchLibraryDestination;
     }
@@ -757,6 +796,7 @@ export type EngineEvent =
       selectedTargetIds?: string[];
       selectedReplacementOptionId?: ReplacementOptionId;
       selectedManaActions?: ManaPaymentAction[];
+      orderedTriggerIds?: string[];
       damageAssignmentOrders?: DamageAssignmentOrder[];
     }
   | {
@@ -2628,6 +2668,182 @@ export function applyLibraryManipulationPromptResponse(
   };
 }
 
+function apnapPlayerOrder(state: GameState): string[] {
+  const playerOrder: string[] = [];
+  for (let i = 0; i < state.players.length; i += 1) {
+    const index = (state.activePlayerIndex + i) % state.players.length;
+    playerOrder.push(state.players[index].id);
+  }
+  return playerOrder;
+}
+
+function orderedTriggerChoices(state: GameState): TriggerOrderChoice[] {
+  const playerOrder = apnapPlayerOrder(state);
+  return [...(state.pendingTriggers || [])]
+    .sort((a, b) => {
+      const controllerDiff = playerOrder.indexOf(a.controllerId) - playerOrder.indexOf(b.controllerId);
+      return controllerDiff !== 0 ? controllerDiff : a.id.localeCompare(b.id);
+    })
+    .map(trigger => ({
+      triggerId: trigger.id,
+      controllerId: trigger.controllerId,
+      sourceInstanceId: trigger.sourceInstanceId,
+      sourceName: cardName(state, state.cards.get(trigger.sourceInstanceId)) || trigger.sourceInstanceId,
+      triggerKind: trigger.ability.trigger.kind,
+    }));
+}
+
+export function createOrderTriggersPromptRequest(
+  state: GameState,
+  playerId: string,
+  options: CreateOrderTriggersPromptOptions = {},
+): OrderTriggersPromptRequest {
+  const expectedStateId = stateFingerprint(state);
+  const createdAt = options.createdAt ?? Date.now();
+
+  return {
+    id: options.id || `order_triggers_${expectedStateId}_${hashText(`${playerId}:${createdAt}`)}`,
+    kind: 'OrderTriggers',
+    playerId,
+    expectedStateId,
+    triggers: orderedTriggerChoices(state),
+    createdAt,
+  };
+}
+
+function orderTriggersRejectUpdate(
+  state: GameState,
+  request: OrderTriggersPromptRequest,
+  response: OrderTriggersPromptResponse,
+  reason: ClientPromptFailure,
+  message: string,
+): EngineStateUpdate {
+  const currentStateId = stateFingerprint(state);
+  return {
+    oldStateId: request.expectedStateId,
+    newStateId: currentStateId,
+    activePlayerId: activePlayerId(state),
+    priorityPlayerId: priorityPlayerId(state),
+    phase: state.phase,
+    step: state.step,
+    turnNumber: state.turnNumber,
+    priority: prioritySnapshot(state),
+    visibleDiffs: [],
+    rulesEvents: [{
+      kind: 'PromptResponseRejected',
+      requestId: response.requestId,
+      playerId: response.playerId,
+      promptKind: request.kind,
+      reason,
+      message,
+      orderedTriggerIds: response.orderedTriggerIds,
+    }],
+    prompt: buildActionPrompt(state),
+  };
+}
+
+function triggerOrderRespectsApnap(state: GameState, triggerIds: string[]): boolean {
+  const playerOrder = apnapPlayerOrder(state);
+  const pendingById = new Map((state.pendingTriggers || []).map(trigger => [trigger.id, trigger]));
+  let lastControllerIndex = -1;
+
+  for (const triggerId of triggerIds) {
+    const trigger = pendingById.get(triggerId);
+    if (!trigger) return false;
+    const controllerIndex = playerOrder.indexOf(trigger.controllerId);
+    if (controllerIndex < lastControllerIndex) return false;
+    lastControllerIndex = controllerIndex;
+  }
+
+  return true;
+}
+
+export function applyOrderTriggersPromptResponse(
+  state: GameState,
+  request: OrderTriggersPromptRequest,
+  response: OrderTriggersPromptResponse,
+): ClientPromptResponse {
+  if (request.kind !== 'OrderTriggers' || response.kind !== 'OrderTriggers' || request.id !== response.requestId) {
+    const message = 'Prompt response does not match the active trigger-order request.';
+    return {
+      requestId: response.requestId,
+      ok: false,
+      reason: 'invalid_request',
+      message,
+      update: orderTriggersRejectUpdate(state, request, response, 'invalid_request', message),
+    };
+  }
+
+  if (request.playerId !== response.playerId) {
+    const message = 'This trigger-order prompt belongs to another player.';
+    return {
+      requestId: response.requestId,
+      ok: false,
+      reason: 'wrong_player',
+      message,
+      update: orderTriggersRejectUpdate(state, request, response, 'wrong_player', message),
+    };
+  }
+
+  const currentStateId = stateFingerprint(state);
+  if (request.expectedStateId !== currentStateId) {
+    const message = 'The game state changed before this trigger-order response reached the engine.';
+    return {
+      requestId: response.requestId,
+      ok: false,
+      reason: 'stale_state',
+      message,
+      update: orderTriggersRejectUpdate(state, request, response, 'stale_state', message),
+    };
+  }
+
+  const expectedIds = (state.pendingTriggers || []).map(trigger => trigger.id).sort();
+  const submittedIds = [...response.orderedTriggerIds].sort();
+  const hasDuplicates = new Set(response.orderedTriggerIds).size !== response.orderedTriggerIds.length;
+  const sameSet = expectedIds.length === submittedIds.length
+    && expectedIds.every((id, index) => id === submittedIds[index]);
+  if (hasDuplicates || !sameSet || !triggerOrderRespectsApnap(state, response.orderedTriggerIds)) {
+    const message = 'Trigger order must include every pending trigger exactly once and preserve APNAP controller groups.';
+    return {
+      requestId: response.requestId,
+      ok: false,
+      reason: 'illegal_response',
+      message,
+      update: orderTriggersRejectUpdate(state, request, response, 'illegal_response', message),
+    };
+  }
+
+  const nextState = putTriggersOnStack(state, {}, response.orderedTriggerIds);
+  const invariantReport = validateStateInvariants(nextState);
+  if (!invariantReport.ok) {
+    const message = `Engine invariant failed: ${invariantReport.violations[0]?.message || 'invalid state'}`;
+    return {
+      requestId: response.requestId,
+      ok: false,
+      reason: 'invariant_violation',
+      message,
+      update: orderTriggersRejectUpdate(state, request, response, 'invariant_violation', message),
+    };
+  }
+
+  return {
+    requestId: response.requestId,
+    ok: true,
+    state: nextState,
+    update: {
+      ...buildStateUpdate(state, nextState),
+      rulesEvents: [{
+        kind: 'PromptResponseAccepted',
+        requestId: response.requestId,
+        playerId: response.playerId,
+        promptKind: 'OrderTriggers',
+        orderedTriggerIds: response.orderedTriggerIds,
+      }],
+    },
+    orderedTriggerIds: response.orderedTriggerIds,
+  };
+}
+
 function damageAssignmentGroups(state: GameState, playerId: string): DamageAssignmentGroup[] {
   if (!state.combat) return [];
 
@@ -3610,9 +3826,11 @@ export function auditPromptReplay(
             ? applySelectCardsPromptResponse(state, request, response as SelectCardsPromptResponse)
             : request.kind === 'LibraryManipulation'
               ? applyLibraryManipulationPromptResponse(state, request, response as LibraryManipulationPromptResponse)
-              : request.kind === 'DamageAssignment'
-                ? applyDamageAssignmentPromptResponse(state, request, response as DamageAssignmentPromptResponse)
-                : applyChooseModePromptResponse(state, request, response as ChooseModePromptResponse);
+              : request.kind === 'OrderTriggers'
+                ? applyOrderTriggersPromptResponse(state, request, response as OrderTriggersPromptResponse)
+                : request.kind === 'DamageAssignment'
+                  ? applyDamageAssignmentPromptResponse(state, request, response as DamageAssignmentPromptResponse)
+                  : applyChooseModePromptResponse(state, request, response as ChooseModePromptResponse);
     const step: PromptReplayAuditStep = {
       index,
       requestId: request.id,
@@ -3675,9 +3893,11 @@ export function auditEngineReplay(
                 ? applySelectCardsPromptResponse(state, record.request, record.response as SelectCardsPromptResponse)
                 : record.request.kind === 'LibraryManipulation'
                   ? applyLibraryManipulationPromptResponse(state, record.request, record.response as LibraryManipulationPromptResponse)
-                  : record.request.kind === 'DamageAssignment'
-                    ? applyDamageAssignmentPromptResponse(state, record.request, record.response as DamageAssignmentPromptResponse)
-                    : applyChooseModePromptResponse(state, record.request, record.response as ChooseModePromptResponse);
+                  : record.request.kind === 'OrderTriggers'
+                    ? applyOrderTriggersPromptResponse(state, record.request, record.response as OrderTriggersPromptResponse)
+                    : record.request.kind === 'DamageAssignment'
+                      ? applyDamageAssignmentPromptResponse(state, record.request, record.response as DamageAssignmentPromptResponse)
+                      : applyChooseModePromptResponse(state, record.request, record.response as ChooseModePromptResponse);
 
     const step: EngineReplayAuditStep = {
       index,

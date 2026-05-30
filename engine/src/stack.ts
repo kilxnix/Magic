@@ -1165,7 +1165,11 @@ export function resolveTopOfStack(state: GameState): GameState {
  * Move pending triggers to the stack.
  * In APNAP order (active player first, then clockwise).
  */
-export function putTriggersOnStack(state: GameState, triggerTargets: Record<string, string[]> = {}): GameState {
+export function putTriggersOnStack(
+  state: GameState,
+  triggerTargets: Record<string, string[]> = {},
+  triggerOrder: string[] = [],
+): GameState {
   if (state.pendingTriggers.length === 0) return state;
 
   // Sort triggers by APNAP order
@@ -1175,10 +1179,15 @@ export function putTriggersOnStack(state: GameState, triggerTargets: Record<stri
     playerOrder.push(state.players[idx].id);
   }
 
+  const orderIndex = new Map(triggerOrder.map((triggerId, index) => [triggerId, index]));
   const sortedTriggers = [...state.pendingTriggers].sort((a, b) => {
     const aIdx = playerOrder.indexOf(a.controllerId);
     const bIdx = playerOrder.indexOf(b.controllerId);
-    return aIdx - bIdx;
+    if (aIdx !== bIdx) return aIdx - bIdx;
+    const aOrder = orderIndex.get(a.id) ?? Number.MAX_SAFE_INTEGER;
+    const bOrder = orderIndex.get(b.id) ?? Number.MAX_SAFE_INTEGER;
+    if (aOrder !== bOrder) return aOrder - bOrder;
+    return 0;
   });
 
   // Create stack items for each trigger
