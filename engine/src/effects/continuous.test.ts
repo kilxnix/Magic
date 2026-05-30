@@ -206,6 +206,15 @@ describe('Static Ability Parsing', () => {
     expect(result.ability.excludeSelf).toBe(true);
   });
 
+  it('parses self static unblockable text', () => {
+    const result = parseOracleText("~ can't be blocked.");
+    expect(result.kind).toBe('StaticAbility');
+    if (result.kind !== 'StaticAbility') return;
+
+    expect(result.ability.modifier).toEqual({ kind: 'GrantKeyword', keyword: 'unblockable' });
+    expect(result.ability.selfOnly).toBe(true);
+  });
+
   it('parses "Spells you cast cost {1} less to cast"', () => {
     const result = parseOracleText('Spells you cast cost {1} less to cast');
     expect(result.kind).toBe('StaticAbility');

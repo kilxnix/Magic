@@ -301,6 +301,25 @@ describe('keywords', () => {
       });
       expect(canBlock(state, 'creature-1', 'attacker')).toBe(true);
     });
+
+    it('prevents blocking unblockable creatures', () => {
+      const state = makeTestState([]);
+      const unblockableDef = makeCreatureDef(['Unblockable']);
+      unblockableDef.id = 'unblockable-creature';
+      state.cardDefinitions.set('unblockable-creature', unblockableDef);
+      state.cards.set('attacker', {
+        instanceId: 'attacker',
+        definitionId: 'unblockable-creature',
+        ownerId: 'player-2',
+        zone: 'battlefield',
+        tapped: false,
+        summoningSick: false,
+        counters: {},
+        damage: 0,
+        isCommander: false,
+      });
+      expect(canBlock(state, 'creature-1', 'attacker')).toBe(false);
+    });
   });
 
   describe('satisfiesMenace', () => {

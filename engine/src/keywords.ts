@@ -21,7 +21,8 @@ export type Keyword =
   | 'Shroud'
   | 'Indestructible'
   | 'Ward'
-  | 'Flash';
+  | 'Flash'
+  | 'Unblockable';
 
 // Normalize keyword strings for comparison
 function normalizeKeyword(keyword: string): string {
@@ -46,6 +47,7 @@ const KEYWORD_MAP: Record<string, Keyword> = {
   'indestructible': 'Indestructible',
   'ward': 'Ward',
   'flash': 'Flash',
+  'unblockable': 'Unblockable',
 };
 
 // Set of keyword names that can be granted by keyword counters
@@ -290,6 +292,10 @@ export function canBlock(
   blockerId: string,
   attackerId: string,
 ): boolean {
+  if (instanceHasKeyword(state, attackerId, 'Unblockable')) {
+    return false;
+  }
+
   // Flying creatures can only be blocked by creatures with flying or reach
   if (instanceHasKeyword(state, attackerId, 'Flying')) {
     if (!instanceHasKeyword(state, blockerId, 'Flying') &&

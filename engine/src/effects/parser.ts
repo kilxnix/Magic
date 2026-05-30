@@ -3959,6 +3959,17 @@ function matchStaticAbility(tokens: string[]): StaticAbilityEffect | null {
     idx += 4;
   }
 
+  if (
+    (tokens[idx] === 'can' && tokens[idx + 1] === 'not' && tokens[idx + 2] === 'be' && tokens[idx + 3] === 'blocked')
+    || (tokens[idx] === "can't" && tokens[idx + 1] === 'be' && tokens[idx + 2] === 'blocked')
+    || (tokens[idx] === 'cant' && tokens[idx + 1] === 'be' && tokens[idx + 2] === 'blocked')
+  ) {
+    if (tokens[idx] === 'can') idx += 4;
+    else idx += 3;
+    if (tokens[idx] === '.') idx++;
+    return { kind: 'StaticAbility', modifier: { kind: 'GrantKeyword', keyword: 'unblockable' }, filter, controller, excludeSelf, selfOnly };
+  }
+
   if (tokens[idx] === 'get' || tokens[idx] === 'gets') {
     idx++;
     const ptMatch = tokens[idx]?.match(/^([+-]\d+)\/([+-]\d+)$/);

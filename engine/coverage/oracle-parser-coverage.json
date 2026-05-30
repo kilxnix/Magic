@@ -1,19 +1,19 @@
 {
-  "generatedAt": "2026-05-30T13:01:21.119Z",
+  "generatedAt": "2026-05-30T13:04:43.917Z",
   "source": "mtg_data/cards_min.jsonl",
   "commanderLegalOnly": true,
   "includedCards": 30969,
   "totalOracleFaces": 31420,
-  "parsedFaces": 16169,
-  "unparsedFaces": 15251,
-  "parsedPercent": 51.46,
+  "parsedFaces": 16173,
+  "unparsedFaces": 15247,
+  "parsedPercent": 51.47,
   "parsedKindCounts": {
-    "Unparsed": 15251,
+    "Unparsed": 15247,
     "Spell": 10513,
     "ETB": 2539,
     "Triggered": 1307,
     "KeywordOnly": 876,
-    "StaticAbility": 340,
+    "StaticAbility": 344,
     "EntryCounters": 338,
     "Modal": 241,
     "Dies": 15
@@ -21,7 +21,7 @@
   "unparsedReasons": [
     {
       "reason": "No recognized pattern",
-      "count": 12834
+      "count": 12830
     },
     {
       "reason": "Could not parse ETB effect clause",
@@ -40,7 +40,7 @@
     {
       "id": "trigger-timing",
       "reason": "Triggered or delayed triggered abilities need event registration and APNAP ordering.",
-      "count": 6381,
+      "count": 6380,
       "samples": [
         {
           "name": "Mindlink Mech",
@@ -95,7 +95,7 @@
     {
       "id": "unclassified",
       "reason": "Unparsed text did not match a known syntax cluster; inspect manually.",
-      "count": 3442,
+      "count": 3439,
       "samples": [
         {
           "name": "Static Orb",
@@ -205,7 +205,7 @@
     {
       "id": "combat-multiplayer",
       "reason": "Combat or multiplayer-defender text needs combat/defender-aware execution.",
-      "count": 2375,
+      "count": 2374,
       "samples": [
         {
           "name": "Marang River Prowler",
@@ -645,7 +645,7 @@
     {
       "id": "special-mechanics",
       "reason": "Special mechanics need dedicated state and UI presentation.",
-      "count": 284,
+      "count": 283,
       "samples": [
         {
           "name": "Sword-Swallowing Seraph",
