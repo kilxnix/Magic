@@ -130,6 +130,10 @@ function isKeywordOnlyOracle(text, cardKeywords = []) {
   });
 }
 
+function isEntryCounterOracle(text) {
+  return /\benters(?: the battlefield)? with (?:a|an|one|two|three|four|five|six|seven|eight|nine|ten|\d+) (?:[+\-]\d+\/[+\-]\d+|[a-z]+(?: [a-z]+)?) counters?\b/i.test(text);
+}
+
 function cardFaces(card) {
   if (Array.isArray(card.card_faces) && card.card_faces.length > 0) {
     return card.card_faces
@@ -232,7 +236,8 @@ function analyze(args) {
       totalFaces += 1;
       const parsed = parseOracleText(face.oracleText);
       const isKeywordOnly = parsed.kind === 'Unparsed' && isKeywordOnlyOracle(face.oracleText, card.keywords || []);
-      const parsedKind = isKeywordOnly ? 'KeywordOnly' : parsed.kind;
+      const isEntryCounters = parsed.kind === 'Unparsed' && isEntryCounterOracle(face.oracleText);
+      const parsedKind = isKeywordOnly ? 'KeywordOnly' : isEntryCounters ? 'EntryCounters' : parsed.kind;
       kindCounts[parsedKind] = (kindCounts[parsedKind] || 0) + 1;
 
       const override = getOverrideMetadata(card.id || '', card.name || face.name || '');

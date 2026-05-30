@@ -1,25 +1,26 @@
 {
-  "generatedAt": "2026-05-30T11:26:25.165Z",
+  "generatedAt": "2026-05-30T11:29:13.451Z",
   "source": "mtg_data/cards_min.jsonl",
   "commanderLegalOnly": true,
   "includedCards": 30969,
   "totalOracleFaces": 31420,
-  "parsedFaces": 14220,
-  "unparsedFaces": 17200,
-  "parsedPercent": 45.26,
+  "parsedFaces": 14587,
+  "unparsedFaces": 16833,
+  "parsedPercent": 46.43,
   "parsedKindCounts": {
-    "Unparsed": 17200,
+    "Unparsed": 16833,
     "Spell": 10915,
     "ETB": 1202,
     "KeywordOnly": 909,
     "Triggered": 625,
+    "EntryCounters": 367,
     "StaticAbility": 339,
     "Modal": 230
   },
   "unparsedReasons": [
     {
       "reason": "No recognized pattern",
-      "count": 15715
+      "count": 15349
     },
     {
       "reason": "Could not parse ETB effect clause",
@@ -27,14 +28,14 @@
     },
     {
       "reason": "Could not parse trigger effect clause",
-      "count": 684
+      "count": 683
     }
   ],
   "syntaxClusters": [
     {
       "id": "trigger-timing",
       "reason": "Triggered or delayed triggered abilities need event registration and APNAP ordering.",
-      "count": 7470,
+      "count": 7314,
       "samples": [
         {
           "name": "Nissa, Worldsoul Speaker",
@@ -89,7 +90,7 @@
     {
       "id": "continuous-layers",
       "reason": "Continuous effects need layer/timestamp/dependency handling.",
-      "count": 3962,
+      "count": 3925,
       "samples": [
         {
           "name": "Sensory Deprivation",
@@ -144,7 +145,7 @@
     {
       "id": "unclassified",
       "reason": "Unparsed text did not match a known syntax cluster; inspect manually.",
-      "count": 3583,
+      "count": 3560,
       "samples": [
         {
           "name": "Static Orb",
@@ -197,64 +198,9 @@
       ]
     },
     {
-      "id": "tokens-counters",
-      "reason": "Token/counter wording needs typed objects, counters, and downstream interactions.",
-      "count": 2685,
-      "samples": [
-        {
-          "name": "Seedship Agrarian",
-          "set": "eoe",
-          "reason": "No recognized pattern",
-          "text": "Whenever this creature becomes tapped, create a Lander token. (It's an artifact with \"{2}, {T}, Sacrifice this token: Search your library for a basic land card, put it onto the battlefield tapped, then shuffle.\") Landfall — Whenever a land you control enters, put a +1/+1 counter on this creature."
-        },
-        {
-          "name": "Coalition Relic",
-          "set": "dmc",
-          "reason": "No recognized pattern",
-          "text": "{T}: Add one mana of any color. {T}: Put a charge counter on this artifact. At the beginning of your first main phase, remove all charge counters from this artifact. Add one mana of any color for each charge counter removed this way."
-        },
-        {
-          "name": "Yorvo, Lord of Garenbrig",
-          "set": "eld",
-          "reason": "No recognized pattern",
-          "text": "Yorvo enters with four +1/+1 counters on it. Whenever another green creature you control enters, put a +1/+1 counter on Yorvo. Then if that creature's power is greater than Yorvo's power, put another +1/+1 counter on Yorvo."
-        },
-        {
-          "name": "Puppeteer Clique",
-          "set": "ecc",
-          "reason": "No recognized pattern",
-          "text": "Flying When this creature enters, put target creature card from an opponent's graveyard onto the battlefield under your control. It gains haste. At the beginning of your next end step, exile it. Persist (When this creature dies, if it had no -1/-1 counters on it, return it to the battlefield under its owner's control with a -1/-1 counter on it.)"
-        },
-        {
-          "name": "Sagu Pummeler",
-          "set": "tdm",
-          "reason": "No recognized pattern",
-          "text": "Reach Renew — {4}{G}, Exile this card from your graveyard: Put two +1/+1 counters and a reach counter on target creature. Activate only as a sorcery."
-        },
-        {
-          "name": "Shrewd Hatchling",
-          "set": "mm2",
-          "reason": "No recognized pattern",
-          "text": "This creature enters with four -1/-1 counters on it. {U/R}: Target creature can't block this creature this turn. Whenever you cast a blue spell, remove a -1/-1 counter from this creature. Whenever you cast a red spell, remove a -1/-1 counter from this creature."
-        },
-        {
-          "name": "Minion Reflector",
-          "set": "ala",
-          "reason": "Could not parse trigger effect clause",
-          "text": "Whenever a nontoken creature you control enters, you may pay {2}. If you do, create a token that's a copy of that creature, except it has haste and \"At the beginning of the end step, sacrifice this permanent.\""
-        },
-        {
-          "name": "Long List of the Ents",
-          "set": "ltr",
-          "reason": "No recognized pattern",
-          "text": "(As this Saga enters and after your draw step, add a lore counter. Sacrifice after VI.) I, II, III, IV, V, VI — Note a creature type that hasn't been noted for this Saga. When you next cast a creature spell of that type this turn, that creature enters with an additional +1/+1 counter on it."
-        }
-      ]
-    },
-    {
       "id": "combat-multiplayer",
       "reason": "Combat or multiplayer-defender text needs combat/defender-aware execution.",
-      "count": 2548,
+      "count": 2512,
       "samples": [
         {
           "name": "Marang River Prowler",
@@ -273,12 +219,6 @@
           "set": "snc",
           "reason": "No recognized pattern",
           "text": "Reach (This creature can block creatures with flying.) Whenever this creature blocks a creature with flying, this creature gets +2/+0 until end of turn."
-        },
-        {
-          "name": "Carnage Wurm",
-          "set": "m12",
-          "reason": "No recognized pattern",
-          "text": "Bloodthirst 3 (If an opponent was dealt damage this turn, this creature enters with three +1/+1 counters on it.) Trample (This creature can deal excess combat damage to the player or planeswalker it's attacking.)"
         },
         {
           "name": "Labyrinth Adversary",
@@ -303,13 +243,74 @@
           "set": "dst",
           "reason": "No recognized pattern",
           "text": "Each creature you control can't be blocked as long as defending player controls an artifact land."
+        },
+        {
+          "name": "Planebound Accomplice",
+          "set": "mh1",
+          "reason": "No recognized pattern",
+          "text": "{R}: You may put a planeswalker card from your hand onto the battlefield. Sacrifice it at the beginning of the next end step."
+        }
+      ]
+    },
+    {
+      "id": "tokens-counters",
+      "reason": "Token/counter wording needs typed objects, counters, and downstream interactions.",
+      "count": 2391,
+      "samples": [
+        {
+          "name": "Seedship Agrarian",
+          "set": "eoe",
+          "reason": "No recognized pattern",
+          "text": "Whenever this creature becomes tapped, create a Lander token. (It's an artifact with \"{2}, {T}, Sacrifice this token: Search your library for a basic land card, put it onto the battlefield tapped, then shuffle.\") Landfall — Whenever a land you control enters, put a +1/+1 counter on this creature."
+        },
+        {
+          "name": "Coalition Relic",
+          "set": "dmc",
+          "reason": "No recognized pattern",
+          "text": "{T}: Add one mana of any color. {T}: Put a charge counter on this artifact. At the beginning of your first main phase, remove all charge counters from this artifact. Add one mana of any color for each charge counter removed this way."
+        },
+        {
+          "name": "Puppeteer Clique",
+          "set": "ecc",
+          "reason": "No recognized pattern",
+          "text": "Flying When this creature enters, put target creature card from an opponent's graveyard onto the battlefield under your control. It gains haste. At the beginning of your next end step, exile it. Persist (When this creature dies, if it had no -1/-1 counters on it, return it to the battlefield under its owner's control with a -1/-1 counter on it.)"
+        },
+        {
+          "name": "Sagu Pummeler",
+          "set": "tdm",
+          "reason": "No recognized pattern",
+          "text": "Reach Renew — {4}{G}, Exile this card from your graveyard: Put two +1/+1 counters and a reach counter on target creature. Activate only as a sorcery."
+        },
+        {
+          "name": "Minion Reflector",
+          "set": "ala",
+          "reason": "Could not parse trigger effect clause",
+          "text": "Whenever a nontoken creature you control enters, you may pay {2}. If you do, create a token that's a copy of that creature, except it has haste and \"At the beginning of the end step, sacrifice this permanent.\""
+        },
+        {
+          "name": "Long List of the Ents",
+          "set": "ltr",
+          "reason": "No recognized pattern",
+          "text": "(As this Saga enters and after your draw step, add a lore counter. Sacrifice after VI.) I, II, III, IV, V, VI — Note a creature type that hasn't been noted for this Saga. When you next cast a creature spell of that type this turn, that creature enters with an additional +1/+1 counter on it."
+        },
+        {
+          "name": "Deny the Divine",
+          "set": "thb",
+          "reason": "No recognized pattern",
+          "text": "Counter target creature or enchantment spell. If that spell is countered this way, exile it instead of putting it into its owner's graveyard."
+        },
+        {
+          "name": "Hurl into History",
+          "set": "lci",
+          "reason": "No recognized pattern",
+          "text": "Counter target artifact or creature spell. Discover X, where X is that spell's mana value. (Exile cards from the top of your library until you exile a nonland card with that mana value or less. Cast it without paying its mana cost or put it into your hand. Put the rest on the bottom in a random order.)"
         }
       ]
     },
     {
       "id": "replacement-prevention",
       "reason": "Replacement/prevention effects require replacement-layer handling.",
-      "count": 1696,
+      "count": 1660,
       "samples": [
         {
           "name": "Sodden Verdure",
@@ -364,7 +365,7 @@
     {
       "id": "non-hand-zones",
       "reason": "Non-hand zone casting/movement needs zone permission and visibility checks.",
-      "count": 1590,
+      "count": 1567,
       "samples": [
         {
           "name": "Road of Return",
@@ -419,7 +420,7 @@
     {
       "id": "cost-system",
       "reason": "Alternative/additional/reduced costs need prompt-backed payment and legality.",
-      "count": 1319,
+      "count": 1269,
       "samples": [
         {
           "name": "Nissa, Worldsoul Speaker",
@@ -474,7 +475,7 @@
     {
       "id": "library-selection",
       "reason": "Library search/look/reveal effects need legal choices, destinations, reveal policy, and ordering.",
-      "count": 897,
+      "count": 893,
       "samples": [
         {
           "name": "Safewright Quest",
@@ -529,7 +530,7 @@
     {
       "id": "choice-modal",
       "reason": "Choice/modal/naming text should be prompt-backed instead of deterministic.",
-      "count": 847,
+      "count": 843,
       "samples": [
         {
           "name": "Road of Return",
@@ -584,7 +585,7 @@
     {
       "id": "copy-stack",
       "reason": "Copy/stack mechanics need stack-object identity and trigger multiplication.",
-      "count": 624,
+      "count": 617,
       "samples": [
         {
           "name": "Mindlink Mech",
@@ -639,7 +640,7 @@
     {
       "id": "special-mechanics",
       "reason": "Special mechanics need dedicated state and UI presentation.",
-      "count": 311,
+      "count": 304,
       "samples": [
         {
           "name": "Sword-Swallowing Seraph",

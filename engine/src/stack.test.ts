@@ -13,6 +13,23 @@ function makeCreature(): CardDefinition {
   };
 }
 
+function makeCreatureEnteringWithCounters(): CardDefinition {
+  return {
+    id: 'yorvo-like-1',
+    name: 'Yorvo Like',
+    type_line: 'Legendary Creature - Giant Noble',
+    oracle_text: 'Yorvo Like enters with four +1/+1 counters on it.',
+    mana_cost: '{G}{G}{G}',
+    cmc: 3,
+    colors: ['G'],
+    color_identity: ['G'],
+    keywords: [],
+    card_types: ['creature'],
+    power: 0,
+    toughness: 0,
+  };
+}
+
 function makeInstant(): CardDefinition {
   return {
     id: 'opt-1', name: 'Opt', type_line: 'Instant',
@@ -957,6 +974,15 @@ describe('Stack', () => {
       next = resolveTopOfStack(next);
 
       expect(next.cards.get(cardInstanceId)!.zone).toBe('battlefield');
+    });
+
+    it('applies enters-with counters before the permanent can be checked as a creature', () => {
+      const { state, cardInstanceId } = setupWithCardInHand(makeCreatureEnteringWithCounters());
+      let next = castSpell(state, 'p1', cardInstanceId);
+      next = resolveTopOfStack(next);
+
+      expect(next.cards.get(cardInstanceId)?.zone).toBe('battlefield');
+      expect(next.cards.get(cardInstanceId)?.counters['+1/+1']).toBe(4);
     });
 
     it('instant resolves to graveyard', () => {

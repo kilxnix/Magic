@@ -366,6 +366,54 @@ function hasProwess(def: CardDefinition): boolean {
     || /(^|\n)\s*prowess\b/i.test(def.oracle_text);
 }
 
+function parseSmallCounterCount(raw: string): number | null {
+  const normalized = raw.toLowerCase();
+  if (normalized === 'a' || normalized === 'an') return 1;
+  const numeric = parseInt(normalized, 10);
+  if (!Number.isNaN(numeric)) return numeric;
+  const words: Record<string, number> = {
+    one: 1,
+    two: 2,
+    three: 3,
+    four: 4,
+    five: 5,
+    six: 6,
+    seven: 7,
+    eight: 8,
+    nine: 9,
+    ten: 10,
+  };
+  return words[normalized] ?? null;
+}
+
+function entersWithCounters(oracleText: string): Array<{ counterType: string; count: number }> {
+  const counters: Array<{ counterType: string; count: number }> = [];
+  for (const rawLine of oracleText.split('\n')) {
+    const line = rawLine.trim();
+    const match = line.match(/\benters(?: the battlefield)? with (a|an|one|two|three|four|five|six|seven|eight|nine|ten|\d+) ([+\-]\d+\/[+\-]\d+|[a-z]+(?: [a-z]+)?) counters?\b/i);
+    if (!match) continue;
+    const count = parseSmallCounterCount(match[1]);
+    const counterType = match[2]?.toLowerCase();
+    if (!count || !counterType) continue;
+    counters.push({ counterType, count });
+  }
+  return counters;
+}
+
+function applyEntersWithCounters(state: GameState, instanceId: string, def: CardDefinition): GameState {
+  const counters = entersWithCounters(def.oracle_text);
+  if (counters.length === 0) return state;
+  const card = state.cards.get(instanceId);
+  if (!card || card.zone !== 'battlefield') return state;
+  const nextCounters = { ...card.counters };
+  for (const counter of counters) {
+    nextCounters[counter.counterType] = (nextCounters[counter.counterType] || 0) + counter.count;
+  }
+  const cards = new Map(state.cards);
+  cards.set(instanceId, { ...card, counters: nextCounters });
+  return { ...state, cards };
+}
+
 function hasPrintedCascade(def: CardDefinition): boolean {
   return /(^|\n)\s*cascade\b/i.test(def.oracle_text);
 }
@@ -1315,6 +1363,7 @@ export function resolveTopOfStack(state: GameState): GameState {
       return checkStateBasedActions(resultState);
     }
 
+    resultState = applyEntersWithCounters(resultState, card.instanceId, def);
     // Register all triggered abilities for this permanent (ETB, dies, attacks, etc.)
     resultState = registerBattlefieldAbilities(resultState, card.instanceId);
     resultState = registerContinuousAbilitiesForPermanent(resultState, card.instanceId);
