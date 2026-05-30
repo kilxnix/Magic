@@ -365,6 +365,9 @@ export function serializeGameState(state: GameState): SerializedGameStateV1 {
     spellsCastThisTurn: state.spellsCastThisTurn,
     playersWhoAttackedThisTurn: state.playersWhoAttackedThisTurn ? [...state.playersWhoAttackedThisTurn] : undefined,
     legendRuleKeepChoices: state.legendRuleKeepChoices ? { ...state.legendRuleKeepChoices } : undefined,
+    replacementEffectOrderChoices: state.replacementEffectOrderChoices
+      ? Object.fromEntries(Object.entries(state.replacementEffectOrderChoices).map(([key, ids]) => [key, [...ids]]))
+      : undefined,
     hasPriorityPassed: [...state.hasPriorityPassed],
     stack: state.stack.map(serializeStackItem),
     combat: state.combat ? serializeCombatState(state.combat) : null,
@@ -413,6 +416,9 @@ export function deserializeGameState(data: SerializedGameStateV1): GameState {
     spellsCastThisTurn: data.spellsCastThisTurn,
     playersWhoAttackedThisTurn: data.playersWhoAttackedThisTurn ? [...data.playersWhoAttackedThisTurn] : [],
     legendRuleKeepChoices: data.legendRuleKeepChoices ? { ...data.legendRuleKeepChoices } : undefined,
+    replacementEffectOrderChoices: data.replacementEffectOrderChoices
+      ? Object.fromEntries(Object.entries(data.replacementEffectOrderChoices).map(([key, ids]) => [key, [...ids]]))
+      : {},
     hasPriorityPassed: [...data.hasPriorityPassed],
     stack: data.stack.map(deserializeStackItem),
     combat: data.combat ? deserializeCombatState(data.combat) : null,

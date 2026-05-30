@@ -322,6 +322,10 @@ describe('serializeGameState / deserializeGameState', () => {
   it('round-trips permanent choices and restricted mana metadata', () => {
     const state = createTestState();
     state.legendRuleKeepChoices = { 'p1:mirror legend': 'legend-copy-2' };
+    state.replacementEffectOrderChoices = {
+      'DamageDealt|p1|p1|source-a': ['prevent_two', 'halve_damage'],
+      'player:p1': ['replacement-a'],
+    };
     state.players[0].manaPool = { W: 0, U: 0, B: 0, R: 0, G: 1, C: 0 };
     state.players[0].restrictedMana = [
       {
@@ -345,6 +349,10 @@ describe('serializeGameState / deserializeGameState', () => {
 
     expect(deserialized.cards.get('cavern1')?.choices).toEqual({ chosenCreatureType: 'Elf' });
     expect(deserialized.legendRuleKeepChoices).toEqual({ 'p1:mirror legend': 'legend-copy-2' });
+    expect(deserialized.replacementEffectOrderChoices).toEqual({
+      'DamageDealt|p1|p1|source-a': ['prevent_two', 'halve_damage'],
+      'player:p1': ['replacement-a'],
+    });
     expect(deserialized.players[0].restrictedMana).toEqual([
       {
         color: 'G',

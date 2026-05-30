@@ -82,6 +82,7 @@ export function initGameState(decks: DeckInput[]): GameState {
     turnNumber: 1,
     spellsCastThisTurn: 0,
     playersWhoAttackedThisTurn: [],
+    replacementEffectOrderChoices: {},
     hasPriorityPassed: new Array(decks.length).fill(false),
     stack: [],
     combat: null,

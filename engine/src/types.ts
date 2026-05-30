@@ -340,6 +340,12 @@ export interface GameState {
    * deterministic AI/test fallback.
    */
   legendRuleKeepChoices?: Record<string, string>;
+  /**
+   * Explicit replacement-effect ordering choices. Keys can be the event key
+   * from `replacementChoiceKey(...)`, `player:<playerId>`, or `global`.
+   * Each value is an ordered list of replacement effect ids to apply first.
+   */
+  replacementEffectOrderChoices?: Record<string, string[]>;
   hasPriorityPassed: boolean[];
   stack: StackItem[];
   combat: CombatState | null;

@@ -85,12 +85,71 @@ export function getReplacementsForPermanent(instanceId: string): ReplacementEffe
   );
 }
 
+function affectedPlayerId(state: GameState, event: ReplacementEvent): string | undefined {
+  if (event.targetId && state.players.some(player => player.id === event.targetId)) {
+    return event.targetId;
+  }
+  const cardId = event.cardInstanceId || event.targetId;
+  if (!cardId) return undefined;
+  return state.cards.get(cardId)?.ownerId;
+}
+
+export function replacementChoiceKey(event: ReplacementEvent, playerId?: string): string {
+  const parts = [
+    event.type,
+    playerId || 'unknown',
+    event.cardInstanceId || event.targetId || 'none',
+    event.sourceId || 'none',
+  ];
+  return parts.map(part => String(part).replace(/[:|]/g, '_')).join('|');
+}
+
+function explicitReplacementOrder(state: GameState, event: ReplacementEvent): string[] {
+  const choices = state.replacementEffectOrderChoices;
+  if (!choices) return [];
+  const playerId = affectedPlayerId(state, event);
+  const keys = [
+    replacementChoiceKey(event, playerId),
+    playerId ? `player:${playerId}` : '',
+    'global',
+  ].filter(Boolean);
+
+  for (const key of keys) {
+    const order = choices[key];
+    if (order?.length) return order;
+  }
+  return [];
+}
+
+function orderApplicableReplacements(
+  state: GameState,
+  event: ReplacementEvent,
+  applicable: ReplacementEffect[],
+): ReplacementEffect[] {
+  const order = explicitReplacementOrder(state, event);
+  if (order.length === 0) return applicable;
+  const rank = new Map(order.map((id, index) => [id, index]));
+  return applicable
+    .map((replacement, index) => ({ replacement, index }))
+    .sort((a, b) => {
+      const rankA = rank.get(a.replacement.id);
+      const rankB = rank.get(b.replacement.id);
+      if (rankA !== undefined || rankB !== undefined) {
+        if (rankA === undefined) return 1;
+        if (rankB === undefined) return -1;
+        return rankA - rankB;
+      }
+      return a.index - b.index;
+    })
+    .map(entry => entry.replacement);
+}
+
 /**
  * Apply replacement effects to an event.
  * Returns the modified event (or null if prevented).
  *
- * If multiple replacements apply, the affected player/controller chooses
- * which to apply first (for now, we apply in registration order).
+ * If multiple replacements apply, explicit state choices select the order;
+ * otherwise the engine falls back to registration order for AI/tests.
  */
 export function applyReplacements(
   state: GameState,
@@ -107,14 +166,12 @@ export function applyReplacements(
     iterations++;
 
     // Find applicable replacements
-    const applicable = Array.from(activeReplacements.values()).filter(
+    const applicable = orderApplicableReplacements(state, currentEvent, Array.from(activeReplacements.values()).filter(
       r => !appliedReplacements.includes(r.id) && r.applies(state, currentEvent!)
-    );
+    ));
 
     if (applicable.length === 0) break;
 
-    // Apply the first applicable replacement
-    // (In a real implementation, the affected player would choose)
     const replacement = applicable[0];
     currentEvent = replacement.replace(state, currentEvent);
     appliedReplacements.push(replacement.id);

@@ -236,6 +236,7 @@ export interface SerializedGameStateV1 {
   spellsCastThisTurn?: number;
   playersWhoAttackedThisTurn?: string[];
   legendRuleKeepChoices?: Record<string, string>;
+  replacementEffectOrderChoices?: Record<string, string[]>;
   hasPriorityPassed: boolean[];
   stack: SerializedStackItemV1[];
   combat: SerializedCombatStateV1 | null;

@@ -4,6 +4,7 @@ import {
   unregisterReplacement,
   clearReplacements,
   applyReplacements,
+  replacementChoiceKey,
   createDamagePreventionEffect,
   createExileInsteadOfDieEffect,
   createDrawDoublingEffect,
@@ -11,7 +12,7 @@ import {
   createTokenDoublingEffect,
   getReplacementsForPermanent,
 } from './replacement';
-import type { ReplacementEvent } from './replacement';
+import type { ReplacementEffect, ReplacementEvent } from './replacement';
 import type { GameState, CardInstance, CardDefinition } from '../types';
 import { executeEffects, resetTokenCounter } from './executor';
 import type { Effect } from './ast';
@@ -366,6 +367,81 @@ describe('Replacement Effects Framework', () => {
 
       expect(result.event).toBeNull();
       expect(result.appliedReplacements).toHaveLength(1); // Only first applied
+    });
+
+    it('uses explicit affected-player replacement order when multiple replacements apply', () => {
+      const state = createTestState();
+      const halveDamage: ReplacementEffect = {
+        id: 'halve_damage',
+        sourceInstanceId: 'source-halve',
+        controllerId: 'player-1',
+        eventType: 'DamageDealt',
+        applies: (_state, event) => event.type === 'DamageDealt' && event.targetId === 'player-1',
+        replace: (_state, event) => ({ ...event, amount: Math.ceil((event.amount || 0) / 2) }),
+      };
+      const preventTwo: ReplacementEffect = {
+        id: 'prevent_two',
+        sourceInstanceId: 'source-prevent',
+        controllerId: 'player-1',
+        eventType: 'DamageDealt',
+        applies: (_state, event) => event.type === 'DamageDealt' && event.targetId === 'player-1',
+        replace: (_state, event) => {
+          const amount = Math.max(0, (event.amount || 0) - 2);
+          return amount === 0 ? null : { ...event, amount };
+        },
+      };
+      registerReplacement(halveDamage);
+      registerReplacement(preventTwo);
+
+      const event: ReplacementEvent = {
+        type: 'DamageDealt',
+        targetId: 'player-1',
+        amount: 5,
+      };
+      const key = replacementChoiceKey(event, 'player-1');
+      const orderedState = {
+        ...state,
+        replacementEffectOrderChoices: {
+          [key]: ['prevent_two', 'halve_damage'],
+        },
+      };
+
+      const result = applyReplacements(orderedState, event);
+
+      expect(result.appliedReplacements).toEqual(['prevent_two', 'halve_damage']);
+      expect(result.event?.amount).toBe(2);
+    });
+
+    it('falls back to registration order when no replacement order choice is present', () => {
+      const state = createTestState();
+      registerReplacement({
+        id: 'halve_damage',
+        sourceInstanceId: 'source-halve',
+        controllerId: 'player-1',
+        eventType: 'DamageDealt',
+        applies: (_state, event) => event.type === 'DamageDealt' && event.targetId === 'player-1',
+        replace: (_state, event) => ({ ...event, amount: Math.ceil((event.amount || 0) / 2) }),
+      });
+      registerReplacement({
+        id: 'prevent_two',
+        sourceInstanceId: 'source-prevent',
+        controllerId: 'player-1',
+        eventType: 'DamageDealt',
+        applies: (_state, event) => event.type === 'DamageDealt' && event.targetId === 'player-1',
+        replace: (_state, event) => {
+          const amount = Math.max(0, (event.amount || 0) - 2);
+          return amount === 0 ? null : { ...event, amount };
+        },
+      });
+
+      const result = applyReplacements(state, {
+        type: 'DamageDealt',
+        targetId: 'player-1',
+        amount: 5,
+      });
+
+      expect(result.appliedReplacements).toEqual(['halve_damage', 'prevent_two']);
+      expect(result.event?.amount).toBe(1);
     });
   });
 });
