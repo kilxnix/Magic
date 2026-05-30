@@ -182,7 +182,7 @@ async function assertHoverPreview(page) {
   const hoverTarget = page.getByText('Forest', { exact: true }).first();
   await hoverTarget.waitFor({ state: 'visible', timeout: 30000 });
   await hoverTarget.hover();
-  const preview = page.locator('div.fixed.right-4.top-20').filter({ hasText: /Forest|Basic Land|Tap/i }).first();
+  const preview = page.locator('div.pointer-events-none.fixed').filter({ hasText: /Forest|Basic Land|Tap/i }).first();
   await preview.waitFor({ state: 'visible', timeout: 5000 });
   const text = (await preview.innerText()).replace(/\s+/g, ' ');
   await screenshot(page, '03-hover-preview.png');

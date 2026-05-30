@@ -20,9 +20,10 @@ Scope: recent `game-reliability-refactor` work from `88e54bb..597d918`, with Sis
 | Flow | Command | Result |
 | --- | --- | --- |
 | `/play` save slots/review audit | `DECKREPS_BASE_URL=http://127.0.0.1:5179 node scripts/play_save_slots_playtest.js` | Passed against fresh built preview; now verifies saved-game replay audit fields (`engineEventLogInitialState`, per-record seeds, authority action/prompt records), the save-slot audit badge, and the Game Review replay audit entry. |
+| `/play` selected mulligan | `DECKREPS_BASE_URL=http://127.0.0.1:5179 node scripts/play_mulligan_ui_playtest.js` | Passed against fresh built preview; selected-card mulligan redraw requires a bottom choice before game actions appear. |
 | Admin console | `DECKREPS_QA_ADMIN_TOKEN=local-ui-qa-token node scripts/admin_console_playtest.js` | Passed locally |
 | Multiplayer rooms | `DECKREPS_BASE_URL=http://127.0.0.1:5173 DECKREPS_QA_ADMIN_TOKEN=local-ui-qa-token node scripts/room_ui_playtest.js` | Passed locally; covered shared tracker, engine beta start, 4-player room, mobile room checks, and unsupported-action error |
-| Search picker UI | `DECKREPS_BASE_URL=http://127.0.0.1:5173 node scripts/play_search_picker_ui_playtest.js` | Passed locally |
+| Search picker UI | `DECKREPS_BASE_URL=http://127.0.0.1:5179 node scripts/play_search_picker_ui_playtest.js` | Passed against fresh built preview; hover card preview and search picker legality/destination/reveal metadata verified. |
 | Scry/surveil choice UI | `DECKREPS_BASE_URL=http://127.0.0.1:5173 node scripts/play_library_choice_ui_playtest.js` | Passed locally |
 | Polish surface | `DECKREPS_BASE_URL=http://127.0.0.1:5173 node scripts/polish_ui_playtest.js` | Passed locally |
 | Event Center | `DECKREPS_BASE_URL=http://127.0.0.1:5173 DECKREPS_QA_ADMIN_TOKEN=local-ui-qa-token node scripts/event_ui_playtest.js` | Passed locally |
