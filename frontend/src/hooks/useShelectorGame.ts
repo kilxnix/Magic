@@ -833,6 +833,13 @@ type PendingTargetChoice = {
   choices: TargetActionChoice[];
 };
 
+type PendingHandTopLibraryChoice = {
+  promptRequest: SelectCardsPromptRequest;
+  selectedIds: string[];
+  sourceName: string;
+  count: number;
+};
+
 type PendingCastChoiceMode = 'discardLand' | 'sacrificeCreature';
 
 function toTutorCardOption(state: GameState, card: CardInstance): TutorCardOption | null {
@@ -845,6 +852,47 @@ function toTutorCardOption(state: GameState, card: CardInstance): TutorCardOptio
     oracleText: def.oracle_text,
     colors: def.colors,
     cmc: def.cmc,
+  };
+}
+
+function handTopLibraryOptionsFromPrompt(
+  state: GameState,
+  prompt: SelectCardsPromptRequest,
+  selectedIds: string[],
+  count: number,
+): TutorCardOption[] {
+  const selected = new Set(selectedIds);
+  const nextPick = selectedIds.length + 1;
+  return prompt.legalChoices
+    .filter(choice => !selected.has(choice.cardInstanceId))
+    .flatMap(choice => {
+      const card = state.cards.get(choice.cardInstanceId);
+      if (!card) return [];
+      const option = toTutorCardOption(state, card);
+      return option
+        ? [{
+            ...option,
+            legal: true,
+            reason: `Pick ${nextPick} of ${count}; chosen order becomes top-to-bottom library order.`,
+            destination: 'top' as const,
+          }]
+        : [];
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function topStackBrainstormInfo(state: GameState): { controllerId: string; sourceName: string; sourceInstanceId: string } | null {
+  const top = state.stack[state.stack.length - 1];
+  if (!top || top.kind !== 'Spell') return null;
+  const spellCard = state.cards.get(top.cardInstanceId);
+  if (!spellCard) return null;
+  const spellDef = getCastSpellDefinition(state, top.cardInstanceId, { faceName: top.faceName })
+    || getCardDefinition(state, spellCard);
+  if (!spellDef || spellDef.name.toLowerCase() !== 'brainstorm') return null;
+  return {
+    controllerId: top.casterId,
+    sourceName: spellDef.name,
+    sourceInstanceId: top.cardInstanceId,
   };
 }
 
@@ -2098,6 +2146,7 @@ export function useShelectorGame() {
   const pendingPlayLandChoiceRef = useRef<PendingPlayLandChoice | null>(null);
   const pendingSearchEntryChoiceRef = useRef<PendingSearchEntryChoice | null>(null);
   const pendingTargetChoiceRef = useRef<PendingTargetChoice | null>(null);
+  const pendingHandTopLibraryChoiceRef = useRef<PendingHandTopLibraryChoice | null>(null);
   const pendingLibraryChoiceRef = useRef<{ stackItemId: string; mode: 'scry' | 'surveil' } | null>(null);
   const libraryManipulationPromptRequestRef = useRef<LibraryManipulationPromptRequest | null>(null);
   const [optionalTriggerChoice, setOptionalTriggerChoice] = useState<OptionalTriggerChoice | null>(null);
@@ -2302,6 +2351,55 @@ export function useShelectorGame() {
   const resolveTopOfStackWithAuthority = useCallback((state: GameState): GameState =>
     recordSystemStateTransition(state, resolveTopOfStack(state)),
   [recordSystemStateTransition]);
+
+  const queueHandTopLibraryChoice = useCallback((
+    state: GameState,
+    sourceName: string,
+    sourceInstanceId: string,
+    count: number,
+  ): boolean => {
+    const handCount = getCardsInZone(state, humanIdRef.current, 'hand').length;
+    const requiredCount = Math.min(count, handCount);
+    if (requiredCount <= 0) return false;
+    const promptRequest = createSelectCardsPromptRequest(state, humanIdRef.current, {
+      subject: 'PutOnTopOfLibrary',
+      zone: 'hand',
+      destination: 'library',
+      sourceInstanceId,
+      minSelections: requiredCount,
+      maxSelections: requiredCount,
+    });
+    if (promptRequest.legalChoices.length < requiredCount) return false;
+    pendingHandTopLibraryChoiceRef.current = {
+      promptRequest,
+      selectedIds: [],
+      sourceName,
+      count: requiredCount,
+    };
+    tutorRemainingRef.current = 0;
+    tutorFilterRef.current = undefined;
+    tutorFilterSpecRef.current = undefined;
+    tutorTappedRef.current = false;
+    tutorShuffleRef.current = false;
+    tutorSourceNameRef.current = sourceName;
+    tutorSourceInstanceIdRef.current = sourceInstanceId;
+    tutorPromptRequestRef.current = null;
+    setTutorTitle(`${sourceName}: choose card 1 of ${requiredCount} for the top of your library`);
+    setTutorCards(handTopLibraryOptionsFromPrompt(state, promptRequest, [], requiredCount));
+    setTutorPhase(true);
+    addMessage('system', `${sourceName} - choose ${requiredCount} card${requiredCount === 1 ? '' : 's'} from hand to put on top of your library.`);
+    return true;
+  }, [addMessage]);
+
+  const resolveTopOfStackAndPauseForFollowUp = useCallback((state: GameState): { state: GameState; pause: boolean } => {
+    const brainstorm = topStackBrainstormInfo(state);
+    const nextState = resolveTopOfStackWithAuthority(state);
+    if (brainstorm?.controllerId === humanIdRef.current) {
+      const queued = queueHandTopLibraryChoice(nextState, brainstorm.sourceName, brainstorm.sourceInstanceId, 2);
+      if (queued) return { state: nextState, pause: true };
+    }
+    return { state: nextState, pause: false };
+  }, [queueHandTopLibraryChoice, resolveTopOfStackWithAuthority]);
 
   const resolveCombatDamageWithAuthority = useCallback((state: GameState): GameState =>
     recordSystemStateTransition(state, resolveCombatDamage(state)),
@@ -3088,6 +3186,7 @@ export function useShelectorGame() {
     (currentState: GameState, messages: { role: ChatMessage['role']; text: string }[], logEntries: GameLogEntry[]): GameState => {
       let state = currentState;
       let safety = 200;
+      if (pendingHandTopLibraryChoiceRef.current) return state;
 
       // Run SBAs + triggers on entry (the action that preceded advanceGameLoop
       // may have caused creatures to die, etc.)
@@ -3361,7 +3460,7 @@ export function useShelectorGame() {
               console.log(`  -> all passed, resolving stack (${state.stack.length} items)`);
               if (tryPauseForLibraryChoice()) break;
               if (tryResolveTutor()) break;
-              { const taxResult = resolveTaxTrigger(state, messages); if (taxResult.pause) break; if (taxResult.handled) { state = taxResult.state; } else { state = resolveTopOfStackWithAuthority(state); } }
+              { const taxResult = resolveTaxTrigger(state, messages); if (taxResult.pause) break; if (taxResult.handled) { state = taxResult.state; } else { const resolved = resolveTopOfStackAndPauseForFollowUp(state); state = resolved.state; if (resolved.pause) break; } }
               state = runSBAAndTriggers(state);
               if (checkGameOver(state)) break;
               continue;
@@ -3390,7 +3489,7 @@ export function useShelectorGame() {
                   console.log(`  -> all passed, resolving stack (${state.stack.length} items)`);
                   if (tryPauseForLibraryChoice()) break;
                   if (tryResolveTutor()) break;
-                  { const taxResult = resolveTaxTrigger(state, messages); if (taxResult.pause) break; if (taxResult.handled) { state = taxResult.state; } else { state = resolveTopOfStackWithAuthority(state); } }
+                  { const taxResult = resolveTaxTrigger(state, messages); if (taxResult.pause) break; if (taxResult.handled) { state = taxResult.state; } else { const resolved = resolveTopOfStackAndPauseForFollowUp(state); state = resolved.state; if (resolved.pause) break; } }
                   state = runSBAAndTriggers(state);
                   if (checkGameOver(state)) break;
                 }
@@ -3423,7 +3522,7 @@ export function useShelectorGame() {
           console.log(`  -> resolving stack (${state.stack.length} items)`);
           if (tryPauseForLibraryChoice()) break;
           if (tryResolveTutor()) break;
-          { const taxResult = resolveTaxTrigger(state, messages); if (taxResult.pause) break; if (taxResult.handled) { state = taxResult.state; } else { state = resolveTopOfStackWithAuthority(state); } }
+          { const taxResult = resolveTaxTrigger(state, messages); if (taxResult.pause) break; if (taxResult.handled) { state = taxResult.state; } else { const resolved = resolveTopOfStackAndPauseForFollowUp(state); state = resolved.state; if (resolved.pause) break; } }
           state = runSBAAndTriggers(state);
           if (checkGameOver(state)) break;
           continue;
@@ -3848,7 +3947,7 @@ export function useShelectorGame() {
       recordAuthorityUpdate,
       resolveCombatDamageWithAuthority,
       resolveTaxTrigger,
-      resolveTopOfStackWithAuthority,
+      resolveTopOfStackAndPauseForFollowUp,
       runSBAAndTriggers,
     ],
   );
@@ -4183,6 +4282,7 @@ export function useShelectorGame() {
       pendingPlayLandChoiceRef.current = null;
       pendingSearchEntryChoiceRef.current = null;
       pendingTargetChoiceRef.current = null;
+      pendingHandTopLibraryChoiceRef.current = null;
       tutorSourceInstanceIdRef.current = undefined;
       tutorPromptRequestRef.current = null;
       libraryManipulationPromptRequestRef.current = null;
@@ -4678,6 +4778,58 @@ export function useShelectorGame() {
   );
 
   const resolveTutor = useCallback((cardInstanceId: string) => {
+    const pendingHandTopLibrary = pendingHandTopLibraryChoiceRef.current;
+    if (pendingHandTopLibrary) {
+      const engineForChoice = engineRef.current;
+      if (!engineForChoice) return;
+      const selectedIds = [...pendingHandTopLibrary.selectedIds, cardInstanceId];
+      if (selectedIds.length < pendingHandTopLibrary.count) {
+        pendingHandTopLibraryChoiceRef.current = {
+          ...pendingHandTopLibrary,
+          selectedIds,
+        };
+        setTutorTitle(`${pendingHandTopLibrary.sourceName}: choose card ${selectedIds.length + 1} of ${pendingHandTopLibrary.count} for the top of your library`);
+        setTutorCards(handTopLibraryOptionsFromPrompt(
+          engineForChoice,
+          pendingHandTopLibrary.promptRequest,
+          selectedIds,
+          pendingHandTopLibrary.count,
+        ));
+        addMessage('player', `Selected ${selectedIds.length} of ${pendingHandTopLibrary.count} for ${pendingHandTopLibrary.sourceName}.`);
+        syncState();
+        return;
+      }
+
+      const selectResponse = applySelectCardsPromptResponse(engineForChoice, pendingHandTopLibrary.promptRequest, {
+        requestId: pendingHandTopLibrary.promptRequest.id,
+        kind: 'SelectCards',
+        playerId: humanIdRef.current,
+        selectedCardInstanceIds: selectedIds,
+      });
+      recordAuthorityUpdate(selectResponse.update);
+      if (!selectResponse.ok || !selectResponse.state) {
+        addMessage('system', selectResponse.message || `Could not resolve ${pendingHandTopLibrary.sourceName} card ordering.`);
+        syncState();
+        return;
+      }
+
+      pendingHandTopLibraryChoiceRef.current = null;
+      setTutorPhase(false);
+      setTutorCards([]);
+      setTutorTitle('');
+      engineRef.current = selectResponse.state as GameStateWithAI;
+      addMessage('player', `${pendingHandTopLibrary.sourceName}: put ${selectedIds.length} card${selectedIds.length === 1 ? '' : 's'} from hand on top of your library.`);
+
+      const loopMessages: { role: ChatMessage['role']; text: string }[] = [];
+      const loopLogEntries: GameLogEntry[] = [];
+      const state: GameState = advanceGameLoop(engineRef.current, loopMessages, loopLogEntries);
+      engineRef.current = state as GameStateWithAI;
+      for (const msg of loopMessages) addMessage(msg.role, msg.text);
+      if (loopLogEntries.length > 0) setGameLog(prev => [...prev, ...loopLogEntries]);
+      syncState();
+      return;
+    }
+
     const pendingCastChoice = pendingCastChoiceActionRef.current;
     if (pendingCastChoice) {
       pendingCastChoiceActionRef.current = null;
@@ -5054,6 +5206,11 @@ export function useShelectorGame() {
    * fewer than N picks, or to skip the search entirely. */
   const cancelTutor = useCallback(() => {
     if (!engineRef.current) return;
+    if (pendingHandTopLibraryChoiceRef.current) {
+      addMessage('system', `${pendingHandTopLibraryChoiceRef.current.sourceName} requires choosing cards for the top of your library.`);
+      syncState();
+      return;
+    }
     const pendingCastChoice = pendingCastChoiceActionRef.current;
     const pendingLandChoice = pendingPlayLandChoiceRef.current;
     const choiceMode = pendingCastChoiceModeRef.current;
@@ -5153,6 +5310,7 @@ export function useShelectorGame() {
     pendingPlayLandChoiceRef.current = null;
     pendingSearchEntryChoiceRef.current = null;
     pendingTargetChoiceRef.current = null;
+    pendingHandTopLibraryChoiceRef.current = null;
     optionalTriggerPromptRequestRef.current = null;
     damageAssignmentPromptRequestRef.current = null;
     triggerOrderPromptRequestRef.current = null;
@@ -5674,8 +5832,8 @@ export function useShelectorGame() {
     runSBAAndTriggers,
     skipEmptyPhases,
     syncState,
-    tutorPhase,
-    applyActionThroughAuthority,
+      tutorPhase,
+      applyActionThroughAuthority,
   ]);
 
   // Handle player action
@@ -5697,6 +5855,10 @@ export function useShelectorGame() {
       }
       if (triggerOrderChoice) {
         addMessage('system', 'Order the pending triggers first.');
+        return;
+      }
+      if (pendingHandTopLibraryChoiceRef.current) {
+        addMessage('system', `Finish ${pendingHandTopLibraryChoiceRef.current.sourceName} card ordering first.`);
         return;
       }
 
@@ -6799,6 +6961,7 @@ export function useShelectorGame() {
       pendingPlayLandChoiceRef.current = null;
       pendingSearchEntryChoiceRef.current = snapshot.pendingSearchEntryChoice || null;
       pendingTargetChoiceRef.current = snapshot.pendingTargetChoice || null;
+      pendingHandTopLibraryChoiceRef.current = null;
       tutorPromptRequestRef.current = snapshot.tutorPromptRequest || null;
       tutorRemainingRef.current = snapshot.tutorRemaining || 0;
       tutorFilterRef.current = snapshot.tutorFilter;

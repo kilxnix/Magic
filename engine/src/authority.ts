@@ -298,7 +298,8 @@ export type SelectCardsSubject =
   | 'ManualDiscard'
   | 'AdditionalCost'
   | 'OpeningMulligan'
-  | 'OpeningMulliganBottom';
+  | 'OpeningMulliganBottom'
+  | 'PutOnTopOfLibrary';
 
 export interface SelectCardsChoice {
   cardInstanceId: string;
@@ -2831,6 +2832,49 @@ function selectCardsRejectUpdate(
   };
 }
 
+function moveSelectedCardsToLibraryTop(
+  state: GameState,
+  selectedIds: string[],
+): Map<string, CardInstance> {
+  const selectedSet = new Set(selectedIds);
+  const selectedCards = selectedIds
+    .map(id => state.cards.get(id))
+    .filter((card): card is CardInstance => Boolean(card))
+    .map(card => ({
+      ...card,
+      zone: 'library' as Zone,
+      tapped: false,
+      damage: 0,
+      counters: {},
+    }));
+
+  const entriesBeforeLibrary: [string, CardInstance][] = [];
+  const existingLibrary: [string, CardInstance][] = [];
+  const entriesAfterLibrary: [string, CardInstance][] = [];
+  let libraryStarted = false;
+  let libraryEnded = false;
+
+  for (const [id, card] of state.cards) {
+    if (selectedSet.has(id)) continue;
+    const isSelectedOwnerLibrary = selectedCards.some(selected => selected.ownerId === card.ownerId)
+      && card.zone === 'library';
+    if (isSelectedOwnerLibrary && !libraryEnded) {
+      libraryStarted = true;
+      existingLibrary.push([id, card]);
+      continue;
+    }
+    if (libraryStarted) libraryEnded = true;
+    (libraryStarted ? entriesAfterLibrary : entriesBeforeLibrary).push([id, card]);
+  }
+
+  const newCards = new Map<string, CardInstance>();
+  for (const [id, card] of entriesBeforeLibrary) newCards.set(id, card);
+  for (const card of selectedCards) newCards.set(card.instanceId, card);
+  for (const [id, card] of existingLibrary) newCards.set(id, card);
+  for (const [id, card] of entriesAfterLibrary) newCards.set(id, card);
+  return newCards;
+}
+
 export function applySelectCardsPromptResponse(
   state: GameState,
   request: SelectCardsPromptRequest,
@@ -2912,18 +2956,22 @@ export function applySelectCardsPromptResponse(
     }
   }
 
-  const newCards = new Map(state.cards);
+  let newCards = new Map(state.cards);
   if (request.commitSelection) {
-    for (const selectedId of selectedIds) {
-      const card = newCards.get(selectedId);
-      if (!card) continue;
-      newCards.set(selectedId, {
-        ...card,
-        zone: request.destination,
-        tapped: request.destination === 'battlefield' ? card.tapped : false,
-        damage: request.destination === 'battlefield' ? card.damage : 0,
-        counters: request.destination === 'battlefield' ? card.counters : {},
-      });
+    if (request.destination === 'library') {
+      newCards = moveSelectedCardsToLibraryTop(state, selectedIds);
+    } else {
+      for (const selectedId of selectedIds) {
+        const card = newCards.get(selectedId);
+        if (!card) continue;
+        newCards.set(selectedId, {
+          ...card,
+          zone: request.destination,
+          tapped: request.destination === 'battlefield' ? card.tapped : false,
+          damage: request.destination === 'battlefield' ? card.damage : 0,
+          counters: request.destination === 'battlefield' ? card.counters : {},
+        });
+      }
     }
   }
   const nextState: GameState = request.commitSelection ? { ...state, cards: newCards } : state;

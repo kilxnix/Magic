@@ -32,7 +32,7 @@ Source files audited:
 | --- | --- | --- |
 | 1. Single engine authority boundary | partial | `engine/src/authority.ts`, `actions-public.ts`, and authority tests exist. UI still has local orchestration and not every mutation is event-sourced. |
 | 2. Split spell casting, ability activation, resolution prompts | partial | Sisay cast/activation split is browser-proven. Generic typed prompt architecture is not complete. |
-| 3. Typed prompt lifecycle | partial | Search and library-choice prompts improved. No universal `ActionRequest` request-id/state-id system across all decisions. |
+| 3. Typed prompt lifecycle | partial | Search, library-choice, and Brainstorm hand-to-library-top prompts improved. No universal `ActionRequest` request-id/state-id system across all decisions. |
 | 4. Search predicates/response validation | partial | Sisay is browser-proven. Search picker and Farseek/fetch-style legality have UI proof. Not all search/tutor destinations are complete. |
 | 5. Stack and priority machine | partial | Stack/priority tests and UI paths exist. Full Arena-like priority stops/hold behavior is not complete. |
 | 6. Replacement effects on all zone changes | partial | Shock/fetch-style entry choices have tests/UI coverage in slices. Replacement coverage is not global. |
@@ -40,7 +40,7 @@ Source files audited:
 | 8. Context-aware card clicks | partial | Hover/modal/card inspect improvements exist. Not every card context maps to exact legal action choices. |
 | 9. Target selection | partial | Targeting tests exist. Complex multiplayer target selection/fizzle/revalidation is not complete. |
 | 10. Turn/phase/event feed projection | partial | Public phase label polishing and UI tests exist. Full state-id event consistency/replay is not done. |
-| 11. Mandatory choices separate from priority | partial | Search/scry/surveil choices exist. Universal mandatory-choice handling is not complete. |
+| 11. Mandatory choices separate from priority | partial | Search/scry/surveil choices exist, and Brainstorm now pauses for mandatory hand-to-library-top selection after draw resolution. Universal mandatory-choice handling is not complete. |
 | 12. Auto-pay as proposal | partial | Auto-pay preview and Sisay auto-pay are browser-proven. Full trust UI for every special mana case is incomplete. |
 | 13. Continuous effects/derived characteristics | partial | Sisay power and some layers/effective types work. Full CR-style layer/dependency system is not complete. |
 | 14. AI uses same engine contract | partial | AI action tests pass and AI uses try paths in slices. Full 4p politics/hidden-info safe AI is not complete. |
@@ -69,7 +69,7 @@ Minimum acceptance bar from that file:
 | Fix 1: Strict Action Generation | partial | Shared legal-action and try wrappers exist; not every source consumes one canonical predicate. |
 | Fix 2: Sisay Search Legality | browser-proven for one flow | The exact `/play` flow cast Sisay, activated WUBRG, filtered choices, and put Mox Amber on battlefield. |
 | Fix 3: Shared Legality Engine | partial | Action paths improved, review and UI suggestions still not fully unified. |
-| Fix 4: Prompt System | partial | Search/scry/surveil/equipment style prompts exist; no fully generic typed request system. |
+| Fix 4: Prompt System | partial | Search/scry/surveil/equipment style prompts exist, plus Brainstorm hand-to-library-top selection; no fully generic typed request system. |
 | Fix 5: Transactional Engine Updates | partial | Authority/action response structures exist; not a complete event-sourced transaction model. |
 | Fix 6: Event-Sourced Replay | not done | Logging exists; deterministic replay/audit is not complete. |
 | Fix 7: Review Must Audit Legality | partial | Review wording and some legality surfacing exist; no full legality audit. |
@@ -104,7 +104,7 @@ Minimum acceptance bar from that file:
 | 2.9 Target Legality | partial |
 | 2.10 Cost Payment Rules | partial |
 | 2.11 Timing Permissions | partial |
-| 2.12 Modal And Optional Choices | partial |
+| 2.12 Modal And Optional Choices | partial; Brainstorm now has prompt-backed hand-to-library-top ordering |
 | 3.1 Priority Is Visible But Not Central | partial |
 | 3.2 Stack Is Evented But Not Visually Dominant | partial |
 | 3.3 Pass Priority Flow Is Compressed | partial |

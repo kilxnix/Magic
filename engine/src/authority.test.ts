@@ -1264,6 +1264,45 @@ describe('authority action boundary', () => {
     expect(illegal.state).toBeUndefined();
   });
 
+  it('puts selected hand cards on top of the library in submitted order', () => {
+    const state = stateWithForestInHand();
+    const ponder = def('ponder', 'Ponder', 'Sorcery', '{U}');
+    const opt = def('opt', 'Opt', 'Instant', '{U}');
+    const island = def('top-island', 'Island', 'Basic Land - Island');
+    const bolt = def('library-bolt', 'Lightning Bolt', 'Instant', '{R}');
+    state.cardDefinitions.set(ponder.id, ponder);
+    state.cardDefinitions.set(opt.id, opt);
+    state.cardDefinitions.set(island.id, island);
+    state.cardDefinitions.set(bolt.id, bolt);
+    state.cards.set('ponder-hand', cardInstance('ponder-hand', ponder.id, 'p1', 'hand'));
+    state.cards.set('opt-hand', cardInstance('opt-hand', opt.id, 'p1', 'hand'));
+    state.cards.set('island-library', cardInstance('island-library', island.id, 'p1', 'library'));
+    state.cards.set('bolt-library', cardInstance('bolt-library', bolt.id, 'p1', 'library'));
+
+    const request = createSelectCardsPromptRequest(state, 'p1', {
+      id: 'prompt-put-on-top',
+      subject: 'PutOnTopOfLibrary',
+      zone: 'hand',
+      destination: 'library',
+      minSelections: 2,
+      maxSelections: 2,
+      createdAt: 33,
+    });
+
+    const accepted = applySelectCardsPromptResponse(state, request, {
+      requestId: request.id,
+      kind: 'SelectCards',
+      playerId: 'p1',
+      selectedCardInstanceIds: ['opt-hand', 'ponder-hand'],
+    });
+
+    expect(accepted.ok).toBe(true);
+    const libraryOrder = [...accepted.state!.cards.values()]
+      .filter(card => card.ownerId === 'p1' && card.zone === 'library')
+      .map(card => card.instanceId);
+    expect(libraryOrder.slice(0, 4)).toEqual(['opt-hand', 'ponder-hand', 'island-library', 'bolt-library']);
+  });
+
   it('validates opening mulligan card selections before redraw and bottom decisions', () => {
     const state = stateWithForestInHand();
     const forest = [...state.cards.values()].find(card => card.definitionId === 'forest' && card.ownerId === 'p1');
