@@ -39,7 +39,7 @@ Source files audited:
 | 7. One legal action generator everywhere | partial | Engine and AI moved closer to shared try/action paths. Review/coaching are not fully unified. |
 | 8. Context-aware card clicks | partial | Hover/modal/card inspect improvements exist. Not every card context maps to exact legal action choices. |
 | 9. Target selection | partial | Targeting tests exist. Complex multiplayer target selection/fizzle/revalidation is not complete. |
-| 10. Turn/phase/event feed projection | partial | Public phase label polishing and UI tests exist. Full state-id event consistency/replay is not done. |
+| 10. Turn/phase/event feed projection | partial | Public phase label polishing, validated manual turn/phase correction, and UI tests exist. Full state-id event consistency/replay is not done. |
 | 11. Mandatory choices separate from priority | partial | Search/scry/surveil choices exist, and Brainstorm now pauses for mandatory hand-to-library-top selection after draw resolution. Universal mandatory-choice handling is not complete. |
 | 12. Auto-pay as proposal | partial | Auto-pay preview and Sisay auto-pay are browser-proven. Full trust UI for every special mana case is incomplete. |
 | 13. Continuous effects/derived characteristics | partial | Sisay power and some layers/effective types work. Full CR-style layer/dependency system is not complete. |
@@ -69,12 +69,12 @@ Minimum acceptance bar from that file:
 | Fix 1: Strict Action Generation | partial | Shared legal-action and try wrappers exist; not every source consumes one canonical predicate. |
 | Fix 2: Sisay Search Legality | browser-proven for one flow | The exact `/play` flow cast Sisay, activated WUBRG, filtered choices, and put Mox Amber on battlefield. |
 | Fix 3: Shared Legality Engine | partial | Action paths improved, review and UI suggestions still not fully unified. |
-| Fix 4: Prompt System | partial | Search/scry/surveil/equipment style prompts exist, Brainstorm hand-to-library-top selection exists, and manual attach/detach correction now uses validated action requests; no fully generic typed request system. |
+| Fix 4: Prompt System | partial | Search/scry/surveil/equipment style prompts exist, Brainstorm hand-to-library-top selection exists, and manual attach/detach plus turn/phase correction now use validated action requests; no fully generic typed request system. |
 | Fix 5: Transactional Engine Updates | partial | Authority/action response structures exist; not a complete event-sourced transaction model. |
 | Fix 6: Event-Sourced Replay | not done | Logging exists; deterministic replay/audit is not complete. |
 | Fix 7: Review Must Audit Legality | partial | Review wording and some legality surfacing exist; no full legality audit. |
 | Fix 8: Stack And Priority | partial | Visible stack/priority exists; full-control/stop settings are incomplete. |
-| Fix 9: Turn And Phase Labels | partial/browser-checked in UI scripts | Labels improved; event consistency is not globally audited. |
+| Fix 9: Turn And Phase Labels | partial/browser-checked in UI scripts | Labels improved and a validated turn/phase correction surface exists; event consistency is not globally audited. |
 | Fix 10: Replacement/Choice Prompts | partial | Some ETB/tapped/pay-life prompts exist; not global replacement handling. |
 | Fix 11: Continuous Effects And Layers | partial | Practical layer slices exist; not full Arena-like layer fidelity. |
 | Fix 12: Presentation Events | partial | Feed/last-played/modal polish exists, d20 rolls now persist through the engine authority update as DiceRolled events with a playfield toast, and attachment corrections emit validated manual events. This is still not a full animation/event pipeline. |
@@ -109,8 +109,8 @@ Minimum acceptance bar from that file:
 | 3.2 Stack Is Evented But Not Visually Dominant | partial |
 | 3.3 Pass Priority Flow Is Compressed | partial |
 | 3.4 Stop Settings Are Incomplete Or Not Exposed Enough | not done |
-| 4.1 Internal Step Labels Mismatch Visible UI | partial |
-| 4.2 Main Phase And Begin Combat Confusion | partial |
+| 4.1 Internal Step Labels Mismatch Visible UI | partial; Main 2 display handles the existing postcombat-main/end representation, and manual phase correction offers explicit user-facing step names |
+| 4.2 Main Phase And Begin Combat Confusion | partial; manual phase correction can recover a stuck/incorrect step, but the underlying turn-manager model still needs a cleaner main-step representation |
 | 4.3 AI Turn Compression | partial |
 | 5.1 Action Text Is Improved But Still Tool-Like | partial |
 | 5.2 Action Categories Are Coarse | partial |
@@ -128,7 +128,7 @@ Minimum acceptance bar from that file:
 | 9.1 Zone-Change Identity | partial; manual zone moves clear stale attachments, and manual attach/detach now preserves explicit attachment identity |
 | 9.2 Command Zone Rules | partial; manual commander-damage correction validates commander sources and feeds commander-damage loss checks |
 | 9.3 Graveyard/Exile/Library UX | partial |
-| 10.1 State Changes Need Presentation Events | partial; d20 rolls now have persisted presentation records and authoritative DiceRolled events, and manual attachment changes emit action events |
+| 10.1 State Changes Need Presentation Events | partial; d20 rolls now have persisted presentation records and authoritative DiceRolled events, and manual attachment plus turn/phase changes emit action events |
 | 10.2 Cause And Effect Need Better Timing | partial |
 | 10.3 Battlefield Visual Hierarchy | partial |
 | 10.4 Card Presentation | partial |

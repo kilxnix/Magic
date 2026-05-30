@@ -1,5 +1,5 @@
 // engine/src/actions-public.ts
-import type { GameState, ManaColor, ManaCost, AttackerDeclaration, BlockerDeclaration, Zone } from './types';
+import type { GameState, ManaColor, ManaCost, AttackerDeclaration, BlockerDeclaration, Zone, Phase, Step } from './types';
 import {
   playLand,
   canPlayLandDetailed,
@@ -116,6 +116,13 @@ export type GameEvent =
       nextTargetId?: string;
       manual: true;
     }
+  | {
+      kind: 'TurnStepAdjusted';
+      playerId: string;
+      from: { activePlayerId?: string; phase: Phase; step: Step };
+      to: { activePlayerId: string; phase: Phase; step: Step };
+      manual: true;
+    }
   | { kind: 'CreatureDied'; cardId: string; ownerId: string }
   | { kind: 'PlayerLost'; playerId: string; reason: WinReason }
   | { kind: 'PossibleLoop'; signature: LoopSignature }
@@ -134,6 +141,14 @@ export function success(state: GameState, events: GameEvent[] = []): ActionResul
 }
 
 const globalDetector = new LoopDetector();
+
+const PHASE_STEPS: Record<Phase, Step[]> = {
+  beginning: ['untap', 'upkeep', 'draw'],
+  precombat_main: ['begin_combat'],
+  combat: ['begin_combat', 'declare_attackers', 'declare_blockers', 'first_strike_damage', 'combat_damage', 'end_of_combat'],
+  postcombat_main: ['end_of_combat', 'end'],
+  ending: ['end', 'cleanup'],
+};
 
 export function resetLoopDetector(): void {
   globalDetector.reset();
@@ -817,6 +832,60 @@ export function tryAttachCardManually(
       cardId: cardInstanceId,
       previousTargetId,
       nextTargetId,
+      manual: true,
+    },
+    ...runWinCheck(next),
+  ]);
+}
+
+export function trySetPhaseStepManually(
+  state: GameState,
+  playerId: string,
+  activePlayerId: string,
+  phase: Phase,
+  step: Step,
+): ActionResult {
+  if (!state.players.some(p => p.id === playerId)) return fail('card_not_found', 'Player not found');
+  const activePlayerIndex = state.players.findIndex(p => p.id === activePlayerId);
+  if (activePlayerIndex < 0) return fail('card_not_found', 'Active player not found');
+  if (state.players[activePlayerIndex]?.hasLost) return fail('illegal_target', 'A player who has lost cannot be made active');
+  if (!PHASE_STEPS[phase]?.includes(step)) {
+    return fail('wrong_phase', `Step ${step} is not valid during ${phase}`);
+  }
+
+  const previousActivePlayerId = state.players[state.activePlayerIndex]?.id;
+  if (
+    previousActivePlayerId === activePlayerId
+    && state.phase === phase
+    && state.step === step
+  ) {
+    return fail('wrong_phase', 'The game is already at that turn step');
+  }
+
+  const next: GameState = {
+    ...state,
+    activePlayerIndex,
+    priorityPlayerIndex: activePlayerIndex,
+    phase,
+    step,
+    hasPriorityPassed: new Array(state.players.length).fill(false),
+    combat: phase === 'combat' && step !== 'begin_combat' ? state.combat : null,
+  };
+
+  return success(next, [
+    {
+      kind: 'TurnStepAdjusted',
+      playerId,
+      from: {
+        activePlayerId: previousActivePlayerId,
+        phase: state.phase,
+        step: state.step,
+      },
+      to: {
+        activePlayerId,
+        phase,
+        step,
+      },
       manual: true,
     },
     ...runWinCheck(next),

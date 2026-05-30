@@ -38,14 +38,14 @@ Area table:
 | P0 | partial | targeting | Add target revalidation on resolution, illegal target fizzles, target-changing effects, and multiplayer target selection UI. |
 | P0 | partial | tokens | Add a token factory certification table and browser proof for Krenko, Talrand, Goblin Spymaster, Dockside-style counting, and token sacrifice. |
 | P0 | partial | triggers-etb | Create a trigger matrix by event kind and add missing beginning/end step token triggers. |
-| P0 | partial | turn-structure-priority | Add multiplayer APNAP priority fixtures and browser proof for skip rest of turn after stack/combat windows. |
+| P0 | partial | turn-structure-priority | Manual turn/phase correction now flows through validated engine actions, resets priority to the chosen active player, clears stale combat when leaving combat, and is exposed in the playfield menu; add multiplayer APNAP priority fixtures and browser proof for skip rest of turn after stack/combat windows. |
 | P0 | partial | ui-gameplay | D20 rolls now persist as public engine state, emit authoritative DiceRolled events, and appear as a disappearing playfield toast; add browser automation certification for each starter deck and all action categories. |
 | P1 | partial | keywords-non-evergreen | Prowess now registers as a real noncreature-spell trigger with temporary +1/+1 cleanup; continue the mechanic-by-mechanic implementation list for other popular Commander mechanics. |
 | P1 | partial | post-game-review | Decision reviews now audit selected actions through the engine authority boundary and are attached to authoritative state updates; continue broadening line comparison and replay presentation. |
 | P1 | partial | ai-shelector | Add speed and legality benchmark across archetypes and stack-heavy high-power states. |
 | P1 | partial | graveyard-exile | Add zone permission engine for casting/activating from non-hand zones. |
 | P1 | partial | keywords-evergreen | Audit every evergreen keyword and bind each to at least one fixture card. |
-| P1 | partial | manual-correction-tools | Manual repair tools now cover permanent counters, player counters/poison, commander damage, token creation, zone movement, marked damage, mana untap, and attach/detach corrections; continue adding phase rewinds and replay-audited correction summaries. |
+| P1 | partial | manual-correction-tools | Manual repair tools now cover permanent counters, player counters/poison, commander damage, token creation, zone movement, marked damage, mana untap, attach/detach corrections, and validated turn/phase correction; continue adding replay-audited correction summaries and deeper correction review UX. |
 | P1 | partial | manual-overrides | Add override registry metadata with reason, owner, and fixture card. |
 | P1 | partial | multiplayer | Bridge rooms to authoritative engine sessions and add four-player combat/priority browser proof. |
 | P1 | partial | rules-update-process | Wire edge-case generation and coverage audit into a scheduled certification run after every card-data refresh. |

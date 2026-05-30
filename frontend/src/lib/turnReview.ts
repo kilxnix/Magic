@@ -77,6 +77,8 @@ export function actionIdentity(action: AIAction): string {
       return `${action.kind}:${action.name}:${action.count}:${action.power}/${action.toughness}:${action.colors.join(',')}:${action.types.join(',')}:${action.subtypes.join(',')}:${action.keywords?.join(',') || ''}`;
     case 'ManualAttachCard':
       return `${action.kind}:${action.cardInstanceId}>${action.targetId || 'detached'}`;
+    case 'ManualSetPhaseStep':
+      return `${action.kind}:${action.activePlayerId}:${action.phase}:${action.step}`;
     case 'PassPriority':
       return action.kind;
     default:
@@ -165,6 +167,10 @@ export function describeReviewAction(state: GameState, action: AIAction): string
       return action.targetId
         ? `Attach ${def?.name || 'a card'} to ${targetDef?.name || 'a permanent'}`
         : `Detach ${def?.name || 'a card'}`;
+    }
+    case 'ManualSetPhaseStep': {
+      const player = state.players.find(candidate => candidate.id === action.activePlayerId);
+      return `Set turn to ${player?.name || 'a player'} ${action.phase}/${action.step}`;
     }
     case 'PassPriority':
       return 'Pass priority';

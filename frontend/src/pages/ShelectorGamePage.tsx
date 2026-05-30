@@ -121,6 +121,7 @@ export function ShelectorGamePage() {
     adjustDamage,
     createManualToken,
     attachCardManually,
+    setPhaseStepManually,
     untappableCardIds,
     endGame,
     closeEndGame,
@@ -809,6 +810,7 @@ export function ShelectorGamePage() {
           onAdjustDamage={adjustDamage}
           onCreateToken={createManualToken}
           onAttachCard={attachCardManually}
+          onSetPhaseStep={setPhaseStepManually}
           untappableCardIds={untappableCardIds}
           lastPlayedCard={lastPlayedCard}
           authorityUpdates={authorityUpdates}

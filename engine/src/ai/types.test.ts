@@ -12,6 +12,7 @@ import type {
   ManualAdjustDamageAction,
   ManualCreateTokenAction,
   ManualAttachCardAction,
+  ManualSetPhaseStepAction,
   ActivateAbilityAction,
   DeclareAttackersAction,
   DeclareBlockersAction,
@@ -168,6 +169,20 @@ describe('AI Types', () => {
     expect(action.targetId).toBe('creature_1');
   });
 
+  it('creates ManualSetPhaseStepAction correctly', () => {
+    const action: ManualSetPhaseStepAction = {
+      kind: 'ManualSetPhaseStep',
+      activePlayerId: 'player_1',
+      phase: 'combat',
+      step: 'declare_attackers',
+    };
+
+    expect(action.kind).toBe('ManualSetPhaseStep');
+    expect(action.activePlayerId).toBe('player_1');
+    expect(action.phase).toBe('combat');
+    expect(action.step).toBe('declare_attackers');
+  });
+
   it('creates DeclareAttackersAction correctly', () => {
     const action: DeclareAttackersAction = {
       kind: 'DeclareAttackers',
@@ -217,6 +232,7 @@ describe('AI Types', () => {
       { kind: 'ManualAdjustDamage', cardInstanceId: 'c1', delta: 2 },
       { kind: 'ManualCreateToken', name: 'Treasure', count: 1, power: 0, toughness: 0, colors: [], types: ['artifact'], subtypes: ['Treasure'] },
       { kind: 'ManualAttachCard', cardInstanceId: 'eq1', targetId: 'c1' },
+      { kind: 'ManualSetPhaseStep', activePlayerId: 'p1', phase: 'ending', step: 'end' },
       { kind: 'ActivateAbility', cardInstanceId: 'c1', abilityIndex: 0, targets: [] },
       { kind: 'DeclareAttackers', attacks: [] },
       { kind: 'DeclareBlockers', blocks: [] },
@@ -224,7 +240,7 @@ describe('AI Types', () => {
       { kind: 'PassPriority' },
     ];
 
-    expect(actions).toHaveLength(16);
+    expect(actions).toHaveLength(17);
     expect(actions.map(a => a.kind)).toEqual([
       'CastSpell',
       'PlayLand',
@@ -237,6 +253,7 @@ describe('AI Types', () => {
       'ManualAdjustDamage',
       'ManualCreateToken',
       'ManualAttachCard',
+      'ManualSetPhaseStep',
       'ActivateAbility',
       'DeclareAttackers',
       'DeclareBlockers',

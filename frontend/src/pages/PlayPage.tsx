@@ -142,6 +142,7 @@ export function PlayPage() {
     adjustDamage,
     createManualToken,
     attachCardManually,
+    setPhaseStepManually,
     untappableCardIds,
     endGame,
     closeEndGame,
@@ -795,6 +796,7 @@ export function PlayPage() {
             onAdjustDamage={adjustDamage}
             onCreateToken={createManualToken}
             onAttachCard={attachCardManually}
+            onSetPhaseStep={setPhaseStepManually}
             untappableCardIds={untappableCardIds}
             lastPlayedCard={lastPlayedCard}
             authorityUpdates={authorityUpdates}

@@ -40,6 +40,8 @@ import {
   type ScryfallCard,
   type GeneratedDeck,
   type Zone,
+  type Phase,
+  type Step,
   isTriggeredAbilityStackItem,
   evaluateActions,
   type ManaColor,
@@ -361,6 +363,7 @@ function isMeaningfulAutoSkipAction(action: AIAction): boolean {
     case 'ManualAdjustDamage':
     case 'ManualCreateToken':
     case 'ManualAttachCard':
+    case 'ManualSetPhaseStep':
       return false;
     case 'DeclareAttackers':
       return action.attacks.length > 0;
@@ -1947,6 +1950,14 @@ function toSimpleLegalAction(action: AIAction, engineState: GameState): SimpleLe
         label: action.targetId
           ? `Attach ${def?.name || 'card'} to ${targetDef?.name || 'target'}`
           : `Detach ${def?.name || 'card'}`,
+        _engineAction: action,
+      };
+    }
+    case 'ManualSetPhaseStep': {
+      const playerName = engineState.players.find(player => player.id === action.activePlayerId)?.name || 'player';
+      return {
+        kind: 'ManualSetPhaseStep',
+        label: `Set turn to ${playerName}: ${action.phase}/${action.step}`,
         _engineAction: action,
       };
     }
@@ -5651,6 +5662,35 @@ export function useShelectorGame() {
     syncState();
   }, [addMessage, applyActionThroughAuthority, applyEvents, syncState]);
 
+  const setPhaseStepManually = useCallback((activePlayerId: string, phase: Phase, step: Step) => {
+    const engine = engineRef.current;
+    if (!engine) return;
+
+    const activePlayerName = engine.players.find(player => player.id === activePlayerId)?.name || activePlayerId;
+    const action: AIAction = {
+      kind: 'ManualSetPhaseStep',
+      activePlayerId,
+      phase,
+      step,
+    };
+    const response = applyActionThroughAuthority(engine, humanIdRef.current, action, {
+      source: 'system',
+      label: toSimpleLegalAction(action, engine).label,
+    });
+    if (!response.ok || !response.state) {
+      const message = response.message || 'That phase correction was rejected.';
+      setActionError({ reason: response.reason || 'illegal_action', message });
+      addMessage('system', `Cannot adjust phase: ${message}`);
+      syncState();
+      return;
+    }
+
+    engineRef.current = response.state as GameStateWithAI;
+    applyEvents(response.events || [], response.state);
+    addMessage('system', `Manual correction: set turn to ${activePlayerName} ${phase}/${step}.`);
+    syncState();
+  }, [addMessage, applyActionThroughAuthority, applyEvents, syncState]);
+
   // Deep-clone engine state for undo snapshots (Maps need special handling)
   const cloneEngineState = useCallback((s: GameStateWithAI): GameStateWithAI => {
     return {
@@ -7238,6 +7278,7 @@ export function useShelectorGame() {
     adjustDamage,
     createManualToken,
     attachCardManually,
+    setPhaseStepManually,
     clearActionError: () => setActionError(null),
   };
 }

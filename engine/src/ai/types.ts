@@ -4,7 +4,7 @@
  * Represents all possible actions an AI can take during a game.
  */
 
-import { AttackerDeclaration, BlockerDeclaration, ManaColor, CardInstance } from '../types';
+import { AttackerDeclaration, BlockerDeclaration, ManaColor, CardInstance, Phase, Step } from '../types';
 
 /**
  * An action to cast a spell from hand or command zone.
@@ -110,6 +110,13 @@ export interface ManualAttachCardAction {
   targetId?: string;
 }
 
+export interface ManualSetPhaseStepAction {
+  kind: 'ManualSetPhaseStep';
+  activePlayerId: string;
+  phase: Phase;
+  step: Step;
+}
+
 /**
  * An action to declare attackers during the declare attackers step.
  */
@@ -167,6 +174,7 @@ export type AIAction =
   | ManualAdjustDamageAction
   | ManualCreateTokenAction
   | ManualAttachCardAction
+  | ManualSetPhaseStepAction
   | ActivateAbilityAction
   | DeclareAttackersAction
   | DeclareBlockersAction

@@ -21,6 +21,7 @@ import {
   tryAdjustDamage,
   tryCreateManualToken,
   tryAttachCardManually,
+  trySetPhaseStepManually,
   tryCastSpell,
   tryActivateAbility,
   tryPassPriority,
@@ -98,6 +99,9 @@ export function dispatchAIAction(
 
     case 'ManualAttachCard':
       return tryAttachCardManually(state, playerId, action.cardInstanceId, action.targetId);
+
+    case 'ManualSetPhaseStep':
+      return trySetPhaseStepManually(state, playerId, action.activePlayerId, action.phase, action.step);
 
     case 'CastSpell':
       // CastSpell in the AIAction doesn't carry a manaPayment — the mana pool

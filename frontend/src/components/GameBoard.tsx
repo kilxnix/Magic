@@ -44,7 +44,7 @@ function displayStepForPhase(phase: string | undefined, step: string | undefined
   if (phase === 'precombat_main' && (!step || step === 'main' || step === 'begin_combat')) {
     return 'Main Phase 1';
   }
-  if (phase === 'postcombat_main' && (!step || step === 'main' || step === 'end_of_combat')) {
+  if (phase === 'postcombat_main' && (!step || step === 'main' || step === 'end_of_combat' || step === 'end')) {
     return 'Main Phase 2';
   }
   if (step) return STEP_DISPLAY[step] || PHASE_DISPLAY[phase || ''] || step;
@@ -91,6 +91,19 @@ interface ManualTokenInput {
 }
 
 type ManualMoveZone = 'hand' | 'battlefield' | 'graveyard' | 'exile' | 'command';
+type ManualPhase = 'beginning' | 'precombat_main' | 'combat' | 'postcombat_main' | 'ending';
+type ManualStep =
+  | 'untap'
+  | 'upkeep'
+  | 'draw'
+  | 'begin_combat'
+  | 'declare_attackers'
+  | 'declare_blockers'
+  | 'first_strike_damage'
+  | 'combat_damage'
+  | 'end_of_combat'
+  | 'end'
+  | 'cleanup';
 
 interface GameBoardProps {
   gameState: SimpleGameState;
@@ -145,6 +158,7 @@ interface GameBoardProps {
   onAdjustDamage?: (cardInstanceId: string, delta: number) => void;
   onCreateToken?: (token: ManualTokenInput) => void;
   onAttachCard?: (cardInstanceId: string, targetId?: string) => void;
+  onSetPhaseStep?: (activePlayerId: string, phase: ManualPhase, step: ManualStep) => void;
   untappableCardIds?: string[];
   lastPlayedCard?: LastPlayedCard | null;
   authorityUpdates?: EngineStateUpdate[];
@@ -1143,6 +1157,22 @@ const PRIORITY_STOP_OPTIONS: { key: PriorityStopKey; label: string; detail: stri
   { key: 'endStep', label: 'End Step', detail: 'Pause at end step priority.' },
 ];
 
+const MANUAL_PHASE_CHOICES: { id: string; label: string; phase: ManualPhase; step: ManualStep }[] = [
+  { id: 'untap', label: 'Untap', phase: 'beginning', step: 'untap' },
+  { id: 'upkeep', label: 'Upkeep', phase: 'beginning', step: 'upkeep' },
+  { id: 'draw', label: 'Draw', phase: 'beginning', step: 'draw' },
+  { id: 'main1', label: 'Main 1', phase: 'precombat_main', step: 'begin_combat' },
+  { id: 'begin-combat', label: 'Begin Combat', phase: 'combat', step: 'begin_combat' },
+  { id: 'attackers', label: 'Attackers', phase: 'combat', step: 'declare_attackers' },
+  { id: 'blockers', label: 'Blockers', phase: 'combat', step: 'declare_blockers' },
+  { id: 'first-strike', label: 'First Strike Damage', phase: 'combat', step: 'first_strike_damage' },
+  { id: 'damage', label: 'Combat Damage', phase: 'combat', step: 'combat_damage' },
+  { id: 'end-combat', label: 'End Combat', phase: 'combat', step: 'end_of_combat' },
+  { id: 'main2', label: 'Main 2', phase: 'postcombat_main', step: 'end' },
+  { id: 'end', label: 'End Step', phase: 'ending', step: 'end' },
+  { id: 'cleanup', label: 'Cleanup', phase: 'ending', step: 'cleanup' },
+];
+
 function splitTokenWords(value: string, fallback: string[]): string[] {
   const words = value
     .split(',')
@@ -1560,6 +1590,138 @@ function ManualPlayerCounterModal({
               className="min-h-11 rounded bg-amber-400 px-4 text-sm font-black text-neutral-950 transition-colors hover:bg-amber-300 disabled:cursor-not-allowed disabled:opacity-40"
             >
               Add
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ManualPhaseStepModal({
+  players,
+  currentActivePlayerId,
+  currentPhase,
+  currentStep,
+  onSet,
+  onCancel,
+}: {
+  players: SimpleGameState['aiPlayers'];
+  currentActivePlayerId: string;
+  currentPhase: string;
+  currentStep: string;
+  onSet: (activePlayerId: string, phase: ManualPhase, step: ManualStep) => void;
+  onCancel: () => void;
+}) {
+  const [activePlayerId, setActivePlayerId] = useState(currentActivePlayerId || players[0]?.id || '');
+  const [choiceId, setChoiceId] = useState(
+    MANUAL_PHASE_CHOICES.find(choice => choice.phase === currentPhase && choice.step === currentStep)?.id
+      || MANUAL_PHASE_CHOICES[0].id,
+  );
+  const selectedChoice = MANUAL_PHASE_CHOICES.find(choice => choice.id === choiceId) || MANUAL_PHASE_CHOICES[0];
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onCancel();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onCancel]);
+
+  return (
+    <div
+      className="fixed inset-0 z-[74] flex items-center justify-center bg-black/75 p-3 backdrop-blur-sm"
+      onClick={onCancel}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Adjust turn phase"
+        className="w-[min(34rem,calc(100vw-1rem))] overflow-hidden rounded-lg border border-amber-500/35 bg-neutral-950 shadow-2xl shadow-black/70"
+        onClick={event => event.stopPropagation()}
+      >
+        <div className="flex items-center justify-between gap-3 border-b border-neutral-800 px-4 py-3">
+          <div>
+            <div className="text-[10px] font-bold uppercase tracking-wider text-amber-400">Manual Correction</div>
+            <div className="text-lg font-black text-stone-100">Turn And Phase</div>
+          </div>
+          <button
+            type="button"
+            onClick={onCancel}
+            className="flex h-9 w-9 items-center justify-center rounded border border-neutral-700 bg-neutral-900 text-stone-300 transition-colors hover:bg-neutral-800 hover:text-white"
+            aria-label="Close phase editor"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="space-y-4 p-4">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="space-y-1 text-xs font-bold uppercase tracking-wider text-stone-500">
+              <span>Active Player</span>
+              <select
+                value={activePlayerId}
+                onChange={event => setActivePlayerId(event.target.value)}
+                className="min-h-11 w-full rounded border border-neutral-700 bg-neutral-900 px-3 text-sm normal-case tracking-normal text-stone-100 focus:border-amber-400 focus:outline-none"
+              >
+                {players.map(player => (
+                  <option key={player.id} value={player.id}>{player.name}</option>
+                ))}
+              </select>
+            </label>
+            <label className="space-y-1 text-xs font-bold uppercase tracking-wider text-stone-500">
+              <span>Step</span>
+              <select
+                value={choiceId}
+                onChange={event => setChoiceId(event.target.value)}
+                className="min-h-11 w-full rounded border border-neutral-700 bg-neutral-900 px-3 text-sm normal-case tracking-normal text-stone-100 focus:border-amber-400 focus:outline-none"
+              >
+                {MANUAL_PHASE_CHOICES.map(choice => (
+                  <option key={choice.id} value={choice.id}>{choice.label}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          <div className="rounded border border-neutral-800 bg-neutral-900 p-3 text-xs font-semibold text-stone-400">
+            Current: {displayStepForPhase(currentPhase, currentStep)}
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            {MANUAL_PHASE_CHOICES.map(choice => (
+              <button
+                key={choice.id}
+                type="button"
+                onClick={() => setChoiceId(choice.id)}
+                className={`min-h-10 rounded border px-3 text-sm font-bold transition-colors ${
+                  choice.id === choiceId
+                    ? 'border-amber-300 bg-amber-400 text-neutral-950'
+                    : 'border-neutral-700 bg-neutral-900 text-stone-300 hover:border-neutral-500'
+                }`}
+              >
+                {choice.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <button
+              type="button"
+              onClick={onCancel}
+              className="min-h-11 rounded border border-neutral-700 bg-neutral-950 px-4 text-sm font-bold text-stone-200 transition-colors hover:bg-neutral-800"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (!activePlayerId) return;
+                onSet(activePlayerId, selectedChoice.phase, selectedChoice.step);
+              }}
+              disabled={!activePlayerId}
+              className="min-h-11 rounded bg-amber-400 px-4 text-sm font-black text-neutral-950 transition-colors hover:bg-amber-300 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Set Phase
             </button>
           </div>
         </div>
@@ -2136,6 +2298,7 @@ export function GameBoard({
   onAdjustDamage,
   onCreateToken,
   onAttachCard,
+  onSetPhaseStep,
   untappableCardIds,
   lastPlayedCard,
   authorityUpdates = [],
@@ -2153,6 +2316,7 @@ export function GameBoard({
   const [showUtilityMenu, setShowUtilityMenu] = useState(false);
   const [showTokenCreator, setShowTokenCreator] = useState(false);
   const [showPlayerCounters, setShowPlayerCounters] = useState(false);
+  const [showPhaseCorrection, setShowPhaseCorrection] = useState(false);
   const [attachSourceCardId, setAttachSourceCardId] = useState<string | null>(null);
 
   const handleCardHover = (card: SimpleCard | null) => {
@@ -2584,6 +2748,19 @@ export function GameBoard({
           onCancel={() => setShowPlayerCounters(false)}
         />
       )}
+      {showPhaseCorrection && onSetPhaseStep && (
+        <ManualPhaseStepModal
+          players={[gameState.humanPlayer, ...gameState.aiPlayers]}
+          currentActivePlayerId={gameState.activePlayerId}
+          currentPhase={gameState.phase}
+          currentStep={gameState.step}
+          onSet={(activePlayerId, phase, step) => {
+            onSetPhaseStep(activePlayerId, phase, step);
+            setShowPhaseCorrection(false);
+          }}
+          onCancel={() => setShowPhaseCorrection(false)}
+        />
+      )}
       {inspectedCard && (
         <CardInspectorModal
           card={inspectedCard}
@@ -2867,6 +3044,22 @@ export function GameBoard({
                   className="flex min-h-11 w-full items-center justify-between rounded border border-neutral-800 bg-neutral-900 px-3 text-left text-sm font-bold text-stone-100 transition-colors hover:border-amber-400/60 hover:bg-neutral-800"
                 >
                   <span>Player counters</span>
+                  <span className="rounded bg-neutral-800 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-stone-400">
+                    Manual
+                  </span>
+                </button>
+              )}
+
+              {onSetPhaseStep && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowPhaseCorrection(true);
+                    setShowUtilityMenu(false);
+                  }}
+                  className="flex min-h-11 w-full items-center justify-between rounded border border-neutral-800 bg-neutral-900 px-3 text-left text-sm font-bold text-stone-100 transition-colors hover:border-amber-400/60 hover:bg-neutral-800"
+                >
+                  <span>Turn and phase</span>
                   <span className="rounded bg-neutral-800 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-stone-400">
                     Manual
                   </span>

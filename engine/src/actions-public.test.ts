@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { tryPlayLand, tryTapLandForMana, tryUntapManaSource, tryCastSpell, tryActivateAbility, tryPassPriority, tryDeclareAttackers, tryDeclareBlockers, tryEquip, tryAdjustCounters, tryAdjustPlayerCounter, tryAdjustCommanderDamage, tryMoveCardManually, tryAdjustDamage, tryCreateManualToken, tryAttachCardManually, resetLoopDetector } from './actions-public';
+import { tryPlayLand, tryTapLandForMana, tryUntapManaSource, tryCastSpell, tryActivateAbility, tryPassPriority, tryDeclareAttackers, tryDeclareBlockers, tryEquip, tryAdjustCounters, tryAdjustPlayerCounter, tryAdjustCommanderDamage, tryMoveCardManually, tryAdjustDamage, tryCreateManualToken, tryAttachCardManually, trySetPhaseStepManually, resetLoopDetector } from './actions-public';
 import { makeTestState } from './__tests__/test-helpers';
 import { populateParsedCache } from './cards/card-parser-cache';
 import type { CardDefinition, GameState } from './types';
@@ -670,6 +670,47 @@ describe('tryAttachCardManually', () => {
     const handTarget = tryAttachCardManually(state, 'human', 'equipment_0', 'instant_0');
     expect(handTarget.ok).toBe(false);
     if (!handTarget.ok) expect(handTarget.reason).toBe('not_in_zone');
+  });
+});
+
+describe('trySetPhaseStepManually', () => {
+  it('sets the active player, phase, step, priority, and clears passed priority', () => {
+    const state = makeTestState({ battlefieldCreature: true, phase: 'combat', step: 'declare_attackers', priorityPlayerIndex: 1 });
+    state.hasPriorityPassed = [true, true];
+    state.combat = {
+      attackers: [{ cardInstanceId: 'vanilla_creature_0', defendingPlayerId: 'ai1' }],
+      blockers: [],
+      blockersDeclared: false,
+      blockersDeclaredBy: [],
+      damageAssignment: new Map(),
+    };
+
+    const result = trySetPhaseStepManually(state, 'human', 'ai1', 'ending', 'end');
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.activePlayerIndex).toBe(1);
+    expect(result.state.priorityPlayerIndex).toBe(1);
+    expect(result.state.phase).toBe('ending');
+    expect(result.state.step).toBe('end');
+    expect(result.state.hasPriorityPassed).toEqual([false, false]);
+    expect(result.state.combat).toBeNull();
+    expect(result.events).toContainEqual(expect.objectContaining({
+      kind: 'TurnStepAdjusted',
+      playerId: 'human',
+      from: expect.objectContaining({ activePlayerId: 'human', phase: 'combat', step: 'declare_attackers' }),
+      to: expect.objectContaining({ activePlayerId: 'ai1', phase: 'ending', step: 'end' }),
+      manual: true,
+    }));
+  });
+
+  it('rejects phase and step combinations that cannot happen together', () => {
+    const state = makeTestState({});
+
+    const result = trySetPhaseStepManually(state, 'human', 'human', 'beginning', 'declare_attackers');
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe('wrong_phase');
   });
 });
 
