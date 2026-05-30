@@ -7,7 +7,8 @@
  */
 
 import { useEffect, useState } from 'react';
-import type { LibraryManipulationChoice, OptionalTriggerChoice, SimpleGameState, SimpleLegalAction, SimpleCard, LastPlayedCard } from '../hooks/useShelectorGame';
+import type { DamageAssignmentChoice, LibraryManipulationChoice, OptionalTriggerChoice, SimpleGameState, SimpleLegalAction, SimpleCard, LastPlayedCard } from '../hooks/useShelectorGame';
+import type { DamageAssignmentOrder } from 'commander-engine';
 import type { EnginePrompt, EngineStateUpdate } from 'commander-engine';
 import { Loader2, ChevronDown, ChevronRight, Search, X, Lightbulb, Menu } from 'lucide-react';
 import { CardPickerModal } from './CardPickerModal';
@@ -105,6 +106,8 @@ interface GameBoardProps {
   onResolveLibraryChoice?: (topIds: string[], movedIds: string[]) => void;
   optionalTriggerChoice?: OptionalTriggerChoice | null;
   onResolveOptionalTrigger?: (use: boolean) => void;
+  damageAssignmentChoice?: DamageAssignmentChoice | null;
+  onResolveDamageAssignment?: (orders: DamageAssignmentOrder[]) => void;
   undosRemaining?: number;
   onUndo?: () => void;
   coachMode?: boolean;
@@ -1151,6 +1154,123 @@ function OptionalTriggerModal({
   );
 }
 
+function DamageAssignmentModal({
+  choice,
+  onResolve,
+}: {
+  choice: DamageAssignmentChoice;
+  onResolve: (orders: DamageAssignmentOrder[]) => void;
+}) {
+  const [orders, setOrders] = useState<Record<string, string[]>>(() =>
+    Object.fromEntries(choice.groups.map(group => [
+      group.attackerId,
+      group.blockers.map(blocker => blocker.blockerId),
+    ])),
+  );
+
+  useEffect(() => {
+    setOrders(Object.fromEntries(choice.groups.map(group => [
+      group.attackerId,
+      group.blockers.map(blocker => blocker.blockerId),
+    ])));
+  }, [choice.id, choice.groups]);
+
+  const blockerById = new Map(choice.groups.flatMap(group => group.blockers.map(blocker => [blocker.blockerId, blocker])));
+  const moveBlocker = (attackerId: string, blockerId: string, delta: number) => {
+    setOrders(prev => {
+      const current = prev[attackerId] || [];
+      const index = current.indexOf(blockerId);
+      const target = index + delta;
+      if (index < 0 || target < 0 || target >= current.length) return prev;
+      const next = [...current];
+      [next[index], next[target]] = [next[target], next[index]];
+      return { ...prev, [attackerId]: next };
+    });
+  };
+  const submit = () => {
+    onResolve(choice.groups.map(group => ({
+      attackerId: group.attackerId,
+      blockerIds: orders[group.attackerId] || group.blockers.map(blocker => blocker.blockerId),
+    })));
+  };
+
+  return (
+    <div className="fixed inset-0 z-[86] flex items-center justify-center bg-black/75 p-3 backdrop-blur-sm">
+      <div className="flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-lg border border-red-500/45 bg-neutral-950 shadow-2xl">
+        <div className="border-b border-neutral-800 px-4 py-3">
+          <div className="text-[10px] font-black uppercase tracking-wider text-red-300">Combat Damage</div>
+          <div className="mt-1 text-lg font-black text-stone-100">{choice.title}</div>
+          <div className="mt-1 text-xs text-stone-400">
+            Order blockers from first to last. Damage is assigned in this order.
+          </div>
+        </div>
+        <div className="min-h-0 space-y-3 overflow-y-auto p-3">
+          {choice.groups.map(group => {
+            const orderedBlockers = orders[group.attackerId] || group.blockers.map(blocker => blocker.blockerId);
+            return (
+              <section key={group.attackerId} className="rounded-lg border border-neutral-800 bg-neutral-900/70 p-3">
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <div>
+                    <div className="text-sm font-black text-stone-100">{group.attackerName}</div>
+                    <div className="text-[11px] text-stone-400">Power {group.attackerPower}</div>
+                  </div>
+                  <span className="rounded bg-red-500/20 px-2 py-0.5 text-[10px] font-black uppercase text-red-100">
+                    {orderedBlockers.length} blockers
+                  </span>
+                </div>
+                <div className="space-y-2">
+                  {orderedBlockers.map((blockerId, index) => {
+                    const blocker = blockerById.get(blockerId);
+                    if (!blocker) return null;
+                    return (
+                      <div key={blockerId} className="flex items-center gap-2 rounded border border-neutral-800 bg-neutral-950 p-2">
+                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded bg-red-500 text-sm font-black text-white">
+                          {index + 1}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-sm font-bold text-stone-100">{blocker.blockerName}</div>
+                          <div className="text-[11px] text-stone-500">
+                            lethal {blocker.lethalDamage} - marked {blocker.currentDamage}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => moveBlocker(group.attackerId, blockerId, -1)}
+                          disabled={index === 0}
+                          className="min-h-9 rounded border border-stone-700 px-2 text-xs font-bold text-stone-200 disabled:opacity-35"
+                        >
+                          Up
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => moveBlocker(group.attackerId, blockerId, 1)}
+                          disabled={index === orderedBlockers.length - 1}
+                          className="min-h-9 rounded border border-stone-700 px-2 text-xs font-bold text-stone-200 disabled:opacity-35"
+                        >
+                          Down
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            );
+          })}
+        </div>
+        <div className="flex justify-end border-t border-neutral-800 px-4 py-3">
+          <button
+            type="button"
+            onClick={submit}
+            className="min-h-11 rounded bg-red-500 px-5 text-sm font-black text-white hover:bg-red-400"
+          >
+            Confirm Damage Order
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /** Expandable graveyard viewer */
 function GraveyardViewer({
   cards,
@@ -1228,6 +1348,8 @@ export function GameBoard({
   onResolveLibraryChoice,
   optionalTriggerChoice,
   onResolveOptionalTrigger,
+  damageAssignmentChoice,
+  onResolveDamageAssignment,
   undosRemaining,
   onUndo,
   coachMode,
@@ -1581,6 +1703,12 @@ export function GameBoard({
         <OptionalTriggerModal
           choice={optionalTriggerChoice}
           onResolve={onResolveOptionalTrigger}
+        />
+      )}
+      {damageAssignmentChoice && onResolveDamageAssignment && (
+        <DamageAssignmentModal
+          choice={damageAssignmentChoice}
+          onResolve={onResolveDamageAssignment}
         />
       )}
       {inspectedCard && (

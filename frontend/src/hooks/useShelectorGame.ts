@@ -75,6 +75,8 @@ import {
   applyLibraryManipulationPromptResponse,
   createOptionalTriggerPromptRequest,
   applyOptionalTriggerPromptResponse,
+  createDamageAssignmentPromptRequest,
+  applyDamageAssignmentPromptResponse,
   createChooseModePromptRequest,
   applyChooseModePromptResponse,
   type ActionPromptChoice,
@@ -85,6 +87,8 @@ import {
   type SelectCardsPromptRequest,
   type LibraryManipulationPromptRequest,
   type OptionalTriggerPromptRequest,
+  type DamageAssignmentOrder,
+  type DamageAssignmentPromptRequest,
   type TargetSpec,
   summarizeActionPromptChoices,
   serializeGameState,
@@ -373,6 +377,7 @@ export interface ShelectorGameSaveSnapshot {
   tutorTitle: string;
   libraryChoice?: LibraryManipulationChoice | null;
   optionalTriggerChoice?: OptionalTriggerChoice | null;
+  damageAssignmentChoice?: DamageAssignmentChoice | null;
   undosRemaining: number;
   coachMode: boolean;
   newPlayerMode: boolean;
@@ -628,6 +633,24 @@ export interface OptionalTriggerChoice {
   sourceName: string;
   triggerKind: string;
   title: string;
+}
+
+export interface DamageAssignmentChoice {
+  id: string;
+  title: string;
+  groups: {
+    attackerId: string;
+    attackerName: string;
+    attackerPower: number;
+    blockers: {
+      blockerId: string;
+      blockerName: string;
+      lethalDamage: number;
+      currentDamage: number;
+      legal: boolean;
+      reason?: string;
+    }[];
+  }[];
 }
 
 type PendingPlayLandChoice = {
@@ -2018,6 +2041,8 @@ export function useShelectorGame() {
   const libraryManipulationPromptRequestRef = useRef<LibraryManipulationPromptRequest | null>(null);
   const [optionalTriggerChoice, setOptionalTriggerChoice] = useState<OptionalTriggerChoice | null>(null);
   const optionalTriggerPromptRequestRef = useRef<OptionalTriggerPromptRequest | null>(null);
+  const [damageAssignmentChoice, setDamageAssignmentChoice] = useState<DamageAssignmentChoice | null>(null);
+  const damageAssignmentPromptRequestRef = useRef<DamageAssignmentPromptRequest | null>(null);
   const submitActionRef = useRef<((action: SimpleLegalAction) => void) | null>(null);
   const [undosRemaining, setUndosRemaining] = useState(10);
 
@@ -2543,6 +2568,37 @@ export function useShelectorGame() {
       sourceName: request.sourceName || sourceDef?.name || 'Triggered ability',
       triggerKind: request.triggerKind || trigger.ability.trigger.kind,
       title: `${request.sourceName || sourceDef?.name || 'Triggered ability'} trigger`,
+    });
+    return true;
+  }, []);
+
+  const queueHumanDamageAssignmentChoice = useCallback((current: GameState): boolean => {
+    if (current.step !== 'combat_damage' || !current.combat || current.combat.attackers.length === 0) {
+      damageAssignmentPromptRequestRef.current = null;
+      setDamageAssignmentChoice(null);
+      return false;
+    }
+
+    const request = createDamageAssignmentPromptRequest(current, humanIdRef.current);
+    const unresolvedGroups = request.groups.filter(group => {
+      const existingOrder = current.combat?.blockerOrder?.[group.attackerId];
+      return group.blockers.length > 1
+        && (!existingOrder || existingOrder.length !== group.blockers.length);
+    });
+    if (unresolvedGroups.length === 0) {
+      damageAssignmentPromptRequestRef.current = null;
+      setDamageAssignmentChoice(null);
+      return false;
+    }
+
+    damageAssignmentPromptRequestRef.current = {
+      ...request,
+      groups: unresolvedGroups,
+    };
+    setDamageAssignmentChoice({
+      id: request.id,
+      title: 'Assign combat damage',
+      groups: unresolvedGroups,
     });
     return true;
   }, []);
@@ -3340,6 +3396,9 @@ export function useShelectorGame() {
           // combat_damage: resolve damage if attackers exist
           if (state.step === 'combat_damage') {
             if (state.combat && state.combat.attackers.length > 0) {
+              if (queueHumanDamageAssignmentChoice(state)) {
+                break;
+              }
               try {
                 state = resolveCombatDamage(state);
                 console.log('  -> resolved combat damage');
@@ -3455,7 +3514,7 @@ export function useShelectorGame() {
 
       return state;
     },
-    [applyActionThroughAuthority, narrateDecisions, resolveTaxTrigger, runSBAAndTriggers],
+    [applyActionThroughAuthority, narrateDecisions, queueHumanDamageAssignmentChoice, resolveTaxTrigger, runSBAAndTriggers],
   );
 
   const resolveLibraryChoice = useCallback((topIds: string[], movedIds: string[]) => {
@@ -3570,6 +3629,44 @@ export function useShelectorGame() {
     syncState();
   }, [addMessage, advanceGameLoop, recordAuthorityUpdate, runSBAAndTriggers, syncState]);
 
+  const resolveDamageAssignmentChoice = useCallback((orders: DamageAssignmentOrder[]) => {
+    const engine = engineRef.current;
+    const promptRequest = damageAssignmentPromptRequestRef.current;
+    if (!engine || !promptRequest) {
+      damageAssignmentPromptRequestRef.current = null;
+      setDamageAssignmentChoice(null);
+      syncState();
+      return;
+    }
+
+    const promptResponse = applyDamageAssignmentPromptResponse(engine, promptRequest, {
+      requestId: promptRequest.id,
+      kind: 'DamageAssignment',
+      playerId: humanIdRef.current,
+      orders,
+    });
+    recordAuthorityUpdate(promptResponse.update);
+    if (!promptResponse.ok || !promptResponse.state) {
+      addMessage('system', promptResponse.message || 'Could not apply combat damage order.');
+      syncState();
+      return;
+    }
+
+    damageAssignmentPromptRequestRef.current = null;
+    setDamageAssignmentChoice(null);
+
+    let state = promptResponse.state as GameStateWithAI;
+    const loopMessages: { role: ChatMessage['role']; text: string }[] = [];
+    const loopLogEntries: GameLogEntry[] = [];
+    state = advanceGameLoop(state, loopMessages, loopLogEntries) as GameStateWithAI;
+
+    engineRef.current = state;
+    addMessage('player', 'Set combat damage order.');
+    for (const msg of loopMessages) addMessage(msg.role, msg.text);
+    if (loopLogEntries.length > 0) setGameLog(prev => [...prev, ...loopLogEntries]);
+    syncState();
+  }, [addMessage, advanceGameLoop, recordAuthorityUpdate, syncState]);
+
   // Spawn opponent via the Shelector API
   const spawnOpponent = useCallback(async (options?: SpawnOptions) => {
     setIsLoading(true);
@@ -3678,11 +3775,13 @@ export function useShelectorGame() {
       tutorPromptRequestRef.current = null;
       libraryManipulationPromptRequestRef.current = null;
       optionalTriggerPromptRequestRef.current = null;
+      damageAssignmentPromptRequestRef.current = null;
       setTutorPhase(false);
       setTutorCards([]);
       setTutorTitle('');
       setLibraryChoice(null);
       setOptionalTriggerChoice(null);
+      setDamageAssignmentChoice(null);
       pendingLibraryChoiceRef.current = null;
       const format = options?.format ?? 'commander';
 
@@ -4654,7 +4753,9 @@ export function useShelectorGame() {
     pendingSearchEntryChoiceRef.current = null;
     pendingTargetChoiceRef.current = null;
     optionalTriggerPromptRequestRef.current = null;
+    damageAssignmentPromptRequestRef.current = null;
     setOptionalTriggerChoice(null);
+    setDamageAssignmentChoice(null);
     setDiscardPhase(false);
     setTutorPhase(false);
     setTutorCards([]);
@@ -4744,7 +4845,7 @@ export function useShelectorGame() {
 
   const skipEmptyPhases = useCallback(() => {
     let state = engineRef.current as GameState | null;
-    if (!state || gameState?.gameOver || mulliganPhase || discardPhase || tutorPhase || libraryChoice || optionalTriggerChoice) return;
+    if (!state || gameState?.gameOver || mulliganPhase || discardPhase || tutorPhase || libraryChoice || optionalTriggerChoice || damageAssignmentChoice) return;
 
     const humanId = humanIdRef.current;
     const loopMessages: { role: ChatMessage['role']; text: string }[] = [];
@@ -4831,6 +4932,7 @@ export function useShelectorGame() {
     addMessage,
     advanceGameLoop,
     applyEvents,
+    damageAssignmentChoice,
     discardPhase,
     gameState?.gameOver,
     libraryChoice,
@@ -4843,7 +4945,7 @@ export function useShelectorGame() {
 
   const skipRestOfTurn = useCallback(() => {
     let state = engineRef.current as GameState | null;
-    if (!state || gameState?.gameOver || mulliganPhase || discardPhase || tutorPhase || libraryChoice || optionalTriggerChoice) return;
+    if (!state || gameState?.gameOver || mulliganPhase || discardPhase || tutorPhase || libraryChoice || optionalTriggerChoice || damageAssignmentChoice) return;
 
     const humanId = humanIdRef.current;
     if (state.players[state.activePlayerIndex]?.id !== humanId) {
@@ -4881,6 +4983,9 @@ export function useShelectorGame() {
       s.hasPriorityPassed.every((passed, index) => passed || s.players[index].hasLost);
     const resolveCombatDamageBeforeAdvance = (s: GameState): GameState => {
       if (s.step !== 'combat_damage' || !s.combat || s.combat.attackers.length === 0) {
+        return s;
+      }
+      if (queueHumanDamageAssignmentChoice(s)) {
         return s;
       }
 
@@ -4985,11 +5090,13 @@ export function useShelectorGame() {
     addMessage,
     advanceGameLoop,
     applyEvents,
+    damageAssignmentChoice,
     discardPhase,
     gameState?.gameOver,
     libraryChoice,
     mulliganPhase,
     optionalTriggerChoice,
+    queueHumanDamageAssignmentChoice,
     runSBAAndTriggers,
     skipEmptyPhases,
     syncState,
@@ -5004,6 +5111,10 @@ export function useShelectorGame() {
       if (!engine || gameState?.gameOver) return;
       if (optionalTriggerChoice) {
         addMessage('system', 'Choose whether to use the pending optional trigger first.');
+        return;
+      }
+      if (damageAssignmentChoice) {
+        addMessage('system', 'Choose combat damage order first.');
         return;
       }
 
@@ -5930,7 +6041,7 @@ export function useShelectorGame() {
         syncState();
       }
     },
-    [gameState, addMessage, appendLog, syncState, advanceGameLoop, applyEvents, lastPlayedCard, optionalTriggerChoice, rememberLastPlayedCard, recordAuthorityUpdate, recordStateUpdate, skipEmptyPhases, skipRestOfTurn],
+    [gameState, addMessage, appendLog, syncState, advanceGameLoop, applyEvents, damageAssignmentChoice, lastPlayedCard, optionalTriggerChoice, rememberLastPlayedCard, recordAuthorityUpdate, recordStateUpdate, skipEmptyPhases, skipRestOfTurn],
   );
   submitActionRef.current = submitAction;
 
@@ -5965,6 +6076,7 @@ export function useShelectorGame() {
       tutorTitle,
       libraryChoice,
       optionalTriggerChoice,
+      damageAssignmentChoice,
       undosRemaining,
       coachMode,
       newPlayerMode,
@@ -5992,6 +6104,7 @@ export function useShelectorGame() {
     tutorTitle,
     libraryChoice,
     optionalTriggerChoice,
+    damageAssignmentChoice,
     undosRemaining,
     coachMode,
     newPlayerMode,
@@ -6079,6 +6192,13 @@ export function useShelectorGame() {
           })
         : null;
       setOptionalTriggerChoice(restoredOptionalTriggerChoice);
+      const restoredDamageAssignmentChoice = snapshot.damageAssignmentChoice || null;
+      damageAssignmentPromptRequestRef.current = restoredDamageAssignmentChoice
+        ? createDamageAssignmentPromptRequest(restored, humanIdRef.current, {
+            id: restoredDamageAssignmentChoice.id,
+          })
+        : null;
+      setDamageAssignmentChoice(restoredDamageAssignmentChoice);
       setUndosRemaining(snapshot.undosRemaining ?? 10);
       setCoachMode(Boolean(snapshot.coachMode));
       setNewPlayerMode(Boolean(snapshot.newPlayerMode));
@@ -6125,6 +6245,7 @@ export function useShelectorGame() {
     tutorTitle,
       libraryChoice,
       optionalTriggerChoice,
+      damageAssignmentChoice,
       gameLog,
       authorityUpdates,
       lastStateUpdate,
@@ -6170,6 +6291,7 @@ export function useShelectorGame() {
     cancelTutor,
     resolveLibraryChoice,
     resolveOptionalTriggerChoice,
+    resolveDamageAssignmentChoice,
     undoAction,
     setCoachMode,
     setNewPlayerMode,
