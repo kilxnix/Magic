@@ -1,16 +1,16 @@
 {
-  "generatedAt": "2026-05-30T12:57:49.024Z",
+  "generatedAt": "2026-05-30T13:01:21.119Z",
   "source": "mtg_data/cards_min.jsonl",
   "commanderLegalOnly": true,
   "includedCards": 30969,
   "totalOracleFaces": 31420,
-  "parsedFaces": 16133,
-  "unparsedFaces": 15287,
-  "parsedPercent": 51.35,
+  "parsedFaces": 16169,
+  "unparsedFaces": 15251,
+  "parsedPercent": 51.46,
   "parsedKindCounts": {
-    "Unparsed": 15287,
-    "Spell": 10481,
-    "ETB": 2535,
+    "Unparsed": 15251,
+    "Spell": 10513,
+    "ETB": 2539,
     "Triggered": 1307,
     "KeywordOnly": 876,
     "StaticAbility": 340,
@@ -21,11 +21,11 @@
   "unparsedReasons": [
     {
       "reason": "No recognized pattern",
-      "count": 12867
+      "count": 12834
     },
     {
       "reason": "Could not parse ETB effect clause",
-      "count": 1357
+      "count": 1354
     },
     {
       "reason": "Could not parse trigger effect clause",
@@ -40,7 +40,7 @@
     {
       "id": "trigger-timing",
       "reason": "Triggered or delayed triggered abilities need event registration and APNAP ordering.",
-      "count": 6392,
+      "count": 6381,
       "samples": [
         {
           "name": "Mindlink Mech",
@@ -85,17 +85,17 @@
           "text": "Flying Whenever this creature deals combat damage to a player, that player exiles cards from the top of their library until they exile an instant or sorcery card. You may cast that card without paying its mana cost. Then that player puts the exiled cards that weren't cast this way on the bottom of their library in a random order."
         },
         {
-          "name": "Dakmor Lancer",
-          "set": "7ed",
-          "reason": "Could not parse ETB effect clause",
-          "text": "When this creature enters, destroy target nonblack creature."
+          "name": "Planebound Accomplice",
+          "set": "mh1",
+          "reason": "No recognized pattern",
+          "text": "{R}: You may put a planeswalker card from your hand onto the battlefield. Sacrifice it at the beginning of the next end step."
         }
       ]
     },
     {
       "id": "unclassified",
       "reason": "Unparsed text did not match a known syntax cluster; inspect manually.",
-      "count": 3460,
+      "count": 3442,
       "samples": [
         {
           "name": "Static Orb",
@@ -205,7 +205,7 @@
     {
       "id": "combat-multiplayer",
       "reason": "Combat or multiplayer-defender text needs combat/defender-aware execution.",
-      "count": 2376,
+      "count": 2375,
       "samples": [
         {
           "name": "Marang River Prowler",
@@ -370,7 +370,7 @@
     {
       "id": "non-hand-zones",
       "reason": "Non-hand zone casting/movement needs zone permission and visibility checks.",
-      "count": 1493,
+      "count": 1487,
       "samples": [
         {
           "name": "Road of Return",
@@ -425,7 +425,7 @@
     {
       "id": "cost-system",
       "reason": "Alternative/additional/reduced costs need prompt-backed payment and legality.",
-      "count": 1215,
+      "count": 1210,
       "samples": [
         {
           "name": "Pteramander",
@@ -480,7 +480,7 @@
     {
       "id": "choice-modal",
       "reason": "Choice/modal/naming text should be prompt-backed instead of deterministic.",
-      "count": 808,
+      "count": 806,
       "samples": [
         {
           "name": "Road of Return",
@@ -590,7 +590,7 @@
     {
       "id": "copy-stack",
       "reason": "Copy/stack mechanics need stack-object identity and trigger multiplication.",
-      "count": 597,
+      "count": 596,
       "samples": [
         {
           "name": "Mindlink Mech",

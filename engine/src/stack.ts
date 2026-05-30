@@ -1575,6 +1575,7 @@ function defaultTargetForSpec(
       if (existingTargets.includes(card.instanceId)) return false;
       if (spec.constraints?.opponentControls && card.ownerId === controllerId) return false;
       const def = getCardDefinition(state, card);
+      if (spec.constraints?.notColors?.some(color => def.colors.includes(color))) return false;
       return def?.card_types.includes('creature') ?? false;
     })?.instanceId ?? null;
   }
@@ -1588,6 +1589,7 @@ function defaultTargetForSpec(
       if (existingTargets.includes(card.instanceId)) return false;
       if (spec.constraints?.opponentControls && card.ownerId === controllerId) return false;
       const def = getCardDefinition(state, card);
+      if (spec.constraints?.notColors?.some(color => def.colors.includes(color))) return false;
       if (spec.type === 'CreatureCardInGraveyard') return def.card_types.includes('creature');
       if (spec.type === 'CreatureOrEnchantmentCardInGraveyard') {
         return def.card_types.includes('creature') || def.card_types.includes('enchantment');

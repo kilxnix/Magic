@@ -101,6 +101,8 @@ export function getLegalTargets(
     for (const card of state.cards.values()) {
       if (card.zone !== 'battlefield') continue;
       if (!isEffectiveCreature(state, card.instanceId)) continue;
+      const def = getCardDefinition(state, card);
+      if (spec.constraints?.notColors?.some(color => def.colors.includes(color))) continue;
 
       // Check opponentControls constraint
       if (spec.constraints?.opponentControls && card.ownerId === casterId) continue;
@@ -152,6 +154,7 @@ export function getLegalTargets(
     for (const card of state.cards.values()) {
       if (card.zone !== 'battlefield') continue;
       const def = getCardDefinition(state, card);
+      if (spec.constraints?.notColors?.some(color => def.colors.includes(color))) continue;
 
       if (spec.type === 'NonlandPermanent' && def.card_types.includes('land')) continue;
       if (spec.type === 'Land' && !def.card_types.includes('land')) continue;
@@ -180,6 +183,7 @@ export function getLegalTargets(
     for (const card of state.cards.values()) {
       if (card.zone !== 'graveyard') continue;
       const def = getCardDefinition(state, card);
+      if (spec.constraints?.notColors?.some(color => def.colors.includes(color))) continue;
       if (spec.type === 'CreatureCardInGraveyard' && !def.card_types.includes('creature')) continue;
       if (
         spec.type === 'CreatureOrEnchantmentCardInGraveyard'

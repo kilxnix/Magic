@@ -846,6 +846,32 @@ describe('getLegalTargets', () => {
 
     expect(targets).toEqual(['creature-spell']);
   });
+
+  it('excludes creatures with blocked colors from legal targets', () => {
+    const state = createTestState();
+
+    addCard(state, 'black-creature', 'p2', 'battlefield', {
+      name: 'Black Creature',
+      type_line: 'Creature - Zombie',
+      card_types: ['creature'],
+      colors: ['B'],
+    });
+    addCard(state, 'green-creature', 'p2', 'battlefield', {
+      name: 'Green Creature',
+      type_line: 'Creature - Bear',
+      card_types: ['creature'],
+      colors: ['G'],
+    });
+
+    const targets = getLegalTargets(state, 'p1', {
+      id: 'target1',
+      type: 'Creature',
+      count: 1,
+      constraints: { notColors: ['B'] },
+    });
+
+    expect(targets).toEqual(['green-creature']);
+  });
 });
 
 describe('Modal spell actions', () => {

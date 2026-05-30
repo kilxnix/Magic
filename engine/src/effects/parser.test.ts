@@ -76,6 +76,21 @@ describe('parseOracleText', () => {
       expect(result.targets[0].constraints?.opponentControls).toBe(true);
     });
 
+    it('parses "destroy target nonblack creature" with an excluded color constraint', () => {
+      const result = parseOracleText('When this creature enters, destroy target nonblack creature.');
+
+      expect(result.kind).toBe('ETB');
+      if (result.kind !== 'ETB') return;
+
+      expect(result.ability.effects).toHaveLength(1);
+      expect(result.ability.effects[0].kind).toBe('Destroy');
+      expect(result.targets).toHaveLength(1);
+      expect(result.targets[0]).toMatchObject({
+        type: 'Creature',
+        constraints: { notColors: ['B'] },
+      });
+    });
+
     it('parses "Destroy target land."', () => {
       const result = parseOracleText('Destroy target land.');
 

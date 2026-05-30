@@ -20,7 +20,7 @@ export type ParsedOracle =
 
 let targetSpecCounter = 0;
 
-function makeTargetSpec(type: TargetType, constraints?: { opponentControls?: boolean }): TargetSpec {
+function makeTargetSpec(type: TargetType, constraints?: TargetSpec['constraints']): TargetSpec {
   return {
     id: `target_${++targetSpecCounter}`,
     type,
@@ -325,9 +325,21 @@ function matchDestroy(tokens: string[], startIndex: number): PatternResult {
   let targetType: TargetType;
   let consumed = 3;
   let opponentControls = false;
+  let notColors: Array<'W' | 'U' | 'B' | 'R' | 'G'> | undefined;
+  const excludedColorByToken: Record<string, 'W' | 'U' | 'B' | 'R' | 'G'> = {
+    nonwhite: 'W',
+    nonblue: 'U',
+    nonblack: 'B',
+    nonred: 'R',
+    nongreen: 'G',
+  };
 
   if (slice[2] === 'creature') {
     targetType = 'Creature';
+  } else if (excludedColorByToken[slice[2]] && slice[3] === 'creature') {
+    targetType = 'Creature';
+    notColors = [excludedColorByToken[slice[2]]];
+    consumed = 4;
   } else if (slice[2] === 'permanent') {
     targetType = 'Permanent';
   } else if (slice[2] === 'artifact' && slice[3] === 'or' && slice[4] === 'enchantment') {
@@ -361,7 +373,11 @@ function matchDestroy(tokens: string[], startIndex: number): PatternResult {
     consumed++;
   }
 
-  const spec = makeTargetSpec(targetType, opponentControls ? { opponentControls: true } : undefined);
+  const constraints: TargetSpec['constraints'] = {
+    ...(opponentControls ? { opponentControls: true } : {}),
+    ...(notColors ? { notColors } : {}),
+  };
+  const spec = makeTargetSpec(targetType, Object.keys(constraints).length > 0 ? constraints : undefined);
   const effect: Effect = {
     kind: 'Destroy',
     target: makeChosenRef(spec),
