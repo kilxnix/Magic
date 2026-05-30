@@ -2613,6 +2613,12 @@ function matchSearchLibraryGeneric(tokens: string[], startIndex: number): Patter
     return null;
   }
 
+  const manaValueFilter = parseManaValueFilterSuffix(slice, idx);
+  if (manaValueFilter) {
+    filter = mergeStaticFilters(filter, manaValueFilter.filter);
+    idx = manaValueFilter.nextIndex;
+  }
+
   // Skip optional destination clauses and shuffle
   // "put it into your hand" / "put that card on top" etc.
   // We consume everything until end of tokens or next sentence
@@ -4063,6 +4069,68 @@ function parseStaticFilterType(word: string): CardFilter | null {
   return null;
 }
 
+function parseManaValueFilterSuffix(
+  tokens: string[],
+  startIndex: number,
+): { filter: Pick<CardFilter, 'cmc'>; nextIndex: number } | null {
+  let idx = startIndex;
+  if (tokens[idx] === 'with') idx++;
+  if (tokens[idx] !== 'mana' || tokens[idx + 1] !== 'value') return null;
+  idx += 2;
+
+  const readValue = (token: string | undefined): number => {
+    if (!token) return Number.NaN;
+    return parseSmallNumberToken(token);
+  };
+
+  if (tokens[idx] === 'equal' && tokens[idx + 1] === 'to') {
+    const value = readValue(tokens[idx + 2]);
+    if (Number.isNaN(value)) return null;
+    return { filter: { cmc: { op: 'eq', value } }, nextIndex: idx + 3 };
+  }
+
+  if (tokens[idx] === 'less' && tokens[idx + 1] === 'than') {
+    let valueIndex = idx + 2;
+    let inclusive = false;
+    if (tokens[valueIndex] === 'or' && tokens[valueIndex + 1] === 'equal' && tokens[valueIndex + 2] === 'to') {
+      inclusive = true;
+      valueIndex += 3;
+    }
+    const value = readValue(tokens[valueIndex]);
+    if (Number.isNaN(value)) return null;
+    return {
+      filter: { cmc: { op: 'lte', value: inclusive ? value : Math.max(0, value - 1) } },
+      nextIndex: valueIndex + 1,
+    };
+  }
+
+  if (tokens[idx] === 'greater' && tokens[idx + 1] === 'than') {
+    let valueIndex = idx + 2;
+    let inclusive = false;
+    if (tokens[valueIndex] === 'or' && tokens[valueIndex + 1] === 'equal' && tokens[valueIndex + 2] === 'to') {
+      inclusive = true;
+      valueIndex += 3;
+    }
+    const value = readValue(tokens[valueIndex]);
+    if (Number.isNaN(value)) return null;
+    return {
+      filter: { cmc: { op: 'gte', value: inclusive ? value : value + 1 } },
+      nextIndex: valueIndex + 1,
+    };
+  }
+
+  const value = readValue(tokens[idx]);
+  if (Number.isNaN(value)) return null;
+  idx++;
+  if (tokens[idx] === 'or' && tokens[idx + 1] === 'less') {
+    return { filter: { cmc: { op: 'lte', value } }, nextIndex: idx + 2 };
+  }
+  if (tokens[idx] === 'or' && tokens[idx + 1] === 'greater') {
+    return { filter: { cmc: { op: 'gte', value } }, nextIndex: idx + 2 };
+  }
+  return { filter: { cmc: { op: 'eq', value } }, nextIndex: idx };
+}
+
 function mergeStaticFilters(a: CardFilter, b: CardFilter): CardFilter {
   const merge = <T,>(left?: T[], right?: T[]): T[] | undefined => {
     const values = [...(left || []), ...(right || [])];
@@ -4115,6 +4183,12 @@ function parseStaticSubject(tokens: string[], startIndex: number): { filter: Car
 
   if (['creature', 'creatures', 'spell', 'spells'].includes(tokens[idx])) {
     idx++;
+  }
+
+  const manaValueFilter = parseManaValueFilterSuffix(tokens, idx);
+  if (manaValueFilter) {
+    filter = mergeStaticFilters(filter, manaValueFilter.filter);
+    idx = manaValueFilter.nextIndex;
   }
 
   return { filter, nextIndex: idx };

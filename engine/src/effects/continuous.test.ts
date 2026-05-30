@@ -765,6 +765,52 @@ describe('Cost Reduction', () => {
     expect(canCastSpell(state, 'p1', 'impulse_1')).toBe(false);
   });
 
+  it('applies parsed mana-value filters to spell cost modifiers', () => {
+    const taxText = 'Creature spells with mana value greater than or equal to 4 cost {1} more to cast.';
+    const parsed = parseOracleText(taxText);
+    expect(parsed.kind).toBe('StaticAbility');
+    if (parsed.kind !== 'StaticAbility') return;
+
+    const cards = new Map<string, CardInstance>();
+    cards.set('tax_1', makeCard('tax_1', 'tax_def', 'p1', 'battlefield'));
+    cards.set('large_1', makeCard('large_1', 'large_def', 'p1', 'hand'));
+    cards.set('small_1', makeCard('small_1', 'small_def', 'p1', 'hand'));
+
+    const defs = new Map<string, CardDefinition>();
+    defs.set('tax_def', makeDef('tax_def', {
+      name: 'Mana Value Tax',
+      type_line: 'Enchantment',
+      oracle_text: taxText,
+      card_types: ['enchantment'],
+    }));
+    defs.set('large_def', makeDef('large_def', {
+      name: 'Large Creature',
+      type_line: 'Creature - Beast',
+      mana_cost: '{3}{G}',
+      cmc: 4,
+      card_types: ['creature'],
+      colors: ['G'],
+      power: 4,
+      toughness: 4,
+    }));
+    defs.set('small_def', makeDef('small_def', {
+      name: 'Small Creature',
+      type_line: 'Creature - Elf',
+      mana_cost: '{1}{G}',
+      cmc: 2,
+      card_types: ['creature'],
+      colors: ['G'],
+      power: 2,
+      toughness: 2,
+    }));
+
+    let state = makeState({ cards, cardDefinitions: defs });
+    state = registerContinuousEffect(state, 'tax_1', 'p1', parsed.ability);
+
+    expect(getCostIncrease(state, 'p1', defs.get('large_def')!)).toBe(1);
+    expect(getCostIncrease(state, 'p1', defs.get('small_def')!)).toBe(0);
+  });
+
   it('makes an otherwise uncastable instant castable through parsed cost reduction', () => {
     const reducerText = 'Instant and sorcery spells you cast cost {1} less to cast.';
     const parsed = parseOracleText(reducerText);

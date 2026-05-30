@@ -1351,6 +1351,38 @@ describe('parseOracleText', () => {
       });
     });
 
+    it('parses mana value limits on library searches', () => {
+      const result = parseOracleText('Search your library for a creature card with mana value 3 or less, reveal it, put it into your hand, then shuffle.');
+      expect(result.kind).toBe('Spell');
+      if (result.kind !== 'Spell') return;
+      expect(result.effects[0]).toMatchObject({
+        kind: 'SearchLibrary',
+        filter: {
+          types: ['creature'],
+          cmc: { op: 'lte', value: 3 },
+        },
+        destination: 'hand',
+      });
+    });
+
+    it('parses strict and inclusive mana value phrases on static subjects', () => {
+      const strict = parseOracleText('Creature spells with mana value less than 3 cost {1} less to cast.');
+      expect(strict.kind).toBe('StaticAbility');
+      if (strict.kind !== 'StaticAbility') return;
+      expect(strict.ability.filter).toMatchObject({
+        types: ['creature'],
+        cmc: { op: 'lte', value: 2 },
+      });
+
+      const inclusive = parseOracleText('Creature spells with mana value greater than or equal to 4 cost {1} more to cast.');
+      expect(inclusive.kind).toBe('StaticAbility');
+      if (inclusive.kind !== 'StaticAbility') return;
+      expect(inclusive.ability.filter).toMatchObject({
+        types: ['creature'],
+        cmc: { op: 'gte', value: 4 },
+      });
+    });
+
     it('parses known noncreature and supertype search filters', () => {
       const auraResult = parseOracleText('Search your library for an Aura card, put it into your hand, then shuffle.');
       expect(auraResult.kind).toBe('Spell');
