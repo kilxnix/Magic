@@ -33,6 +33,7 @@ import { getOverride } from './effects/overrides';
 import { getOptionalUntappedLifeCost } from './permanent-entry';
 import { validateStateInvariants } from './invariants';
 import { instanceHasKeyword } from './keywords';
+import { getCommanderDestinationZone } from './commander';
 import type { AIAction } from './ai/types';
 import type { ActionFailure, GameEvent as ActionGameEvent } from './actions-public';
 import type { CardFilter, Effect, SearchLibraryEffect, TargetRef } from './effects/ast';
@@ -3541,9 +3542,10 @@ function applyDirectLibraryManipulation(
     }
   } else {
     for (const card of movedCards) {
+      const destination = getCommanderDestinationZone(state, card.instanceId, 'graveyard');
       newCards.set(card.instanceId, {
         ...card,
-        zone: 'graveyard',
+        zone: destination,
         tapped: false,
         damage: 0,
         counters: {},

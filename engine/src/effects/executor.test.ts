@@ -146,6 +146,20 @@ function createTestState(): GameState {
   };
 }
 
+function withLibraryCommander(state: GameState, commanderId = 'lib-card-1'): GameState {
+  const commander = state.cards.get(commanderId);
+  if (!commander) throw new Error(`Missing commander fixture ${commanderId}`);
+  return {
+    ...state,
+    cards: new Map(state.cards).set(commanderId, { ...commander, isCommander: true }),
+    players: state.players.map(player =>
+      player.id === 'player-1'
+        ? { ...player, commanderInstanceId: commanderId, commanderInstanceIds: [commanderId] }
+        : player,
+    ),
+  };
+}
+
 describe('executeEffects', () => {
   describe('Draw effect', () => {
     it('moves cards from library to hand', () => {
@@ -164,6 +178,17 @@ describe('executeEffects', () => {
         }
       }
       expect(handCount).toBe(2);
+    });
+
+    it('moves a drawn commander to command zone by default instead of hand', () => {
+      const state = withLibraryCommander(createTestState());
+      const effects: Effect[] = [
+        { kind: 'Draw', player: { kind: 'Controller' }, count: 1 },
+      ];
+
+      const newState = executeEffects(state, effects, 'player-1', [], []);
+
+      expect(newState.cards.get('lib-card-1')?.zone).toBe('command');
     });
 
     it('draws specified number of cards', () => {
@@ -589,6 +614,35 @@ describe('Phase 10 effects', () => {
 
       expect(newState.cards.get('creature-1')?.zone).toBe('command');
     });
+
+    it('moves commanders to command zone by default instead of tucking into library', () => {
+      const state = createTestState();
+      const cards = new Map(state.cards);
+      const commander = cards.get('creature-1')!;
+      cards.set('creature-1', { ...commander, isCommander: true });
+      const modifiedState = {
+        ...state,
+        cards,
+        players: state.players.map(player =>
+          player.id === 'player-1'
+            ? { ...player, commanderInstanceId: 'creature-1', commanderInstanceIds: ['creature-1'] }
+            : player,
+        ),
+      };
+      const effects: Effect[] = [
+        { kind: 'PutIntoLibrary', target: { kind: 'Chosen', targetId: 'target_1' }, position: 'top' },
+      ];
+
+      const newState = executeEffects(
+        modifiedState,
+        effects,
+        'player-1',
+        ['creature-1'],
+        [{ id: 'target_1' }],
+      );
+
+      expect(newState.cards.get('creature-1')?.zone).toBe('command');
+    });
   });
 
   describe('Mill effect', () => {
@@ -610,6 +664,17 @@ describe('Phase 10 effects', () => {
       expect(graveyardCount).toBe(3);
     });
 
+    it('moves a milled commander to command zone by default instead of graveyard', () => {
+      const state = withLibraryCommander(createTestState());
+      const effects: Effect[] = [
+        { kind: 'Mill', player: { kind: 'Controller' }, count: 1 },
+      ];
+
+      const newState = executeEffects(state, effects, 'player-1', [], []);
+
+      expect(newState.cards.get('lib-card-1')?.zone).toBe('command');
+    });
+
     it('mills only as many cards as available', () => {
       const state = createTestState();
       // Library has 5 cards, try to mill 10
@@ -626,6 +691,60 @@ describe('Phase 10 effects', () => {
         }
       }
       expect(graveyardCount).toBe(5);
+    });
+  });
+
+  describe('Library commander replacement', () => {
+    it('moves searched commanders to command zone by default instead of hand', () => {
+      const state = withLibraryCommander(createTestState());
+      const effects: Effect[] = [
+        {
+          kind: 'SearchLibrary',
+          player: { kind: 'Controller' },
+          filter: {},
+          destination: 'hand',
+          shuffle: false,
+        },
+      ];
+
+      const newState = executeEffects(state, effects, 'player-1', [], []);
+
+      expect(newState.cards.get('lib-card-1')?.zone).toBe('command');
+    });
+
+    it('moves exiled-from-library commanders to command zone and excludes them from exile-count records', () => {
+      const state = withLibraryCommander(createTestState());
+      const effects: Effect[] = [
+        {
+          kind: 'ExileFromLibrary',
+          player: { kind: 'Controller' },
+          count: 1,
+          delayedDamageEachOpponentPerCard: 1,
+        },
+      ];
+
+      const newState = executeEffects(state, effects, 'player-1', [], [], 0, {
+        sourceInstanceId: 'creature-1',
+      });
+
+      expect(newState.cards.get('lib-card-1')?.zone).toBe('command');
+      expect(newState.delayedTriggers?.length ?? 0).toBe(0);
+    });
+
+    it('moves commanders exiled-until-named to command zone by default', () => {
+      const state = withLibraryCommander(createTestState());
+      const effects: Effect[] = [
+        {
+          kind: 'ExileUntilNamed',
+          player: { kind: 'Controller' },
+          namedCard: 'Generic Card',
+          foundDestination: 'hand',
+        },
+      ];
+
+      const newState = executeEffects(state, effects, 'player-1', [], []);
+
+      expect(newState.cards.get('lib-card-1')?.zone).toBe('command');
     });
   });
 

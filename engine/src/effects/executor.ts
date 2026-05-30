@@ -315,7 +315,13 @@ function executeDraw(state: GameState, playerId: string, count: number): GameSta
       break;
     }
     const card = libraryCards[i];
-    newCards.set(card.instanceId, { ...card, zone: 'hand' });
+    newCards.set(card.instanceId, {
+      ...card,
+      zone: getCommanderDestinationZone(currentState, card.instanceId, 'hand'),
+      tapped: false,
+      damage: 0,
+      counters: {},
+    });
   }
 
   return { ...currentState, cards: newCards };
@@ -585,6 +591,21 @@ function executePutIntoLibrary(
   const card = state.cards.get(targetId);
   if (!card) return state;
 
+  const finalZone = getCommanderDestinationZone(state, targetId, 'library');
+  if (finalZone !== 'library') {
+    const newCards = new Map(state.cards);
+    newCards.set(targetId, {
+      ...card,
+      zone: finalZone,
+      tapped: false,
+      damage: 0,
+      counters: {},
+      summoningSick: true,
+      attachedTo: undefined,
+    });
+    return pruneDetachedEffects({ ...state, cards: newCards });
+  }
+
   const ownerId = card.ownerId;
   const libraryCards: CardInstance[] = [];
   const otherEntries: [string, CardInstance][] = [];
@@ -667,7 +688,13 @@ function executeMill(state: GameState, playerId: string, count: number): GameSta
   const toMill = Math.min(count, libraryCards.length);
   for (let i = 0; i < toMill; i++) {
     const card = libraryCards[i];
-    newCards.set(card.instanceId, { ...card, zone: 'graveyard' });
+    newCards.set(card.instanceId, {
+      ...card,
+      zone: getCommanderDestinationZone(state, card.instanceId, 'graveyard'),
+      tapped: false,
+      damage: 0,
+      counters: {},
+    });
   }
 
   return { ...state, cards: newCards };
@@ -817,7 +844,13 @@ function executeDiscard(state: GameState, playerId: string, count: number, rando
   }
 
   for (const card of toDiscard) {
-    newCards.set(card.instanceId, { ...card, zone: 'graveyard' });
+    newCards.set(card.instanceId, {
+      ...card,
+      zone: getCommanderDestinationZone(state, card.instanceId, 'graveyard'),
+      tapped: false,
+      damage: 0,
+      counters: {},
+    });
   }
 
   return { ...state, cards: newCards };
@@ -987,7 +1020,10 @@ function executeSurveil(
   if (hasExplicitChoices) {
     const topCards = orderChosenCards(surveilCards, splitChoiceIds(namedCardChoices.get('surveilTopIds')));
     const graveyardCards = orderChosenCards(surveilCards, splitChoiceIds(namedCardChoices.get('surveilGraveyardIds')))
-      .map(card => ({ ...card, zone: 'graveyard' as Zone }));
+      .map(card => ({
+        ...card,
+        zone: getCommanderDestinationZone(state, card.instanceId, 'graveyard'),
+      }));
     const assigned = new Set([...topCards, ...graveyardCards].map(card => card.instanceId));
     const unassignedTop = surveilCards.filter(card => !assigned.has(card.instanceId));
     return rebuildLibraryOrder(state, playerId, [...topCards, ...unassignedTop, ...restLibrary], graveyardCards);
@@ -1015,7 +1051,10 @@ function executeSurveil(
     state,
     playerId,
     newLibrary,
-    sendToGraveyard.map(card => ({ ...card, zone: 'graveyard' as Zone })),
+    sendToGraveyard.map(card => ({
+      ...card,
+      zone: getCommanderDestinationZone(state, card.instanceId, 'graveyard'),
+    })),
   );
 }
 
@@ -1255,6 +1294,22 @@ export function executeSearchLibrary(
   }
 
   if (!matchedCard) return state; // No match found
+
+  const intendedZone: Zone = destination === 'top' ? 'library' : destination;
+  const finalDestination = getCommanderDestinationZone(state, matchedCard.instanceId, intendedZone);
+  if (finalDestination !== intendedZone) {
+    const newCards = new Map(state.cards);
+    newCards.set(matchedCard.instanceId, {
+      ...matchedCard,
+      zone: finalDestination,
+      tapped: false,
+      summoningSick: true,
+      damage: 0,
+      counters: {},
+    });
+    const movedState = { ...state, cards: newCards };
+    return shuffleRest ? executeShuffleLibrary(movedState, playerId) : movedState;
+  }
 
   if (destination === 'top') {
     const libraryEntries: [string, CardInstance][] = [];
@@ -1714,8 +1769,15 @@ function executeExileFromLibrary(
   const exiledCardIds: string[] = [];
   for (let i = 0; i < toExile; i++) {
     const card = libraryCards[i];
-    exiledCardIds.push(card.instanceId);
-    newCards.set(card.instanceId, { ...card, zone: 'exile' });
+    const destination = getCommanderDestinationZone(state, card.instanceId, 'exile');
+    if (destination === 'exile') exiledCardIds.push(card.instanceId);
+    newCards.set(card.instanceId, {
+      ...card,
+      zone: destination,
+      tapped: false,
+      damage: 0,
+      counters: {},
+    });
   }
 
   let nextState: GameState = { ...state, cards: newCards };
@@ -1762,16 +1824,26 @@ function executeExileUntilNamed(
   let index = 0;
   for (; index < Math.min(exileBeforeSearch, libraryCards.length); index++) {
     const card = libraryCards[index];
-    newCards.set(card.instanceId, { ...card, zone: 'exile' });
+    newCards.set(card.instanceId, {
+      ...card,
+      zone: getCommanderDestinationZone(state, card.instanceId, 'exile'),
+      tapped: false,
+      damage: 0,
+      counters: {},
+    });
   }
 
   for (; index < libraryCards.length; index++) {
     const card = libraryCards[index];
     const def = getCardDefinition(state, card);
     const isNamed = def.name.toLowerCase() === targetName;
+    const intendedZone = isNamed ? foundDestination : 'exile';
     newCards.set(card.instanceId, {
       ...card,
-      zone: isNamed ? foundDestination : 'exile',
+      zone: getCommanderDestinationZone(state, card.instanceId, intendedZone),
+      tapped: false,
+      damage: 0,
+      counters: {},
     });
     if (isNamed) break;
   }

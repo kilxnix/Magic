@@ -24,11 +24,13 @@ export function isOwnersCommander(state: GameState, cardInstanceId: string): boo
 }
 
 /**
- * Apply the commander replacement rule when moving a card to graveyard, exile, or hand.
+ * Apply the commander replacement rule when moving a card to graveyard, exile,
+ * hand, or library.
  * If the card is a commander, it can go to the command zone instead.
  *
- * Per MTG rules (903.9a): If a commander would be put into its owner's hand, graveyard,
- * or exile from anywhere, that player may put it into the command zone instead.
+ * Per MTG rules (903.9a): If a commander would be put into its owner's hand,
+ * library, graveyard, or exile from anywhere, that player may put it into the
+ * command zone instead.
  *
  * The `ownerChoosesCommandZone` parameter controls whether the owner opts for command zone.
  * When null/undefined, defaults to true for hand/graveyard/exile so the trainer
@@ -40,8 +42,13 @@ export function getCommanderDestinationZone(
   intendedZone: Zone,
   ownerChoosesCommandZone?: boolean,
 ): Zone {
-  // Only applies to graveyard, exile, and hand
-  if (intendedZone !== 'graveyard' && intendedZone !== 'exile' && intendedZone !== 'hand') {
+  // Only applies to graveyard, exile, hand, and library
+  if (
+    intendedZone !== 'graveyard'
+    && intendedZone !== 'exile'
+    && intendedZone !== 'hand'
+    && intendedZone !== 'library'
+  ) {
     return intendedZone;
   }
 
