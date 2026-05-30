@@ -4060,6 +4060,7 @@ function mergeStaticFilters(a: CardFilter, b: CardFilter): CardFilter {
     power: b.power || a.power,
     permanent: a.permanent || b.permanent || undefined,
     manaValueLessThanSourcePower: a.manaValueLessThanSourcePower || b.manaValueLessThanSourcePower || undefined,
+    chosenCreatureTypeFromSource: a.chosenCreatureTypeFromSource || b.chosenCreatureTypeFromSource || undefined,
   };
 }
 
@@ -4195,6 +4196,7 @@ function matchStaticAbility(tokens: string[]): StaticAbilityEffect | null {
   if ((tokens[idx] === 'with' && tokens[idx + 1] === 'power')) return null;
 
   if (tokens[idx] === 'of' && tokens[idx + 1] === 'the' && tokens[idx + 2] === 'chosen' && tokens[idx + 3] === 'type') {
+    filter.chosenCreatureTypeFromSource = true;
     idx += 4;
   }
 

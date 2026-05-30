@@ -262,6 +262,18 @@ describe('Static Ability Parsing', () => {
     expect(result.ability.filter).toEqual({ types: ['instant', 'sorcery'], colors: ['R'] });
   });
 
+  it('parses chosen-type spell cost reducers', () => {
+    const result = parseOracleText('Creature spells you cast of the chosen type cost {1} less to cast.');
+    expect(result.kind).toBe('StaticAbility');
+    if (result.kind !== 'StaticAbility') return;
+
+    expect(result.ability.modifier).toEqual({ kind: 'ReduceCost', amount: 1 });
+    expect(result.ability.filter).toEqual({
+      types: ['creature'],
+      chosenCreatureTypeFromSource: true,
+    });
+  });
+
   it('parses "Zombies you control get +1/+1"', () => {
     const result = parseOracleText('Zombies you control get +1/+1');
     expect(result.kind).toBe('StaticAbility');
@@ -713,6 +725,59 @@ describe('Cost Reduction', () => {
     expect(canCastSpell(state, 'p1', 'bolt_1')).toBe(false);
     state = registerContinuousEffect(state, 'mentor_1', 'p1', parsed.ability);
     expect(canCastSpell(state, 'p1', 'bolt_1')).toBe(true);
+  });
+
+  it('applies chosen-type cost reducers only to matching creature spells', () => {
+    const cards = new Map<string, CardInstance>();
+    cards.set('horn_1', {
+      ...makeCard('horn_1', 'horn_def', 'p1', 'battlefield'),
+      choices: { chosenCreatureType: 'Bird' },
+    });
+    cards.set('bird_1', makeCard('bird_1', 'bird_def', 'p1', 'hand'));
+    cards.set('dragon_1', makeCard('dragon_1', 'dragon_def', 'p1', 'hand'));
+
+    const defs = new Map<string, CardDefinition>();
+    defs.set('horn_def', makeDef('horn_def', {
+      name: "Herald's Horn",
+      type_line: 'Artifact',
+      oracle_text: 'As Herald\'s Horn enters, choose a creature type.\nCreature spells you cast of the chosen type cost {1} less to cast.',
+      card_types: ['artifact'],
+      power: undefined,
+      toughness: undefined,
+    }));
+    defs.set('bird_def', makeDef('bird_def', {
+      name: 'Aven Test',
+      type_line: 'Creature - Bird Wizard',
+      mana_cost: '{1}{U}',
+      cmc: 2,
+      card_types: ['creature'],
+      colors: ['U'],
+    }));
+    defs.set('dragon_def', makeDef('dragon_def', {
+      name: 'Dragon Test',
+      type_line: 'Creature - Dragon',
+      mana_cost: '{1}{U}',
+      cmc: 2,
+      card_types: ['creature'],
+      colors: ['U'],
+    }));
+
+    const players = [makePlayer('p1'), makePlayer('p2')];
+    players[0] = {
+      ...players[0],
+      manaPool: { ...emptyManaPool(), U: 1 },
+    };
+
+    let state = makeState({
+      players,
+      cards,
+      cardDefinitions: defs,
+    });
+    state = { ...state, phase: 'precombat_main' as any, step: 'main' as any };
+    state = registerContinuousAbilitiesForPermanent(state, 'horn_1');
+
+    expect(canCastSpell(state, 'p1', 'bird_1')).toBe(true);
+    expect(canCastSpell(state, 'p1', 'dragon_1')).toBe(false);
   });
 });
 

@@ -846,7 +846,7 @@ type PendingHandTopLibraryChoice = {
   count: number;
 };
 
-type PendingCastChoiceMode = 'discardLand' | 'sacrificeCreature';
+type PendingCastChoiceMode = 'discardLand' | 'sacrificeCreature' | 'creatureType';
 
 function toTutorCardOption(state: GameState, card: CardInstance): TutorCardOption | null {
   const def = getCardDefinition(state, card);
@@ -911,7 +911,7 @@ function publicTurnNumber(engineTurnNumber: number, playerCount: number): number
   return Math.ceil(engineTurnNumber / Math.max(1, playerCount));
 }
 
-function isCreatureTypeChoiceLand(def: CardDefinition): boolean {
+function needsCreatureTypeChoice(def: CardDefinition): boolean {
   return /cavern of souls/i.test(def.name)
     || /as .* enters.*choose a creature type/i.test(def.oracle_text);
 }
@@ -4919,6 +4919,20 @@ export function useShelectorGame() {
           return;
         }
 
+        if (choiceMode === 'creatureType') {
+          submitActionRef.current?.({
+            ...pendingCastChoice,
+            _engineAction: {
+              ...pendingEngineAction,
+              cardChoices: {
+                ...(pendingEngineAction.cardChoices || {}),
+                chosenCreatureType: cardInstanceId,
+              },
+            },
+          });
+          return;
+        }
+
         submitActionRef.current?.({
           ...pendingCastChoice,
           _engineAction: {
@@ -5279,6 +5293,11 @@ export function useShelectorGame() {
       if (choiceMode === 'sacrificeCreature') {
         addMessage('player', 'No creature sacrificed.');
         submitActionRef.current?.(pendingCastChoice);
+        return;
+      }
+      if (choiceMode === 'creatureType') {
+        addMessage('player', 'Cancelled the creature type choice.');
+        syncState();
         return;
       }
       addMessage('player', 'Cancelled the cast choice.');
@@ -6145,11 +6164,46 @@ export function useShelectorGame() {
         }
       }
 
+      if (engineAction.kind === 'CastSpell') {
+        const card = engine.cards.get(engineAction.cardInstanceId);
+        const def = card ? getCardDefinition(engine, card) : undefined;
+        if (def && needsCreatureTypeChoice(def) && !engineAction.cardChoices?.chosenCreatureType) {
+          const creatureTypes = getCreatureTypeChoices(engine as GameState, humanIdRef.current);
+          const typeOptions = (creatureTypes.length > 0 ? creatureTypes : ['Dragon'])
+            .map(type => ({
+              instanceId: type,
+              name: type,
+              typeLine: 'Creature type',
+              manaCost: '',
+              legal: true,
+              reason: 'Available creature type choice',
+              destination: 'choice' as const,
+            }));
+
+          pendingCastChoiceActionRef.current = action;
+          pendingCastChoiceModeRef.current = 'creatureType';
+          tutorRemainingRef.current = 0;
+          tutorFilterRef.current = undefined;
+          tutorFilterSpecRef.current = undefined;
+          tutorTappedRef.current = false;
+          tutorShuffleRef.current = false;
+          tutorSourceNameRef.current = def.name;
+          tutorSourceInstanceIdRef.current = undefined;
+          tutorPromptRequestRef.current = null;
+          setTutorTitle(`${def.name}: choose a creature type`);
+          setTutorCards(typeOptions);
+          setTutorPhase(true);
+          addMessage('system', `Choose a creature type for ${def.name}.`);
+          syncState();
+          return;
+        }
+      }
+
       if (engineAction.kind === 'PlayLand') {
         const card = engine.cards.get(engineAction.cardInstanceId);
         const def = card ? getCardDefinition(engine, card) : undefined;
 
-        if (def && isCreatureTypeChoiceLand(def) && !engineAction.chosenCreatureType) {
+        if (def && needsCreatureTypeChoice(def) && !engineAction.chosenCreatureType) {
           const creatureTypes = getCreatureTypeChoices(engine as GameState, humanIdRef.current);
           const typeOptions = (creatureTypes.length > 0 ? creatureTypes : ['Dragon'])
             .map(type => ({

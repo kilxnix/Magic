@@ -1001,6 +1001,14 @@ export function matchesCardFilter(def: CardDefinition, filter: CardFilter, conte
     if (!hasMatchingSubtype) return false;
   }
 
+  if (filter.chosenCreatureTypeFromSource) {
+    if (!context.state || !context.sourceInstanceId) return false;
+    const source = context.state.cards.get(context.sourceInstanceId);
+    const chosenType = source?.choices?.chosenCreatureType?.trim().toLowerCase();
+    if (!chosenType) return false;
+    if (!def.type_line.toLowerCase().includes(chosenType)) return false;
+  }
+
   if (filter.excludeSubtypes) {
     const typeLine = def.type_line.toLowerCase();
     const hasExcludedSubtype = filter.excludeSubtypes.some(st => typeLine.includes(st.toLowerCase()));

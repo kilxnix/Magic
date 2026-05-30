@@ -124,8 +124,15 @@ function isAffectedBy(
   }
 
   // Check card filter
-  if (ability.filter.types || ability.filter.subtypes || ability.filter.colors || ability.filter.cmc || ability.filter.power) {
-    return matchesCardFilter(def, ability.filter);
+  if (
+    ability.filter.types
+    || ability.filter.subtypes
+    || ability.filter.colors
+    || ability.filter.cmc
+    || ability.filter.power
+    || ability.filter.chosenCreatureTypeFromSource
+  ) {
+    return matchesCardFilter(def, ability.filter, { state, sourceInstanceId: effect.sourceInstanceId });
   }
 
   // No filter = matches all permanents
@@ -329,8 +336,9 @@ export function getCostReduction(
       || effect.ability.filter.colors
       || effect.ability.filter.cmc
       || effect.ability.filter.power
+      || effect.ability.filter.chosenCreatureTypeFromSource
     )) {
-      if (!matchesCardFilter(spellDef, effect.ability.filter)) continue;
+      if (!matchesCardFilter(spellDef, effect.ability.filter, { state, sourceInstanceId: effect.sourceInstanceId })) continue;
     }
 
     reduction += effect.ability.modifier.amount;

@@ -413,6 +413,7 @@ export interface CardFilter {
   permanent?: boolean;
   manaValueLessThanSourcePower?: boolean;
   power?: { op: 'eq' | 'lte' | 'gte'; value: number };
+  chosenCreatureTypeFromSource?: boolean;
 }
 
 // Modal choice (for "Choose one" spells)
