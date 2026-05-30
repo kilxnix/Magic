@@ -66,11 +66,14 @@ import {
   buildStateUpdate,
   createSearchLibraryPromptRequest,
   applySearchLibraryPromptResponse,
+  createSelectTargetPromptRequest,
+  applySelectTargetPromptResponse,
   type ActionPromptChoice,
   type ClientActionResponse,
   type EnginePrompt,
   type EngineStateUpdate,
   type SearchLibraryPromptRequest,
+  type TargetSpec,
   summarizeActionPromptChoices,
   serializeGameState,
   deserializeGameState,
@@ -4821,6 +4824,51 @@ export function useShelectorGame() {
           return response.state;
         };
 
+        const validateTargetPromptResponse = (
+          state: GameState,
+          spec: TargetSpec | undefined,
+          selectedTargetIds: string[],
+          sourceInstanceId: string | undefined,
+          label: string,
+        ): boolean => {
+          if (!spec || selectedTargetIds.length === 0) return true;
+          const targetRequest = createSelectTargetPromptRequest(state, humanIdRef.current, spec, {
+            sourceInstanceId,
+          });
+          const targetResponse = applySelectTargetPromptResponse(state, targetRequest, {
+            requestId: targetRequest.id,
+            kind: 'SelectTarget',
+            playerId: humanIdRef.current,
+            selectedTargetIds,
+          });
+          recordAuthorityUpdate(targetResponse.update);
+          if (targetResponse.ok) return true;
+
+          appendLog({
+            ...captureLogEntry(
+              state,
+              humanIdRef.current,
+              aiIdsRef.current,
+              'human',
+              `Rejected illegal target for ${label}`,
+              0,
+              humanIdRef.current,
+            ),
+            playByPlay: `Target selection for ${label} was rejected by the rules validator.`,
+            rulesAudit: {
+              severity: 'error',
+              reason: targetResponse.message || 'That target is not legal in the current game state.',
+            },
+          });
+          setActionError({
+            reason: targetResponse.reason || 'illegal_response',
+            message: targetResponse.message || 'That target is not legal in the current game state.',
+          });
+          addMessage('system', `Cannot choose target: ${targetResponse.message || 'That target is not legal in the current game state.'}`);
+          syncState();
+          return false;
+        };
+
         // For DeclareAttackers with no actual attacks, skip combat via passPriority
         if (engineAction.kind === 'DeclareAttackers' && engineAction.attacks.length === 0) {
           // Skip combat — pass both players through all remaining combat steps.
@@ -4849,6 +4897,20 @@ export function useShelectorGame() {
           let precastState: GameState = engine as GameState;
 
           if (card && player) {
+            const targetSpecs = getSpellTargetSpecs(engine as GameState, card);
+            if (
+              targetSpecs.length === 1
+              && !validateTargetPromptResponse(
+                engine as GameState,
+                targetSpecs[0],
+                engineAction.targets,
+                engineAction.cardInstanceId,
+                action.label,
+              )
+            ) {
+              return;
+            }
+
             const def = getCardDefinition(engine, card);
             const isFromCommandZone = card.zone === 'command';
             const taxAmount = isFromCommandZone ? getCommanderCastCount(player, card.instanceId) * 2 : 0;
@@ -4935,6 +4997,22 @@ export function useShelectorGame() {
           let preActivateState = engine as GameState;
           const abilities = getActivatedAbilities(preActivateState, engineAction.cardInstanceId);
           const ability = abilities[engineAction.abilityIndex];
+          if (ability?.targets?.length === 1) {
+            const targetSpec: TargetSpec = {
+              id: ability.targets[0].id,
+              type: ability.targets[0].type as TargetSpec['type'],
+              count: 1,
+            };
+            if (!validateTargetPromptResponse(
+              preActivateState,
+              targetSpec,
+              engineAction.targets,
+              engineAction.cardInstanceId,
+              action.label,
+            )) {
+              return;
+            }
+          }
           const abilityCost = ability?.cost.mana ? parseManaString(ability.cost.mana) : null;
 
           if (abilityCost) {
@@ -5024,6 +5102,15 @@ export function useShelectorGame() {
           newState = blockState;
         } else if (engineAction.kind === 'Equip') {
           let preEquipState = engine as GameState;
+          if (!validateTargetPromptResponse(
+            preEquipState,
+            { id: 'equip-target', type: 'Creature', count: 1 },
+            [engineAction.targetCreatureId],
+            engineAction.equipmentInstanceId,
+            action.label,
+          )) {
+            return;
+          }
           const equipment = preEquipState.cards.get(engineAction.equipmentInstanceId);
           const equipDef = equipment ? getCardDefinition(preEquipState, equipment) : undefined;
           const equipCost = equipDef?.equipCost ? { ...equipDef.equipCost } as ManaCost : null;
