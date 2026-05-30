@@ -57,6 +57,7 @@ import {
 } from '../lib/multiplayer';
 import { BEGINNER_DECKS } from '../lib/beginnerDecks';
 import { parseRoomDeckList } from '../lib/deckListParser';
+import { typeLineHasType } from '../lib/typeLine';
 import {
   applyPendingRoomAction,
   createRoomEngineState,
@@ -342,7 +343,7 @@ function nextSharedPhase(phase: GamePhase) {
 }
 
 function isCreatureCard(card: RoomScopedCard) {
-  return card.cardTypes.includes('creature') || card.typeLine.toLowerCase().includes('creature');
+  return card.cardTypes.includes('creature') || typeLineHasType(card.typeLine, 'creature');
 }
 
 function cardPowerToughness(card: RoomScopedCard) {

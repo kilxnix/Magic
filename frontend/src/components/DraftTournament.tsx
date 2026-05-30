@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, Clock, Eye, EyeOff, Loader2, PackageOpen, Swords, Trophy, Users } from 'lucide-react';
 import type { ImportedCards, CardDataFromAPI } from '../hooks/useShelectorGame';
+import { typeLineHasType } from '../lib/typeLine';
 
 interface DraftSetSummary {
   set_code: string;
@@ -176,7 +177,7 @@ function isDoubleMastersSet(setCode: string, setName = ''): boolean {
 
 function buildLimitedDeck(playerName: string, pickedCards: DraftCard[]): ImportedCards {
   const colors = preferredColors(pickedCards);
-  const nonlands = pickedCards.filter(card => !card.type_line.toLowerCase().includes('land'));
+  const nonlands = pickedCards.filter(card => !typeLineHasType(card.type_line, 'land'));
   const ranked = [...nonlands].sort((a, b) => scoreDraftCard(b, pickedCards) - scoreDraftCard(a, pickedCards));
   const spells = ranked.slice(0, 23);
   const landTotal = Math.max(40 - spells.length, 17);

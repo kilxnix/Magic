@@ -1,4 +1,5 @@
 import type { CardDataFromAPI, ImportedCards } from '../hooks/useShelectorGame';
+import { typeLineHasType } from './typeLine';
 
 const BASIC_LAND_DATA: Record<string, CardDataFromAPI> = {
   Plains: card('Plains', 'Basic Land - Plains', '', 0, [], ['W'], null, null, '({T}: Add {W}.)'),
@@ -113,7 +114,7 @@ function cardDataFor(name: string): CardDataFromAPI {
 }
 
 function isLand(name: string, data: CardDataFromAPI): boolean {
-  return data.type_line.toLowerCase().includes('land')
+  return typeLineHasType(data.type_line, 'land')
     || BASIC_LAND_DATA[name] != null;
 }
 

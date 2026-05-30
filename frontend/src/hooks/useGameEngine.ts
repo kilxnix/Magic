@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef } from 'react';
+import { typeLineHasType } from '../lib/typeLine';
 
 // ============== TYPE DEFINITIONS (mirroring engine/src/types.ts) ==============
 
@@ -953,14 +954,13 @@ interface ApiDeck {
 
 function parseCardTypes(typeLine: string): CardType[] {
   const types: CardType[] = [];
-  const lower = typeLine.toLowerCase();
-  if (lower.includes('creature')) types.push('creature');
-  if (lower.includes('instant')) types.push('instant');
-  if (lower.includes('sorcery')) types.push('sorcery');
-  if (lower.includes('artifact')) types.push('artifact');
-  if (lower.includes('enchantment')) types.push('enchantment');
-  if (lower.includes('land')) types.push('land');
-  if (lower.includes('planeswalker')) types.push('planeswalker');
+  if (typeLineHasType(typeLine, 'creature')) types.push('creature');
+  if (typeLineHasType(typeLine, 'instant')) types.push('instant');
+  if (typeLineHasType(typeLine, 'sorcery')) types.push('sorcery');
+  if (typeLineHasType(typeLine, 'artifact')) types.push('artifact');
+  if (typeLineHasType(typeLine, 'enchantment')) types.push('enchantment');
+  if (typeLineHasType(typeLine, 'land')) types.push('land');
+  if (typeLineHasType(typeLine, 'planeswalker')) types.push('planeswalker');
   return types;
 }
 

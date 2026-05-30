@@ -123,6 +123,7 @@ import {
 } from '../lib/turnReview';
 import { shelectorApiUrl } from '../lib/api';
 import { findUnsupportedEngineCards, formatUnsupportedEngineCards } from '../lib/enginePreflight';
+import { typeLineHasSupertype, typeLineHasType } from '../lib/typeLine';
 
 // ========== End-Game Modal State (Task 27 — game-reliability-refactor) ==========
 
@@ -640,11 +641,10 @@ function findCardDataByName(cardData: Record<string, CardDataFromAPI> | undefine
 
 function isCommanderEligibleData(data: CardDataFromAPI | undefined): boolean {
   if (!data) return false;
-  const typeLine = (data.type_line || '').toLowerCase();
   const oracleText = (data.oracle_text || '').toLowerCase();
   return (
-    typeLine.includes('legendary')
-    && (typeLine.includes('creature') || typeLine.includes('planeswalker'))
+    typeLineHasSupertype(data.type_line || '', 'legendary')
+    && (typeLineHasType(data.type_line || '', 'creature') || typeLineHasType(data.type_line || '', 'planeswalker'))
   ) || oracleText.includes('can be your commander');
 }
 
@@ -795,11 +795,10 @@ function resolveCommanderNamesForLookup(
   const commanderEligibleFaces = parts.filter(name => {
     const card = lookup(name);
     if (!card) return false;
-    const typeLine = card.type_line.toLowerCase();
     const oracleText = (card.oracle_text || '').toLowerCase();
     return (
-      typeLine.includes('legendary')
-      && (typeLine.includes('creature') || typeLine.includes('planeswalker'))
+      typeLineHasSupertype(card.type_line || '', 'legendary')
+      && (typeLineHasType(card.type_line || '', 'creature') || typeLineHasType(card.type_line || '', 'planeswalker'))
     ) || oracleText.includes('can be your commander');
   });
   if (commanderEligibleFaces.length === 1 && normalizeLookupName(commanderEligibleFaces[0]) === normalizeLookupName(parts[0])) {

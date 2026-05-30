@@ -7,6 +7,7 @@
  */
 
 import { useState, useCallback, useRef } from 'react';
+import { typeLineHasType } from '../lib/typeLine';
 
 // Engine imports
 import {
@@ -511,7 +512,7 @@ async function fetchDeckAndCards(deckId: string): Promise<{
 
   // Infer basic land mana text
   for (const card of cardDataList) {
-    if (card.type_line.toLowerCase().includes('land')) {
+    if (typeLineHasType(card.type_line, 'land')) {
       card.oracle_text = inferBasicLandText(card.name, card.oracle_text);
     }
   }
