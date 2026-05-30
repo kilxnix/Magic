@@ -204,6 +204,27 @@ describe('manaProduction cache — comprehensive', () => {
       expect(colors).toContain('U');
       expect(colors).toContain('B');
       expect(colors).toHaveLength(2);
+      expect(parsed(
+        landDef(
+          'Dimir Aqueduct',
+          'Land',
+          'Dimir Aqueduct enters tapped.\nWhen Dimir Aqueduct enters, return a land you control to its owner\'s hand.\n{T}: Add {U}{B}.',
+        ),
+      ).manaProduction?.producesAllColors).toBe(true);
+    });
+
+    it('Nantuko Elder parses fixed {C}{G} as a bundled creature mana ability', () => {
+      const def = parsed(
+        landDef(
+          'Nantuko Elder',
+          'Creature - Insect Druid',
+          '{T}: Add {C}{G}.',
+        ),
+      );
+      expect(def.manaProduction?.colors).toEqual(['C', 'G']);
+      expect(def.manaProduction?.amounts.C).toBe(1);
+      expect(def.manaProduction?.amounts.G).toBe(1);
+      expect(def.manaProduction?.producesAllColors).toBe(true);
     });
 
     it('Somberwald Sage parses three mana of any one color', () => {

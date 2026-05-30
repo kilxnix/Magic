@@ -303,15 +303,21 @@ export function tapLandForMana(state: GameState, playerId: string, cardInstanceI
     }
   }
 
-  let amount = def.manaProduction?.amounts[color] ?? 1;
-  if (def.manaProduction?.amountScale === 'creaturesYouControl') {
-    amount *= [...state.cards.values()].filter(instance => {
-      if (instance.ownerId !== playerId || instance.zone !== 'battlefield') return false;
-      const cardDef = getCardDefinition(state, instance);
-      return cardDef.card_types.includes('creature');
-    }).length;
-  }
-  amount *= manaProductionMultiplier(state, playerId, cardInstanceId);
+  const amountForColor = (manaColor: ManaColor): number => {
+    let amount = def.manaProduction?.amounts[manaColor] ?? 1;
+    if (def.manaProduction?.amountScale === 'creaturesYouControl') {
+      amount *= [...state.cards.values()].filter(instance => {
+        if (instance.ownerId !== playerId || instance.zone !== 'battlefield') return false;
+        const cardDef = getCardDefinition(state, instance);
+        return cardDef.card_types.includes('creature');
+      }).length;
+    }
+    amount *= manaProductionMultiplier(state, playerId, cardInstanceId);
+    return amount;
+  };
+  const producedMana = (def.manaProduction?.producesAllColors ? def.manaProduction.colors : [color])
+    .map(manaColor => ({ color: manaColor, amount: amountForColor(manaColor) }))
+    .filter(entry => entry.amount > 0);
 
   // Sacrifice-cost mana abilities (Lotus Petal, Tinder Wall, Lotus Bloom, etc.)
   // move the paid permanent away as part of activation. A few silver-bordered
@@ -365,25 +371,37 @@ export function tapLandForMana(state: GameState, playerId: string, cardInstanceI
   const sourceProducesSnowMana = /\bsnow\b/i.test(def.type_line);
   const newPlayers = state.players.map((p, i) => {
     if (i !== playerIndex) return p;
-    const withMana = {
-      ...p,
-      manaPool: addMana(p.manaPool, color, amount),
-      ...(sourceProducesSnowMana
-        ? { snowManaPool: addMana(p.snowManaPool || { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 }, color, amount) }
-        : {}),
-    };
-    const withRestriction = addRestrictedMana(withMana, color, amount, def.manaProduction?.restriction, {
-      sourceInstanceId: cardInstanceId,
-      creatureType: card.choices?.chosenCreatureType,
-      snow: sourceProducesSnowMana,
-    });
-    if (manaHasSpellCopyRider(def.oracle_text)) {
-      return addConditionalMana(withRestriction, color, amount, 'copyRedInstantOrSorcery', {
+    let withMana = { ...p };
+    for (const produced of producedMana) {
+      withMana = {
+        ...withMana,
+        manaPool: addMana(withMana.manaPool, produced.color, produced.amount),
+        ...(sourceProducesSnowMana
+          ? {
+            snowManaPool: addMana(
+              withMana.snowManaPool || { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 },
+              produced.color,
+              produced.amount,
+            ),
+          }
+          : {}),
+      };
+      withMana = addRestrictedMana(withMana, produced.color, produced.amount, def.manaProduction?.restriction, {
         sourceInstanceId: cardInstanceId,
+        creatureType: card.choices?.chosenCreatureType,
         snow: sourceProducesSnowMana,
       });
     }
-    return withRestriction;
+    if (manaHasSpellCopyRider(def.oracle_text)) {
+      return producedMana.reduce(
+        (player, produced) => addConditionalMana(player, produced.color, produced.amount, 'copyRedInstantOrSorcery', {
+          sourceInstanceId: cardInstanceId,
+          snow: sourceProducesSnowMana,
+        }),
+        withMana,
+      );
+    }
+    return withMana;
   });
 
   let resultState: GameState = { ...state, cards: newCards, players: newPlayers };

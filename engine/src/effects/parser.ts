@@ -3697,6 +3697,97 @@ function matchGrantKeyword(tokens: string[], startIndex: number): PatternResult 
 }
 
 /**
+ * Match: "target creature can't block this turn"
+ * Match: "target creature can't attack this turn"
+ * Match: "target creature can't attack or block this turn"
+ * Match: "target creature can't be blocked this turn"
+ */
+function matchTargetCombatRestriction(tokens: string[], startIndex: number): PatternResult {
+  const slice = tokens.slice(startIndex);
+  if (slice.length < 6) return null;
+  if (slice[0] !== 'target') return null;
+
+  let idx = 1;
+  const colorConstraints = colorConstraintFromWord(slice[idx]);
+  if (colorConstraints) idx++;
+  if (slice[idx] !== 'creature') return null;
+  idx++;
+
+  const constraints: TargetSpec['constraints'] = { ...(colorConstraints || {}) };
+  if (slice[idx] === 'an' && slice[idx + 1] === 'opponent' && slice[idx + 2] === 'controls') {
+    constraints.opponentControls = true;
+    idx += 3;
+  } else if (slice[idx] === 'you' && slice[idx + 1] === 'control') {
+    idx += 2;
+  }
+
+  const consumeNegation = (): boolean => {
+    if (slice[idx] === "can't" || slice[idx] === 'cant' || slice[idx] === 'cannot') {
+      idx++;
+      return true;
+    }
+    if (slice[idx] === 'can' && slice[idx + 1] === 'not') {
+      idx += 2;
+      return true;
+    }
+    return false;
+  };
+  if (!consumeNegation()) return null;
+
+  const keywords: string[] = [];
+  while (idx < slice.length) {
+    if (slice[idx] === 'attack') {
+      keywords.push('CannotAttack');
+      idx++;
+    } else if (slice[idx] === 'block') {
+      keywords.push('CannotBlock');
+      idx++;
+    } else if (slice[idx] === 'be' && slice[idx + 1] === 'blocked') {
+      keywords.push('Unblockable');
+      idx += 2;
+    } else {
+      break;
+    }
+
+    if ((slice[idx] === 'or' || slice[idx] === 'and') && !['this', 'until'].includes(slice[idx + 1])) {
+      idx++;
+      consumeNegation();
+      continue;
+    }
+    break;
+  }
+  if (keywords.length === 0) return null;
+
+  let hasDuration = false;
+  if (slice[idx] === 'this' && (slice[idx + 1] === 'turn' || slice[idx + 1] === 'combat')) {
+    hasDuration = true;
+    idx += 2;
+  } else if (
+    slice[idx] === 'until'
+    && slice[idx + 1] === 'end'
+    && slice[idx + 2] === 'of'
+    && (slice[idx + 3] === 'turn' || slice[idx + 3] === 'combat')
+  ) {
+    hasDuration = true;
+    idx += 4;
+  }
+  if (!hasDuration) return null;
+
+  if (slice[idx] === '.') idx++;
+
+  const spec = makeTargetSpec('Creature', Object.keys(constraints).length > 0 ? constraints : undefined);
+  const target = makeChosenRef(spec);
+  const effects: Effect[] = [...new Set(keywords)].map(keyword => ({
+    kind: 'GrantKeyword',
+    target,
+    keyword,
+    untilEndOfTurn: true,
+  }));
+
+  return { effects, targets: [spec], consumed: idx };
+}
+
+/**
  * Match: "another target creature you control gains haste until end of turn and gets +X/+X until end of turn, where X is that creature's power"
  * Also handles the same pattern without "another" or "you control".
  */
@@ -4188,7 +4279,7 @@ function parseEffectClauseInternal(tokens: string[], startIndex: number): Patter
 
   const patterns = [
     matchWinGame, matchLoseGame,
-    matchBlink, matchCopyThatSpell, matchCopySpell, matchCopyCreature, matchModifyPTAndLoseKeyword, matchGrantKeywordAndDynamicPT, matchGrantKeyword, matchPhaseOut,
+    matchBlink, matchCopyThatSpell, matchCopySpell, matchCopyCreature, matchModifyPTAndLoseKeyword, matchGrantKeywordAndDynamicPT, matchTargetCombatRestriction, matchGrantKeyword, matchPhaseOut,
     matchPreventDamage, matchDealDamageGreatestManaValue, matchDealDamageForEach, matchForEachDraw, matchCreateTokenForEach,
     matchExileFromLibraryTop, matchSearchLibraryGeneric, matchSacrificeSelfUnlessTargetOpponentSacrifices, matchEachOpponentSacrifice,
     matchEachPlayerEffect, matchTargetPlayerSacrifice, matchSacrificeAsEffect,
@@ -4239,6 +4330,7 @@ function parseEffectClause(tokens: string[], startIndex: number): PatternResult 
     matchCopyCreature,            // "create a token that's a copy of target creature"
     matchModifyPTAndLoseKeyword,
     matchGrantKeywordAndDynamicPT,
+    matchTargetCombatRestriction, // "target creature can't block this turn"
     matchGrantKeyword,            // "target creature gains hexproof until end of turn"
     matchPhaseOut,                // "target permanent phases out"
 

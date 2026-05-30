@@ -322,6 +322,83 @@ describe('Land Actions', () => {
       expect(() => tapLandForMana(state, 'p1', card.instanceId, 'G')).toThrow();
     });
 
+    it('throws if a creature tap-mana source is summoning sick', () => {
+      const sageDef = populateParsedCache({
+        id: 'somberwald-sage',
+        name: 'Somberwald Sage',
+        type_line: 'Creature - Human Druid',
+        oracle_text: '{T}: Add three mana of any one color. Spend this mana only to cast creature spells.',
+        mana_cost: '{2}{G}',
+        cmc: 3,
+        colors: ['G'],
+        color_identity: ['G'],
+        keywords: [],
+        card_types: ['creature'],
+        power: 0,
+        toughness: 1,
+      });
+      let state = initGameState([
+        { playerId: 'p1', name: 'Alice', cards: [], commanderId: 'cmd1' },
+        { playerId: 'p2', name: 'Bob', cards: [], commanderId: 'cmd2' },
+      ]);
+      state.cardDefinitions.set(sageDef.id, sageDef);
+      state.cards.set('sage-1', {
+        instanceId: 'sage-1',
+        definitionId: sageDef.id,
+        ownerId: 'p1',
+        zone: 'battlefield',
+        tapped: false,
+        summoningSick: true,
+        counters: {},
+        damage: 0,
+        isCommander: false,
+      });
+
+      expect(() => tapLandForMana(state, 'p1', 'sage-1', 'G')).toThrow('Summoning sick');
+      expect(getLegalActions(state, 'p1').some(action =>
+        action.kind === 'ActivateManaAbility' && action.cardInstanceId === 'sage-1'
+      )).toBe(false);
+    });
+
+    it('adds all fixed bundled mana from a creature mana ability', () => {
+      const elderDef = populateParsedCache({
+        id: 'nantuko-elder',
+        name: 'Nantuko Elder',
+        type_line: 'Creature - Insect Druid',
+        oracle_text: '{T}: Add {C}{G}.',
+        mana_cost: '{2}{G}',
+        cmc: 3,
+        colors: ['G'],
+        color_identity: ['G'],
+        keywords: [],
+        card_types: ['creature'],
+        power: 1,
+        toughness: 2,
+      });
+      let state = initGameState([
+        { playerId: 'p1', name: 'Alice', cards: [], commanderId: 'cmd1' },
+        { playerId: 'p2', name: 'Bob', cards: [], commanderId: 'cmd2' },
+      ]);
+      state.cardDefinitions.set(elderDef.id, elderDef);
+      state.cards.set('elder-1', {
+        instanceId: 'elder-1',
+        definitionId: elderDef.id,
+        ownerId: 'p1',
+        zone: 'battlefield',
+        tapped: false,
+        summoningSick: false,
+        counters: {},
+        damage: 0,
+        isCommander: false,
+      });
+
+      const next = tapLandForMana(state, 'p1', 'elder-1', 'C');
+
+      expect(next.players[0].manaPool.C).toBe(1);
+      expect(next.players[0].manaPool.G).toBe(1);
+      expect(next.cards.get('elder-1')?.tapped).toBe(true);
+    });
+
     it("adds G for each creature from Gaea's Cradle", () => {
       const decks = [{
         playerId: 'p1', name: 'Alice',

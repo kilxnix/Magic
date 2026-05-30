@@ -1,35 +1,35 @@
 {
-  "generatedAt": "2026-05-30T13:14:39.495Z",
+  "generatedAt": "2026-05-30T13:21:21.515Z",
   "source": "mtg_data/cards_min.jsonl",
   "commanderLegalOnly": true,
   "includedCards": 30969,
   "totalOracleFaces": 31420,
-  "parsedFaces": 16610,
-  "unparsedFaces": 14810,
-  "parsedPercent": 52.86,
+  "parsedFaces": 16680,
+  "unparsedFaces": 14740,
+  "parsedPercent": 53.09,
   "parsedKindCounts": {
-    "Unparsed": 14810,
-    "Spell": 10509,
-    "ETB": 2560,
-    "Triggered": 1319,
+    "Unparsed": 14740,
+    "Spell": 10559,
+    "ETB": 2573,
+    "Triggered": 1327,
     "KeywordOnly": 876,
     "StaticAbility": 752,
-    "EntryCounters": 337,
+    "EntryCounters": 336,
     "Modal": 242,
     "Dies": 15
   },
   "unparsedReasons": [
     {
       "reason": "No recognized pattern",
-      "count": 12429
+      "count": 12378
     },
     {
       "reason": "Could not parse ETB effect clause",
-      "count": 1330
+      "count": 1319
     },
     {
       "reason": "Could not parse trigger effect clause",
-      "count": 1020
+      "count": 1012
     },
     {
       "reason": "Could not parse dies effect clause",
@@ -40,19 +40,13 @@
     {
       "id": "trigger-timing",
       "reason": "Triggered or delayed triggered abilities need event registration and APNAP ordering.",
-      "count": 6271,
+      "count": 6234,
       "samples": [
         {
           "name": "Mindlink Mech",
           "set": "neo",
           "reason": "No recognized pattern",
           "text": "Flying Whenever this Vehicle becomes crewed for the first time each turn, until end of turn, this Vehicle becomes a copy of target nonlegendary creature that crewed it this turn, except it's 4/3, it's a Vehicle artifact in addition to its other types, and it has flying. Crew 1"
-        },
-        {
-          "name": "Labyrinth Adversary",
-          "set": "acr",
-          "reason": "No recognized pattern",
-          "text": "Trample (This creature can deal excess combat damage to the player it's attacking.) Whenever you attack, you may pay {1}{R}. When you do, target creature can't block this turn."
         },
         {
           "name": "Ogre Battlecaster",
@@ -89,13 +83,19 @@
           "set": "mh1",
           "reason": "No recognized pattern",
           "text": "{R}: You may put a planeswalker card from your hand onto the battlefield. Sacrifice it at the beginning of the next end step."
+        },
+        {
+          "name": "Ondu Rising",
+          "set": "bfz",
+          "reason": "No recognized pattern",
+          "text": "Whenever a creature attacks this turn, it gains lifelink until end of turn. Awaken 4—{4}{W} (If you cast this spell for {4}{W}, also put four +1/+1 counters on target land you control and it becomes a 0/0 Elemental creature with haste. It's still a land.)"
         }
       ]
     },
     {
       "id": "unclassified",
       "reason": "Unparsed text did not match a known syntax cluster; inspect manually.",
-      "count": 3330,
+      "count": 3317,
       "samples": [
         {
           "name": "Static Orb",
@@ -150,7 +150,7 @@
     {
       "id": "continuous-layers",
       "reason": "Continuous effects need layer/timestamp/dependency handling.",
-      "count": 3070,
+      "count": 3060,
       "samples": [
         {
           "name": "Sensory Deprivation",
@@ -205,14 +205,8 @@
     {
       "id": "combat-multiplayer",
       "reason": "Combat or multiplayer-defender text needs combat/defender-aware execution.",
-      "count": 2227,
+      "count": 2175,
       "samples": [
-        {
-          "name": "Labyrinth Adversary",
-          "set": "acr",
-          "reason": "No recognized pattern",
-          "text": "Trample (This creature can deal excess combat damage to the player it's attacking.) Whenever you attack, you may pay {1}{R}. When you do, target creature can't block this turn."
-        },
         {
           "name": "Dazzling Sphinx",
           "set": "otc",
@@ -254,13 +248,19 @@
           "set": "tmt",
           "reason": "No recognized pattern",
           "text": "Menace Whenever Don & Raph attack, the next noncreature spell you cast this turn has affinity for artifacts. (It costs {1} less to cast for each artifact you control.)"
+        },
+        {
+          "name": "Fear of Infinity",
+          "set": "dsk",
+          "reason": "No recognized pattern",
+          "text": "Flying, lifelink This creature can't block. Eerie — Whenever an enchantment you control enters and whenever you fully unlock a Room, you may return this card from your graveyard to your hand."
         }
       ]
     },
     {
       "id": "tokens-counters",
       "reason": "Token/counter wording needs typed objects, counters, and downstream interactions.",
-      "count": 1755,
+      "count": 1751,
       "samples": [
         {
           "name": "Sagu Pummeler",
@@ -315,7 +315,7 @@
     {
       "id": "replacement-prevention",
       "reason": "Replacement/prevention effects require replacement-layer handling.",
-      "count": 1572,
+      "count": 1570,
       "samples": [
         {
           "name": "Sodden Verdure",
@@ -370,7 +370,7 @@
     {
       "id": "non-hand-zones",
       "reason": "Non-hand zone casting/movement needs zone permission and visibility checks.",
-      "count": 1462,
+      "count": 1459,
       "samples": [
         {
           "name": "Road of Return",
@@ -425,7 +425,7 @@
     {
       "id": "cost-system",
       "reason": "Alternative/additional/reduced costs need prompt-backed payment and legality.",
-      "count": 1196,
+      "count": 1192,
       "samples": [
         {
           "name": "Pteramander",
@@ -590,7 +590,7 @@
     {
       "id": "copy-stack",
       "reason": "Copy/stack mechanics need stack-object identity and trigger multiplication.",
-      "count": 591,
+      "count": 590,
       "samples": [
         {
           "name": "Mindlink Mech",
@@ -645,7 +645,7 @@
     {
       "id": "special-mechanics",
       "reason": "Special mechanics need dedicated state and UI presentation.",
-      "count": 280,
+      "count": 279,
       "samples": [
         {
           "name": "Sword-Swallowing Seraph",

@@ -191,7 +191,13 @@ function parseManaProduction(oracle: string, typeLine: string): ManaProductionIn
       amounts['C'] = 1;
     }
 
-    return { colors, amounts, ...extras };
+    const producesAllColors = colors.length > 1 && !/\bor\b/i.test(addPart);
+    return {
+      colors,
+      amounts,
+      ...extras,
+      ...(producesAllColors ? { producesAllColors: true } : {}),
+    };
   };
 
   // Basic-land subtype shortcut

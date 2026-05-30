@@ -3,7 +3,7 @@
 import { describe, it, expect } from 'vitest';
 import { parseOracleText } from './parser';
 import { executeEffects } from './executor';
-import { instanceHasKeyword } from '../keywords';
+import { canAttackThisTurn, canBlock, instanceHasKeyword } from '../keywords';
 import type { Effect } from './ast';
 import type { GameState, CardInstance, CardDefinition } from '../types';
 
@@ -408,6 +408,39 @@ describe('Grant Keyword', () => {
       expect(result.effects[0].untilEndOfTurn).toBe(false);
     });
 
+    it('parses temporary cannot-block target restrictions', () => {
+      const result = parseOracleText("Target creature can't block this turn.");
+      expect(result.kind).toBe('Spell');
+      if (result.kind !== 'Spell') return;
+      expect(result.effects).toHaveLength(1);
+      expect(result.effects[0]).toMatchObject({
+        kind: 'GrantKeyword',
+        keyword: 'CannotBlock',
+        untilEndOfTurn: true,
+      });
+      expect(result.targets[0].type).toBe('Creature');
+    });
+
+    it('parses temporary cannot-attack-or-block target restrictions', () => {
+      const result = parseOracleText("Target creature can't attack or block this turn.");
+      expect(result.kind).toBe('Spell');
+      if (result.kind !== 'Spell') return;
+      expect(result.effects).toHaveLength(2);
+      expect(result.effects.map(effect => effect.kind === 'GrantKeyword' ? effect.keyword : null))
+        .toEqual(['CannotAttack', 'CannotBlock']);
+    });
+
+    it('parses temporary unblockable target restrictions', () => {
+      const result = parseOracleText("Target creature can't be blocked this turn.");
+      expect(result.kind).toBe('Spell');
+      if (result.kind !== 'Spell') return;
+      expect(result.effects[0]).toMatchObject({
+        kind: 'GrantKeyword',
+        keyword: 'Unblockable',
+        untilEndOfTurn: true,
+      });
+    });
+
     it('parses all supported keywords', () => {
       const keywords = [
         'hexproof', 'indestructible', 'flying', 'trample', 'lifelink',
@@ -433,6 +466,42 @@ describe('Grant Keyword', () => {
 
       const creature = newState.cards.get('creature-1')!;
       expect(creature.grantedKeywords).toContain('Hexproof');
+    });
+
+    it('applies parsed cannot-block restrictions to blocking legality', () => {
+      const result = parseOracleText("Target creature can't block this turn.");
+      expect(result.kind).toBe('Spell');
+      if (result.kind !== 'Spell') return;
+
+      const state = createTestState();
+      const newState = executeEffects(state, result.effects, 'player-1', ['creature-1'], result.targets);
+
+      expect(newState.cards.get('creature-1')!.grantedKeywords).toContain('CannotBlock');
+      expect(canBlock(newState, 'creature-1', 'creature-2')).toBe(false);
+    });
+
+    it('applies parsed cannot-attack restrictions to attack legality', () => {
+      const result = parseOracleText("Target creature can't attack this turn.");
+      expect(result.kind).toBe('Spell');
+      if (result.kind !== 'Spell') return;
+
+      const state = createTestState();
+      const newState = executeEffects(state, result.effects, 'player-1', ['creature-1'], result.targets);
+
+      expect(newState.cards.get('creature-1')!.grantedKeywords).toContain('CannotAttack');
+      expect(canAttackThisTurn(newState, 'creature-1')).toBe(false);
+    });
+
+    it('applies parsed unblockable restrictions to blocking legality', () => {
+      const result = parseOracleText("Target creature can't be blocked this turn.");
+      expect(result.kind).toBe('Spell');
+      if (result.kind !== 'Spell') return;
+
+      const state = createTestState();
+      const newState = executeEffects(state, result.effects, 'player-1', ['creature-2'], result.targets);
+
+      expect(newState.cards.get('creature-2')!.grantedKeywords).toContain('Unblockable');
+      expect(canBlock(newState, 'creature-1', 'creature-2')).toBe(false);
     });
 
     it('does not duplicate granted keywords', () => {
