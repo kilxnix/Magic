@@ -268,6 +268,12 @@ function serializeCombatState(combat: CombatState): SerializedCombatStateV1 {
     })),
     blockersDeclared: combat.blockersDeclared,
     blockersDeclaredBy: combat.blockersDeclaredBy ? [...combat.blockersDeclaredBy] : undefined,
+    blockerOrder: combat.blockerOrder
+      ? Object.fromEntries(Object.entries(combat.blockerOrder).map(([attackerId, blockerIds]) => [
+          attackerId,
+          [...blockerIds],
+        ]))
+      : undefined,
     damageAssignment: Array.from(combat.damageAssignment.entries()),
   };
 }
@@ -287,6 +293,12 @@ function deserializeCombatState(data: SerializedCombatStateV1): CombatState {
     })),
     blockersDeclared: data.blockersDeclared,
     blockersDeclaredBy: data.blockersDeclaredBy ? [...data.blockersDeclaredBy] : undefined,
+    blockerOrder: data.blockerOrder
+      ? Object.fromEntries(Object.entries(data.blockerOrder).map(([attackerId, blockerIds]) => [
+          attackerId,
+          [...blockerIds],
+        ]))
+      : undefined,
     damageAssignment: new Map(data.damageAssignment),
   };
 }

@@ -194,6 +194,7 @@ export interface CombatState {
   blockers: BlockerDeclaration[];
   blockersDeclared?: boolean;
   blockersDeclaredBy?: string[];
+  blockerOrder?: Record<string, string[]>; // attackerInstanceId -> ordered blocker instance IDs for damage assignment
   damageAssignment: Map<string, number>; // attackerInstanceId -> damage to assign to player
 }
 

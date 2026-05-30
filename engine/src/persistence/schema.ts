@@ -152,6 +152,7 @@ export interface SerializedCombatStateV1 {
   }>;
   blockersDeclared?: boolean;
   blockersDeclaredBy?: string[];
+  blockerOrder?: Record<string, string[]>;
   damageAssignment: Array<[string, number]>;
 }
 

@@ -4,6 +4,7 @@ import {
   applyChooseModePromptResponse,
   applyChooseReplacementPromptResponse,
   applyPayCostsPromptResponse,
+  applyDamageAssignmentPromptResponse,
   applyLibraryManipulationPromptResponse,
   applySearchLibraryPromptResponse,
   applySelectCardsPromptResponse,
@@ -16,6 +17,7 @@ import {
   createClientActionRequest,
   createBattlefieldEntryReplacementPromptRequest,
   createChooseModePromptRequest,
+  createDamageAssignmentPromptRequest,
   createLibraryManipulationPromptRequest,
   createSearchLibraryPromptRequest,
   createSelectCardsPromptRequest,
@@ -25,6 +27,7 @@ import {
   labelForAction,
   stateFingerprint,
 } from './authority';
+import { resolveCombatDamage } from './combat';
 import { initGameState } from './game-state';
 import type { CardDefinition, CardInstance, GameState } from './types';
 import type { AIAction } from './ai/types';
@@ -1045,6 +1048,87 @@ describe('authority action boundary', () => {
 
     expect(bottomAccepted.ok).toBe(true);
     expect(bottomAccepted.state?.cards.get(forest!.instanceId)?.zone).toBe('library');
+  });
+
+  it('validates combat damage blocker ordering and uses it during combat damage', () => {
+    const attacker: CardDefinition = {
+      ...def('attacker', 'Charging Beast', 'Creature - Beast'),
+      power: 3,
+      toughness: 3,
+    };
+    const smallBlocker: CardDefinition = {
+      ...def('small_blocker', 'Small Guard', 'Creature - Soldier'),
+      power: 1,
+      toughness: 1,
+    };
+    const largeBlocker: CardDefinition = {
+      ...def('large_blocker', 'Large Guard', 'Creature - Giant'),
+      power: 5,
+      toughness: 5,
+    };
+    const base = stateWithSisaySearchChoices();
+    const state: GameState = {
+      ...base,
+      phase: 'combat',
+      step: 'combat_damage',
+      cards: new Map<string, CardInstance>([
+        ['attacker_1', cardInstance('attacker_1', attacker.id, 'p1', 'battlefield')],
+        ['small_blocker_1', cardInstance('small_blocker_1', smallBlocker.id, 'p2', 'battlefield')],
+        ['large_blocker_1', cardInstance('large_blocker_1', largeBlocker.id, 'p2', 'battlefield')],
+      ]),
+      cardDefinitions: new Map<string, CardDefinition>([
+        [attacker.id, attacker],
+        [smallBlocker.id, smallBlocker],
+        [largeBlocker.id, largeBlocker],
+      ]),
+      combat: {
+        attackers: [{ cardInstanceId: 'attacker_1', defendingPlayerId: 'p2' }],
+        blockers: [
+          { cardInstanceId: 'small_blocker_1', blockingAttackerId: 'attacker_1' },
+          { cardInstanceId: 'large_blocker_1', blockingAttackerId: 'attacker_1' },
+        ],
+        blockersDeclared: true,
+        blockersDeclaredBy: ['p2'],
+        damageAssignment: new Map(),
+      },
+    };
+
+    const request = createDamageAssignmentPromptRequest(state, 'p1', {
+      id: 'prompt-damage-order',
+      createdAt: 230,
+    });
+    expect(request.groups).toEqual([expect.objectContaining({
+      attackerId: 'attacker_1',
+      attackerPower: 3,
+      blockers: expect.arrayContaining([
+        expect.objectContaining({ blockerId: 'small_blocker_1', lethalDamage: 1 }),
+        expect.objectContaining({ blockerId: 'large_blocker_1', lethalDamage: 5 }),
+      ]),
+    })]);
+
+    const rejected = applyDamageAssignmentPromptResponse(state, request, {
+      requestId: request.id,
+      kind: 'DamageAssignment',
+      playerId: 'p1',
+      orders: [{ attackerId: 'attacker_1', blockerIds: ['large_blocker_1', 'large_blocker_1'] }],
+    });
+    expect(rejected.ok).toBe(false);
+    expect(rejected.reason).toBe('illegal_response');
+
+    const accepted = applyDamageAssignmentPromptResponse(state, request, {
+      requestId: request.id,
+      kind: 'DamageAssignment',
+      playerId: 'p1',
+      orders: [{ attackerId: 'attacker_1', blockerIds: ['large_blocker_1', 'small_blocker_1'] }],
+    });
+    expect(accepted.ok).toBe(true);
+    expect(accepted.state?.combat?.blockerOrder).toEqual({
+      attacker_1: ['large_blocker_1', 'small_blocker_1'],
+    });
+
+    const damaged = resolveCombatDamage(accepted.state!);
+    expect(damaged.cards.get('large_blocker_1')?.damage).toBe(3);
+    expect(damaged.cards.get('small_blocker_1')?.damage).toBe(0);
   });
 
   it('validates additional-cost land selections without committing the discard early', () => {

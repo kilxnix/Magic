@@ -287,6 +287,23 @@ function creatureDealsInStep(state: GameState, instanceId: string, step: 'first'
   }
 }
 
+function orderBlockersForAttacker(
+  state: GameState,
+  attackerId: string,
+  blockers: BlockerDeclaration[],
+): BlockerDeclaration[] {
+  const order = state.combat?.blockerOrder?.[attackerId];
+  if (!order?.length) return blockers;
+
+  const blockerById = new Map(blockers.map(blocker => [blocker.cardInstanceId, blocker]));
+  const ordered = order
+    .map(blockerId => blockerById.get(blockerId))
+    .filter((blocker): blocker is BlockerDeclaration => Boolean(blocker));
+  const orderedIds = new Set(ordered.map(blocker => blocker.cardInstanceId));
+  const missing = blockers.filter(blocker => !orderedIds.has(blocker.cardInstanceId));
+  return [...ordered, ...missing];
+}
+
 /**
  * Resolve damage for a single combat damage step (first strike or normal).
  * Only creatures that deal damage in this step participate.
@@ -315,7 +332,11 @@ function resolveDamageStep(state: GameState, step: 'first' | 'normal'): GameStat
     const attackerDeals = creatureDealsInStep(state, attacker.cardInstanceId, step);
 
     // Find blockers for this attacker
-    const blockers = state.combat.blockers.filter(b => b.blockingAttackerId === attacker.cardInstanceId);
+    const blockers = orderBlockersForAttacker(
+      state,
+      attacker.cardInstanceId,
+      state.combat.blockers.filter(b => b.blockingAttackerId === attacker.cardInstanceId),
+    );
 
     if (blockers.length === 0) {
       // Unblocked — deal damage to defending player

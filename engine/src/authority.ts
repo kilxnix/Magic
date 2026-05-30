@@ -16,10 +16,11 @@ import { dispatchAIAction } from './ai/agent';
 import { canPlayLandDetailed } from './actions';
 import { canPayCost } from './mana';
 import { executeSearchLibrary, executeShuffleLibrary, matchesCardFilter } from './effects/executor';
-import { getEffectivePower } from './effects/continuous';
+import { getEffectivePower, getEffectiveToughness } from './effects/continuous';
 import { parseOracleText } from './effects/parser';
 import { getOptionalUntappedLifeCost } from './permanent-entry';
 import { validateStateInvariants } from './invariants';
+import { instanceHasKeyword } from './keywords';
 import type { AIAction } from './ai/types';
 import type { ActionFailure, GameEvent as ActionGameEvent } from './actions-public';
 import type { CardFilter } from './effects/ast';
@@ -58,6 +59,7 @@ export type EnginePromptKind =
   | 'PayCosts'
   | 'SelectCards'
   | 'LibraryManipulation'
+  | 'DamageAssignment'
   | 'ChooseMode';
 
 export type ClientPromptFailure =
@@ -128,6 +130,7 @@ export interface ClientPromptResponse {
   selectedManaActions?: ManaPaymentAction[];
   selectedCardInstanceIds?: string[];
   libraryManipulationChoices?: Record<string, string>;
+  damageAssignmentOrders?: DamageAssignmentOrder[];
   selectedModeIndices?: number[];
 }
 
@@ -332,6 +335,48 @@ export interface LibraryManipulationPromptResponse {
   movedCardInstanceIds: string[];
 }
 
+export interface DamageAssignmentBlockerChoice {
+  blockerId: string;
+  blockerName: string;
+  lethalDamage: number;
+  currentDamage: number;
+  legal: boolean;
+  reason?: string;
+}
+
+export interface DamageAssignmentGroup {
+  attackerId: string;
+  attackerName: string;
+  attackerPower: number;
+  blockers: DamageAssignmentBlockerChoice[];
+}
+
+export interface DamageAssignmentPromptRequest {
+  id: string;
+  kind: 'DamageAssignment';
+  playerId: string;
+  expectedStateId: string;
+  groups: DamageAssignmentGroup[];
+  createdAt: number;
+}
+
+export interface CreateDamageAssignmentPromptOptions {
+  id?: string;
+  createdAt?: number;
+}
+
+export interface DamageAssignmentOrder {
+  attackerId: string;
+  blockerIds: string[];
+}
+
+export interface DamageAssignmentPromptResponse {
+  requestId: string;
+  kind: 'DamageAssignment';
+  playerId: string;
+  orders: DamageAssignmentOrder[];
+}
+
 export interface ModeChoice {
   modeIndex: number;
   label: string;
@@ -426,6 +471,11 @@ export interface ChooseModePromptReplayRecord {
   response: ChooseModePromptResponse;
 }
 
+export interface DamageAssignmentPromptReplayRecord {
+  request: DamageAssignmentPromptRequest;
+  response: DamageAssignmentPromptResponse;
+}
+
 export type PromptReplayRecord =
   | SearchPromptReplayRecord
   | TargetPromptReplayRecord
@@ -433,6 +483,7 @@ export type PromptReplayRecord =
   | PayCostsPromptReplayRecord
   | SelectCardsPromptReplayRecord
   | LibraryManipulationPromptReplayRecord
+  | DamageAssignmentPromptReplayRecord
   | ChooseModePromptReplayRecord;
 
 export interface PromptReplayAuditStep {
@@ -663,6 +714,7 @@ export interface CombatSummary {
   blockers: { cardId: string; attackerId: string }[];
   blockersDeclared?: boolean;
   blockersDeclaredBy: string[];
+  blockerOrder: { attackerId: string; blockerIds: string[] }[];
   damageAssignment: { cardId: string; amount: number }[];
 }
 
@@ -691,6 +743,7 @@ export type EngineEvent =
       selectedTargetIds?: string[];
       selectedReplacementOptionId?: ReplacementOptionId;
       selectedManaActions?: ManaPaymentAction[];
+      damageAssignmentOrders?: DamageAssignmentOrder[];
       destination?: SearchLibraryDestination;
     }
   | {
@@ -704,6 +757,7 @@ export type EngineEvent =
       selectedTargetIds?: string[];
       selectedReplacementOptionId?: ReplacementOptionId;
       selectedManaActions?: ManaPaymentAction[];
+      damageAssignmentOrders?: DamageAssignmentOrder[];
     }
   | {
       kind: 'RulesEvent';
@@ -885,6 +939,7 @@ function stateSignature(state: GameState): unknown {
           blockers: state.combat.blockers,
           blockersDeclared: state.combat.blockersDeclared,
           blockersDeclaredBy: state.combat.blockersDeclaredBy,
+          blockerOrder: state.combat.blockerOrder,
         }
       : null,
   };
@@ -2573,6 +2628,215 @@ export function applyLibraryManipulationPromptResponse(
   };
 }
 
+function damageAssignmentGroups(state: GameState, playerId: string): DamageAssignmentGroup[] {
+  if (!state.combat) return [];
+
+  return state.combat.attackers
+    .filter(attacker => {
+      const attackerCard = state.cards.get(attacker.cardInstanceId);
+      return attackerCard?.ownerId === playerId
+        && state.combat!.blockers.filter(blocker => blocker.blockingAttackerId === attacker.cardInstanceId).length > 1;
+    })
+    .map(attacker => {
+      const blockers = state.combat!.blockers
+        .filter(blocker => blocker.blockingAttackerId === attacker.cardInstanceId)
+        .map(blocker => {
+          const blockerCard = state.cards.get(blocker.cardInstanceId);
+          const remainingToughness = Math.max(
+            0,
+            getEffectiveToughness(state, blocker.cardInstanceId) - (blockerCard?.damage || 0),
+          );
+          const lethalDamage = instanceHasKeyword(state, attacker.cardInstanceId, 'Deathtouch')
+            ? Math.min(1, remainingToughness)
+            : remainingToughness;
+          return {
+            blockerId: blocker.cardInstanceId,
+            blockerName: cardName(state, blockerCard) || blocker.cardInstanceId,
+            lethalDamage,
+            currentDamage: blockerCard?.damage || 0,
+            legal: Boolean(blockerCard && blockerCard.zone === 'battlefield'),
+            reason: blockerCard?.zone === 'battlefield' ? undefined : 'Blocker is no longer on the battlefield',
+          };
+        });
+
+      return {
+        attackerId: attacker.cardInstanceId,
+        attackerName: cardName(state, state.cards.get(attacker.cardInstanceId)) || attacker.cardInstanceId,
+        attackerPower: getEffectivePower(state, attacker.cardInstanceId),
+        blockers,
+      };
+    });
+}
+
+export function createDamageAssignmentPromptRequest(
+  state: GameState,
+  playerId: string,
+  options: CreateDamageAssignmentPromptOptions = {},
+): DamageAssignmentPromptRequest {
+  const expectedStateId = stateFingerprint(state);
+  const createdAt = options.createdAt ?? Date.now();
+
+  return {
+    id: options.id || `damage_assignment_${expectedStateId}_${hashText(`${playerId}:${createdAt}`)}`,
+    kind: 'DamageAssignment',
+    playerId,
+    expectedStateId,
+    groups: damageAssignmentGroups(state, playerId),
+    createdAt,
+  };
+}
+
+function damageAssignmentRejectUpdate(
+  state: GameState,
+  request: DamageAssignmentPromptRequest,
+  response: DamageAssignmentPromptResponse,
+  reason: ClientPromptFailure,
+  message: string,
+): EngineStateUpdate {
+  const currentStateId = stateFingerprint(state);
+  return {
+    oldStateId: request.expectedStateId,
+    newStateId: currentStateId,
+    activePlayerId: activePlayerId(state),
+    priorityPlayerId: priorityPlayerId(state),
+    phase: state.phase,
+    step: state.step,
+    turnNumber: state.turnNumber,
+    priority: prioritySnapshot(state),
+    visibleDiffs: [],
+    rulesEvents: [{
+      kind: 'PromptResponseRejected',
+      requestId: response.requestId,
+      playerId: response.playerId,
+      promptKind: request.kind,
+      reason,
+      message,
+      damageAssignmentOrders: response.orders,
+    }],
+    prompt: buildActionPrompt(state),
+  };
+}
+
+export function applyDamageAssignmentPromptResponse(
+  state: GameState,
+  request: DamageAssignmentPromptRequest,
+  response: DamageAssignmentPromptResponse,
+): ClientPromptResponse {
+  if (request.kind !== 'DamageAssignment' || response.kind !== 'DamageAssignment' || request.id !== response.requestId) {
+    const message = 'Prompt response does not match the active damage-assignment request.';
+    return {
+      requestId: response.requestId,
+      ok: false,
+      reason: 'invalid_request',
+      message,
+      update: damageAssignmentRejectUpdate(state, request, response, 'invalid_request', message),
+    };
+  }
+
+  if (request.playerId !== response.playerId) {
+    const message = 'This damage-assignment prompt belongs to another player.';
+    return {
+      requestId: response.requestId,
+      ok: false,
+      reason: 'wrong_player',
+      message,
+      update: damageAssignmentRejectUpdate(state, request, response, 'wrong_player', message),
+    };
+  }
+
+  const currentStateId = stateFingerprint(state);
+  if (request.expectedStateId !== currentStateId) {
+    const message = 'The game state changed before this damage-assignment response reached the engine.';
+    return {
+      requestId: response.requestId,
+      ok: false,
+      reason: 'stale_state',
+      message,
+      update: damageAssignmentRejectUpdate(state, request, response, 'stale_state', message),
+    };
+  }
+
+  const groups = damageAssignmentGroups(state, response.playerId);
+  const expectedGroups = new Map(groups.map(group => [group.attackerId, group]));
+  const responseGroups = new Map(response.orders.map(order => [order.attackerId, order]));
+  if (responseGroups.size !== response.orders.length || responseGroups.size !== expectedGroups.size) {
+    const message = 'Damage assignment must include exactly one order for each blocked attacker with multiple blockers.';
+    return {
+      requestId: response.requestId,
+      ok: false,
+      reason: 'illegal_response',
+      message,
+      update: damageAssignmentRejectUpdate(state, request, response, 'illegal_response', message),
+    };
+  }
+
+  for (const [attackerId, group] of expectedGroups) {
+    const order = responseGroups.get(attackerId);
+    if (!order) {
+      const message = `Missing damage order for ${group.attackerName}.`;
+      return {
+        requestId: response.requestId,
+        ok: false,
+        reason: 'illegal_response',
+        message,
+        update: damageAssignmentRejectUpdate(state, request, response, 'illegal_response', message),
+      };
+    }
+
+    const expectedIds = group.blockers.map(blocker => blocker.blockerId).sort();
+    const submittedIds = [...order.blockerIds].sort();
+    const hasDuplicates = new Set(order.blockerIds).size !== order.blockerIds.length;
+    const matches = expectedIds.length === submittedIds.length
+      && expectedIds.every((id, index) => id === submittedIds[index]);
+    if (hasDuplicates || !matches) {
+      const message = `Damage order for ${group.attackerName} must include each current blocker exactly once.`;
+      return {
+        requestId: response.requestId,
+        ok: false,
+        reason: 'illegal_response',
+        message,
+        update: damageAssignmentRejectUpdate(state, request, response, 'illegal_response', message),
+      };
+    }
+  }
+
+  const blockerOrder = {
+    ...(state.combat?.blockerOrder || {}),
+    ...Object.fromEntries(response.orders.map(order => [order.attackerId, [...order.blockerIds]])),
+  };
+  const nextState: GameState = state.combat
+    ? { ...state, combat: { ...state.combat, blockerOrder } }
+    : state;
+  const invariantReport = validateStateInvariants(nextState);
+  if (!invariantReport.ok) {
+    const message = `Engine invariant failed: ${invariantReport.violations[0]?.message || 'invalid state'}`;
+    return {
+      requestId: response.requestId,
+      ok: false,
+      reason: 'invariant_violation',
+      message,
+      update: damageAssignmentRejectUpdate(state, request, response, 'invariant_violation', message),
+    };
+  }
+
+  return {
+    requestId: response.requestId,
+    ok: true,
+    state: nextState,
+    update: {
+      ...buildStateUpdate(state, nextState),
+      rulesEvents: [{
+        kind: 'PromptResponseAccepted',
+        requestId: response.requestId,
+        playerId: response.playerId,
+        promptKind: 'DamageAssignment',
+        damageAssignmentOrders: response.orders,
+      }],
+    },
+    damageAssignmentOrders: response.orders,
+  };
+}
+
 function chooseModeRejectUpdate(
   state: GameState,
   request: ChooseModePromptRequest,
@@ -2766,6 +3030,9 @@ function combatSummary(state: GameState): CombatSummary | undefined {
       .sort((a, b) => `${a.cardId}:${a.attackerId}`.localeCompare(`${b.cardId}:${b.attackerId}`)),
     blockersDeclared: state.combat.blockersDeclared,
     blockersDeclaredBy: [...(state.combat.blockersDeclaredBy || [])].sort(),
+    blockerOrder: Object.entries(state.combat.blockerOrder || {})
+      .map(([attackerId, blockerIds]) => ({ attackerId, blockerIds: [...blockerIds] }))
+      .sort((a, b) => a.attackerId.localeCompare(b.attackerId)),
     damageAssignment: [...state.combat.damageAssignment.entries()]
       .map(([cardId, amount]) => ({ cardId, amount }))
       .sort((a, b) => a.cardId.localeCompare(b.cardId)),
@@ -3343,7 +3610,9 @@ export function auditPromptReplay(
             ? applySelectCardsPromptResponse(state, request, response as SelectCardsPromptResponse)
             : request.kind === 'LibraryManipulation'
               ? applyLibraryManipulationPromptResponse(state, request, response as LibraryManipulationPromptResponse)
-              : applyChooseModePromptResponse(state, request, response as ChooseModePromptResponse);
+              : request.kind === 'DamageAssignment'
+                ? applyDamageAssignmentPromptResponse(state, request, response as DamageAssignmentPromptResponse)
+                : applyChooseModePromptResponse(state, request, response as ChooseModePromptResponse);
     const step: PromptReplayAuditStep = {
       index,
       requestId: request.id,
@@ -3406,7 +3675,9 @@ export function auditEngineReplay(
                 ? applySelectCardsPromptResponse(state, record.request, record.response as SelectCardsPromptResponse)
                 : record.request.kind === 'LibraryManipulation'
                   ? applyLibraryManipulationPromptResponse(state, record.request, record.response as LibraryManipulationPromptResponse)
-                  : applyChooseModePromptResponse(state, record.request, record.response as ChooseModePromptResponse);
+                  : record.request.kind === 'DamageAssignment'
+                    ? applyDamageAssignmentPromptResponse(state, record.request, record.response as DamageAssignmentPromptResponse)
+                    : applyChooseModePromptResponse(state, record.request, record.response as ChooseModePromptResponse);
 
     const step: EngineReplayAuditStep = {
       index,
