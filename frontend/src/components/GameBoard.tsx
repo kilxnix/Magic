@@ -3144,13 +3144,7 @@ export function GameBoard({
           <div className="flex min-w-0 items-center gap-2">
 	            <button
               type="button"
-              onClick={
-                aiCommanderTargetAction
-                  ? () => onAction(aiCommanderTargetAction)
-                  : aiCommanderCard
-                  ? () => setInspectedCard(aiCommanderCard)
-                  : undefined
-              }
+              onClick={aiCommanderCard ? () => setInspectedCard(aiCommanderCard) : undefined}
               className={`h-12 w-9 overflow-hidden rounded border bg-stone-200 ${
                 aiCommanderTargetAction ? 'border-sky-400 ring-2 ring-sky-400/45' : 'border-red-700/50'
               }`}
@@ -3246,7 +3240,7 @@ export function GameBoard({
                   compact
                   inspectable
                   onHoverCard={handleCardHover}
-                  onClick={targetAction ? () => onAction(targetAction) : () => setInspectedCard(card)}
+                  onClick={() => setInspectedCard(card)}
                   onInspect={() => setInspectedCard(card)}
                 />
               );
@@ -3332,7 +3326,7 @@ export function GameBoard({
                 <button
                   key={item.id}
                   type="button"
-                  onClick={targetAction ? () => onAction(targetAction) : () => setInspectedCard(item.card!)}
+                  onClick={() => setInspectedCard(item.card!)}
                   className={`${className} text-left ${
                     targetAction
                       ? 'border-sky-400/70 bg-sky-950/70 text-sky-100 ring-2 ring-sky-400/35 hover:border-sky-300 hover:bg-sky-900/70 focus:ring-sky-400/60'
@@ -3492,8 +3486,6 @@ export function GameBoard({
                   onClick={
                     playable
                       ? () => handleCardClick(card)
-                      : targetAction
-                      ? () => onAction(targetAction)
                       : () => setInspectedCard(card)
                   }
                   onInspect={() => setInspectedCard(card)}
