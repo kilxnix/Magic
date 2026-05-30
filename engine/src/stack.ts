@@ -361,6 +361,11 @@ function hasStorm(def: CardDefinition): boolean {
   return /\bstorm\b/i.test(def.oracle_text);
 }
 
+function hasProwess(def: CardDefinition): boolean {
+  return def.keywords.some(keyword => keyword.toLowerCase() === 'prowess')
+    || /(^|\n)\s*prowess\b/i.test(def.oracle_text);
+}
+
 function hasPrintedCascade(def: CardDefinition): boolean {
   return /(^|\n)\s*cascade\b/i.test(def.oracle_text);
 }
@@ -1057,6 +1062,20 @@ export function registerBattlefieldAbilities(state: GameState, instanceId: strin
   const def = getCardDefinition(state, card);
 
   const abilitiesToAdd: TriggeredAbilityRef[] = [];
+
+  if (hasProwess(def)) {
+    abilitiesToAdd.push({
+      kind: 'TriggeredAbility' as const,
+      trigger: { kind: 'CastNoncreatureSpell' },
+      effects: [{
+        kind: 'ModifyPT',
+        target: { kind: 'Source' },
+        power: 1,
+        toughness: 1,
+        untilEndOfTurn: true,
+      }],
+    } as TriggeredAbilityRef);
+  }
 
   // Register tax triggers from cached data (Rhystic Study, Mystic Remora, etc.)
   if (def.unlessTax) {

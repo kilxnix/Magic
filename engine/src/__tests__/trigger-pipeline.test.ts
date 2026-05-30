@@ -12,7 +12,7 @@ import { describe, it, expect } from 'vitest';
 import { parseOracleText } from '../effects/parser';
 import { initGameState, getCardsInZone, getCardDefinition } from '../game-state';
 import { castSpell, canCastSpell, resolveTopOfStack, putTriggersOnStack, checkTriggersForEvent, registerBattlefieldAbilities } from '../stack';
-import { checkStateBasedActions } from '../state-based';
+import { checkStateBasedActions, cleanupDamage } from '../state-based';
 import { activateAbility, getActivatedAbilities, playLand, tapLandForMana, drawCards } from '../actions';
 import { declareAttackers } from '../combat';
 import { addMana } from '../mana';
@@ -1109,6 +1109,57 @@ describe('YouCastSpell Trigger Pipeline', () => {
 
     expect(state.cards.get(viviInst.instanceId)!.counters['+1/+1']).toBe(1);
     expect(state.players[1].life).toBe(opponentLifeBefore - 1);
+  });
+
+  it('registers prowess as a noncreature-spell trigger and clears the temporary buff at cleanup', () => {
+    const swiftspear = makeVanillaCreature('swiftspear', 'Monastery Swiftspear', '{R}');
+    swiftspear.oracle_text = 'Haste. Prowess.';
+    swiftspear.keywords = ['Haste', 'Prowess'];
+    swiftspear.colors = ['R'];
+    swiftspear.color_identity = ['R'];
+    swiftspear.power = 1;
+    swiftspear.toughness = 2;
+    const opt = makeInstant('opt', 'Opt', 'Draw a card.');
+    const bear = makeVanillaCreature('bear', 'Grizzly Bears', '{1}{G}');
+    const island = makeLand('island', 'Island');
+
+    let state = createTestGame(
+      [swiftspear, opt, bear, island, island],
+      [island],
+    );
+
+    const prowessInst = findCard(state, 'swiftspear')!;
+    state = moveToZone(state, prowessInst.instanceId, 'battlefield');
+    state = registerBattlefieldAbilities(state, prowessInst.instanceId);
+
+    expect(state.battlefieldAbilities.get(prowessInst.instanceId)?.some(ability =>
+      ability.trigger.kind === 'CastNoncreatureSpell'
+    )).toBe(true);
+
+    const bearInst = findCard(state, 'bear')!;
+    state = moveToZone(state, bearInst.instanceId, 'hand');
+    state = giveMana(state, 'p1', 5, 'G');
+    state = { ...state, activePlayerIndex: 0, phase: 'precombat_main' as any, step: 'upkeep' as any };
+    state = castSpell(state, 'p1', bearInst.instanceId);
+    expect(state.pendingTriggers).toHaveLength(0);
+    state = resolveTopOfStack(state);
+
+    const optInst = findCard(state, 'opt')!;
+    state = moveToZone(state, optInst.instanceId, 'hand');
+    state = giveMana(state, 'p1', 1, 'U');
+    state = castSpell(state, 'p1', optInst.instanceId);
+    expect(state.pendingTriggers).toHaveLength(1);
+
+    state = putTriggersOnStack(state);
+    state = resolveTopOfStack(state);
+
+    expect(state.cards.get(prowessInst.instanceId)?.counters._powerMod).toBe(1);
+    expect(state.cards.get(prowessInst.instanceId)?.counters._toughnessMod).toBe(1);
+    expect(getEffectivePower(state, prowessInst.instanceId)).toBe(2);
+
+    state = cleanupDamage({ ...state, step: 'cleanup' });
+    expect(state.cards.get(prowessInst.instanceId)?.counters._powerMod).toBeUndefined();
+    expect(state.cards.get(prowessInst.instanceId)?.counters._toughnessMod).toBeUndefined();
   });
 });
 

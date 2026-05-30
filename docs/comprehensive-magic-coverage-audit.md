@@ -4,8 +4,8 @@ Total areas: 28
 
 By status:
 - certified: 0
-- partial: 25
-- gap: 3
+- partial: 26
+- gap: 2
 - blocked: 0
 
 By priority:
@@ -13,7 +13,6 @@ By priority:
 - P1: 9
 
 Open P0/P1 gaps:
-- [P1] keywords-non-evergreen: Create mechanic-by-mechanic implementation list and begin with mechanics appearing in popular Commander decks.
 - [P0] modal-choice-ui: Add generic choice request/resolution layer instead of deterministic shortcuts.
 - [P1] post-game-review: Attach review records to authoritative action events and compare against legal alternatives.
 
@@ -42,7 +41,7 @@ Area table:
 | P0 | partial | triggers-etb | Create a trigger matrix by event kind and add missing beginning/end step token triggers. |
 | P0 | partial | turn-structure-priority | Add multiplayer APNAP priority fixtures and browser proof for skip rest of turn after stack/combat windows. |
 | P0 | partial | ui-gameplay | Add browser automation certification for each starter deck and all action categories. |
-| P1 | gap | keywords-non-evergreen | Create mechanic-by-mechanic implementation list and begin with mechanics appearing in popular Commander decks. |
+| P1 | partial | keywords-non-evergreen | Prowess now registers as a real noncreature-spell trigger with temporary +1/+1 cleanup; continue the mechanic-by-mechanic implementation list for other popular Commander mechanics. |
 | P1 | gap | post-game-review | Attach review records to authoritative action events and compare against legal alternatives. |
 | P1 | partial | ai-shelector | Add speed and legality benchmark across archetypes and stack-heavy high-power states. |
 | P1 | partial | graveyard-exile | Add zone permission engine for casting/activating from non-hand zones. |
