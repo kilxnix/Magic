@@ -512,6 +512,7 @@ export type StaticModifier =
       toughnessPerColor: number;
     }
   | { kind: 'GrantKeyword'; keyword: string }
+  | { kind: 'GrantKeywords'; keywords: string[] }
   | { kind: 'ReduceCost'; amount: number };
 
 /**

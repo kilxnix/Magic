@@ -1,19 +1,19 @@
 {
-  "generatedAt": "2026-05-30T13:04:43.917Z",
+  "generatedAt": "2026-05-30T13:09:39.171Z",
   "source": "mtg_data/cards_min.jsonl",
   "commanderLegalOnly": true,
   "includedCards": 30969,
   "totalOracleFaces": 31420,
-  "parsedFaces": 16173,
-  "unparsedFaces": 15247,
-  "parsedPercent": 51.47,
+  "parsedFaces": 16516,
+  "unparsedFaces": 14904,
+  "parsedPercent": 52.57,
   "parsedKindCounts": {
-    "Unparsed": 15247,
-    "Spell": 10513,
-    "ETB": 2539,
+    "Unparsed": 14904,
+    "Spell": 10455,
+    "ETB": 2532,
     "Triggered": 1307,
     "KeywordOnly": 876,
-    "StaticAbility": 344,
+    "StaticAbility": 752,
     "EntryCounters": 338,
     "Modal": 241,
     "Dies": 15
@@ -21,7 +21,7 @@
   "unparsedReasons": [
     {
       "reason": "No recognized pattern",
-      "count": 12830
+      "count": 12487
     },
     {
       "reason": "Could not parse ETB effect clause",
@@ -40,7 +40,7 @@
     {
       "id": "trigger-timing",
       "reason": "Triggered or delayed triggered abilities need event registration and APNAP ordering.",
-      "count": 6380,
+      "count": 6330,
       "samples": [
         {
           "name": "Mindlink Mech",
@@ -95,7 +95,7 @@
     {
       "id": "unclassified",
       "reason": "Unparsed text did not match a known syntax cluster; inspect manually.",
-      "count": 3439,
+      "count": 3330,
       "samples": [
         {
           "name": "Static Orb",
@@ -150,7 +150,7 @@
     {
       "id": "continuous-layers",
       "reason": "Continuous effects need layer/timestamp/dependency handling.",
-      "count": 3250,
+      "count": 3163,
       "samples": [
         {
           "name": "Sensory Deprivation",
@@ -205,14 +205,8 @@
     {
       "id": "combat-multiplayer",
       "reason": "Combat or multiplayer-defender text needs combat/defender-aware execution.",
-      "count": 2374,
+      "count": 2234,
       "samples": [
-        {
-          "name": "Marang River Prowler",
-          "set": "znc",
-          "reason": "No recognized pattern",
-          "text": "This creature can't block and can't be blocked. You may cast this card from your graveyard as long as you control a black or green permanent."
-        },
         {
           "name": "Labyrinth Adversary",
           "set": "acr",
@@ -254,13 +248,19 @@
           "set": "fdn",
           "reason": "No recognized pattern",
           "text": "Trample Whenever a creature you control deals combat damage during your turn, put that many +1/+1 counters on it. (It must survive to get the counters.) You may cast this card from your graveyard by removing six counters from among creatures you control in addition to paying its other costs."
+        },
+        {
+          "name": "Don & Raph, Hard Science",
+          "set": "tmt",
+          "reason": "No recognized pattern",
+          "text": "Menace Whenever Don & Raph attack, the next noncreature spell you cast this turn has affinity for artifacts. (It costs {1} less to cast for each artifact you control.)"
         }
       ]
     },
     {
       "id": "tokens-counters",
       "reason": "Token/counter wording needs typed objects, counters, and downstream interactions.",
-      "count": 1783,
+      "count": 1764,
       "samples": [
         {
           "name": "Sagu Pummeler",
@@ -315,7 +315,7 @@
     {
       "id": "replacement-prevention",
       "reason": "Replacement/prevention effects require replacement-layer handling.",
-      "count": 1584,
+      "count": 1579,
       "samples": [
         {
           "name": "Sodden Verdure",
@@ -370,7 +370,7 @@
     {
       "id": "non-hand-zones",
       "reason": "Non-hand zone casting/movement needs zone permission and visibility checks.",
-      "count": 1487,
+      "count": 1469,
       "samples": [
         {
           "name": "Road of Return",
@@ -383,12 +383,6 @@
           "set": "c13",
           "reason": "No recognized pattern",
           "text": "{T}: Put target creature card from your graveyard on top of your library. Activate only during your turn, before attackers are declared."
-        },
-        {
-          "name": "Marang River Prowler",
-          "set": "znc",
-          "reason": "No recognized pattern",
-          "text": "This creature can't block and can't be blocked. You may cast this card from your graveyard as long as you control a black or green permanent."
         },
         {
           "name": "Ogre Battlecaster",
@@ -419,13 +413,19 @@
           "set": "neo",
           "reason": "Could not parse trigger effect clause",
           "text": "At the beginning of combat on your turn, return target Vehicle card from your graveyard to the battlefield. It gains haste. Return it to its owner's hand at the beginning of your next end step."
+        },
+        {
+          "name": "Dragon Fangs",
+          "set": "scg",
+          "reason": "No recognized pattern",
+          "text": "Enchant creature Enchanted creature gets +1/+1 and has trample. When a creature with mana value 6 or greater enters, you may return this card from your graveyard to the battlefield attached to that creature."
         }
       ]
     },
     {
       "id": "cost-system",
       "reason": "Alternative/additional/reduced costs need prompt-backed payment and legality.",
-      "count": 1210,
+      "count": 1205,
       "samples": [
         {
           "name": "Pteramander",
@@ -480,7 +480,7 @@
     {
       "id": "choice-modal",
       "reason": "Choice/modal/naming text should be prompt-backed instead of deterministic.",
-      "count": 806,
+      "count": 805,
       "samples": [
         {
           "name": "Road of Return",
@@ -535,7 +535,7 @@
     {
       "id": "library-selection",
       "reason": "Library search/look/reveal effects need legal choices, destinations, reveal policy, and ordering.",
-      "count": 766,
+      "count": 765,
       "samples": [
         {
           "name": "Safewright Quest",
@@ -590,7 +590,7 @@
     {
       "id": "copy-stack",
       "reason": "Copy/stack mechanics need stack-object identity and trigger multiplication.",
-      "count": 596,
+      "count": 593,
       "samples": [
         {
           "name": "Mindlink Mech",
@@ -645,7 +645,7 @@
     {
       "id": "special-mechanics",
       "reason": "Special mechanics need dedicated state and UI presentation.",
-      "count": 283,
+      "count": 280,
       "samples": [
         {
           "name": "Sword-Swallowing Seraph",
@@ -866,10 +866,10 @@
       "text": "{T}: Put target creature card from your graveyard on top of your library. Activate only during your turn, before attackers are declared."
     },
     {
-      "name": "Marang River Prowler",
-      "set": "znc",
+      "name": "Aura Graft",
+      "set": "10e",
       "reason": "No recognized pattern",
-      "text": "This creature can't block and can't be blocked. You may cast this card from your graveyard as long as you control a black or green permanent."
+      "text": "Gain control of target Aura that's attached to a permanent. Attach it to another permanent it can enchant."
     }
   ]
 }

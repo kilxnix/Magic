@@ -17,7 +17,7 @@ import { executeEffects } from './executor';
 import { getKeywordsForInstance } from '../keywords';
 import { emptyManaPool } from '../types';
 import { canDeclareAttacker } from '../combat';
-import { canCastSpell } from '../stack';
+import { canCastSpell, registerContinuousAbilitiesForPermanent } from '../stack';
 import { countDevotionToColors, getEffectiveCardTypes, isEffectiveCreature } from '../effective-types';
 
 // ============================================================================
@@ -212,6 +212,18 @@ describe('Static Ability Parsing', () => {
     if (result.kind !== 'StaticAbility') return;
 
     expect(result.ability.modifier).toEqual({ kind: 'GrantKeyword', keyword: 'unblockable' });
+    expect(result.ability.selfOnly).toBe(true);
+  });
+
+  it('parses compound self combat restrictions', () => {
+    const result = parseOracleText("This creature can't block and can't be blocked.");
+    expect(result.kind).toBe('StaticAbility');
+    if (result.kind !== 'StaticAbility') return;
+
+    expect(result.ability.modifier).toEqual({
+      kind: 'GrantKeywords',
+      keywords: ['CannotBlock', 'unblockable'],
+    });
     expect(result.ability.selfOnly).toBe(true);
   });
 
@@ -607,6 +619,25 @@ describe('Continuous Keyword Grants', () => {
     const keywords = getKeywordsForInstance(state, 'creature_1');
     expect(keywords.has('Flying')).toBe(true);  // from continuous effect
     expect(keywords.has('Trample')).toBe(true);  // from definition
+  });
+
+  it('registers parsed self combat restrictions as continuous keywords', () => {
+    const cards = new Map<string, CardInstance>();
+    cards.set('prowler_1', makeCard('prowler_1', 'prowler_def', 'p1'));
+
+    const defs = new Map<string, CardDefinition>();
+    defs.set('prowler_def', makeDef('prowler_def', {
+      name: 'River Prowler',
+      oracle_text: "This creature can't block and can't be blocked.",
+      keywords: [],
+    }));
+
+    let state = makeState({ cards, cardDefinitions: defs });
+    state = registerContinuousAbilitiesForPermanent(state, 'prowler_1');
+
+    const keywords = getKeywordsForInstance(state, 'prowler_1');
+    expect(keywords.has('CannotBlock')).toBe(true);
+    expect(keywords.has('Unblockable')).toBe(true);
   });
 });
 

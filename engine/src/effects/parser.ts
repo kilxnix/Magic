@@ -3915,6 +3915,56 @@ function parseStaticSubject(tokens: string[], startIndex: number): { filter: Car
   return { filter, nextIndex: idx };
 }
 
+function staticKeywordModifier(keywords: string[]): StaticModifier {
+  const uniqueKeywords = [...new Set(keywords)];
+  return uniqueKeywords.length === 1
+    ? { kind: 'GrantKeyword', keyword: uniqueKeywords[0] }
+    : { kind: 'GrantKeywords', keywords: uniqueKeywords };
+}
+
+function readStaticCombatRestrictions(tokens: string[], startIndex: number): { keywords: string[]; consumed: number } | null {
+  let idx = startIndex;
+  const keywords: string[] = [];
+
+  while (idx < tokens.length) {
+    if (tokens[idx] === '.') {
+      idx++;
+      break;
+    }
+    if (tokens[idx] === 'and') {
+      idx++;
+      continue;
+    }
+
+    const negationConsumed = (
+      tokens[idx] === 'can' && tokens[idx + 1] === 'not'
+    ) ? 2 : (
+      tokens[idx] === "can't" || tokens[idx] === 'cant' || tokens[idx] === 'cannot'
+    ) ? 1 : 0;
+    if (!negationConsumed) break;
+    idx += negationConsumed;
+
+    if (tokens[idx] === 'block') {
+      keywords.push('CannotBlock');
+      idx++;
+      continue;
+    }
+    if (tokens[idx] === 'attack') {
+      keywords.push('CannotAttack');
+      idx++;
+      continue;
+    }
+    if (tokens[idx] === 'be' && tokens[idx + 1] === 'blocked') {
+      keywords.push('unblockable');
+      idx += 2;
+      continue;
+    }
+    break;
+  }
+
+  return keywords.length > 0 ? { keywords, consumed: idx - startIndex } : null;
+}
+
 function matchStaticAbility(tokens: string[]): StaticAbilityEffect | null {
   let idx = 0;
   let excludeSelf = false;
@@ -3927,6 +3977,11 @@ function matchStaticAbility(tokens: string[]): StaticAbilityEffect | null {
     selfOnly = true;
     controller = 'any';
     idx++;
+  } else if (tokens[idx] === 'this' && tokens[idx + 1] === 'creature') {
+    selfOnly = true;
+    controller = 'any';
+    filter = { types: ['creature'] };
+    idx += 2;
   } else {
     const subject = parseStaticSubject(tokens, idx);
     if (!subject) return null;
@@ -3959,15 +4014,10 @@ function matchStaticAbility(tokens: string[]): StaticAbilityEffect | null {
     idx += 4;
   }
 
-  if (
-    (tokens[idx] === 'can' && tokens[idx + 1] === 'not' && tokens[idx + 2] === 'be' && tokens[idx + 3] === 'blocked')
-    || (tokens[idx] === "can't" && tokens[idx + 1] === 'be' && tokens[idx + 2] === 'blocked')
-    || (tokens[idx] === 'cant' && tokens[idx + 1] === 'be' && tokens[idx + 2] === 'blocked')
-  ) {
-    if (tokens[idx] === 'can') idx += 4;
-    else idx += 3;
-    if (tokens[idx] === '.') idx++;
-    return { kind: 'StaticAbility', modifier: { kind: 'GrantKeyword', keyword: 'unblockable' }, filter, controller, excludeSelf, selfOnly };
+  const combatRestrictions = readStaticCombatRestrictions(tokens, idx);
+  if (combatRestrictions) {
+    idx += combatRestrictions.consumed;
+    return { kind: 'StaticAbility', modifier: staticKeywordModifier(combatRestrictions.keywords), filter, controller, excludeSelf, selfOnly };
   }
 
   if (tokens[idx] === 'get' || tokens[idx] === 'gets') {

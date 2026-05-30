@@ -22,7 +22,9 @@ export type Keyword =
   | 'Indestructible'
   | 'Ward'
   | 'Flash'
-  | 'Unblockable';
+  | 'Unblockable'
+  | 'CannotBlock'
+  | 'CannotAttack';
 
 // Normalize keyword strings for comparison
 function normalizeKeyword(keyword: string): string {
@@ -48,6 +50,12 @@ const KEYWORD_MAP: Record<string, Keyword> = {
   'ward': 'Ward',
   'flash': 'Flash',
   'unblockable': 'Unblockable',
+  'cannotblock': 'CannotBlock',
+  'cantblock': 'CannotBlock',
+  "can'tblock": 'CannotBlock',
+  'cannotattack': 'CannotAttack',
+  'cantattack': 'CannotAttack',
+  "can'tattack": 'CannotAttack',
 };
 
 // Set of keyword names that can be granted by keyword counters
@@ -157,7 +165,7 @@ export function getKeywordsForInstance(state: GameState, instanceId: string): Se
   // Phase 15: Add keywords granted by continuous effects
   if (state.continuousEffects) {
     for (const ce of state.continuousEffects) {
-      if (ce.ability.modifier.kind !== 'GrantKeyword') continue;
+      if (ce.ability.modifier.kind !== 'GrantKeyword' && ce.ability.modifier.kind !== 'GrantKeywords') continue;
 
       // Check source is still on the battlefield
       const source = state.cards.get(ce.sourceInstanceId);
@@ -207,11 +215,14 @@ export function getKeywordsForInstance(state: GameState, instanceId: string): Se
         if (!matches) continue;
       }
 
-      // Map the keyword string to canonical Keyword type
-      const normalized = ce.ability.modifier.keyword.toLowerCase().replace(/[\s_-]/g, '');
-      const canonical = KEYWORD_MAP[normalized];
-      if (canonical) {
-        keywords.add(canonical);
+      const modifierKeywords = ce.ability.modifier.kind === 'GrantKeyword'
+        ? [ce.ability.modifier.keyword]
+        : ce.ability.modifier.keywords;
+      for (const keyword of modifierKeywords) {
+        const canonical = KEYWORD_MAP[normalizeKeyword(keyword)];
+        if (canonical) {
+          keywords.add(canonical);
+        }
       }
     }
   }
@@ -268,6 +279,9 @@ export function canAttackThisTurn(state: GameState, instanceId: string): boolean
   if (instanceHasKeyword(state, instanceId, 'Defender')) {
     return false;
   }
+  if (instanceHasKeyword(state, instanceId, 'CannotAttack')) {
+    return false;
+  }
 
   // Check summoning sickness (haste ignores it)
   if (card.summoningSick && !instanceHasKeyword(state, instanceId, 'Haste')) {
@@ -292,6 +306,10 @@ export function canBlock(
   blockerId: string,
   attackerId: string,
 ): boolean {
+  if (instanceHasKeyword(state, blockerId, 'CannotBlock')) {
+    return false;
+  }
+
   if (instanceHasKeyword(state, attackerId, 'Unblockable')) {
     return false;
   }

@@ -212,6 +212,11 @@ describe('keywords', () => {
       const state = makeTestState(['Defender'], { summoningSick: false });
       expect(canAttackThisTurn(state, 'creature-1')).toBe(false);
     });
+
+    it('prevents attack with cannot-attack restrictions', () => {
+      const state = makeTestState(['CannotAttack'], { summoningSick: false });
+      expect(canAttackThisTurn(state, 'creature-1')).toBe(false);
+    });
   });
 
   describe('shouldTapWhenAttacking', () => {
@@ -310,6 +315,22 @@ describe('keywords', () => {
       state.cards.set('attacker', {
         instanceId: 'attacker',
         definitionId: 'unblockable-creature',
+        ownerId: 'player-2',
+        zone: 'battlefield',
+        tapped: false,
+        summoningSick: false,
+        counters: {},
+        damage: 0,
+        isCommander: false,
+      });
+      expect(canBlock(state, 'creature-1', 'attacker')).toBe(false);
+    });
+
+    it('prevents creatures with cannot-block restrictions from blocking', () => {
+      const state = makeTestState(['CannotBlock']);
+      state.cards.set('attacker', {
+        instanceId: 'attacker',
+        definitionId: 'test-creature',
         ownerId: 'player-2',
         zone: 'battlefield',
         tapped: false,

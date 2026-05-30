@@ -284,14 +284,18 @@ export function getGrantedKeywords(
   const sorted = [...effects].sort((a, b) => a.timestamp - b.timestamp);
 
   for (const effect of sorted) {
-    if (effect.ability.modifier.kind !== 'GrantKeyword') continue;
+    if (effect.ability.modifier.kind !== 'GrantKeyword' && effect.ability.modifier.kind !== 'GrantKeywords') continue;
 
     // Check that the source is still on the battlefield
     const source = state.cards.get(effect.sourceInstanceId);
     if (!source || source.zone !== 'battlefield') continue;
 
     if (isAffectedBy(effect, card, def, state)) {
-      keywords.push(effect.ability.modifier.keyword);
+      if (effect.ability.modifier.kind === 'GrantKeyword') {
+        keywords.push(effect.ability.modifier.keyword);
+      } else {
+        keywords.push(...effect.ability.modifier.keywords);
+      }
     }
   }
 
