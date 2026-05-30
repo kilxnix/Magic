@@ -961,6 +961,8 @@ export function matchesCardFilter(def: CardDefinition, filter: CardFilter, conte
     if (!hasMatchingColor) return false;
   }
 
+  if (filter.multicolored && def.colors.length < 2) return false;
+
   // Check CMC
   if (filter.cmc) {
     switch (filter.cmc.op) {

@@ -2575,7 +2575,10 @@ function matchReturnAllToHand(tokens: string[], startIndex: number): PatternResu
     return { effects: [effect], targets: [], consumed: idx };
   }
 
-  if (slice[idx] === 'creatures') {
+  if (slice[idx] === 'multicolored' && slice[idx + 1] === 'permanents') {
+    filter.multicolored = true;
+    idx += 2;
+  } else if (slice[idx] === 'creatures') {
     filter.types = ['creature'];
     idx++;
   } else if (slice[idx] === 'nonland' && slice[idx + 1] === 'permanents') {
@@ -2626,7 +2629,10 @@ function matchExileAll(tokens: string[], startIndex: number): PatternResult {
   let idx = 2;
   const filter: CardFilter = {};
 
-  if (slice[idx] === 'creatures') {
+  if (slice[idx] === 'multicolored' && slice[idx + 1] === 'permanents') {
+    filter.multicolored = true;
+    idx += 2;
+  } else if (slice[idx] === 'creatures') {
     filter.types = ['creature'];
     idx++;
   } else if (slice[idx] === 'artifacts') {
@@ -3299,6 +3305,7 @@ function parseStaticFilterType(word: string): CardFilter | null {
   if (word === 'legendary') return { supertypes: ['Legendary'] };
   if (word === 'basic') return { supertypes: ['Basic'] };
   if (word === 'snow') return { supertypes: ['Snow'] };
+  if (word === 'multicolored') return { multicolored: true };
   if (colorMap[word]) return { colors: [colorMap[word]] };
   if (creatureSubtypes.includes(word)) return { types: ['creature'], subtypes: [singular] };
   return null;
@@ -3315,6 +3322,7 @@ function mergeStaticFilters(a: CardFilter, b: CardFilter): CardFilter {
     excludeSubtypes: merge(a.excludeSubtypes, b.excludeSubtypes),
     supertypes: merge(a.supertypes, b.supertypes),
     colors: merge(a.colors, b.colors),
+    multicolored: a.multicolored || b.multicolored || undefined,
     cmc: b.cmc || a.cmc,
     power: b.power || a.power,
     permanent: a.permanent || b.permanent || undefined,

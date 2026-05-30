@@ -378,6 +378,7 @@ export interface CardFilter {
   excludeSubtypes?: string[];
   supertypes?: string[];
   colors?: Array<'W' | 'U' | 'B' | 'R' | 'G'>;
+  multicolored?: boolean;
   cmc?: { op: 'eq' | 'lte' | 'gte'; value: number };
   permanent?: boolean;
   manaValueLessThanSourcePower?: boolean;

@@ -1,26 +1,26 @@
 {
-  "generatedAt": "2026-05-30T11:36:53.647Z",
+  "generatedAt": "2026-05-30T11:40:44.107Z",
   "source": "mtg_data/cards_min.jsonl",
   "commanderLegalOnly": true,
   "includedCards": 30969,
   "totalOracleFaces": 31420,
-  "parsedFaces": 15257,
-  "unparsedFaces": 16163,
+  "parsedFaces": 15259,
+  "unparsedFaces": 16161,
   "parsedPercent": 48.56,
   "parsedKindCounts": {
-    "Unparsed": 16163,
-    "Spell": 11569,
+    "Unparsed": 16161,
+    "Spell": 11570,
     "ETB": 1217,
     "KeywordOnly": 887,
     "Triggered": 652,
     "EntryCounters": 361,
-    "StaticAbility": 339,
+    "StaticAbility": 340,
     "Modal": 232
   },
   "unparsedReasons": [
     {
       "reason": "No recognized pattern",
-      "count": 14721
+      "count": 14719
     },
     {
       "reason": "Could not parse ETB effect clause",
@@ -90,7 +90,7 @@
     {
       "id": "unclassified",
       "reason": "Unparsed text did not match a known syntax cluster; inspect manually.",
-      "count": 3514,
+      "count": 3512,
       "samples": [
         {
           "name": "Static Orb",
@@ -103,12 +103,6 @@
           "set": "ulg",
           "reason": "No recognized pattern",
           "text": "{T}: Target creature loses your choice of flying, first strike, or trample until end of turn."
-        },
-        {
-          "name": "Ravnica at War",
-          "set": "war",
-          "reason": "No recognized pattern",
-          "text": "Exile all multicolored permanents."
         },
         {
           "name": "Torrent of Fire",
@@ -139,6 +133,12 @@
           "set": "clb",
           "reason": "No recognized pattern",
           "text": "Commander creatures you own have \"Room abilities of dungeons you own trigger an additional time.\""
+        },
+        {
+          "name": "Brawn",
+          "set": "moc",
+          "reason": "No recognized pattern",
+          "text": "Trample As long as this card is in your graveyard and you control a Forest, creatures you control have trample."
         }
       ]
     },
@@ -782,6 +782,11 @@
       "text": "Flying (This creature can't be blocked except by creatures with flying or reach.)"
     },
     {
+      "name": "Ravnica at War",
+      "kind": "Spell",
+      "text": "Exile all multicolored permanents."
+    },
+    {
       "name": "Greta, Sweettooth Scourge",
       "kind": "ETB",
       "text": "When Greta enters, create a Food token. (It's an artifact with \"{2}, {T}, Sacrifice this token: You gain 3 life.\") {G}, Sacrifice a Food: Put a +1/+1 counter on target creature. Activate only as a sorcery. {1}{B}, Sacrifice a Food: You draw"
@@ -810,11 +815,6 @@
       "name": "Veil of Summer",
       "kind": "Spell",
       "text": "Draw a card if an opponent has cast a blue or black spell this turn. Spells you control can't be countered this turn. You and permanents you control gain hexproof from blue and from black until end of turn. (You and they can't be the target"
-    },
-    {
-      "name": "Disposal Mummy",
-      "kind": "ETB",
-      "text": "When this creature enters, exile target card from an opponent's graveyard."
     }
   ],
   "unparsedSamples": [
@@ -849,12 +849,6 @@
       "text": "{T}: Target creature loses your choice of flying, first strike, or trample until end of turn."
     },
     {
-      "name": "Ravnica at War",
-      "set": "war",
-      "reason": "No recognized pattern",
-      "text": "Exile all multicolored permanents."
-    },
-    {
       "name": "Torrent of Fire",
       "set": "scg",
       "reason": "No recognized pattern",
@@ -865,6 +859,12 @@
       "set": "otc",
       "reason": "No recognized pattern",
       "text": "Flying {7}{U}: Adapt 4. This ability costs {1} less to activate for each instant and sorcery card in your graveyard. (If this creature has no +1/+1 counters on it, put four +1/+1 counters on it.)"
+    },
+    {
+      "name": "Nantuko Elder",
+      "set": "ody",
+      "reason": "No recognized pattern",
+      "text": "{T}: Add {C}{G}."
     }
   ]
 }

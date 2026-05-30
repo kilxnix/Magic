@@ -1621,6 +1621,10 @@ function searchFilterFailureReason(
     if (!hasMatchingColor) return `Not ${filter.colors.join(' or ')}`;
   }
 
+  if (filter.multicolored && def.colors.length < 2) {
+    return 'Not multicolored';
+  }
+
   if (filter.cmc && !matchesNumericPromptFilter(def.cmc, filter.cmc)) {
     return `Mana value ${def.cmc} does not satisfy ${filter.cmc.op} ${filter.cmc.value}`;
   }

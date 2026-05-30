@@ -1270,6 +1270,15 @@ describe('parseOracleText', () => {
       expect(result.effects[0].target).toEqual({ kind: 'AllOfType', filter: { types: ['enchantment'] } });
     });
 
+    it('parses "Exile all multicolored permanents."', () => {
+      const result = parseOracleText('Exile all multicolored permanents.');
+      expect(result.kind).toBe('Spell');
+      if (result.kind !== 'Spell') return;
+      expect(result.effects[0].kind).toBe('Exile');
+      if (result.effects[0].kind !== 'Exile') return;
+      expect(result.effects[0].target).toEqual({ kind: 'AllOfType', filter: { multicolored: true } });
+    });
+
     it('parses "Destroy all artifacts."', () => {
       const result = parseOracleText('Destroy all artifacts.');
       expect(result.kind).toBe('Spell');

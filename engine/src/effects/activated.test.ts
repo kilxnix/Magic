@@ -243,6 +243,14 @@ describe('matchesCardFilter', () => {
     colors: ['G'] as any,
   });
 
+  const goldCreature = createTestDef({
+    id: 'gold-bear',
+    name: 'Gold Bear',
+    type_line: 'Creature - Bear',
+    card_types: ['creature'],
+    colors: ['G', 'W'] as any,
+  });
+
   it('filters by type', () => {
     expect(matchesCardFilter(basicForest, { types: ['land'] })).toBe(true);
     expect(matchesCardFilter(creature, { types: ['land'] })).toBe(false);
@@ -257,6 +265,11 @@ describe('matchesCardFilter', () => {
     expect(matchesCardFilter(basicForest, { types: ['land'], supertypes: ['basic'] })).toBe(true);
     expect(matchesCardFilter(nonbasicLand, { types: ['land'], supertypes: ['basic'] })).toBe(false);
     expect(matchesCardFilter(creature, { types: ['land'], supertypes: ['basic'] })).toBe(false);
+  });
+
+  it('filters multicolored cards', () => {
+    expect(matchesCardFilter(goldCreature, { multicolored: true })).toBe(true);
+    expect(matchesCardFilter(creature, { multicolored: true })).toBe(false);
   });
 });
 

@@ -76,6 +76,36 @@ function createTestState(): GameState {
     card_types: ['land'],
   });
 
+  cardDefinitions.set('def-gold-permanent', {
+    id: 'def-gold-permanent',
+    name: 'Gold Permanent',
+    type_line: 'Creature - Test',
+    oracle_text: '',
+    mana_cost: '{G}{W}',
+    cmc: 2,
+    colors: ['G', 'W'],
+    color_identity: ['G', 'W'],
+    keywords: [],
+    power: 2,
+    toughness: 2,
+    card_types: ['creature'],
+  });
+
+  cardDefinitions.set('def-mono-permanent', {
+    id: 'def-mono-permanent',
+    name: 'Mono Permanent',
+    type_line: 'Creature - Test',
+    oracle_text: '',
+    mana_cost: '{G}',
+    cmc: 1,
+    colors: ['G'],
+    color_identity: ['G'],
+    keywords: [],
+    power: 1,
+    toughness: 1,
+    card_types: ['creature'],
+  });
+
   return {
     players: [
       {
@@ -369,6 +399,43 @@ describe('Phase 10 effects', () => {
       );
 
       expect(newState.cards.get('creature-1')?.zone).toBe('exile');
+    });
+
+    it('exiles all multicolored permanents without touching monocolored permanents', () => {
+      const state = createTestState();
+      const cards = new Map(state.cards);
+      cards.set('gold-1', {
+        instanceId: 'gold-1',
+        definitionId: 'def-gold-permanent',
+        ownerId: 'player-1',
+        zone: 'battlefield',
+        tapped: false,
+        summoningSick: false,
+        counters: {},
+        damage: 0,
+        isCommander: false,
+      });
+      cards.set('mono-1', {
+        instanceId: 'mono-1',
+        definitionId: 'def-mono-permanent',
+        ownerId: 'player-1',
+        zone: 'battlefield',
+        tapped: false,
+        summoningSick: false,
+        counters: {},
+        damage: 0,
+        isCommander: false,
+      });
+      const modifiedState = { ...state, cards };
+
+      const effects: Effect[] = [
+        { kind: 'Exile', target: { kind: 'AllOfType', filter: { multicolored: true } } },
+      ];
+
+      const newState = executeEffects(modifiedState, effects, 'player-1', [], []);
+
+      expect(newState.cards.get('gold-1')?.zone).toBe('exile');
+      expect(newState.cards.get('mono-1')?.zone).toBe('battlefield');
     });
   });
 
