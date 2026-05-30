@@ -1044,6 +1044,32 @@ describe('tryCastSpell', () => {
     expect(result.state.players[0].restrictedMana).toEqual([]);
   });
 
+  it('allows Cavern chosen-type mana to cast matching multi-word creature subtypes', () => {
+    let state = makeTestState({});
+    const cavernId = addHandCavern(state);
+    const playResult = tryPlayLand(state, 'human', cavernId, { chosenCreatureType: 'Time Lord' });
+    expect(playResult.ok).toBe(true);
+    if (!playResult.ok) return;
+    state = playResult.state;
+
+    const manaResult = tryTapLandForMana(state, 'human', cavernId, 'U');
+    expect(manaResult.ok).toBe(true);
+    if (!manaResult.ok) return;
+    state = manaResult.state;
+
+    const doctorId = addHandSpell(state, {
+      instanceId: 'cavern_doctor',
+      name: 'Cavern Test Doctor',
+      typeLine: 'Creature - Time Lord Doctor',
+      manaCost: '{U}',
+      cardTypes: ['creature'],
+    });
+
+    const result = tryCastSpell(state, 'human', doctorId, [], { G: 0, W: 0, U: 1, B: 0, R: 0, C: 0, generic: 0 });
+
+    expect(result.ok).toBe(true);
+  });
+
   it('does not let Cavern chosen-type mana cast another creature subtype', () => {
     let state = makeTestState({});
     const cavernId = addHandCavern(state);

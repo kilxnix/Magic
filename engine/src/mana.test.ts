@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseManaString, addMana, canPayCost, payManaCost, totalMana, canPaySpellCost, paySpellCost } from './mana';
+import { parseManaString, addMana, canPayCost, payManaCost, totalMana, canPaySpellCost, paySpellCost, getCreatureSubtypes } from './mana';
 import { emptyManaPool, ManaPool, ManaCost, createPlayer, CardDefinition } from './types';
 
 describe('Mana System', () => {
@@ -246,6 +246,51 @@ describe('Mana System', () => {
       const paid = paySpellCost(player, cost, spellDef);
       expect(paid.manaPool.G).toBe(0);
       expect(paid.snowManaPool?.G).toBe(0);
+    });
+
+    it('allows creature-type restricted mana for multi-word creature types', () => {
+      const doctorDef: CardDefinition = {
+        id: 'doctor',
+        name: 'The Test Doctor',
+        type_line: 'Legendary Creature - Time Lord Doctor',
+        oracle_text: '',
+        mana_cost: '{U}',
+        cmc: 1,
+        colors: ['U'],
+        color_identity: ['U'],
+        keywords: [],
+        card_types: ['creature'],
+      };
+      const player = {
+        ...createPlayer('p1', 'Alice'),
+        manaPool: { W: 0, U: 1, B: 0, R: 0, G: 0, C: 0 },
+        restrictedMana: [{ color: 'U' as const, amount: 1, restriction: 'creatureTypeSpell' as const, creatureType: 'Time Lord' }],
+      };
+
+      expect(getCreatureSubtypes(doctorDef)).toEqual(['time', 'lord', 'doctor']);
+      expect(canPaySpellCost(player, parseManaString('{U}'), doctorDef)).toBe(true);
+    });
+
+    it('does not allow legendary-restricted mana for Legendary as subtype text', () => {
+      const fakeLegendDef: CardDefinition = {
+        id: 'fake-legend',
+        name: 'Mistitled Bear',
+        type_line: 'Creature - Legendary Bear',
+        oracle_text: '',
+        mana_cost: '{G}',
+        cmc: 1,
+        colors: ['G'],
+        color_identity: ['G'],
+        keywords: [],
+        card_types: ['creature'],
+      };
+      const player = {
+        ...createPlayer('p1', 'Alice'),
+        manaPool: { W: 0, U: 0, B: 0, R: 0, G: 1, C: 0 },
+        restrictedMana: [{ color: 'G' as const, amount: 1, restriction: 'legendarySpell' as const }],
+      };
+
+      expect(canPaySpellCost(player, parseManaString('{G}'), fakeLegendDef)).toBe(false);
     });
 
     it('preserves snow mana for snow symbols when colored mana can be paid another way', () => {

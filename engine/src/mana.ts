@@ -1,5 +1,6 @@
 import { ManaCost, ManaColor, ManaPool, emptyManaPool } from './types';
 import type { CardDefinition, CardInstance, ConditionalMana, ConditionalManaEffectKind, Player, RestrictedMana } from './types';
+import { typeLineHasSubtype, typeLineHasSupertype, typeLineSectionTerms } from './type-line';
 
 const COLOR_SYMBOLS: ManaColor[] = ['W', 'U', 'B', 'R', 'G', 'C'];
 
@@ -257,12 +258,8 @@ type SpellPaymentPlayer = Pick<Player, 'manaPool' | 'restrictedMana' | 'conditio
 
 export function getCreatureSubtypes(def: CardDefinition): string[] {
   if (!def.card_types.includes('creature')) return [];
-  const typeLine = def.type_line.replace(/[—–]/g, '-');
-  const [, subtypePart] = typeLine.split('-');
-  if (!subtypePart) return [];
-  return subtypePart
-    .split(/\s+/)
-    .map(part => part.trim().replace(/[^A-Za-z0-9]/g, ''))
+  return typeLineSectionTerms(def.type_line, 'subtypes')
+    .map(part => part.trim().replace(/[^A-Za-z0-9 ]/g, ''))
     .filter(Boolean);
 }
 
@@ -276,10 +273,9 @@ function restrictionAllows(
       return spellDef.card_types.includes('creature');
     case 'creatureTypeSpell':
       if (!mana.creatureType) return false;
-      return getCreatureSubtypes(spellDef)
-        .some(subtype => subtype.toLowerCase() === mana.creatureType!.toLowerCase());
+      return typeLineHasSubtype(spellDef.type_line, mana.creatureType);
     case 'legendarySpell':
-      return /\blegendary\b/i.test(spellDef.type_line);
+      return typeLineHasSupertype(spellDef.type_line, 'legendary');
     case 'commanderSpell':
       return spellCard?.isCommander === true;
   }

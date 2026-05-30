@@ -198,6 +198,8 @@ Additional shared type-line verification added after this audit: engine card imp
 
 Additional state/layer/protection exactness added after this audit: state-based legend rule checks, Aura/Equipment/Fortification attachment classification, Sisay-style legendary permanent color counting, cost-reduction subject matching, and protection source-type checks now use exact type-line parsing with focused regression tests.
 
+Additional restricted-mana exactness added after this audit: Cavern-style creature-type mana now recognizes multi-word creature types such as Time Lord, and legendary-only restricted mana now checks the Legendary supertype instead of substring matching subtype text.
+
 Additional commander-zone verification added after this audit: manual move corrections now call commander replacement before mutation, so a commander moved toward graveyard/exile/hand by correction lands in command zone and the manual event reports the final command-zone destination. The `/play` manual correction message now reads from the resulting state so it says command zone instead of the requested graveyard/exile destination.
 
 Additional priority-flow wording added after this audit: when the human has priority on someone else's turn and the stack is empty, the phase action is labelled `Yield Until My Turn`; the `Skip Rest of Turn` label is reserved for the human active player's turn.
