@@ -7,6 +7,7 @@ import {
   applySelectCardsPromptResponse,
   applySelectTargetPromptResponse,
   auditActionReplay,
+  auditEngineReplay,
   auditPromptReplay,
   auditSearchPromptReplay,
   buildActionPrompt,
@@ -755,6 +756,49 @@ describe('authority action boundary', () => {
       ok: false,
       reason: 'illegal_response',
     })]);
+  });
+
+  it('audits mixed action and prompt records as one committed replay stream', () => {
+    const state = stateWithTargetChoices();
+    const pass = buildActionPrompt(state, 'p1')?.legalChoices.find(choice => choice.kind === 'PassPriority')?.action;
+    expect(pass).toBeDefined();
+    const actionRequest = createClientActionRequest(state, 'p1', pass as AIAction, {
+      id: 'req-replay-pass',
+      createdAt: 23,
+    });
+    const afterPass = applyClientActionRequest(state, actionRequest);
+    expect(afterPass.ok).toBe(true);
+    expect(afterPass.state).toBeDefined();
+
+    const targetRequest = createSelectTargetPromptRequest(afterPass.state!, 'p1', {
+      id: 'target-permanent',
+      type: 'Permanent',
+      count: 1,
+    }, {
+      id: 'prompt-replay-target',
+      createdAt: 24,
+    });
+
+    const report = auditEngineReplay(state, [
+      { kind: 'Action', request: actionRequest },
+      {
+        kind: 'Prompt',
+        request: targetRequest,
+        response: {
+          requestId: targetRequest.id,
+          kind: 'SelectTarget',
+          playerId: 'p1',
+          selectedTargetIds: ['bear_1'],
+        },
+      },
+    ]);
+
+    expect(report.ok).toBe(true);
+    expect(report.finalState).toBeDefined();
+    expect(report.steps).toEqual([
+      expect.objectContaining({ kind: 'Action', actionKind: 'PassPriority', ok: true }),
+      expect.objectContaining({ kind: 'Prompt', promptKind: 'SelectTarget', ok: true }),
+    ]);
   });
 
   it('validates pay-cost prompt responses and applies mana taps through authority', () => {

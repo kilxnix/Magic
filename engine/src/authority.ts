@@ -353,6 +353,30 @@ export interface PromptReplayAuditReport {
   steps: PromptReplayAuditStep[];
 }
 
+export type EngineReplayRecord =
+  | { kind: 'Action'; request: ClientActionRequest }
+  | ({ kind: 'Prompt' } & PromptReplayRecord);
+
+export interface EngineReplayAuditStep {
+  index: number;
+  kind: EngineReplayRecord['kind'];
+  requestId: string;
+  playerId: string;
+  stateBeforeId: string;
+  stateAfterId?: string;
+  ok: boolean;
+  actionKind?: AIAction['kind'];
+  promptKind?: EnginePromptKind;
+  reason?: ClientActionFailure | ClientPromptFailure | 'missing_state' | 'invariant_violation';
+  message?: string;
+}
+
+export interface EngineReplayAuditReport {
+  ok: boolean;
+  finalState?: GameState;
+  steps: EngineReplayAuditStep[];
+}
+
 export type PromptType =
   | 'main-action'
   | 'priority'
@@ -2885,6 +2909,68 @@ export function auditPromptReplay(
       stateBeforeId,
       stateAfterId: result.update?.newStateId,
       ok: result.ok,
+      reason: result.reason,
+      message: result.message,
+    };
+    steps.push(step);
+
+    if (!result.ok || !result.state) {
+      return { ok: false, steps };
+    }
+
+    const invariantReport = validateStateInvariants(result.state);
+    if (!invariantReport.ok) {
+      steps[steps.length - 1] = {
+        ...step,
+        ok: false,
+        reason: 'invariant_violation',
+        message: invariantReport.violations[0]?.message || 'invalid state',
+      };
+      return { ok: false, steps };
+    }
+
+    state = result.state;
+  }
+
+  return {
+    ok: true,
+    finalState: state,
+    steps,
+  };
+}
+
+export function auditEngineReplay(
+  initialState: GameState,
+  records: EngineReplayRecord[],
+): EngineReplayAuditReport {
+  let state = initialState;
+  const steps: EngineReplayAuditStep[] = [];
+
+  for (let index = 0; index < records.length; index += 1) {
+    const record = records[index];
+    const stateBeforeId = stateFingerprint(state);
+    const result = record.kind === 'Action'
+      ? applyClientActionRequest(state, record.request)
+      : record.request.kind === 'SearchLibrary'
+        ? applySearchLibraryPromptResponse(state, record.request, record.response as SearchLibraryPromptResponse)
+        : record.request.kind === 'SelectTarget'
+          ? applySelectTargetPromptResponse(state, record.request, record.response as SelectTargetPromptResponse)
+          : record.request.kind === 'ChooseReplacement'
+            ? applyChooseReplacementPromptResponse(state, record.request, record.response as ChooseReplacementPromptResponse)
+            : record.request.kind === 'PayCosts'
+              ? applyPayCostsPromptResponse(state, record.request, record.response as PayCostsPromptResponse)
+              : applySelectCardsPromptResponse(state, record.request, record.response as SelectCardsPromptResponse);
+
+    const step: EngineReplayAuditStep = {
+      index,
+      kind: record.kind,
+      requestId: record.kind === 'Action' ? record.request.id : record.request.id,
+      playerId: record.kind === 'Action' ? record.request.playerId : record.request.playerId,
+      stateBeforeId,
+      stateAfterId: result.update?.newStateId,
+      ok: result.ok,
+      actionKind: record.kind === 'Action' ? record.request.action.kind : undefined,
+      promptKind: record.kind === 'Prompt' ? record.request.kind : undefined,
       reason: result.reason,
       message: result.message,
     };
