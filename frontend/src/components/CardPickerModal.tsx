@@ -53,6 +53,11 @@ export function cardPickerDestinationLabel(card: Pick<CardPickerCard, 'destinati
   return labels[card.destination];
 }
 
+export function cardPickerRevealLabel(card: Pick<CardPickerCard, 'mustReveal'>): string | undefined {
+  if (card.mustReveal === undefined) return undefined;
+  return card.mustReveal ? 'Reveal pick' : 'Hidden pick';
+}
+
 export function CardPickerModal({ title, cards, filter, onPick, onCancel, cancelLabel = 'Cancel search', allowCustomName = false }: CardPickerModalProps) {
   const [search, setSearch] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -149,9 +154,9 @@ export function CardPickerModal({ title, cards, filter, onPick, onCancel, cancel
                     Tapped
                   </span>
                 )}
-                {card.mustReveal !== undefined && (
+                {cardPickerRevealLabel(card) && (
                   <span className="rounded bg-stone-600/50 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-stone-200">
-                    {card.mustReveal ? 'Reveal' : 'Private pick'}
+                    {cardPickerRevealLabel(card)}
                   </span>
                 )}
               </div>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cardPickerAvailabilityLabel, cardPickerDestinationLabel, sortCardPickerCards } from '../src/components/CardPickerModal';
+import { cardPickerAvailabilityLabel, cardPickerDestinationLabel, cardPickerRevealLabel, sortCardPickerCards } from '../src/components/CardPickerModal';
 
 describe('CardPickerModal helpers', () => {
   it('sorts legal search choices before disabled choices, then by name', () => {
@@ -30,5 +30,11 @@ describe('CardPickerModal helpers', () => {
     expect(cardPickerDestinationLabel({ destination: 'command' })).toBe('To command zone');
     expect(cardPickerDestinationLabel({ destination: 'choice' })).toBe('Destination choice');
     expect(cardPickerDestinationLabel({})).toBeUndefined();
+  });
+
+  it('uses explicit reveal wording for hidden and revealed choices', () => {
+    expect(cardPickerRevealLabel({ mustReveal: true })).toBe('Reveal pick');
+    expect(cardPickerRevealLabel({ mustReveal: false })).toBe('Hidden pick');
+    expect(cardPickerRevealLabel({})).toBeUndefined();
   });
 });
