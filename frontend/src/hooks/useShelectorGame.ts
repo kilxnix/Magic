@@ -2647,6 +2647,34 @@ export function useShelectorGame() {
 
       /** Check if top of stack is a human spell with searchAbility — show card picker */
       /** Check if top of stack has a search effect from the human — show card picker */
+      const applyValidatedLoopAction = (
+        s: GameState,
+        playerId: string,
+        action: AIAction,
+        source: 'ai' | 'system' = 'ai',
+      ): { state: GameState; events: ActionGameEvent[]; simpleAction: SimpleLegalAction } | null => {
+        const simpleAction = toSimpleLegalAction(action, s);
+        const request = createClientActionRequest(s, playerId, action, {
+          source,
+          label: simpleAction.label,
+        });
+        const response = applyClientActionRequest(s, request);
+        recordAuthorityUpdate(response.update);
+        if (!response.ok || !response.state) {
+          const playerName = s.players.find(player => player.id === playerId)?.name || playerId;
+          messages.push({
+            role: 'system',
+            text: `${playerName} action rejected: ${response.message || 'illegal action'}`,
+          });
+          return null;
+        }
+        return {
+          state: response.state,
+          events: response.events || [],
+          simpleAction,
+        };
+      };
+
       const tryResolveTutor = (): boolean => {
         if (state.stack.length === 0) return false;
         const top = state.stack[state.stack.length - 1];
@@ -2928,19 +2956,8 @@ export function useShelectorGame() {
 
               if (!decision || decision.action.kind === 'PassPriority') {
                 // AI passes priority on the stack
-                const beforePass = state;
-                state = passPriority(state);
-                recordStateUpdate(
-                  beforePass,
-                  state,
-                  {
-                    kind: 'PassPriority',
-                    label: `${priorityPlayer.name.replace(/\s+\(AI\)$/, '')} passed priority`,
-                    _engineAction: { kind: 'PassPriority' },
-                  },
-                  [],
-                  { playerId: priorityPlayer.id, source: 'ai' },
-                );
+                const passResult = applyValidatedLoopAction(state, priorityPlayer.id, { kind: 'PassPriority' }, 'ai');
+                state = passResult?.state || passPriority(state);
                 // Check if all players have now passed (stack resolves)
                 if (state.hasPriorityPassed.every((p, i) => p || state.players[i].hasLost)) {
                   console.log(`  -> all passed, resolving stack (${state.stack.length} items)`);
@@ -2954,15 +2971,12 @@ export function useShelectorGame() {
               }
 
               // AI cast something in response — apply it
-              const beforeDecision = state;
-              state = decision.newState;
-              recordStateUpdate(
-                beforeDecision,
-                state,
-                toSimpleLegalAction(decision.action, beforeDecision),
-                [],
-                { playerId: priorityPlayer.id, source: 'ai' },
-              );
+              const applied = applyValidatedLoopAction(state, priorityPlayer.id, decision.action, 'ai');
+              if (!applied) {
+                state = passPriority(state);
+                continue;
+              }
+              state = applied.state;
               narrateDecisions([decision], state, messages, logEntries);
               state = runSBAAndTriggers(state);
               if (checkGameOver(state)) break;
@@ -3063,15 +3077,17 @@ export function useShelectorGame() {
               const actionDef = actionInst ? state.cardDefinitions.get(actionInst.definitionId) : undefined;
               console.log(`  -> AI main phase: ${action.kind}${actionDef ? ' — ' + actionDef.name : ''}`);
 
-              const beforeDecision = state;
-              state = decision.newState;
-              recordStateUpdate(
-                beforeDecision,
-                state,
-                toSimpleLegalAction(decision.action, beforeDecision),
-                [],
-                { playerId: currentAiId, source: 'ai' },
-              );
+              const applied = applyValidatedLoopAction(state, currentAiId, decision.action, 'ai');
+              if (!applied) {
+                const priority = passUntilHumanOrAllPassed(state);
+                state = priority.state;
+                if (priority.pause) break;
+                state = advanceStep(state);
+                state = runSBAAndTriggers(state);
+                if (checkGameOver(state)) break;
+                continue;
+              }
+              state = applied.state;
 
               // Narrate this single decision
               narrateDecisions([decision], state, messages, logEntries);
@@ -3179,18 +3195,13 @@ export function useShelectorGame() {
                 const config = createAIConfig(activeId, 3);
                 const decision = makeDecision(state, config);
                 if (decision && decision.action.kind === 'DeclareAttackers' && decision.action.attacks.length > 0) {
-                  const beforeDecision = state;
-                  state = decision.newState;
-                  recordStateUpdate(
-                    beforeDecision,
-                    state,
-                    toSimpleLegalAction(decision.action, beforeDecision),
-                    [],
-                    { playerId: activeId, source: 'ai' },
-                  );
-                  narrateDecisions([decision], state, messages, logEntries);
-                  state = runSBAAndTriggers(state);
-                  if (checkGameOver(state)) break;
+                  const applied = applyValidatedLoopAction(state, activeId, decision.action, 'ai');
+                  if (applied) {
+                    state = applied.state;
+                    narrateDecisions([decision], state, messages, logEntries);
+                    state = runSBAAndTriggers(state);
+                    if (checkGameOver(state)) break;
+                  }
                 }
               } catch (aiErr: unknown) {
                 console.error('AI attack declaration error:', aiErr);
@@ -3360,7 +3371,7 @@ export function useShelectorGame() {
 
       return state;
     },
-    [narrateDecisions, recordStateUpdate, resolveTaxTrigger, runSBAAndTriggers],
+    [narrateDecisions, recordAuthorityUpdate, resolveTaxTrigger, runSBAAndTriggers],
   );
 
   const resolveLibraryChoice = useCallback((topIds: string[], movedIds: string[]) => {
