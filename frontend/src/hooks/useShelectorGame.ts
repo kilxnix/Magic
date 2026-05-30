@@ -557,6 +557,7 @@ export interface ShelectorGameSaveSnapshot {
   lastPlayedCard: LastPlayedCard | null;
   mulliganPhase: boolean;
   mulliganCount: number;
+  mulliganBottomSelectionActive?: boolean;
   selectedMulliganCardIds?: string[];
   selectedMulliganBottomIds?: string[];
   discardPhase: boolean;
@@ -2379,6 +2380,7 @@ export function useShelectorGame() {
   const [error, setError] = useState<string | null>(null);
   const [mulliganPhase, setMulliganPhase] = useState(false);
   const [mulliganCount, setMulliganCount] = useState(0);
+  const [mulliganBottomSelectionActive, setMulliganBottomSelectionActive] = useState(false);
   const [selectedMulliganCardIds, setSelectedMulliganCardIds] = useState<string[]>([]);
   const [selectedMulliganBottomIds, setSelectedMulliganBottomIds] = useState<string[]>([]);
   const [gameLog, setGameLog] = useState<GameLogEntry[]>([]);
@@ -4798,6 +4800,7 @@ export function useShelectorGame() {
       setCurrentPrompt(null);
       setLastPlayedCard(null);
       setSelectedMulliganBottomIds([]);
+      setMulliganBottomSelectionActive(false);
       uncommittedTapsRef.current.clear();
       stepEffectsDoneRef.current.clear();
       pendingCastChoiceActionRef.current = null;
@@ -4971,6 +4974,7 @@ export function useShelectorGame() {
 
         setMulliganPhase(true);
         setMulliganCount(0);
+        setMulliganBottomSelectionActive(false);
         setSelectedMulliganCardIds([]);
         setSelectedMulliganBottomIds([]);
 
@@ -5023,6 +5027,19 @@ export function useShelectorGame() {
     if (mulliganCount > 0) {
       const handCards = getCardsInZone(engine, humanIdRef.current, 'hand');
       const cardsToBottom = Math.min(mulliganCount, handCards.length);
+
+      if (!mulliganBottomSelectionActive) {
+        setMulliganBottomSelectionActive(true);
+        setSelectedMulliganCardIds([]);
+        setSelectedMulliganBottomIds([]);
+        addMessage(
+          'system',
+          `Choose ${cardsToBottom} card${cardsToBottom === 1 ? '' : 's'} from your hand to put on the bottom.`,
+        );
+        syncState();
+        return;
+      }
+
       const selectedIds = selectedMulliganBottomIds.filter(id =>
         handCards.some(card => card.instanceId === id),
       );
@@ -5068,6 +5085,7 @@ export function useShelectorGame() {
 
     setSelectedMulliganBottomIds([]);
     setSelectedMulliganCardIds([]);
+    setMulliganBottomSelectionActive(false);
     setMulliganPhase(false);
     addMessage('system', 'Game started! You are on the play.');
     addMessage('system', `Turn 1 \u2014 Your precombat main phase.`);
@@ -5078,7 +5096,7 @@ export function useShelectorGame() {
     resetEngineEventLog(advanced);
 
     syncState();
-  }, [mulliganCount, selectedMulliganBottomIds, addMessage, appendEnginePromptEventLogRecord, resetEngineEventLog, syncState, advanceToPrecombatMain]);
+  }, [mulliganCount, mulliganBottomSelectionActive, selectedMulliganBottomIds, addMessage, appendEnginePromptEventLogRecord, resetEngineEventLog, syncState, advanceToPrecombatMain]);
 
   // Mulligan selected cards during the opening-hand trainer phase. If called
   // without selected cards, keep the old full-redraw London mulligan fallback.
@@ -5132,6 +5150,7 @@ export function useShelectorGame() {
       engineRef.current = result.state as GameStateWithAI;
       stepEffectsDoneRef.current.clear();
       setMulliganCount(newMulliganCount);
+      setMulliganBottomSelectionActive(false);
       setSelectedMulliganCardIds([]);
       setSelectedMulliganBottomIds([]);
       addMessage(
@@ -5149,6 +5168,7 @@ export function useShelectorGame() {
 
     const newMulliganCount = mulliganCount + 1;
     setMulliganCount(newMulliganCount);
+    setMulliganBottomSelectionActive(false);
     setSelectedMulliganCardIds([]);
     setSelectedMulliganBottomIds([]);
 
@@ -5192,6 +5212,7 @@ export function useShelectorGame() {
         }
 
         setMulliganPhase(false);
+        setMulliganBottomSelectionActive(false);
         setSelectedMulliganCardIds([]);
         setSelectedMulliganBottomIds([]);
 
@@ -7824,6 +7845,7 @@ export function useShelectorGame() {
       lastPlayedCard,
       mulliganPhase,
       mulliganCount,
+      mulliganBottomSelectionActive,
       selectedMulliganCardIds,
       selectedMulliganBottomIds,
       discardPhase,
@@ -7868,6 +7890,7 @@ export function useShelectorGame() {
     lastPlayedCard,
     mulliganPhase,
     mulliganCount,
+    mulliganBottomSelectionActive,
     selectedMulliganCardIds,
     selectedMulliganBottomIds,
     discardPhase,
@@ -7971,6 +7994,7 @@ export function useShelectorGame() {
       setLastPlayedCard(snapshot.lastPlayedCard || null);
       setMulliganPhase(Boolean(snapshot.mulliganPhase));
       setMulliganCount(snapshot.mulliganCount || 0);
+      setMulliganBottomSelectionActive(Boolean(snapshot.mulliganBottomSelectionActive));
       setSelectedMulliganCardIds(snapshot.selectedMulliganCardIds || []);
       setSelectedMulliganBottomIds(snapshot.selectedMulliganBottomIds || []);
       setDiscardPhase(Boolean(snapshot.discardPhase));
@@ -8040,7 +8064,7 @@ export function useShelectorGame() {
     error,
     mulliganPhase,
     mulliganCount,
-    mulliganBottomCount: mulliganPhase && mulliganCount > 0 ? mulliganCount : 0,
+    mulliganBottomCount: mulliganPhase && mulliganBottomSelectionActive && mulliganCount > 0 ? mulliganCount : 0,
     selectedMulliganCardIds,
     selectedMulliganBottomIds,
     discardPhase,

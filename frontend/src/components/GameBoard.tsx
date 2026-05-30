@@ -2254,6 +2254,7 @@ export function GameBoard({
   isLoading,
   onAction,
   mulliganPhase,
+  mulliganCount,
   mulliganBottomCount,
   selectedMulliganCardIds = [],
   selectedMulliganBottomIds = [],
@@ -3775,7 +3776,11 @@ export function GameBoard({
                 disabled={!mulliganBottomReady}
                 className="px-3 md:px-4 py-1.5 rounded bg-green-700 hover:bg-green-600 text-white text-xs font-semibold transition-colors min-h-[44px] disabled:cursor-not-allowed disabled:opacity-45"
               >
-                {needsMulliganBottomSelection ? 'Keep Selected' : 'Keep'}
+                {needsMulliganBottomSelection
+                  ? 'Keep Selected'
+                  : mulliganPhase && (mulliganCount || 0) > 0
+                    ? `Keep, Bottom ${mulliganCount}`
+                    : 'Keep'}
               </button>
               <button
                 onClick={() => onMulligan?.(selectedMulliganCardIds)}
@@ -3791,7 +3796,9 @@ export function GameBoard({
           <div className="-mt-0.5 mb-1 rounded border border-amber-500/20 bg-amber-950/25 px-2 py-1 text-[10px] font-semibold leading-snug text-amber-100/85">
             {needsMulliganBottomSelection
               ? 'Tap cards in your hand to choose what goes on the bottom, then keep selected.'
-              : 'Tap one or more cards in your hand to mark them for mulligan. Inspect stays on the small card button.'}
+              : mulliganPhase && (mulliganCount || 0) > 0
+                ? `Tap more cards to redraw again, or keep to choose ${mulliganCount} card${mulliganCount === 1 ? '' : 's'} for the bottom. Inspect stays on the small card button.`
+                : 'Tap one or more cards in your hand to mark them for mulligan. Inspect stays on the small card button.'}
           </div>
         )}
 
