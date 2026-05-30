@@ -141,8 +141,7 @@ export function getLegalTargets(
   ) {
     for (const card of state.cards.values()) {
       if (card.zone !== 'battlefield') continue;
-      const def = state.cardDefinitions.get(card.definitionId);
-      if (!def) continue;
+      const def = getCardDefinition(state, card);
 
       if (spec.type === 'NonlandPermanent' && def.card_types.includes('land')) continue;
       if (spec.type === 'Artifact' && !def.card_types.includes('artifact')) continue;
@@ -165,8 +164,8 @@ export function getLegalTargets(
   } else if (spec.type === 'CreatureCardInGraveyard') {
     for (const card of state.cards.values()) {
       if (card.zone !== 'graveyard') continue;
-      const def = state.cardDefinitions.get(card.definitionId);
-      if (!def?.card_types.includes('creature')) continue;
+      const def = getCardDefinition(state, card);
+      if (!def.card_types.includes('creature')) continue;
       if (spec.constraints?.opponentControls && card.ownerId === casterId) continue;
       targets.push(card.instanceId);
     }

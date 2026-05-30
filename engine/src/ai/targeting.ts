@@ -157,7 +157,7 @@ export function selectRemovalTargets(
   }
 
   const topTarget = state.cards.get(selectedTargets[0]);
-  const topDef = topTarget ? state.cardDefinitions.get(topTarget.definitionId) : null;
+  const topDef = topTarget ? getCardDefinition(state, topTarget) : null;
 
   return {
     targets: selectedTargets,
@@ -217,7 +217,7 @@ export function selectDamageTargets(
     reasoning = `Target ${player?.name ?? 'player'} for ${damageAmount} damage`;
   } else {
     const card = state.cards.get(top.id);
-    const def = card ? state.cardDefinitions.get(card.definitionId) : null;
+    const def = card ? getCardDefinition(state, card) : null;
     reasoning = `Target ${def?.name ?? 'creature'} for ${damageAmount} damage`;
   }
 
@@ -324,8 +324,8 @@ export function selectBestAttackTarget(
 
     // Prefer players with fewer blockers
     const theirCreatures = getCardsInZone(state, player.id, 'battlefield').filter(c => {
-      const def = state.cardDefinitions.get(c.definitionId);
-      return def?.card_types.includes('creature') && !c.tapped;
+      const def = getCardDefinition(state, c);
+      return def.card_types.includes('creature') && !c.tapped;
     });
     score -= theirCreatures.length * 2;
 

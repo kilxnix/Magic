@@ -1,4 +1,5 @@
 import type { CardInstance, GameState } from './types';
+import { getCardDefinition } from './game-state';
 
 export interface CastZoneRestriction {
   sourceInstanceId: string;
@@ -27,8 +28,7 @@ export function findCastZoneRestriction(
   for (const [, permanent] of state.cards) {
     if (permanent.zone !== 'battlefield') continue;
     if (permanent.ownerId === playerId) continue;
-    const def = state.cardDefinitions.get(permanent.definitionId);
-    if (!def) continue;
+    const def = getCardDefinition(state, permanent);
 
     const oracle = def.oracle_text.toLowerCase();
     if (

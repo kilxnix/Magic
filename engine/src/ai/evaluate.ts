@@ -78,8 +78,8 @@ export function evaluatePlayerPosition(
   // Creatures on battlefield
   const battlefield = getCardsInZone(state, playerId, 'battlefield');
   for (const card of battlefield) {
-    const def = state.cardDefinitions.get(card.definitionId);
-    if (def?.card_types.includes('creature')) {
+    const def = getCardDefinition(state, card);
+    if (def.card_types.includes('creature')) {
       score += evaluateCreature(state, card);
     }
   }
@@ -91,8 +91,8 @@ export function evaluatePlayerPosition(
 
   // Untapped lands (potential mana)
   for (const card of battlefield) {
-    const def = state.cardDefinitions.get(card.definitionId);
-    if (def?.card_types.includes('land') && !card.tapped) {
+    const def = getCardDefinition(state, card);
+    if (def.card_types.includes('land') && !card.tapped) {
       score += MANA_AVAILABLE_VALUE;
     }
   }

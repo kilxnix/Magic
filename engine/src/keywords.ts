@@ -3,6 +3,7 @@
 
 import type { GameState, CardDefinition, CardInstance } from './types';
 import { isEffectiveCreature } from './effective-types';
+import { getCardDefinition } from './game-state';
 
 export type Keyword =
   | 'Flying'
@@ -128,8 +129,7 @@ export function getKeywordsForInstance(state: GameState, instanceId: string): Se
   const card = state.cards.get(instanceId);
   if (!card) return new Set();
 
-  const def = state.cardDefinitions.get(card.definitionId);
-  if (!def) return new Set();
+  const def = getCardDefinition(state, card);
 
   // Base keywords from definition
   const keywords = getKeywordsFromDefinition(def);
@@ -219,7 +219,7 @@ export function instanceHasKeyword(state: GameState, instanceId: string, keyword
   // Check equipment keywords from cached data
   for (const [, otherCard] of state.cards) {
     if (otherCard.attachedTo !== instanceId || otherCard.zone !== 'battlefield') continue;
-    const equipDef = state.cardDefinitions.get(otherCard.definitionId);
+    const equipDef = getCardDefinition(state, otherCard);
     if (equipDef?.equipmentBonus?.keywords.some(
       k => k.toLowerCase() === keyword.toLowerCase()
     )) {
@@ -307,8 +307,7 @@ export function isLethalDamage(
   const target = state.cards.get(targetId);
   if (!target) return false;
 
-  const def = state.cardDefinitions.get(target.definitionId);
-  if (!def) return false;
+  const def = getCardDefinition(state, target);
   if (!isEffectiveCreature(state, targetId)) return false;
 
   const toughness = def.toughness ?? 0;

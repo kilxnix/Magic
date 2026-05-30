@@ -1,4 +1,5 @@
 import type { CardDefinition, CardType, GameState, ManaColor } from './types';
+import { getCardDefinition } from './game-state';
 
 const COLOR_WORDS: Record<string, ManaColor> = {
   white: 'W',
@@ -52,8 +53,8 @@ export function countDevotionToColors(
 
   for (const card of state.cards.values()) {
     if (card.ownerId !== playerId || card.zone !== 'battlefield') continue;
-    const def = state.cardDefinitions.get(card.definitionId);
-    if (!def?.mana_cost) continue;
+    const def = getCardDefinition(state, card);
+    if (!def.mana_cost) continue;
 
     for (const symbol of def.mana_cost.match(/\{([^}]+)\}/g) || []) {
       const inner = symbol.slice(1, -1).toUpperCase();
@@ -70,8 +71,7 @@ export function countDevotionToColors(
 export function getEffectiveCardTypes(state: GameState, instanceId: string): CardType[] {
   const card = state.cards.get(instanceId);
   if (!card) return [];
-  const def = state.cardDefinitions.get(card.definitionId);
-  if (!def) return [];
+  const def = getCardDefinition(state, card);
 
   let types = [...def.card_types];
   const suppression = parseDevotionCreatureSuppression(def);

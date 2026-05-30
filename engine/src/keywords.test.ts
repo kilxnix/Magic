@@ -134,6 +134,57 @@ describe('keywords', () => {
       expect(keywords.has('Haste')).toBe(true);
     });
 
+    it('uses the active face for modal permanents', () => {
+      const state = makeTestState();
+      state.cardDefinitions.set('test-creature', {
+        ...makeCreatureDef([]),
+        name: 'Dormant Meadow // Awakened Drake',
+        type_line: 'Land',
+        oracle_text: '{T}: Add {G}.',
+        mana_cost: '',
+        cmc: 0,
+        card_types: ['land'],
+        power: undefined,
+        toughness: undefined,
+        faces: [
+          {
+            id: 'test-creature:front',
+            name: 'Dormant Meadow',
+            type_line: 'Land',
+            oracle_text: '{T}: Add {G}.',
+            mana_cost: '',
+            cmc: 0,
+            colors: [],
+            keywords: [],
+            card_types: ['land'],
+          },
+          {
+            id: 'test-creature:back',
+            name: 'Awakened Drake',
+            type_line: 'Creature — Drake',
+            oracle_text: 'Flying',
+            mana_cost: '{3}{U}',
+            cmc: 4,
+            colors: ['U'],
+            keywords: ['Flying'],
+            card_types: ['creature'],
+            power: 3,
+            toughness: 4,
+          },
+        ],
+      });
+      state.cards.set('creature-1', {
+        ...state.cards.get('creature-1')!,
+        activeFaceName: 'Awakened Drake',
+        summoningSick: false,
+      });
+
+      expect(getKeywordsForInstance(state, 'creature-1').has('Flying')).toBe(true);
+      expect(canAttackThisTurn(state, 'creature-1')).toBe(true);
+      expect(isLethalDamage(state, 'attacker', 'creature-1', 3)).toBe(false);
+      expect(isLethalDamage(state, 'attacker', 'creature-1', 4)).toBe(true);
+    });
+
     it('returns empty set for nonexistent card', () => {
       const state = makeTestState();
       const keywords = getKeywordsForInstance(state, 'nonexistent');

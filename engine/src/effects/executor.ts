@@ -6,7 +6,7 @@
 import type { GameState, CardInstance, CardDefinition, PendingTrigger, Zone } from '../types';
 import { isSpellStackItem } from '../types';
 import type { Effect, TargetRef, AmountRef, TokenDefinition, CardFilter, SurveilEffect, ForEachAmount, Condition, LoyaltyAbility } from './ast';
-import { pruneDetachedEffects } from '../game-state';
+import { getCardDefinition, pruneDetachedEffects } from '../game-state';
 import { checkStateBasedActions, markPlayerLostFromEmptyLibrary } from '../state-based';
 import { instanceHasKeyword, isIndestructible } from '../keywords';
 import { getCommanderDestinationZone } from '../commander';
@@ -62,7 +62,7 @@ function resolveAmount(
   if (amount.kind === 'EventSpellManaValue') {
     if (!state || !eventCardInstanceId) return 0;
     const eventCard = state.cards.get(eventCardInstanceId);
-    const eventDef = eventCard ? state.cardDefinitions.get(eventCard.definitionId) : undefined;
+    const eventDef = eventCard ? getCardDefinition(state, eventCard) : undefined;
     return eventDef?.cmc ?? 0;
   }
   if (amount.kind === 'ForEach') {
@@ -113,8 +113,7 @@ function resolveForEachCount(
     if (!playerIds.includes(card.ownerId)) continue;
 
     if (filter) {
-      const def = state.cardDefinitions.get(card.definitionId);
-      if (!def) continue;
+      const def = getCardDefinition(state, card);
       const filterWithoutPower = { ...filter };
       delete filterWithoutPower.power;
       if (!matchesCardFilter(def, filterWithoutPower)) continue;
@@ -145,8 +144,7 @@ function resolveGreatestPower(
   for (const [, card] of state.cards) {
     if (card.zone !== amount.zone) continue;
     if (!playerIds.includes(card.ownerId)) continue;
-    const def = state.cardDefinitions.get(card.definitionId);
-    if (!def) continue;
+    const def = getCardDefinition(state, card);
     if (amount.filter && !matchesCardFilter(def, amount.filter)) continue;
     greatest = Math.max(greatest, getEffectivePower(state, card.instanceId));
   }
@@ -417,8 +415,7 @@ function executePreventDamage(
 function hasEmptyLibraryDrawWinReplacement(state: GameState, playerId: string): boolean {
   for (const card of state.cards.values()) {
     if (card.zone !== 'battlefield' || card.ownerId !== playerId) continue;
-    const def = state.cardDefinitions.get(card.definitionId);
-    if (!def) continue;
+    const def = getCardDefinition(state, card);
     if (/if you would draw a card while your library has no cards in it,\s*you win the game instead/i.test(def.oracle_text)) {
       return true;
     }
@@ -808,11 +805,7 @@ function executeScry(
   const sendToBottom: CardInstance[] = [];
 
   for (const card of scryCards) {
-    const def = state.cardDefinitions.get(card.definitionId);
-    if (!def) {
-      keepOnTop.push(card); // Unknown = keep
-      continue;
-    }
+    const def = getCardDefinition(state, card);
     const isLand = def.card_types.includes('land');
     const isLowCost = def.cmc <= 3;
     if (isLand || isLowCost) {
@@ -870,11 +863,7 @@ function executeSurveil(
   const sendToGraveyard: CardInstance[] = [];
 
   for (const card of surveilCards) {
-    const def = state.cardDefinitions.get(card.definitionId);
-    if (!def) {
-      keepOnTop.push(card); // Unknown = keep
-      continue;
-    }
+    const def = getCardDefinition(state, card);
     const isLand = def.card_types.includes('land');
     const isLowCost = def.cmc <= 3;
     if (isLand || isLowCost) {
@@ -1012,8 +1001,8 @@ function getSacrificeCandidates(state: GameState, playerId: string, filter?: Car
   for (const [, card] of state.cards) {
     if (card.ownerId !== playerId || card.zone !== 'battlefield') continue;
     if (filter) {
-      const def = state.cardDefinitions.get(card.definitionId);
-      if (!def || !matchesCardFilter(def, filter)) continue;
+      const def = getCardDefinition(state, card);
+      if (!matchesCardFilter(def, filter)) continue;
     }
     candidates.push(card);
   }
@@ -1061,8 +1050,7 @@ export function executeSearchLibrary(
 
   for (const [, card] of state.cards) {
     if (card.ownerId !== playerId || card.zone !== 'library') continue;
-    const def = state.cardDefinitions.get(card.definitionId);
-    if (!def) continue;
+    const def = getCardDefinition(state, card);
     if (matchesCardFilter(def, filter, { state, sourceInstanceId: choices.sourceInstanceId })) {
       candidates.push(card);
     }
@@ -1076,8 +1064,8 @@ export function executeSearchLibrary(
   if (!matchedCard && choices.namedCard) {
     const wanted = choices.namedCard.trim().toLowerCase();
     matchedCard = candidates.find(card => {
-      const def = state.cardDefinitions.get(card.definitionId);
-      return def?.name.toLowerCase() === wanted;
+      const def = getCardDefinition(state, card);
+      return def.name.toLowerCase() === wanted;
     }) ?? null;
     if (!matchedCard) return state;
   }
@@ -1124,8 +1112,7 @@ export function executeSearchLibrary(
   const newCards = new Map(state.cards);
   let players = state.players;
   if (destination === 'battlefield') {
-    const def = state.cardDefinitions.get(matchedCard.definitionId);
-    if (!def) return state;
+    const def = getCardDefinition(state, matchedCard);
     const entry = buildBattlefieldEntryPlan(state, playerId, matchedCard, def, {
       forceTapped: tapped === true,
       defaultTapped: tapped === true,
@@ -1190,19 +1177,18 @@ function executePutLandFromHandOntoBattlefield(
   selectedCardInstanceId?: string,
 ): GameState {
   const chosen = selectedCardInstanceId ? state.cards.get(selectedCardInstanceId) : undefined;
-  const chosenDef = chosen ? state.cardDefinitions.get(chosen.definitionId) : undefined;
+  const chosenDef = chosen ? getCardDefinition(state, chosen) : undefined;
   const land = chosen && chosen.ownerId === playerId && chosen.zone === 'hand' && chosenDef?.card_types.includes('land')
     ? chosen
     : [...state.cards.values()].find(card => {
         if (card.ownerId !== playerId || card.zone !== 'hand') return false;
-        const def = state.cardDefinitions.get(card.definitionId);
-        return def?.card_types.includes('land') === true;
+        const def = getCardDefinition(state, card);
+        return def.card_types.includes('land');
       });
   if (!land) return state;
 
   const newCards = new Map(state.cards);
-  const landDef = state.cardDefinitions.get(land.definitionId);
-  if (!landDef) return state;
+  const landDef = getCardDefinition(state, land);
   const entry = buildBattlefieldEntryPlan(state, playerId, land, landDef, {
     forceTapped: tapped,
     defaultTapped: tapped,
@@ -1397,10 +1383,10 @@ function executeCounterSpell(state: GameState, targetId: string, filter?: 'noncr
   if (!card) return state;
   if (targetStackItem && isSpellStackItem(targetStackItem) && targetStackItem.cantBeCountered) return state;
 
-  const def = state.cardDefinitions.get(card.definitionId);
-  if (filter === 'creature' && !def?.card_types.includes('creature')) return state;
-  if (filter === 'noncreature' && def?.card_types.includes('creature')) return state;
-  if (def && /\b(?:can'?t|cannot)\s+be\s+countered\b/i.test(def.oracle_text)) {
+  const def = getCardDefinition(state, card);
+  if (filter === 'creature' && !def.card_types.includes('creature')) return state;
+  if (filter === 'noncreature' && def.card_types.includes('creature')) return state;
+  if (/\b(?:can'?t|cannot)\s+be\s+countered\b/i.test(def.oracle_text)) {
     return state;
   }
 
@@ -1550,8 +1536,8 @@ function executeExileUntilNamed(
 
   for (; index < libraryCards.length; index++) {
     const card = libraryCards[index];
-    const def = state.cardDefinitions.get(card.definitionId);
-    const isNamed = def?.name.toLowerCase() === targetName;
+    const def = getCardDefinition(state, card);
+    const isNamed = def.name.toLowerCase() === targetName;
     newCards.set(card.instanceId, {
       ...card,
       zone: isNamed ? foundDestination : 'exile',
@@ -1594,8 +1580,8 @@ function evaluateCondition(state: GameState, condition: Condition, casterId: str
           // opponent
           if (card.ownerId === casterId) continue;
         }
-        const def = state.cardDefinitions.get(card.definitionId);
-        if (def && matchesCardFilter(def, condition.filter)) return true;
+        const def = getCardDefinition(state, card);
+        if (matchesCardFilter(def, condition.filter)) return true;
       }
       return false;
     }
@@ -1604,8 +1590,8 @@ function evaluateCondition(state: GameState, condition: Condition, casterId: str
       let yourCount = 0;
       for (const [, card] of state.cards) {
         if (card.zone !== 'battlefield') continue;
-        const def = state.cardDefinitions.get(card.definitionId);
-        if (!def || !matchesCardFilter(def, condition.what)) continue;
+        const def = getCardDefinition(state, card);
+        if (!matchesCardFilter(def, condition.what)) continue;
         if (card.ownerId === casterId) yourCount++;
         else opponentCount++;
       }
@@ -1668,9 +1654,6 @@ function executeBlink(state: GameState, targetId: string): GameState {
 function executeCopy(state: GameState, targetId: string, controllerId: string): GameState {
   const card = state.cards.get(targetId);
   if (!card) return state;
-
-  const def = state.cardDefinitions.get(card.definitionId);
-  if (!def) return state;
 
   // Create a token copy with a fresh instance ID
   const copyId = `copy_${++tokenInstanceCounter}`;
@@ -1823,8 +1806,7 @@ function executeEffect(
         let s = state;
         for (const [, card] of state.cards) {
           if (card.zone === 'battlefield') {
-            const def = state.cardDefinitions.get(card.definitionId);
-            if (def && isEffectiveCreature(s, card.instanceId)) {
+            if (isEffectiveCreature(s, card.instanceId)) {
               s = executeDestroy(s, card.instanceId);
             }
           }
@@ -1836,8 +1818,8 @@ function executeEffect(
         let s = state;
         for (const [, card] of state.cards) {
           if (card.zone === 'battlefield') {
-            const def = state.cardDefinitions.get(card.definitionId);
-            if (def && matchesCardFilter(def, effect.target.filter)) {
+            const def = getCardDefinition(state, card);
+            if (matchesCardFilter(def, effect.target.filter)) {
               s = executeDestroy(s, card.instanceId);
             }
           }
@@ -1927,8 +1909,8 @@ function executeEffect(
         let s = state;
         for (const [, card] of state.cards) {
           if (card.zone === 'battlefield') {
-            const def = state.cardDefinitions.get(card.definitionId);
-            if (def && matchesCardFilter(def, effect.target.filter)) {
+            const def = getCardDefinition(state, card);
+            if (matchesCardFilter(def, effect.target.filter)) {
               s = executeExile(s, card.instanceId);
             }
           }
@@ -1955,8 +1937,8 @@ function executeEffect(
         let s = state;
         for (const [, card] of state.cards) {
           if (card.zone === 'battlefield') {
-            const def = state.cardDefinitions.get(card.definitionId);
-            if (def && matchesCardFilter(def, effect.target.filter)) {
+            const def = getCardDefinition(state, card);
+            if (matchesCardFilter(def, effect.target.filter)) {
               s = executeReturnToHand(s, card.instanceId);
             }
           }
@@ -2114,8 +2096,7 @@ function executeEffect(
         let s = state;
         for (const [, card] of state.cards) {
           if (card.zone === 'battlefield' && card.ownerId === casterId) {
-            const def = state.cardDefinitions.get(card.definitionId);
-            if (def && isEffectiveCreature(s, card.instanceId)) {
+            if (isEffectiveCreature(s, card.instanceId)) {
               const power = resolveAmount(effect.power, xValue, s, casterId, chosenTargets, card.instanceId);
               const toughness = resolveAmount(effect.toughness, xValue, s, casterId, chosenTargets, card.instanceId);
               s = executeModifyPT(s, card.instanceId, power, toughness);

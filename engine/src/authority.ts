@@ -35,6 +35,7 @@ import type { AIAction } from './ai/types';
 import type { ActionFailure, GameEvent as ActionGameEvent } from './actions-public';
 import type { CardFilter, Effect, SearchLibraryEffect, TargetRef } from './effects/ast';
 import type { TargetSpec } from './effects/targets';
+import { getCardDefinition } from './game-state';
 
 export type ClientActionSource = 'ui' | 'ai' | 'system';
 
@@ -961,7 +962,7 @@ export function actionKey(action: AIAction): string {
 
 function cardName(state: GameState, card?: CardInstance): string | undefined {
   if (!card) return undefined;
-  return state.cardDefinitions.get(card.definitionId)?.name;
+  return getCardDefinition(state, card).name;
 }
 
 function activePlayerId(state: GameState): string | undefined {
@@ -1475,8 +1476,8 @@ function evaluateSearchLibraryChoice(
   card: CardInstance,
   sourceInstanceId?: string,
 ): SearchLibraryChoice {
-  const def = state.cardDefinitions.get(card.definitionId);
-  const cardName = def?.name || card.instanceId;
+  const def = getCardDefinition(state, card);
+  const cardName = def.name || card.instanceId;
   if (card.ownerId !== playerId || card.zone !== 'library') {
     return {
       cardInstanceId: card.instanceId,
@@ -1486,16 +1487,6 @@ function evaluateSearchLibraryChoice(
       destination,
     };
   }
-  if (!def) {
-    return {
-      cardInstanceId: card.instanceId,
-      cardName,
-      legal: false,
-      reason: 'Card definition missing',
-      destination,
-    };
-  }
-
   const legal = matchesCardFilter(def, filter, { state, sourceInstanceId });
   return {
     cardInstanceId: card.instanceId,
@@ -1578,7 +1569,7 @@ function searchPlayerFromTargetRef(
 
 function spellEffectsFromStackItem(state: GameState, item: Extract<StackItem, { kind: 'Spell' }>): Effect[] {
   const card = state.cards.get(item.cardInstanceId);
-  const def = card ? state.cardDefinitions.get(card.definitionId) : undefined;
+  const def = card ? getCardDefinition(state, card) : undefined;
   if (!def) return [];
 
   const override = getOverride(def.id, def.name);
@@ -1618,7 +1609,7 @@ function stackItemSourceInstanceId(item: StackItem): string | undefined {
 function stackItemSourceName(state: GameState, item: StackItem): string {
   const sourceId = stackItemSourceInstanceId(item);
   const source = sourceId ? state.cards.get(sourceId) : undefined;
-  const def = source ? state.cardDefinitions.get(source.definitionId) : undefined;
+  const def = source ? getCardDefinition(state, source) : undefined;
   return def?.name || 'Search';
 }
 
@@ -1768,7 +1759,7 @@ function validateBattlefieldEntryReplacementResponse(
   if (response.payLifeToEnterUntapped === undefined) return undefined;
 
   const card = state.cards.get(selectedCardInstanceId);
-  const def = card ? state.cardDefinitions.get(card.definitionId) : undefined;
+  const def = card ? getCardDefinition(state, card) : undefined;
   if (!card || !def) return 'Selected card is no longer available';
 
   const optionalLifeCost = getOptionalUntappedLifeCost(def.oracle_text);
@@ -1795,7 +1786,7 @@ function applyBattlefieldEntryFromSearch(state: GameState, cardInstanceId: strin
   nextState = registerContinuousAbilitiesForPermanent(nextState, cardInstanceId);
   nextState = createETBTriggers(nextState, cardInstanceId);
   const enteredCard = nextState.cards.get(cardInstanceId);
-  const definition = enteredCard ? nextState.cardDefinitions.get(enteredCard.definitionId) : undefined;
+  const definition = enteredCard ? getCardDefinition(nextState, enteredCard) : undefined;
   if (!enteredCard || !definition) return nextState;
 
   if (definition.card_types.includes('land')) {
@@ -2016,8 +2007,7 @@ function targetFailureReason(state: GameState, spec: TargetSpec, targetId: strin
     : 'Not a player';
   if (!card) return 'Not a targetable object for this effect';
   if (card.zone !== 'battlefield') return 'Not on the battlefield';
-  const def = state.cardDefinitions.get(card.definitionId);
-  if (!def) return 'Card definition missing';
+  const def = getCardDefinition(state, card);
   switch (spec.type) {
     case 'Creature':
       return 'Not a creature';
@@ -2230,7 +2220,7 @@ export function createBattlefieldEntryReplacementPromptRequest(
   const expectedStateId = stateFingerprint(state);
   const createdAt = options.createdAt ?? Date.now();
   const card = state.cards.get(cardInstanceId);
-  const def = card ? state.cardDefinitions.get(card.definitionId) : undefined;
+  const def = card ? getCardDefinition(state, card) : undefined;
   const player = state.players.find(candidate => candidate.id === playerId);
   const cardLabel = def?.name || cardInstanceId;
   const optionalLifeCost = def ? getOptionalUntappedLifeCost(def.oracle_text) : undefined;
@@ -2641,13 +2631,13 @@ export function createSelectCardsPromptRequest(
   const choices = [...state.cards.values()]
     .filter(card => card.ownerId === playerId)
     .map(card => {
-      const def = state.cardDefinitions.get(card.definitionId);
+      const def = getCardDefinition(state, card);
       const inZone = card.zone === zone;
       const matchesFilter = !options.filter
-        || Boolean(def && matchesCardFilter(def, options.filter, {
+        || matchesCardFilter(def, options.filter, {
           state,
           sourceInstanceId: options.sourceInstanceId,
-        }));
+        });
       return {
         cardInstanceId: card.instanceId,
         cardName: def?.name || card.instanceId,
@@ -2773,7 +2763,7 @@ export function applySelectCardsPromptResponse(
   const legalIds = new Set(request.legalChoices.map(choice => choice.cardInstanceId));
   for (const selectedId of selectedIds) {
     const card = state.cards.get(selectedId);
-    const def = card ? state.cardDefinitions.get(card.definitionId) : undefined;
+    const def = card ? getCardDefinition(state, card) : undefined;
     const matchesFilter = !request.filter
       || Boolean(def && matchesCardFilter(def, request.filter, {
         state,
@@ -2856,8 +2846,8 @@ function openingHandCards(state: GameState, playerId: string): CardInstance[] {
 
 function openingHandLandCount(state: GameState, hand: CardInstance[]): number {
   return hand.filter(card => {
-    const def = state.cardDefinitions.get(card.definitionId);
-    return def?.card_types.includes('land') === true;
+    const def = getCardDefinition(state, card);
+    return def.card_types.includes('land');
   }).length;
 }
 
@@ -2897,9 +2887,9 @@ export function bottomOpeningHandCardsForMulligan(
   const lands = openingHandLandCount(state, hand);
 
   const scored = hand.map(card => {
-    const def = state.cardDefinitions.get(card.definitionId);
-    const isLand = def?.card_types.includes('land') === true;
-    let score = def?.cmc ?? 0;
+    const def = getCardDefinition(state, card);
+    const isLand = def.card_types.includes('land');
+    let score = def.cmc ?? 0;
     if (isLand && lands > 3) score += 10;
     if (isLand && lands <= 2) score -= 10;
     if (!isLand && lands <= 2 && (def?.cmc ?? 0) >= 5) score += 6;
@@ -3781,7 +3771,7 @@ function chooseModeRejectUpdate(
 
 function modalChoicesForCard(state: GameState, sourceInstanceId: string): { chooseCount: number; upTo?: boolean; choices: ModeChoice[] } | undefined {
   const card = state.cards.get(sourceInstanceId);
-  const def = card ? state.cardDefinitions.get(card.definitionId) : undefined;
+  const def = card ? getCardDefinition(state, card) : undefined;
   if (!def) return undefined;
   const parsed = parseOracleText(def.oracle_text);
   if (parsed.kind !== 'Modal') return undefined;

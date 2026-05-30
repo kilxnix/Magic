@@ -138,11 +138,11 @@ function doMainPhaseActions(
   for (const d of decisions) {
     if (d.action.kind === 'PlayLand') {
       const inst = s.cards.get(d.action.cardInstanceId);
-      const def = inst ? s.cardDefinitions.get(inst.definitionId) : undefined;
+      const def = inst ? getCardDefinition(s, inst) : undefined;
       log.push(`    [LAND] ${config.playerId} played ${def?.name || 'a land'}`);
     } else if (d.action.kind === 'CastSpell') {
       const inst = s.cards.get(d.action.cardInstanceId);
-      const def = inst ? s.cardDefinitions.get(inst.definitionId) : undefined;
+      const def = inst ? getCardDefinition(s, inst) : undefined;
       log.push(`    [CAST] ${config.playerId} cast ${def?.name || 'a spell'}`);
     }
   }

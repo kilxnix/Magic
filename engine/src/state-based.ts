@@ -1,7 +1,7 @@
 import { GameState, CardInstance, TriggeredAbilityRef, Zone } from './types';
 import { isIndestructible } from './keywords';
 import { getCommanderDestinationZone } from './commander';
-import { pruneDetachedEffects } from './game-state';
+import { getCardDefinition, pruneDetachedEffects } from './game-state';
 import { isEffectiveCreature } from './effective-types';
 import { applyReplacements } from './effects/replacement';
 import { getEffectiveToughness as getLayeredEffectiveToughness } from './effects/continuous';
@@ -74,8 +74,7 @@ export function checkStateBasedActions(state: GameState): GameState {
     for (const [id, card] of newCards) {
       if (card.zone !== 'battlefield') continue;
 
-      const def = state.cardDefinitions.get(card.definitionId);
-      if (!def || !isEffectiveCreature(tempState, id)) continue;
+      if (!isEffectiveCreature(tempState, id)) continue;
 
       const effectiveToughness = getLayeredEffectiveToughness(tempState, id);
       if (effectiveToughness <= 0) {
@@ -91,8 +90,8 @@ export function checkStateBasedActions(state: GameState): GameState {
     // 2b. Planeswalkers with 0 loyalty go to the graveyard
     for (const [id, card] of newCards) {
       if (card.zone !== 'battlefield') continue;
-      const def = state.cardDefinitions.get(card.definitionId);
-      if (!def || !def.card_types.includes('planeswalker')) continue;
+      const def = getCardDefinition(tempState, card);
+      if (!def.card_types.includes('planeswalker')) continue;
       const loyalty = card.counters['loyalty'] ?? 0;
       if (loyalty <= 0) {
         newCards.set(id, { ...card, zone: graveyardDest(id), counters: {}, tapped: false });
@@ -104,8 +103,7 @@ export function checkStateBasedActions(state: GameState): GameState {
     for (const [id, card] of newCards) {
       if (card.zone !== 'battlefield') continue;
 
-      const def = state.cardDefinitions.get(card.definitionId);
-      if (!def || !isEffectiveCreature(tempState, id)) continue;
+      if (!isEffectiveCreature(tempState, id)) continue;
 
       const effectiveToughness = getLayeredEffectiveToughness(tempState, id);
       const hasLethalDeathtouchDamage = card.damage > 0 && Boolean(card.deathtouchDamage);
@@ -129,8 +127,7 @@ export function checkStateBasedActions(state: GameState): GameState {
     for (const [id, card] of newCards) {
       if (card.zone !== 'battlefield') continue;
 
-      const def = state.cardDefinitions.get(card.definitionId);
-      if (!def) continue;
+      const def = getCardDefinition(tempState, card);
 
       // Check if legendary (type_line contains "Legendary")
       if (!def.type_line.toLowerCase().includes('legendary')) continue;

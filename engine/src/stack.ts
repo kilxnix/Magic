@@ -85,8 +85,7 @@ function getControllerBattlefieldCards(
 ): CardInstance[] {
   return [...state.cards.values()].filter(card => {
     if (card.ownerId !== playerId || card.zone !== 'battlefield' || card.tapped) return false;
-    const def = state.cardDefinitions.get(card.definitionId);
-    return !!def && predicate(card, def);
+    return predicate(card, getCardDefinition(state, card));
   });
 }
 
@@ -159,8 +158,7 @@ function buildCostMechanicPlan(
       ? orderedMechanicCandidates(creatures, options.convokeCreatureIds)
       : creatures;
     for (const creature of candidates) {
-      const creatureDef = state.cardDefinitions.get(creature.definitionId);
-      if (!creatureDef) continue;
+      const creatureDef = getCardDefinition(state, creature);
       const nextCost = reduceCostForConvokeCreature(cost, creatureDef);
       if (nextCost === cost) continue;
       tapIds.push(creature.instanceId);
@@ -198,8 +196,8 @@ function applyCastSacrificeToCounterChoice(
   if (!sacrificeCardId) return state;
   const sacrificed = state.cards.get(sacrificeCardId);
   if (!sacrificed || sacrificed.zone !== 'battlefield') return state;
-  const sacrificedDef = state.cardDefinitions.get(sacrificed.definitionId);
-  if (!sacrificedDef?.card_types.includes('creature')) return state;
+  const sacrificedDef = getCardDefinition(state, sacrificed);
+  if (!sacrificedDef.card_types.includes('creature')) return state;
 
   const spellCard = state.cards.get(spellStackItem.cardInstanceId);
   if (!spellCard) return state;
@@ -346,8 +344,8 @@ function paymentMakesSpellUncounterable(
     if (!mana.sourceInstanceId) return false;
     const source = state.cards.get(mana.sourceInstanceId);
     if (!source) return false;
-    const sourceDef = state.cardDefinitions.get(source.definitionId);
-    return sourceDef ? hasCantBeCounteredText(sourceDef.oracle_text) : false;
+    const sourceDef = getCardDefinition(state, source);
+    return hasCantBeCounteredText(sourceDef.oracle_text);
   });
 }
 
@@ -373,8 +371,7 @@ function permanentGrantsCascadeFromHand(state: GameState, playerId: string, def:
 
   for (const card of state.cards.values()) {
     if (card.zone !== 'battlefield' || card.ownerId !== playerId) continue;
-    const permanentDef = state.cardDefinitions.get(card.definitionId);
-    if (!permanentDef) continue;
+    const permanentDef = getCardDefinition(state, card);
     if (/instant and sorcery spells you cast from your hand have cascade/i.test(permanentDef.oracle_text)) {
       return true;
     }
@@ -427,8 +424,7 @@ function castCascadeHitWithoutPaying(
 
   for (const card of libraryCards) {
     revealedIds.push(card.instanceId);
-    const def = state.cardDefinitions.get(card.definitionId);
-    if (!def) continue;
+    const def = getCardDefinition(state, card);
     if (!def.card_types.includes('land') && def.cmc < sourceManaValue) {
       hit = card;
       hitDef = def;
@@ -621,8 +617,7 @@ function isLegalChromeMoxImprint(
   if (!chosenCardId || chosenCardId === sourceInstanceId) return false;
   const chosenCard = state.cards.get(chosenCardId);
   if (!chosenCard || chosenCard.ownerId !== controllerId || chosenCard.zone !== 'hand') return false;
-  const chosenDef = state.cardDefinitions.get(chosenCard.definitionId);
-  if (!chosenDef) return false;
+  const chosenDef = getCardDefinition(state, chosenCard);
   return !chosenDef.card_types.includes('artifact') && !chosenDef.card_types.includes('land');
 }
 
@@ -635,8 +630,8 @@ function isLegalMoxDiamondDiscard(
   if (!chosenCardId || chosenCardId === sourceInstanceId) return false;
   const chosenCard = state.cards.get(chosenCardId);
   if (!chosenCard || chosenCard.ownerId !== controllerId || chosenCard.zone !== 'hand') return false;
-  const chosenDef = state.cardDefinitions.get(chosenCard.definitionId);
-  return chosenDef?.card_types.includes('land') === true;
+  const chosenDef = getCardDefinition(state, chosenCard);
+  return chosenDef.card_types.includes('land');
 }
 
 function applyPermanentEntryChoices(
@@ -1630,8 +1625,8 @@ export function checkTriggersForEvent(state: GameState, event: GameEvent): GameS
           if (trigger.kind === 'CastNoncreatureSpell' && event.casterId === controllerId) {
             const spellCard = state.cards.get(event.cardInstanceId);
             if (spellCard) {
-              const spellDef = state.cardDefinitions.get(spellCard.definitionId);
-              if (spellDef && !spellDef.card_types.includes('creature')) {
+              const spellDef = getCardDefinition(state, spellCard);
+              if (!spellDef.card_types.includes('creature')) {
                 shouldFire = true;
               }
             }
@@ -1640,8 +1635,8 @@ export function checkTriggersForEvent(state: GameState, event: GameEvent): GameS
           if (trigger.kind === 'CastInstantOrSorcery' && event.casterId === controllerId) {
             const spellCard = state.cards.get(event.cardInstanceId);
             if (spellCard) {
-              const spellDef = state.cardDefinitions.get(spellCard.definitionId);
-              if (spellDef && (spellDef.card_types.includes('instant') || spellDef.card_types.includes('sorcery'))) {
+              const spellDef = getCardDefinition(state, spellCard);
+              if (spellDef.card_types.includes('instant') || spellDef.card_types.includes('sorcery')) {
                 shouldFire = true;
               }
             }
@@ -1650,8 +1645,8 @@ export function checkTriggersForEvent(state: GameState, event: GameEvent): GameS
           if (trigger.kind === 'CastOrCopyInstantOrSorcery' && event.casterId === controllerId) {
             const spellCard = state.cards.get(event.cardInstanceId);
             if (spellCard) {
-              const spellDef = state.cardDefinitions.get(spellCard.definitionId);
-              if (spellDef && isInstantOrSorcery(spellDef)) {
+              const spellDef = getCardDefinition(state, spellCard);
+              if (isInstantOrSorcery(spellDef)) {
                 shouldFire = true;
               }
             }
@@ -1663,8 +1658,8 @@ export function checkTriggersForEvent(state: GameState, event: GameEvent): GameS
           if (trigger.kind === 'CastOrCopyInstantOrSorcery' && event.controllerId === controllerId) {
             const spellCard = state.cards.get(event.cardInstanceId);
             if (spellCard) {
-              const spellDef = state.cardDefinitions.get(spellCard.definitionId);
-              if (spellDef && isInstantOrSorcery(spellDef)) {
+              const spellDef = getCardDefinition(state, spellCard);
+              if (isInstantOrSorcery(spellDef)) {
                 shouldFire = true;
               }
             }
@@ -1777,8 +1772,8 @@ export function checkTriggersForEvent(state: GameState, event: GameEvent): GameS
       if (shouldFire) {
         // Get target specs for this ability from parsing
         let targetSpecs: TargetSpec[] = (ability.targets as TargetSpec[] | undefined) || [];
-        const cardDef = state.cardDefinitions.get(card.definitionId);
-        if (cardDef && targetSpecs.length === 0) {
+        const cardDef = getCardDefinition(state, card);
+        if (targetSpecs.length === 0) {
           // Parse the specific line that matches this trigger
           const lines = cardDef.oracle_text.split('\n');
           for (const line of lines) {

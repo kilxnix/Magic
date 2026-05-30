@@ -62,8 +62,8 @@ export function getAvailableManaColors(state: GameState, cardInstanceId: string)
     for (const imprintedId of card.choices?.imprintedCardIds || []) {
       const imprinted = state.cards.get(imprintedId);
       if (!imprinted || imprinted.zone !== 'exile') continue;
-      const imprintedDef = state.cardDefinitions.get(imprinted.definitionId);
-      for (const color of imprintedDef?.colors || []) {
+      const imprintedDef = getCardDefinition(state, imprinted);
+      for (const color of imprintedDef.colors || []) {
         allowed.add(color);
       }
     }
@@ -150,8 +150,7 @@ export function maxLandsThisTurn(state: GameState, playerId: string): number {
   for (const [, card] of state.cards) {
     if (card.zone !== 'battlefield') continue;
     if (card.ownerId !== playerId) continue;
-    const def = state.cardDefinitions.get(card.definitionId);
-    if (!def) continue;
+    const def = getCardDefinition(state, card);
     const oracle = def.oracle_text.toLowerCase();
     // "play an additional land" → +1
     if (/\byou may play an additional land\b/.test(oracle)) extra += 1;
@@ -307,8 +306,8 @@ export function tapLandForMana(state: GameState, playerId: string, cardInstanceI
   if (def.manaProduction?.amountScale === 'creaturesYouControl') {
     amount *= [...state.cards.values()].filter(instance => {
       if (instance.ownerId !== playerId || instance.zone !== 'battlefield') return false;
-      const cardDef = state.cardDefinitions.get(instance.definitionId);
-      return cardDef?.card_types.includes('creature');
+      const cardDef = getCardDefinition(state, instance);
+      return cardDef.card_types.includes('creature');
     }).length;
   }
   amount *= manaProductionMultiplier(state, playerId, cardInstanceId);
@@ -327,8 +326,8 @@ export function tapLandForMana(state: GameState, playerId: string, cardInstanceI
       .filter(candidate => {
         if (candidate.instanceId === cardInstanceId) return false;
         if (candidate.ownerId !== playerId || candidate.zone !== 'battlefield') return false;
-        const candidateDef = state.cardDefinitions.get(candidate.definitionId);
-        return !!candidateDef && matchesCardFilter(candidateDef, sacrificeFilter);
+        const candidateDef = getCardDefinition(state, candidate);
+        return matchesCardFilter(candidateDef, sacrificeFilter);
       });
     const sacrificed = candidates[0];
     if (!sacrificed) throw new Error('No sacrifice candidate');

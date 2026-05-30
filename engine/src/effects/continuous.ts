@@ -24,6 +24,7 @@
 import type { GameState, CardInstance, CardDefinition } from '../types';
 import type { StaticAbilityEffect, CardFilter } from './ast';
 import { matchesCardFilter } from './executor';
+import { getCardDefinition } from '../game-state';
 
 // ============================================================================
 // Continuous Effect Registration
@@ -150,8 +151,8 @@ function uniqueColorsAmongOtherLegendaryPermanentsYouControl(
     if (card.instanceId === sourceInstanceId) continue;
     if (card.ownerId !== controllerId || card.zone !== 'battlefield') continue;
 
-    const def = state.cardDefinitions.get(card.definitionId);
-    if (!def || !isLegendaryPermanentDefinition(def)) continue;
+    const def = getCardDefinition(state, card);
+    if (!isLegendaryPermanentDefinition(def)) continue;
 
     for (const color of def.colors) {
       if (colors.has(color as 'W' | 'U' | 'B' | 'R' | 'G')) {
@@ -176,10 +177,7 @@ export function getContinuousPTModification(
     return { power: 0, toughness: 0 };
   }
 
-  const def = state.cardDefinitions.get(card.definitionId);
-  if (!def) {
-    return { power: 0, toughness: 0 };
-  }
+  const def = getCardDefinition(state, card);
 
   let powerMod = 0;
   let toughnessMod = 0;
@@ -220,7 +218,7 @@ function getEquipmentPTBonus(state: GameState, instanceId: string): { power: num
   let power = 0, toughness = 0;
   for (const [, otherCard] of state.cards) {
     if (otherCard.attachedTo !== instanceId || otherCard.zone !== 'battlefield') continue;
-    const equipDef = state.cardDefinitions.get(otherCard.definitionId);
+    const equipDef = getCardDefinition(state, otherCard);
     if (!equipDef?.equipmentBonus) continue;
     power += equipDef.equipmentBonus.power;
     toughness += equipDef.equipmentBonus.toughness;
@@ -235,8 +233,8 @@ export function getEffectivePower(state: GameState, instanceId: string): number 
   const card = state.cards.get(instanceId);
   if (!card) return 0;
 
-  const def = state.cardDefinitions.get(card.definitionId);
-  if (!def || def.power === undefined) return 0;
+  const def = getCardDefinition(state, card);
+  if (def.power === undefined) return 0;
 
   const basePower = def.power;
   const counterMod = (card.counters['+1/+1'] || 0) - (card.counters['-1/-1'] || 0);
@@ -254,8 +252,8 @@ export function getEffectiveToughness(state: GameState, instanceId: string): num
   const card = state.cards.get(instanceId);
   if (!card) return 0;
 
-  const def = state.cardDefinitions.get(card.definitionId);
-  if (!def || def.toughness === undefined) return 0;
+  const def = getCardDefinition(state, card);
+  if (def.toughness === undefined) return 0;
 
   const baseToughness = def.toughness;
   const counterMod = (card.counters['+1/+1'] || 0) - (card.counters['-1/-1'] || 0);
@@ -279,10 +277,7 @@ export function getGrantedKeywords(
     return [];
   }
 
-  const def = state.cardDefinitions.get(card.definitionId);
-  if (!def) {
-    return [];
-  }
+  const def = getCardDefinition(state, card);
 
   const keywords: string[] = [];
   const effects = state.continuousEffects || [];
@@ -362,8 +357,7 @@ export function evaluateCondition(
 
       for (const [, card] of state.cards) {
         if (card.ownerId !== playerId || card.zone !== 'battlefield') continue;
-        const def = state.cardDefinitions.get(card.definitionId);
-        if (!def) continue;
+        const def = getCardDefinition(state, card);
         if (matchesCardFilter(def, condition.filter)) return true;
       }
       return false;
@@ -376,8 +370,7 @@ export function evaluateCondition(
 
       for (const [, card] of state.cards) {
         if (card.zone !== 'battlefield') continue;
-        const def = state.cardDefinitions.get(card.definitionId);
-        if (!def) continue;
+        const def = getCardDefinition(state, card);
         if (!matchesCardFilter(def, condition.what)) continue;
 
         if (card.ownerId === controllerId) {

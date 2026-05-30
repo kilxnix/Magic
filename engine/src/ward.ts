@@ -1,5 +1,6 @@
 import type { CardDefinition, GameState, ManaCost, StackItem } from './types';
 import { getCommanderDestinationZone } from './commander';
+import { getCardDefinition } from './game-state';
 import { canPayUnrestrictedCost, parseManaString, payUnrestrictedManaCost } from './mana';
 
 type WardCost =
@@ -44,7 +45,7 @@ function stackItemCanBeCountered(state: GameState, item: StackItem): boolean {
   if (item.kind !== 'Spell') return true;
   if (item.cantBeCountered) return false;
   const card = state.cards.get(item.cardInstanceId);
-  const def = card ? state.cardDefinitions.get(card.definitionId) : undefined;
+  const def = card ? getCardDefinition(state, card) : undefined;
   return !def || !/\b(?:can'?t|cannot)\s+be\s+countered\b/i.test(def.oracle_text);
 }
 
@@ -88,8 +89,7 @@ export function applyWardForStackItem(
 
     const target = nextState.cards.get(targetId);
     if (!target || target.zone !== 'battlefield' || target.ownerId === controllerId) continue;
-    const targetDef = nextState.cardDefinitions.get(target.definitionId);
-    if (!targetDef) continue;
+    const targetDef = getCardDefinition(nextState, target);
 
     const wardCost = parseWardCost(targetDef);
     if (!wardCost) continue;
@@ -105,4 +105,3 @@ export function applyWardForStackItem(
 
   return nextState;
 }
-
