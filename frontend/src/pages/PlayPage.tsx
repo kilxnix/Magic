@@ -131,6 +131,9 @@ export function PlayPage() {
     setNewPlayerMode,
     holdPriority,
     setHoldPriority,
+    priorityStops,
+    setPriorityStop,
+    setAllPriorityStops,
     untapManaSource,
     adjustCounters,
     adjustPlayerCounter,
@@ -778,6 +781,9 @@ export function PlayPage() {
             onToggleNewPlayerMode={setNewPlayerMode}
             holdPriority={holdPriority}
             onToggleHoldPriority={setHoldPriority}
+            priorityStops={priorityStops}
+            onTogglePriorityStop={setPriorityStop}
+            onSetAllPriorityStops={setAllPriorityStops}
             collapseModeControlsOnMobile
             onUntapMana={untapManaSource}
             onAdjustCounters={adjustCounters}

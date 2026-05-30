@@ -110,6 +110,9 @@ export function ShelectorGamePage() {
     setNewPlayerMode,
     holdPriority,
     setHoldPriority,
+    priorityStops,
+    setPriorityStop,
+    setAllPriorityStops,
     untapManaSource,
     adjustCounters,
     adjustPlayerCounter,
@@ -793,6 +796,9 @@ export function ShelectorGamePage() {
           onToggleNewPlayerMode={setNewPlayerMode}
           holdPriority={holdPriority}
           onToggleHoldPriority={setHoldPriority}
+          priorityStops={priorityStops}
+          onTogglePriorityStop={setPriorityStop}
+          onSetAllPriorityStops={setAllPriorityStops}
           onUntapMana={untapManaSource}
           onAdjustCounters={adjustCounters}
           onAdjustPlayerCounter={adjustPlayerCounter}

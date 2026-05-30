@@ -7,7 +7,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import type { DamageAssignmentChoice, LibraryManipulationChoice, OptionalTriggerChoice, SimpleGameState, SimpleLegalAction, SimpleCard, LastPlayedCard, TaxPaymentChoice, TriggerOrderChoiceState } from '../hooks/useShelectorGame';
+import type { DamageAssignmentChoice, LibraryManipulationChoice, OptionalTriggerChoice, PriorityStopKey, PriorityStops, SimpleGameState, SimpleLegalAction, SimpleCard, LastPlayedCard, TaxPaymentChoice, TriggerOrderChoiceState } from '../hooks/useShelectorGame';
 import type { DamageAssignmentOrder } from 'commander-engine';
 import type { EnginePrompt, EngineStateUpdate } from 'commander-engine';
 import { Loader2, ChevronDown, ChevronRight, Search, X, Lightbulb, Menu } from 'lucide-react';
@@ -133,6 +133,9 @@ interface GameBoardProps {
   onToggleNewPlayerMode?: (on: boolean) => void;
   holdPriority?: boolean;
   onToggleHoldPriority?: (on: boolean) => void;
+  priorityStops?: PriorityStops;
+  onTogglePriorityStop?: (key: PriorityStopKey, on: boolean) => void;
+  onSetAllPriorityStops?: (on: boolean) => void;
   collapseModeControlsOnMobile?: boolean;
   onUntapMana?: (cardInstanceId: string) => void;
   onAdjustCounters?: (cardInstanceId: string, counterType: string, delta: number) => void;
@@ -1063,6 +1066,17 @@ const TOKEN_PRESETS: { label: string; token: ManualTokenInput }[] = [
   },
 ];
 
+const PRIORITY_STOP_OPTIONS: { key: PriorityStopKey; label: string; detail: string }[] = [
+  { key: 'upkeep', label: 'Upkeep', detail: 'Pause on upkeep priority.' },
+  { key: 'draw', label: 'Draw', detail: 'Pause after draws resolve.' },
+  { key: 'main', label: 'Main', detail: 'Pause on main-phase priority.' },
+  { key: 'beginCombat', label: 'Begin Combat', detail: 'Pause before attackers.' },
+  { key: 'declareAttackers', label: 'Attackers', detail: 'Pause around attacker declarations.' },
+  { key: 'declareBlockers', label: 'Blockers', detail: 'Pause around blockers.' },
+  { key: 'combatDamage', label: 'Damage', detail: 'Pause around combat damage.' },
+  { key: 'endStep', label: 'End Step', detail: 'Pause at end step priority.' },
+];
+
 function splitTokenWords(value: string, fallback: string[]): string[] {
   const words = value
     .split(',')
@@ -1982,6 +1996,9 @@ export function GameBoard({
   onToggleNewPlayerMode,
   holdPriority = false,
   onToggleHoldPriority,
+  priorityStops,
+  onTogglePriorityStop,
+  onSetAllPriorityStops,
   onUntapMana,
   onAdjustCounters,
   onAdjustPlayerCounter,
@@ -2529,6 +2546,60 @@ export function GameBoard({
                   <span>Hold priority</span>
                   <span className="text-[10px] font-black uppercase tracking-wider">{holdPriority ? 'On' : 'Off'}</span>
                 </button>
+              )}
+
+              {priorityStops && onTogglePriorityStop && (
+                <div className="rounded border border-neutral-800 bg-neutral-900 p-3">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <div>
+                      <div className="text-xs font-black uppercase tracking-wider text-stone-100">
+                        Priority Stops
+                      </div>
+                      <div className="text-[10px] font-semibold text-stone-500">
+                        Pause instead of auto-passing empty windows.
+                      </div>
+                    </div>
+                    {onSetAllPriorityStops && (
+                      <div className="flex gap-1">
+                        <button
+                          type="button"
+                          onClick={() => onSetAllPriorityStops(true)}
+                          className="rounded border border-neutral-700 px-2 py-1 text-[10px] font-black uppercase text-stone-200 hover:border-amber-400/70"
+                        >
+                          All
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onSetAllPriorityStops(false)}
+                          className="rounded border border-neutral-700 px-2 py-1 text-[10px] font-black uppercase text-stone-200 hover:border-amber-400/70"
+                        >
+                          Clear
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {PRIORITY_STOP_OPTIONS.map(stop => (
+                      <label
+                        key={stop.key}
+                        className={`flex min-h-10 items-center justify-between gap-2 rounded border px-2 text-xs font-bold transition-colors ${
+                          priorityStops[stop.key]
+                            ? 'border-amber-400/60 bg-amber-500 text-neutral-950'
+                            : 'border-neutral-800 bg-neutral-950 text-stone-300'
+                        }`}
+                        title={stop.detail}
+                      >
+                        <span>{stop.label}</span>
+                        <input
+                          type="checkbox"
+                          checked={priorityStops[stop.key]}
+                          onChange={event => onTogglePriorityStop(stop.key, event.target.checked)}
+                          className="h-4 w-4 accent-amber-500"
+                        />
+                      </label>
+                    ))}
+                  </div>
+                </div>
               )}
 
               {onToggleCoach && (

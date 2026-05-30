@@ -119,6 +119,59 @@ export interface EndGameState {
   loopSources?: string[];
 }
 
+export type PriorityStopKey =
+  | 'upkeep'
+  | 'draw'
+  | 'main'
+  | 'beginCombat'
+  | 'declareAttackers'
+  | 'declareBlockers'
+  | 'combatDamage'
+  | 'endStep';
+
+export type PriorityStops = Record<PriorityStopKey, boolean>;
+
+const DEFAULT_PRIORITY_STOPS: PriorityStops = {
+  upkeep: false,
+  draw: false,
+  main: false,
+  beginCombat: false,
+  declareAttackers: false,
+  declareBlockers: false,
+  combatDamage: false,
+  endStep: false,
+};
+
+function readStoredPriorityStops(): PriorityStops {
+  if (typeof window === 'undefined') return { ...DEFAULT_PRIORITY_STOPS };
+  try {
+    const raw = window.localStorage.getItem('deckreps_priority_stops');
+    if (!raw) return { ...DEFAULT_PRIORITY_STOPS };
+    const parsed = JSON.parse(raw) as Partial<Record<PriorityStopKey, unknown>>;
+    return {
+      ...DEFAULT_PRIORITY_STOPS,
+      ...Object.fromEntries(
+        (Object.keys(DEFAULT_PRIORITY_STOPS) as PriorityStopKey[])
+          .map(key => [key, Boolean(parsed[key])]),
+      ) as PriorityStops,
+    };
+  } catch {
+    return { ...DEFAULT_PRIORITY_STOPS };
+  }
+}
+
+function priorityStopKeyForState(state: GameState): PriorityStopKey | null {
+  if (state.step === 'upkeep') return 'upkeep';
+  if (state.step === 'draw') return 'draw';
+  if (state.phase === 'precombat_main' || state.phase === 'postcombat_main') return 'main';
+  if (state.step === 'begin_combat') return 'beginCombat';
+  if (state.step === 'declare_attackers') return 'declareAttackers';
+  if (state.step === 'declare_blockers') return 'declareBlockers';
+  if (state.step === 'first_strike_damage' || state.step === 'combat_damage') return 'combatDamage';
+  if (state.step === 'end') return 'endStep';
+  return null;
+}
+
 // ========== Simplified Game Types (consumed by GameBoard.tsx) ==========
 
 export interface SimpleCard {
@@ -421,6 +474,7 @@ export interface ShelectorGameSaveSnapshot {
   coachMode: boolean;
   newPlayerMode: boolean;
   holdPriority: boolean;
+  priorityStops: PriorityStops;
   actionError: { reason: string; message: string } | null;
   lastEvents: ActionGameEvent[];
   endGame: EndGameState;
@@ -2055,6 +2109,29 @@ export function useShelectorGame() {
     }
   }, []);
 
+  const [priorityStops, setPriorityStopsState] = useState<PriorityStops>(() => readStoredPriorityStops());
+  const priorityStopsRef = useRef(priorityStops);
+  const setPriorityStop = useCallback((key: PriorityStopKey, on: boolean) => {
+    setPriorityStopsState(prev => {
+      const next = { ...prev, [key]: on };
+      priorityStopsRef.current = next;
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem('deckreps_priority_stops', JSON.stringify(next));
+      }
+      return next;
+    });
+  }, []);
+  const setAllPriorityStops = useCallback((on: boolean) => {
+    const next = Object.fromEntries(
+      (Object.keys(DEFAULT_PRIORITY_STOPS) as PriorityStopKey[]).map(key => [key, on]),
+    ) as PriorityStops;
+    priorityStopsRef.current = next;
+    setPriorityStopsState(next);
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem('deckreps_priority_stops', JSON.stringify(next));
+    }
+  }, []);
+
   // try* action error state (Task 7 — game-reliability-refactor)
   const [actionError, setActionError] = useState<{ reason: string; message: string } | null>(null);
   const [lastEvents, setLastEvents] = useState<ActionGameEvent[]>([]);
@@ -3158,6 +3235,10 @@ export function useShelectorGame() {
       };
 
       const shouldPauseForHumanPriority = (s: GameState): boolean => {
+        const stopKey = priorityStopKeyForState(s);
+        if (stopKey && priorityStopsRef.current[stopKey]) {
+          return true;
+        }
         if (s.stack.length === 0) return false;
         if (holdPriorityRef.current && controllerIdForStackItem(s.stack[s.stack.length - 1]) === humanIdRef.current) {
           return true;
@@ -6574,6 +6655,7 @@ export function useShelectorGame() {
       coachMode,
       newPlayerMode,
       holdPriority,
+      priorityStops,
       actionError,
       lastEvents,
       endGame,
@@ -6604,6 +6686,7 @@ export function useShelectorGame() {
     coachMode,
     newPlayerMode,
     holdPriority,
+    priorityStops,
     actionError,
     lastEvents,
     endGame,
@@ -6718,6 +6801,8 @@ export function useShelectorGame() {
       setCoachMode(Boolean(snapshot.coachMode));
       setNewPlayerMode(Boolean(snapshot.newPlayerMode));
       setHoldPriority(Boolean(snapshot.holdPriority));
+      setPriorityStopsState(snapshot.priorityStops || readStoredPriorityStops());
+      priorityStopsRef.current = snapshot.priorityStops || readStoredPriorityStops();
       setActionError(snapshot.actionError || null);
       setLastEvents(snapshot.lastEvents || []);
       setEndGame(snapshot.endGame || { open: false, kind: 'loss' });
@@ -6772,6 +6857,7 @@ export function useShelectorGame() {
     coachMode,
     newPlayerMode,
     holdPriority,
+    priorityStops,
     untappableCardIds: [...uncommittedTapsRef.current.keys()],
     // try* error state (Task 7)
     actionError,
@@ -6815,6 +6901,8 @@ export function useShelectorGame() {
     setCoachMode,
     setNewPlayerMode,
     setHoldPriority,
+    setPriorityStop,
+    setAllPriorityStops,
     untapManaSource,
     adjustCounters,
     adjustPlayerCounter,
