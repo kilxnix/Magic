@@ -258,9 +258,12 @@ export interface SelectCardsPromptRequest {
   kind: 'SelectCards';
   playerId: string;
   expectedStateId: string;
+  sourceInstanceId?: string;
   subject: SelectCardsSubject;
   zone: Zone;
   destination: Zone;
+  filter?: CardFilter;
+  commitSelection: boolean;
   minSelections: number;
   maxSelections: number;
   legalChoices: SelectCardsChoice[];
@@ -270,9 +273,12 @@ export interface SelectCardsPromptRequest {
 
 export interface CreateSelectCardsPromptOptions {
   id?: string;
+  sourceInstanceId?: string;
   subject?: SelectCardsSubject;
   zone?: Zone;
   destination?: Zone;
+  filter?: CardFilter;
+  commitSelection?: boolean;
   minSelections?: number;
   maxSelections?: number;
   createdAt?: number;
@@ -2106,6 +2112,7 @@ export function createSelectCardsPromptRequest(
   const zone = options.zone || 'hand';
   const destination = options.destination || 'graveyard';
   const subject = options.subject || 'ManualDiscard';
+  const commitSelection = options.commitSelection ?? true;
   const minSelections = options.minSelections ?? 1;
   const maxSelections = options.maxSelections ?? minSelections;
   const choices = [...state.cards.values()]
@@ -2113,12 +2120,21 @@ export function createSelectCardsPromptRequest(
     .map(card => {
       const def = state.cardDefinitions.get(card.definitionId);
       const inZone = card.zone === zone;
+      const matchesFilter = !options.filter
+        || Boolean(def && matchesCardFilter(def, options.filter, {
+          state,
+          sourceInstanceId: options.sourceInstanceId,
+        }));
       return {
         cardInstanceId: card.instanceId,
         cardName: def?.name || card.instanceId,
         zone: card.zone,
-        legal: inZone,
-        reason: inZone ? undefined : `Card is not in ${zone}`,
+        legal: inZone && matchesFilter,
+        reason: !inZone
+          ? `Card is not in ${zone}`
+          : matchesFilter
+            ? undefined
+            : 'Card does not match the required selection filter',
       };
     })
     .sort((a, b) => {
@@ -2131,9 +2147,12 @@ export function createSelectCardsPromptRequest(
     kind: 'SelectCards',
     playerId,
     expectedStateId,
+    sourceInstanceId: options.sourceInstanceId,
     subject,
     zone,
     destination,
+    filter: options.filter,
+    commitSelection,
     minSelections,
     maxSelections,
     legalChoices: choices.filter(choice => choice.legal),
@@ -2231,8 +2250,19 @@ export function applySelectCardsPromptResponse(
   const legalIds = new Set(request.legalChoices.map(choice => choice.cardInstanceId));
   for (const selectedId of selectedIds) {
     const card = state.cards.get(selectedId);
-    if (!legalIds.has(selectedId) || !card || card.ownerId !== request.playerId || card.zone !== request.zone) {
-      const message = `Illegal card selection: ${cardName(state, card) || selectedId} is not in ${request.zone}.`;
+    const def = card ? state.cardDefinitions.get(card.definitionId) : undefined;
+    const matchesFilter = !request.filter
+      || Boolean(def && matchesCardFilter(def, request.filter, {
+        state,
+        sourceInstanceId: request.sourceInstanceId,
+      }));
+    if (!legalIds.has(selectedId) || !card || card.ownerId !== request.playerId || card.zone !== request.zone || !matchesFilter) {
+      const invalidChoice = request.invalidChoices.find(choice => choice.cardInstanceId === selectedId);
+      const reason = invalidChoice?.reason
+        || (!card || card.ownerId !== request.playerId || card.zone !== request.zone
+          ? `Card is not in ${request.zone}`
+          : 'Card does not match the required selection filter');
+      const message = `Illegal card selection: ${cardName(state, card) || selectedId}. ${reason}.`;
       return {
         requestId: response.requestId,
         ok: false,
@@ -2244,18 +2274,20 @@ export function applySelectCardsPromptResponse(
   }
 
   const newCards = new Map(state.cards);
-  for (const selectedId of selectedIds) {
-    const card = newCards.get(selectedId);
-    if (!card) continue;
-    newCards.set(selectedId, {
-      ...card,
-      zone: request.destination,
-      tapped: request.destination === 'battlefield' ? card.tapped : false,
-      damage: request.destination === 'battlefield' ? card.damage : 0,
-      counters: request.destination === 'battlefield' ? card.counters : {},
-    });
+  if (request.commitSelection) {
+    for (const selectedId of selectedIds) {
+      const card = newCards.get(selectedId);
+      if (!card) continue;
+      newCards.set(selectedId, {
+        ...card,
+        zone: request.destination,
+        tapped: request.destination === 'battlefield' ? card.tapped : false,
+        damage: request.destination === 'battlefield' ? card.damage : 0,
+        counters: request.destination === 'battlefield' ? card.counters : {},
+      });
+    }
   }
-  const nextState: GameState = { ...state, cards: newCards };
+  const nextState: GameState = request.commitSelection ? { ...state, cards: newCards } : state;
   const invariantReport = validateStateInvariants(nextState);
   if (!invariantReport.ok) {
     const message = `Engine invariant failed: ${invariantReport.violations[0]?.message || 'invalid state'}`;

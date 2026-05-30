@@ -76,6 +76,7 @@ import {
   type EnginePrompt,
   type EngineStateUpdate,
   type SearchLibraryPromptRequest,
+  type SelectCardsPromptRequest,
   type TargetSpec,
   summarizeActionPromptChoices,
   serializeGameState,
@@ -646,10 +647,6 @@ function toTutorCardOption(state: GameState, card: CardInstance): TutorCardOptio
 function isMoxDiamondLikeDefinition(def: CardDefinition): boolean {
   return /mox diamond/i.test(def.name)
     || /if .* would enter .* discard a land card/i.test(def.oracle_text);
-}
-
-function isLandDefinition(def: CardDefinition | undefined): boolean {
-  return def?.card_types.includes('land') === true;
 }
 
 function isPermanentTypeLine(typeLine: string): boolean {
@@ -1996,6 +1993,7 @@ export function useShelectorGame() {
   const tutorPromptRequestRef = useRef<SearchLibraryPromptRequest | null>(null);
   const pendingCastChoiceActionRef = useRef<SimpleLegalAction | null>(null);
   const pendingCastChoiceModeRef = useRef<PendingCastChoiceMode | null>(null);
+  const pendingCastSelectCardsPromptRef = useRef<SelectCardsPromptRequest | null>(null);
   const pendingPlayLandChoiceRef = useRef<PendingPlayLandChoice | null>(null);
   const pendingSearchEntryChoiceRef = useRef<PendingSearchEntryChoice | null>(null);
   const pendingTargetChoiceRef = useRef<PendingTargetChoice | null>(null);
@@ -3559,6 +3557,7 @@ export function useShelectorGame() {
       stepEffectsDoneRef.current.clear();
       pendingCastChoiceActionRef.current = null;
       pendingCastChoiceModeRef.current = null;
+      pendingCastSelectCardsPromptRef.current = null;
       pendingPlayLandChoiceRef.current = null;
       pendingSearchEntryChoiceRef.current = null;
       pendingTargetChoiceRef.current = null;
@@ -3990,12 +3989,31 @@ export function useShelectorGame() {
       pendingCastChoiceActionRef.current = null;
       const choiceMode = pendingCastChoiceModeRef.current;
       pendingCastChoiceModeRef.current = null;
+      const selectCardsPrompt = pendingCastSelectCardsPromptRef.current;
+      pendingCastSelectCardsPromptRef.current = null;
       setTutorPhase(false);
       setTutorCards([]);
       setTutorTitle('');
 
       const pendingEngineAction = pendingCastChoice._engineAction;
       if (pendingEngineAction.kind === 'CastSpell') {
+        if (choiceMode === 'discardLand' && selectCardsPrompt) {
+          const engineForChoice = engineRef.current;
+          if (!engineForChoice) return;
+          const selectResponse = applySelectCardsPromptResponse(engineForChoice, selectCardsPrompt, {
+            requestId: selectCardsPrompt.id,
+            kind: 'SelectCards',
+            playerId: humanIdRef.current,
+            selectedCardInstanceIds: [cardInstanceId],
+          });
+          recordAuthorityUpdate(selectResponse.update);
+          if (!selectResponse.ok) {
+            addMessage('system', selectResponse.message || 'That discard choice is not legal right now.');
+            syncState();
+            return;
+          }
+        }
+
         if (choiceMode === 'sacrificeCreature') {
           submitActionRef.current?.({
             ...pendingCastChoice,
@@ -4401,6 +4419,7 @@ export function useShelectorGame() {
     if (pendingCastChoice) {
       pendingCastChoiceActionRef.current = null;
       pendingCastChoiceModeRef.current = null;
+      pendingCastSelectCardsPromptRef.current = null;
       if (choiceMode === 'sacrificeCreature') {
         addMessage('player', 'No creature sacrificed.');
         submitActionRef.current?.(pendingCastChoice);
@@ -4476,6 +4495,7 @@ export function useShelectorGame() {
     // Clear any special phases
     pendingCastChoiceActionRef.current = null;
     pendingCastChoiceModeRef.current = null;
+    pendingCastSelectCardsPromptRef.current = null;
     pendingPlayLandChoiceRef.current = null;
     pendingSearchEntryChoiceRef.current = null;
     pendingTargetChoiceRef.current = null;
@@ -4878,16 +4898,28 @@ export function useShelectorGame() {
         return;
       }
 
+      pendingCastSelectCardsPromptRef.current = null;
+
       if (needsMoxDiamondDiscardChoice(engineAction, engine as GameState)) {
         const card = engine.cards.get(engineAction.cardInstanceId);
         const def = card ? engine.cardDefinitions.get(card.definitionId) : undefined;
-        const discardOptions = getCardsInZone(engine as GameState, humanIdRef.current, 'hand')
-          .filter(handCard => handCard.instanceId !== engineAction.cardInstanceId)
-          .filter(handCard => isLandDefinition(engine.cardDefinitions.get(handCard.definitionId)))
-          .flatMap(handCard => {
+        const discardRequest = createSelectCardsPromptRequest(engine as GameState, humanIdRef.current, {
+          subject: 'AdditionalCost',
+          zone: 'hand',
+          destination: 'graveyard',
+          filter: { types: ['land'] },
+          commitSelection: false,
+          minSelections: 1,
+          maxSelections: 1,
+        });
+        const discardOptions = discardRequest.legalChoices
+          .filter(choice => choice.cardInstanceId !== engineAction.cardInstanceId)
+          .flatMap(choice => {
+            const handCard = engine.cards.get(choice.cardInstanceId);
+            if (!handCard) return [];
             const option = toTutorCardOption(engine as GameState, handCard);
             return option
-              ? [{ ...option, legal: true, reason: 'Land card you can discard', destination: 'graveyard' as const }]
+              ? [{ ...option, legal: true, reason: choice.reason || 'Land card you can discard', destination: 'graveyard' as const }]
               : [];
           })
           .sort((a, b) => a.name.localeCompare(b.name));
@@ -4895,6 +4927,7 @@ export function useShelectorGame() {
         if (discardOptions.length > 0) {
           pendingCastChoiceActionRef.current = action;
           pendingCastChoiceModeRef.current = 'discardLand';
+          pendingCastSelectCardsPromptRef.current = discardRequest;
           tutorRemainingRef.current = 0;
           tutorFilterRef.current = undefined;
           tutorFilterSpecRef.current = undefined;
@@ -5808,6 +5841,7 @@ export function useShelectorGame() {
       uncommittedTapsRef.current.clear();
       stepEffectsDoneRef.current.clear();
       pendingCastChoiceActionRef.current = null;
+      pendingCastSelectCardsPromptRef.current = null;
       pendingPlayLandChoiceRef.current = null;
       pendingSearchEntryChoiceRef.current = null;
       pendingTargetChoiceRef.current = null;

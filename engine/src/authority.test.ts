@@ -894,6 +894,50 @@ describe('authority action boundary', () => {
     expect(illegal.state).toBeUndefined();
   });
 
+  it('validates additional-cost land selections without committing the discard early', () => {
+    const state = stateWithForestInHand();
+    const signet = def('arcane_signet', 'Arcane Signet', 'Artifact', '{2}');
+    state.cardDefinitions.set(signet.id, signet);
+    state.cards.set('signet_in_hand', cardInstance('signet_in_hand', signet.id, 'p1', 'hand'));
+    const forest = [...state.cards.values()].find(card => card.definitionId === 'forest' && card.ownerId === 'p1');
+    expect(forest).toBeDefined();
+
+    const request = createSelectCardsPromptRequest(state, 'p1', {
+      id: 'prompt-mox-diamond-discard',
+      subject: 'AdditionalCost',
+      zone: 'hand',
+      destination: 'graveyard',
+      filter: { types: ['land'] },
+      commitSelection: false,
+      minSelections: 1,
+      maxSelections: 1,
+      createdAt: 23,
+    });
+
+    expect(request.legalChoices.map(choice => choice.cardInstanceId)).toContain(forest!.instanceId);
+    expect(request.invalidChoices.find(choice => choice.cardInstanceId === 'signet_in_hand')?.reason)
+      .toContain('required selection filter');
+
+    const accepted = applySelectCardsPromptResponse(state, request, {
+      requestId: request.id,
+      kind: 'SelectCards',
+      playerId: 'p1',
+      selectedCardInstanceIds: [forest!.instanceId],
+    });
+    expect(accepted.ok).toBe(true);
+    expect(accepted.selectedCardInstanceIds).toEqual([forest!.instanceId]);
+    expect(accepted.state?.cards.get(forest!.instanceId)?.zone).toBe('hand');
+
+    const illegal = applySelectCardsPromptResponse(state, request, {
+      requestId: request.id,
+      kind: 'SelectCards',
+      playerId: 'p1',
+      selectedCardInstanceIds: ['signet_in_hand'],
+    });
+    expect(illegal.ok).toBe(false);
+    expect(illegal.message).toContain('required selection filter');
+  });
+
   it('includes selected target names in command labels', () => {
     const state = stateWithForestInHand();
     const source = [...state.cards.values()].find(card => card.ownerId === 'p1' && card.definitionId === 'commander');
