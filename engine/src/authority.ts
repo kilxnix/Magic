@@ -3485,7 +3485,73 @@ function libraryManipulationChoiceKeys(
     : {
         surveilTopIds: topIds.join(','),
         surveilGraveyardIds: movedIds.join(','),
-      };
+    };
+}
+
+function orderCardsFromIds(state: GameState, ids: string[]): CardInstance[] {
+  const ordered: CardInstance[] = [];
+  const seen = new Set<string>();
+  for (const id of ids) {
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const card = state.cards.get(id);
+    if (card) ordered.push(card);
+  }
+  return ordered;
+}
+
+function applyDirectLibraryManipulation(
+  state: GameState,
+  playerId: string,
+  mode: LibraryManipulationMode,
+  topCardInstanceIds: string[],
+  movedCardInstanceIds: string[],
+): GameState {
+  const movedSet = new Set([...topCardInstanceIds, ...movedCardInstanceIds]);
+  const topCards = orderCardsFromIds(state, topCardInstanceIds).map(card => ({
+    ...card,
+    zone: 'library' as Zone,
+    tapped: false,
+    damage: 0,
+  }));
+  const movedCards = orderCardsFromIds(state, movedCardInstanceIds);
+  const restLibrary = [...state.cards.values()]
+    .filter(card => card.ownerId === playerId && card.zone === 'library' && !movedSet.has(card.instanceId))
+    .map(card => ({ ...card, zone: 'library' as Zone }));
+
+  const nonLibraryEntries: [string, CardInstance][] = [];
+  for (const [id, card] of state.cards) {
+    if (card.ownerId === playerId && card.zone === 'library') continue;
+    nonLibraryEntries.push([id, card]);
+  }
+
+  const newCards = new Map<string, CardInstance>();
+  for (const [id, card] of nonLibraryEntries) newCards.set(id, card);
+  for (const card of topCards) newCards.set(card.instanceId, card);
+  for (const card of restLibrary) newCards.set(card.instanceId, card);
+
+  if (mode === 'scry') {
+    for (const card of movedCards) {
+      newCards.set(card.instanceId, {
+        ...card,
+        zone: 'library',
+        tapped: false,
+        damage: 0,
+      });
+    }
+  } else {
+    for (const card of movedCards) {
+      newCards.set(card.instanceId, {
+        ...card,
+        zone: 'graveyard',
+        tapped: false,
+        damage: 0,
+        counters: {},
+      });
+    }
+  }
+
+  return { ...state, cards: newCards };
 }
 
 export function createLibraryManipulationPromptRequest(
@@ -3606,6 +3672,26 @@ export function applyLibraryManipulationPromptResponse(
       },
     } as StackItem;
     nextState = { ...state, stack };
+  } else {
+    nextState = applyDirectLibraryManipulation(
+      state,
+      request.playerId,
+      request.mode,
+      response.topCardInstanceIds,
+      response.movedCardInstanceIds,
+    );
+  }
+
+  const invariantReport = validateStateInvariants(nextState);
+  if (!invariantReport.ok) {
+    const message = `Engine invariant failed: ${invariantReport.violations[0]?.message || 'invalid state'}`;
+    return {
+      requestId: response.requestId,
+      ok: false,
+      reason: 'invariant_violation',
+      message,
+      update: libraryManipulationRejectUpdate(state, request, response, 'invariant_violation', message),
+    };
   }
 
   return {

@@ -1800,6 +1800,7 @@ describe('authority action boundary', () => {
       casterId: 'p1',
       targets: [],
     }];
+    state.cards.set('sisay_1', { ...state.cards.get('sisay_1')!, zone: 'stack' });
     const request = createLibraryManipulationPromptRequest(state, 'p1', 'surveil', 3, {
       id: 'prompt-surveil-three',
       stackItemId: 'stack-surveil',
@@ -1852,6 +1853,50 @@ describe('authority action boundary', () => {
     });
     expect(illegal.ok).toBe(false);
     expect(illegal.message).toContain('choose each revealed card exactly once');
+  });
+
+  it('commits direct scry and surveil choices to library and graveyard order', () => {
+    const scryState = stateWithSisaySearchChoices();
+    const scryRequest = createLibraryManipulationPromptRequest(scryState, 'p1', 'scry', 3, {
+      id: 'prompt-scry-direct',
+      createdAt: 25,
+    });
+    const scryRevealed = scryRequest.legalChoices.map(choice => choice.cardInstanceId);
+
+    const scryAccepted = applyLibraryManipulationPromptResponse(scryState, scryRequest, {
+      requestId: scryRequest.id,
+      kind: 'LibraryManipulation',
+      playerId: 'p1',
+      topCardInstanceIds: [scryRevealed[2], scryRevealed[0]],
+      movedCardInstanceIds: [scryRevealed[1]],
+    });
+    expect(scryAccepted.ok).toBe(true);
+    expect([...scryAccepted.state!.cards.values()]
+      .filter(card => card.ownerId === 'p1' && card.zone === 'library')
+      .map(card => card.instanceId))
+      .toEqual([scryRevealed[2], scryRevealed[0], 'counterspell_1', 'blood_crypt_1', scryRevealed[1]]);
+
+    const surveilState = stateWithSisaySearchChoices();
+    const surveilRequest = createLibraryManipulationPromptRequest(surveilState, 'p1', 'surveil', 3, {
+      id: 'prompt-surveil-direct',
+      createdAt: 26,
+    });
+    const surveilRevealed = surveilRequest.legalChoices.map(choice => choice.cardInstanceId);
+
+    const surveilAccepted = applyLibraryManipulationPromptResponse(surveilState, surveilRequest, {
+      requestId: surveilRequest.id,
+      kind: 'LibraryManipulation',
+      playerId: 'p1',
+      topCardInstanceIds: [surveilRevealed[1]],
+      movedCardInstanceIds: [surveilRevealed[0], surveilRevealed[2]],
+    });
+    expect(surveilAccepted.ok).toBe(true);
+    expect([...surveilAccepted.state!.cards.values()]
+      .filter(card => card.ownerId === 'p1' && card.zone === 'library')
+      .map(card => card.instanceId))
+      .toEqual([surveilRevealed[1], 'counterspell_1', 'blood_crypt_1']);
+    expect(surveilAccepted.state!.cards.get(surveilRevealed[0])?.zone).toBe('graveyard');
+    expect(surveilAccepted.state!.cards.get(surveilRevealed[2])?.zone).toBe('graveyard');
   });
 
   it('validates modal mode choices before a modal cast is submitted', () => {
