@@ -449,6 +449,7 @@ function generateActivateAbilityActions(state: GameState, playerId: string): Act
  */
 function generateAttackerActions(state: GameState, playerId: string): DeclareAttackersAction[] {
   if (state.step !== 'declare_attackers') return [];
+  if (state.combat) return [];
 
   const playerIndex = state.players.findIndex(p => p.id === playerId);
   if (state.activePlayerIndex !== playerIndex) return [];

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { initGameFromDecks, resetInstanceCounter, type GameStateWithAI } from '../game-init';
 import { createCardLookup, type GeneratedDeck, type ScryfallCard } from '../cards/deck-loader';
 import { getLegalActions, getLegalTargets } from '../ai/legal-actions';
-import { dispatchAIAction } from '../ai/agent';
+import { applyClientActionRequest, createClientActionRequest } from '../authority';
 import { advanceStep, performUntapStep } from '../turn-manager';
 import { allPlayersPassed } from '../priority';
 import { putTriggersOnStack, resolveTopOfStack } from '../stack';
@@ -374,10 +374,6 @@ function stepChaosGame(initial: GameStateWithAI, seed: number, maxActions: numbe
     let actions = declaration?.actions ?? getLegalActions(state, playerId);
     const stepActionKey = `${state.turnNumber}:${state.step}:${playerId}:${state.stack.length > 0 ? 'stack' : 'open'}`;
 
-    if (!declaration && (state.step === 'declare_attackers' || state.step === 'declare_blockers')) {
-      actions = [{ kind: 'PassPriority' }];
-    }
-
     if (!declaration && state.stack.length === 0) {
       // Keep the chaos run action-rich but bounded: if the active player has
       // already used every non-pass legal action, let the turn/phase advance.
@@ -399,7 +395,11 @@ function stepChaosGame(initial: GameStateWithAI, seed: number, maxActions: numbe
     }
 
     const chosen = chooseAction(actions, state, rng);
-    const result = dispatchAIAction(state, playerId, chosen);
+    const request = createClientActionRequest(state, playerId, chosen, {
+      source: 'ai',
+      label: chosen.kind,
+    });
+    const result = applyClientActionRequest(state, request);
     expect(
       result.ok,
       `seed ${seed} action ${actionIndex} ${playerId} ${chosen.kind}: ${result.ok ? 'ok' : result.message}`,
