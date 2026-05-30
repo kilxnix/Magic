@@ -9,24 +9,67 @@ export type OverrideDefinition =
   | { kind: 'ETB'; ability: TriggeredAbility; targets: TargetSpec[] }
   | { kind: 'Activated'; ability: ActivatedAbility };
 
+export interface OverrideMetadata {
+  reason: string;
+  owner: string;
+  fixtureCards: string[];
+  addedAt?: string;
+}
+
+export interface OverrideRegistryEntry {
+  keyType: 'definitionId' | 'name';
+  key: string;
+  override: OverrideDefinition;
+  metadata: OverrideMetadata;
+}
+
 // Registry keyed by definitionId
 const overridesByDefinitionId = new Map<string, OverrideDefinition>();
+const overrideMetadataByDefinitionId = new Map<string, OverrideMetadata>();
 
 // Fallback registry keyed by normalized card name (lowercase)
 const overridesByName = new Map<string, OverrideDefinition>();
+const overrideMetadataByName = new Map<string, OverrideMetadata>();
+
+function defaultMetadata(fixtureCard: string, keyType: 'definitionId' | 'name'): OverrideMetadata {
+  return {
+    reason: `Legacy ${keyType} override; add a focused parser/engine fixture before removing it.`,
+    owner: 'engine',
+    fixtureCards: [fixtureCard],
+  };
+}
 
 /**
  * Register an override by definitionId.
  */
-export function registerOverrideById(definitionId: string, override: OverrideDefinition): void {
+export function registerOverrideById(
+  definitionId: string,
+  override: OverrideDefinition,
+  metadata: Partial<OverrideMetadata> = {},
+): void {
   overridesByDefinitionId.set(definitionId, override);
+  overrideMetadataByDefinitionId.set(definitionId, {
+    ...defaultMetadata(definitionId, 'definitionId'),
+    ...metadata,
+    fixtureCards: metadata.fixtureCards?.length ? metadata.fixtureCards : [definitionId],
+  });
 }
 
 /**
  * Register an override by card name (case-insensitive).
  */
-export function registerOverrideByName(cardName: string, override: OverrideDefinition): void {
-  overridesByName.set(cardName.toLowerCase(), override);
+export function registerOverrideByName(
+  cardName: string,
+  override: OverrideDefinition,
+  metadata: Partial<OverrideMetadata> = {},
+): void {
+  const key = cardName.toLowerCase();
+  overridesByName.set(key, override);
+  overrideMetadataByName.set(key, {
+    ...defaultMetadata(cardName, 'name'),
+    ...metadata,
+    fixtureCards: metadata.fixtureCards?.length ? metadata.fixtureCards : [cardName],
+  });
 }
 
 /**
@@ -52,12 +95,38 @@ export function hasOverride(definitionId: string, cardName: string): boolean {
   return getOverride(definitionId, cardName) !== null;
 }
 
+export function getOverrideMetadata(definitionId: string, cardName: string): OverrideMetadata | null {
+  const byId = overrideMetadataByDefinitionId.get(definitionId);
+  if (byId) return byId;
+  const byName = overrideMetadataByName.get(cardName.toLowerCase());
+  if (byName) return byName;
+  return null;
+}
+
+export function getOverrideRegistryEntries(): OverrideRegistryEntry[] {
+  const byId: OverrideRegistryEntry[] = [...overridesByDefinitionId.entries()].map(([key, override]) => ({
+    keyType: 'definitionId',
+    key,
+    override,
+    metadata: overrideMetadataByDefinitionId.get(key) || defaultMetadata(key, 'definitionId'),
+  }));
+  const byName: OverrideRegistryEntry[] = [...overridesByName.entries()].map(([key, override]) => ({
+    keyType: 'name',
+    key,
+    override,
+    metadata: overrideMetadataByName.get(key) || defaultMetadata(key, 'name'),
+  }));
+  return [...byId, ...byName].sort((a, b) => `${a.keyType}:${a.key}`.localeCompare(`${b.keyType}:${b.key}`));
+}
+
 /**
  * Clear all overrides (useful for testing).
  */
 export function clearOverrides(): void {
   overridesByDefinitionId.clear();
   overridesByName.clear();
+  overrideMetadataByDefinitionId.clear();
+  overrideMetadataByName.clear();
 }
 
 /**

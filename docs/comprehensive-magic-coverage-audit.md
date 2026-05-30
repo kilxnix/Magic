@@ -46,6 +46,6 @@ Area table:
 | P1 | partial | graveyard-exile | Add zone permission engine for casting/activating from non-hand zones. |
 | P1 | partial | keywords-evergreen | Audit every evergreen keyword and bind each to at least one fixture card. |
 | P1 | partial | manual-correction-tools | Manual repair tools now cover permanent counters, player counters/poison, commander damage, token creation, zone movement, marked damage, mana untap, attach/detach corrections, and validated turn/phase correction; continue adding replay-audited correction summaries and deeper correction review UX. |
-| P1 | partial | manual-overrides | Add override registry metadata with reason, owner, and fixture card. |
+| P1 | partial | manual-overrides | Override registry entries now expose reason, owner, and fixture-card metadata for coverage reporting; continue filling specific owner/reason metadata for every legacy override and linking each to a regression fixture. |
 | P1 | partial | multiplayer | Bridge rooms to authoritative engine sessions and add four-player combat/priority browser proof. |
 | P1 | partial | rules-update-process | Wire edge-case generation and coverage audit into a scheduled certification run after every card-data refresh. |

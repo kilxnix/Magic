@@ -6,6 +6,8 @@ import {
   hasOverride,
   clearOverrides,
   getOverrideCounts,
+  getOverrideMetadata,
+  getOverrideRegistryEntries,
 } from './overrides';
 import type { OverrideDefinition } from './overrides';
 
@@ -32,6 +34,21 @@ describe('overrides registry', () => {
       const result = getOverride('test-def-123', 'Some Card');
       expect(result).toBe(testOverride);
     });
+
+    it('stores metadata for definitionId overrides', () => {
+      registerOverrideById('metadata-def-123', testOverride, {
+        reason: 'Parser cannot represent this replacement effect yet.',
+        owner: 'rules-engine',
+        fixtureCards: ['Metadata Fixture'],
+      });
+
+      const metadata = getOverrideMetadata('metadata-def-123', 'Unknown');
+      expect(metadata).toMatchObject({
+        reason: 'Parser cannot represent this replacement effect yet.',
+        owner: 'rules-engine',
+        fixtureCards: ['Metadata Fixture'],
+      });
+    });
   });
 
   describe('registerOverrideByName', () => {
@@ -47,6 +64,15 @@ describe('overrides registry', () => {
 
       const result = getOverride('nonexistent-id', 'upper case card');
       expect(result).toBe(testOverride);
+    });
+
+    it('stores default metadata for name overrides', () => {
+      registerOverrideByName('Default Metadata Card', testOverride);
+
+      const metadata = getOverrideMetadata('unknown-id', 'default metadata card');
+      expect(metadata?.owner).toBe('engine');
+      expect(metadata?.fixtureCards).toEqual(['Default Metadata Card']);
+      expect(metadata?.reason).toContain('Legacy name override');
     });
   });
 
@@ -151,6 +177,26 @@ describe('overrides registry', () => {
       const counts = getOverrideCounts();
       // Pre-registered overrides
       expect(counts.byName).toBeGreaterThanOrEqual(4);
+    });
+  });
+
+  describe('getOverrideRegistryEntries', () => {
+    it('lists overrides with metadata for coverage reporting', () => {
+      registerOverrideByName('Registry Report Card', testOverride, {
+        reason: 'Golden fixture for override reporting.',
+        owner: 'qa',
+        fixtureCards: ['Registry Report Card'],
+      });
+
+      const entries = getOverrideRegistryEntries();
+      const entry = entries.find(item => item.key === 'registry report card');
+      expect(entry).toBeTruthy();
+      expect(entry?.keyType).toBe('name');
+      expect(entry?.metadata).toMatchObject({
+        reason: 'Golden fixture for override reporting.',
+        owner: 'qa',
+        fixtureCards: ['Registry Report Card'],
+      });
     });
   });
 });

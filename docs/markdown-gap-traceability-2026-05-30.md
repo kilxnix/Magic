@@ -79,7 +79,7 @@ Minimum acceptance bar from that file:
 | Fix 11: Continuous Effects And Layers | partial | Practical layer slices exist; not full Arena-like layer fidelity. |
 | Fix 12: Presentation Events | partial | Feed/last-played/modal polish exists, d20 rolls now persist through the engine authority update as DiceRolled events with a playfield toast, and attachment corrections emit validated manual events. This is still not a full animation/event pipeline. |
 | Fix 13: AI Must Use Same Engine | partial | Better action wrappers; not full AI legality/hidden-info proof. |
-| Fix 14: Unsupported Rules Handling | partial | Some unsupported actions fail clearly; full card support/fallback coverage incomplete. |
+| Fix 14: Unsupported Rules Handling | partial | Some unsupported actions fail clearly, and manual override entries now expose metadata for reason/owner/fixture reporting; full card support/fallback coverage incomplete. |
 | Fix 15: Test Plan | partial | Many tests added; listed golden tests are not all fully browser-proven. |
 | Fix 16: Development Roadmap | partial | Phase 1-ish slices landed; phases 2-6 are not complete. |
 | Fix 17: UI Changes | partial | Hamburger/action dock/search prompt improved; full Arena-like UI not done. |
@@ -140,7 +140,7 @@ Minimum acceptance bar from that file:
 | 12.3 AI Legality And Hidden Information | partial |
 | 14.1 Need Golden Rule Tests | partial |
 | 14.2 Need Replay Regression Harness | not done |
-| 14.3 Need Unsupported-Card Surfacing | partial |
+| 14.3 Need Unsupported-Card Surfacing | partial; override metadata can now feed support/coverage reports, but game-start unsupported-card surfacing is not complete |
 
 ## `deckreps_mtga_gap_analysis.md`
 
