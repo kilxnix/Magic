@@ -2,6 +2,8 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { tryPlayLand, tryTapLandForMana, tryUntapManaSource, tryCastSpell, tryActivateAbility, tryPassPriority, tryDeclareAttackers, tryDeclareBlockers, tryEquip, tryAdjustCounters, tryAdjustPlayerCounter, tryAdjustCommanderDamage, tryMoveCardManually, tryAdjustDamage, tryCreateManualToken, tryAttachCardManually, trySetPhaseStepManually, resetLoopDetector } from './actions-public';
 import { makeTestState } from './__tests__/test-helpers';
 import { populateParsedCache } from './cards/card-parser-cache';
+import { getEffectivePower, getEffectiveToughness } from './effects/continuous';
+import { instanceHasKeyword } from './keywords';
 import type { CardDefinition, GameState } from './types';
 
 function addBattlefieldManaCreature(
@@ -1076,6 +1078,35 @@ describe('tryDeclareBlockers', () => {
 });
 
 describe('tryEquip', () => {
+  it('attaches equipment, pays the equip cost, and applies parsed equipment bonuses', () => {
+    const state = makeTestState({ handEquipment: true, battlefieldCreature: true, manaPool: { C: 1 } });
+    const equipment = state.cards.get('equipment_0')!;
+    const parsedEquipmentDef = populateParsedCache({
+      id: equipment.definitionId,
+      name: 'Goblin Morningstar',
+      type_line: 'Artifact - Equipment',
+      oracle_text: 'Equipped creature gets +1/+0 and has trample. Equip {1}.',
+      mana_cost: '{1}{R}',
+      cmc: 2,
+      colors: [],
+      color_identity: ['R'],
+      keywords: [],
+      card_types: ['artifact'],
+    });
+    state.cardDefinitions.set(parsedEquipmentDef.id, parsedEquipmentDef);
+    state.cards.set('equipment_0', { ...equipment, zone: 'battlefield' });
+
+    const result = tryEquip(state, 'human', 'equipment_0', 'vanilla_creature_0');
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.cards.get('equipment_0')?.attachedTo).toBe('vanilla_creature_0');
+    expect(result.state.players[0].manaPool.C).toBe(0);
+    expect(getEffectivePower(result.state, 'vanilla_creature_0')).toBe(3);
+    expect(getEffectiveToughness(result.state, 'vanilla_creature_0')).toBe(2);
+    expect(instanceHasKeyword(result.state, 'vanilla_creature_0', 'Trample')).toBe(true);
+  });
+
   it('returns not_in_zone when equipment not on battlefield', () => {
     const state = makeTestState({ handEquipment: true, battlefieldCreature: true });
     const equip = [...state.cards.values()].find(c => c.zone === 'hand')!;

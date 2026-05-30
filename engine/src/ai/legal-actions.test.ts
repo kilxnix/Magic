@@ -55,6 +55,9 @@ function addCard(
     card_types: def.card_types ?? ['creature'],
     power: def.power,
     toughness: def.toughness,
+    isEquipment: def.isEquipment,
+    equipCost: def.equipCost,
+    equipmentBonus: def.equipmentBonus,
   };
 
   const fullDef = populateParsedCache(baseDef);
@@ -97,6 +100,81 @@ describe('getLegalActions', () => {
     const state = createTestState({ priorityPlayerIndex: 0 });
     const actions = getLegalActions(state, 'p1');
     expect(actions.some(a => a.kind === 'PassPriority')).toBe(true);
+  });
+
+  it('generates equip actions for payable equipment and controlled creatures', () => {
+    const state = createTestState({
+      priorityPlayerIndex: 0,
+      activePlayerIndex: 0,
+      phase: 'precombat_main',
+    });
+    state.players[0] = {
+      ...state.players[0],
+      manaPool: { ...emptyManaPool(), C: 1 },
+    };
+
+    addCard(state, 'morningstar', 'p1', 'battlefield', {
+      name: 'Goblin Morningstar',
+      type_line: 'Artifact - Equipment',
+      oracle_text: 'Equipped creature gets +1/+0 and has trample. Equip {1}.',
+      card_types: ['artifact'],
+      isEquipment: true,
+      equipCost: { ...emptyManaPool(), generic: 1 },
+      equipmentBonus: { power: 1, toughness: 0, keywords: ['Trample'] },
+    });
+    addCard(state, 'goblin', 'p1', 'battlefield', {
+      name: 'Goblin Token',
+      type_line: 'Creature - Goblin',
+      card_types: ['creature'],
+      power: 1,
+      toughness: 1,
+    });
+
+    const equipActions = getLegalActions(state, 'p1').filter(action => action.kind === 'Equip');
+
+    expect(equipActions).toEqual([
+      {
+        kind: 'Equip',
+        equipmentInstanceId: 'morningstar',
+        targetCreatureId: 'goblin',
+      },
+    ]);
+  });
+
+  it('does not offer equip actions when the stack is occupied', () => {
+    const state = createTestState({
+      priorityPlayerIndex: 0,
+      activePlayerIndex: 0,
+      phase: 'precombat_main',
+      stack: [{
+        id: 'spell-1',
+        controllerId: 'p1',
+        cardInstanceId: 'spell-card',
+        effects: [],
+        targets: [],
+      }],
+    });
+    state.players[0] = {
+      ...state.players[0],
+      manaPool: { ...emptyManaPool(), C: 1 },
+    };
+
+    addCard(state, 'morningstar', 'p1', 'battlefield', {
+      name: 'Goblin Morningstar',
+      type_line: 'Artifact - Equipment',
+      card_types: ['artifact'],
+      isEquipment: true,
+      equipCost: { ...emptyManaPool(), generic: 1 },
+    });
+    addCard(state, 'goblin', 'p1', 'battlefield', {
+      name: 'Goblin Token',
+      type_line: 'Creature - Goblin',
+      card_types: ['creature'],
+      power: 1,
+      toughness: 1,
+    });
+
+    expect(getLegalActions(state, 'p1').some(action => action.kind === 'Equip')).toBe(false);
   });
 
   describe('PlayLand actions', () => {

@@ -2383,6 +2383,14 @@ export function GameBoard({
   );
   const targetActionById = new Map<string, SimpleLegalAction>();
   for (const action of legalActions) {
+    if (action.targetChoices?.length) {
+      for (const choice of action.targetChoices) {
+        if (!targetActionById.has(choice.targetId)) {
+          targetActionById.set(choice.targetId, choice.action);
+        }
+      }
+      continue;
+    }
     const rawTargets = (action._engineAction as { targets?: unknown }).targets;
     const targets = Array.isArray(rawTargets)
       ? rawTargets.filter((target): target is string => typeof target === 'string')
