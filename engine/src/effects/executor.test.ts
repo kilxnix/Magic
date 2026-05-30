@@ -1277,6 +1277,83 @@ describe('EachOpponent and AllCreatures effects', () => {
     });
   });
 
+  describe('Sacrifice choice effects', () => {
+    it('uses a selected creature for sacrifice-self-unless effects instead of auto-picking', () => {
+      const state = createTestState();
+      state.cardDefinitions.set('def-brain', {
+        id: 'def-brain',
+        name: 'Brain Gorgers',
+        type_line: 'Creature - Zombie',
+        oracle_text: 'When Brain Gorgers enters the battlefield, sacrifice it unless target opponent sacrifices a creature.',
+        mana_cost: '{3}{B}',
+        cmc: 4,
+        colors: ['B'],
+        color_identity: ['B'],
+        keywords: [],
+        power: 4,
+        toughness: 2,
+        card_types: ['creature'],
+      });
+      state.cards.set('brain-1', {
+        instanceId: 'brain-1',
+        definitionId: 'def-brain',
+        ownerId: 'player-1',
+        zone: 'battlefield',
+        tapped: false,
+        summoningSick: false,
+        counters: {},
+        damage: 0,
+        isCommander: false,
+      });
+      state.cards.set('opponent-bad-sac', {
+        instanceId: 'opponent-bad-sac',
+        definitionId: 'def-creature',
+        ownerId: 'player-2',
+        zone: 'battlefield',
+        tapped: false,
+        summoningSick: false,
+        counters: {},
+        damage: 0,
+        isCommander: false,
+      });
+      state.cards.set('opponent-selected-sac', {
+        instanceId: 'opponent-selected-sac',
+        definitionId: 'def-creature',
+        ownerId: 'player-2',
+        zone: 'battlefield',
+        tapped: false,
+        summoningSick: false,
+        counters: {},
+        damage: 0,
+        isCommander: false,
+      });
+
+      const effects: Effect[] = [{
+        kind: 'SacrificeSelfUnlessPlayerSacrifices',
+        player: { kind: 'Chosen', targetId: 'target_1' },
+        count: 1,
+        filter: { types: ['creature'] },
+      }];
+
+      const result = executeEffects(
+        state,
+        effects,
+        'player-1',
+        ['player-2'],
+        [{ id: 'target_1' }],
+        0,
+        {
+          sourceInstanceId: 'brain-1',
+          namedCardChoices: { 'sacrificeCardId:player-2': 'opponent-selected-sac' },
+        },
+      );
+
+      expect(result.cards.get('brain-1')?.zone).toBe('battlefield');
+      expect(result.cards.get('opponent-selected-sac')?.zone).toBe('graveyard');
+      expect(result.cards.get('opponent-bad-sac')?.zone).toBe('battlefield');
+    });
+  });
+
   describe('CounterSpell effect', () => {
     it('removes the countered spell from the stack and puts it into graveyard', () => {
       const state = createTestState();

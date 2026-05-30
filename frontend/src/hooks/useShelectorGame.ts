@@ -846,6 +846,13 @@ type PendingHandTopLibraryChoice = {
   count: number;
 };
 
+type PendingStackSacrificeChoice = {
+  promptRequest: SelectCardsPromptRequest;
+  stackItemId: string;
+  sourceName: string;
+  mandatory: boolean;
+};
+
 type PendingCastChoiceMode = 'discardLand' | 'sacrificeCreature' | 'creatureType';
 
 function toTutorCardOption(state: GameState, card: CardInstance): TutorCardOption | null {
@@ -1102,6 +1109,84 @@ function libraryChoiceInfoFromEffects(effects: unknown[] | undefined): { mode: '
     mode: effect.kind === 'Scry' ? 'scry' : 'surveil',
     count: amountRefToChoiceCount(effect.count),
   };
+}
+
+type StackSacrificeChoiceInfo = {
+  effectKind: 'Sacrifice' | 'SacrificeSelfUnlessPlayerSacrifices';
+  filter?: CardFilter;
+  count: number;
+  choiceKey: string;
+  mandatory: boolean;
+};
+
+function targetRefIncludesHuman(
+  state: GameState,
+  targetRef: unknown,
+  humanId: string,
+  controllerId: string | undefined,
+  chosenTargets: string[],
+): boolean {
+  if (!targetRef || typeof targetRef !== 'object') return false;
+  const ref = targetRef as { kind?: string; playerId?: string; targetId?: string };
+  switch (ref.kind) {
+    case 'Player':
+      return ref.playerId === humanId;
+    case 'Controller':
+      return controllerId === humanId;
+    case 'ActivePlayer':
+      return state.players[state.activePlayerIndex]?.id === humanId;
+    case 'EachPlayer':
+      return true;
+    case 'EachOpponent':
+      return !!controllerId && controllerId !== humanId;
+    case 'Chosen':
+      return ref.targetId === humanId || chosenTargets.includes(humanId);
+    case 'TargetController': {
+      if (ref.targetId === humanId || chosenTargets.includes(humanId)) return true;
+      const targetCard = ref.targetId ? state.cards.get(ref.targetId) : undefined;
+      return targetCard?.ownerId === humanId;
+    }
+    default:
+      return false;
+  }
+}
+
+function stackSacrificeChoiceInfoFromEffects(
+  state: GameState,
+  effects: unknown[] | undefined,
+  humanId: string,
+  controllerId: string | undefined,
+  chosenTargets: string[],
+  namedCardChoices: Record<string, string> | undefined,
+): StackSacrificeChoiceInfo | undefined {
+  if (!Array.isArray(effects)) return undefined;
+
+  for (const effect of effects) {
+    if (!effect || typeof effect !== 'object') continue;
+    const candidate = effect as {
+      kind?: string;
+      player?: unknown;
+      filter?: CardFilter;
+      count?: unknown;
+    };
+    if (candidate.kind !== 'Sacrifice' && candidate.kind !== 'SacrificeSelfUnlessPlayerSacrifices') continue;
+    if (!targetRefIncludesHuman(state, candidate.player, humanId, controllerId, chosenTargets)) continue;
+
+    const count = Math.max(1, amountRefToChoiceCount(candidate.count));
+    const choiceKey = candidate.kind === 'Sacrifice'
+      ? `sacrificeCardIds:${humanId}`
+      : `sacrificeCardId:${humanId}`;
+    if (Object.prototype.hasOwnProperty.call(namedCardChoices || {}, choiceKey)) continue;
+
+    return {
+      effectKind: candidate.kind,
+      filter: candidate.filter,
+      count,
+      choiceKey,
+      mandatory: candidate.kind === 'Sacrifice',
+    };
+  }
+  return undefined;
 }
 
 function controllerIdForStackItem(item: StackItem | undefined): string | undefined {
@@ -2190,6 +2275,7 @@ export function useShelectorGame() {
   const pendingSearchEntryChoiceRef = useRef<PendingSearchEntryChoice | null>(null);
   const pendingTargetChoiceRef = useRef<PendingTargetChoice | null>(null);
   const pendingHandTopLibraryChoiceRef = useRef<PendingHandTopLibraryChoice | null>(null);
+  const pendingStackSacrificeChoiceRef = useRef<PendingStackSacrificeChoice | null>(null);
   const pendingLibraryChoiceRef = useRef<{ stackItemId: string; mode: 'scry' | 'surveil' } | null>(null);
   const libraryManipulationPromptRequestRef = useRef<LibraryManipulationPromptRequest | null>(null);
   const [optionalTriggerChoice, setOptionalTriggerChoice] = useState<OptionalTriggerChoice | null>(null);
@@ -3431,6 +3517,119 @@ export function useShelectorGame() {
         return true;
       };
 
+      const tryPauseForStackSacrificeChoice = (): boolean => {
+        if (state.stack.length === 0) return false;
+        const top = state.stack[state.stack.length - 1] as StackItem & { namedCardChoices?: Record<string, string> };
+        if (!top) return false;
+
+        let controllerId: string | undefined;
+        let sourceName = 'Sacrifice choice';
+        let sourceInstanceId: string | undefined;
+        let effects: unknown[] | undefined;
+        let chosenTargets: string[] = [];
+
+        if (top.kind === 'Spell') {
+          controllerId = top.casterId;
+          sourceInstanceId = top.cardInstanceId;
+          chosenTargets = top.targets || [];
+          const spellCard = state.cards.get(top.cardInstanceId);
+          const spellDef = spellCard ? getCardDefinition(state, spellCard) : undefined;
+          sourceName = spellDef?.name || sourceName;
+          effects = spellEffectsForChoicePrompt(state, top);
+        } else if (top.kind === 'ActivatedAbility') {
+          controllerId = top.controllerId;
+          sourceInstanceId = top.sourceInstanceId;
+          chosenTargets = top.targets || [];
+          const sourceCard = state.cards.get(top.sourceInstanceId);
+          const sourceDef = sourceCard ? getCardDefinition(state, sourceCard) : undefined;
+          sourceName = sourceDef?.name || sourceName;
+          effects = top.ability.effects;
+        } else if (top.kind === 'TriggeredAbility') {
+          controllerId = top.controllerId;
+          sourceInstanceId = top.sourceInstanceId;
+          chosenTargets = top.targets || [];
+          const sourceCard = state.cards.get(top.sourceInstanceId);
+          const sourceDef = sourceCard ? getCardDefinition(state, sourceCard) : undefined;
+          sourceName = sourceDef?.name || sourceName;
+          effects = top.ability.effects;
+        }
+
+        const info = stackSacrificeChoiceInfoFromEffects(
+          state,
+          effects,
+          humanIdRef.current,
+          controllerId,
+          chosenTargets,
+          top.namedCardChoices,
+        );
+        if (!info || info.count <= 0) return false;
+
+        let promptRequest = createSelectCardsPromptRequest(state, humanIdRef.current, {
+          subject: 'SacrificeChoice',
+          zone: 'battlefield',
+          destination: 'graveyard',
+          filter: info.filter,
+          commitSelection: false,
+          stackItemId: top.id,
+          choiceKey: info.choiceKey,
+          sourceInstanceId,
+          minSelections: info.count,
+          maxSelections: info.count,
+        });
+        const actualCount = Math.min(info.count, promptRequest.legalChoices.length);
+        if (actualCount <= 0) return false;
+        if (actualCount !== info.count) {
+          promptRequest = createSelectCardsPromptRequest(state, humanIdRef.current, {
+            subject: 'SacrificeChoice',
+            zone: 'battlefield',
+            destination: 'graveyard',
+            filter: info.filter,
+            commitSelection: false,
+            stackItemId: top.id,
+            choiceKey: info.choiceKey,
+            sourceInstanceId,
+            minSelections: actualCount,
+            maxSelections: actualCount,
+          });
+        }
+
+        const cards = promptRequest.legalChoices
+          .map(choice => state.cards.get(choice.cardInstanceId))
+          .filter((card): card is CardInstance => Boolean(card))
+          .map(card => toTutorCardOption(state, card))
+          .filter((option): option is TutorCardOption => !!option)
+          .map(option => ({
+            ...option,
+            legal: true,
+            reason: info.mandatory
+              ? 'Permanent you must sacrifice for the resolving effect'
+              : 'Permanent you may sacrifice for the resolving effect',
+            destination: 'graveyard' as const,
+          }));
+        if (cards.length === 0) return false;
+
+        engineRef.current = state as GameStateWithAI;
+        pendingStackSacrificeChoiceRef.current = {
+          promptRequest,
+          stackItemId: top.id,
+          sourceName,
+          mandatory: info.mandatory,
+        };
+        tutorRemainingRef.current = 0;
+        tutorFilterRef.current = undefined;
+        tutorFilterSpecRef.current = info.filter as SearchFilterSpec | undefined;
+        tutorTappedRef.current = false;
+        tutorShuffleRef.current = false;
+        tutorSourceNameRef.current = sourceName;
+        tutorSourceInstanceIdRef.current = sourceInstanceId;
+        tutorPromptRequestRef.current = null;
+        setTutorTitle(`${sourceName}: choose ${actualCount} permanent${actualCount === 1 ? '' : 's'} to sacrifice${info.mandatory ? '' : ', or cancel to decline'}`);
+        setTutorCards(cards);
+        setTutorPhase(true);
+        messages.push({ role: 'system', text: `${sourceName} - choose sacrifice${actualCount === 1 ? '' : 's'} before resolution.` });
+        return true;
+      };
+
       const allPlayersHavePassed = (s: GameState): boolean =>
         s.hasPriorityPassed.every((passed, index) => passed || s.players[index].hasLost);
 
@@ -3508,6 +3707,7 @@ export function useShelectorGame() {
             // does not have to click through every opponent phase.
             if (state.hasPriorityPassed.every((p, i) => p || state.players[i].hasLost)) {
               console.log(`  -> all passed, resolving stack (${state.stack.length} items)`);
+              if (tryPauseForStackSacrificeChoice()) break;
               if (tryPauseForLibraryChoice()) break;
               if (tryResolveTutor()) break;
               { const taxResult = resolveTaxTrigger(state, messages); if (taxResult.pause) break; if (taxResult.handled) { state = taxResult.state; } else { const resolved = resolveTopOfStackAndPauseForFollowUp(state); state = resolved.state; if (resolved.pause) break; } }
@@ -3537,6 +3737,7 @@ export function useShelectorGame() {
                 // Check if all players have now passed (stack resolves)
                 if (state.hasPriorityPassed.every((p, i) => p || state.players[i].hasLost)) {
                   console.log(`  -> all passed, resolving stack (${state.stack.length} items)`);
+                  if (tryPauseForStackSacrificeChoice()) break;
                   if (tryPauseForLibraryChoice()) break;
                   if (tryResolveTutor()) break;
                   { const taxResult = resolveTaxTrigger(state, messages); if (taxResult.pause) break; if (taxResult.handled) { state = taxResult.state; } else { const resolved = resolveTopOfStackAndPauseForFollowUp(state); state = resolved.state; if (resolved.pause) break; } }
@@ -3570,6 +3771,7 @@ export function useShelectorGame() {
 
           // Fallback: no valid priority player — just resolve
           console.log(`  -> resolving stack (${state.stack.length} items)`);
+          if (tryPauseForStackSacrificeChoice()) break;
           if (tryPauseForLibraryChoice()) break;
           if (tryResolveTutor()) break;
           { const taxResult = resolveTaxTrigger(state, messages); if (taxResult.pause) break; if (taxResult.handled) { state = taxResult.state; } else { const resolved = resolveTopOfStackAndPauseForFollowUp(state); state = resolved.state; if (resolved.pause) break; } }
@@ -4333,6 +4535,7 @@ export function useShelectorGame() {
       pendingSearchEntryChoiceRef.current = null;
       pendingTargetChoiceRef.current = null;
       pendingHandTopLibraryChoiceRef.current = null;
+      pendingStackSacrificeChoiceRef.current = null;
       tutorSourceInstanceIdRef.current = undefined;
       tutorPromptRequestRef.current = null;
       tutorSelectedIdsRef.current = [];
@@ -4881,6 +5084,43 @@ export function useShelectorGame() {
       return;
     }
 
+    const pendingStackSacrificeChoice = pendingStackSacrificeChoiceRef.current;
+    if (pendingStackSacrificeChoice) {
+      const engineForChoice = engineRef.current;
+      if (!engineForChoice) return;
+      const selectResponse = applySelectCardsPromptResponse(engineForChoice, pendingStackSacrificeChoice.promptRequest, {
+        requestId: pendingStackSacrificeChoice.promptRequest.id,
+        kind: 'SelectCards',
+        playerId: humanIdRef.current,
+        selectedCardInstanceIds: [cardInstanceId],
+      });
+      recordAuthorityUpdate(selectResponse.update);
+      if (!selectResponse.ok || !selectResponse.state) {
+        addMessage('system', selectResponse.message || `Could not resolve ${pendingStackSacrificeChoice.sourceName} sacrifice choice.`);
+        syncState();
+        return;
+      }
+
+      pendingStackSacrificeChoiceRef.current = null;
+      setTutorPhase(false);
+      setTutorCards([]);
+      setTutorTitle('');
+
+      let state = selectResponse.state as GameState;
+      state = resolveTopOfStackWithAuthority(state);
+      state = runSBAAndTriggers(state);
+
+      const loopMessages: { role: ChatMessage['role']; text: string }[] = [];
+      const loopLogEntries: GameLogEntry[] = [];
+      state = advanceGameLoop(state, loopMessages, loopLogEntries);
+      engineRef.current = state as GameStateWithAI;
+      addMessage('player', `${pendingStackSacrificeChoice.sourceName}: selected a sacrifice.`);
+      for (const msg of loopMessages) addMessage(msg.role, msg.text);
+      if (loopLogEntries.length > 0) setGameLog(prev => [...prev, ...loopLogEntries]);
+      syncState();
+      return;
+    }
+
     const pendingCastChoice = pendingCastChoiceActionRef.current;
     if (pendingCastChoice) {
       pendingCastChoiceActionRef.current = null;
@@ -4912,6 +5152,22 @@ export function useShelectorGame() {
         }
 
         if (choiceMode === 'sacrificeCreature') {
+          if (selectCardsPrompt) {
+            const engineForChoice = engineRef.current;
+            if (!engineForChoice) return;
+            const selectResponse = applySelectCardsPromptResponse(engineForChoice, selectCardsPrompt, {
+              requestId: selectCardsPrompt.id,
+              kind: 'SelectCards',
+              playerId: humanIdRef.current,
+              selectedCardInstanceIds: [cardInstanceId],
+            });
+            recordAuthorityUpdate(selectResponse.update);
+            if (!selectResponse.ok) {
+              addMessage('system', selectResponse.message || 'That sacrifice choice is not legal right now.');
+              syncState();
+              return;
+            }
+          }
           submitActionRef.current?.({
             ...pendingCastChoice,
             _engineAction: {
@@ -5293,6 +5549,12 @@ export function useShelectorGame() {
       syncState();
       return;
     }
+    const pendingStackSacrificeChoice = pendingStackSacrificeChoiceRef.current;
+    if (pendingStackSacrificeChoice?.mandatory) {
+      addMessage('system', `${pendingStackSacrificeChoice.sourceName} requires choosing a permanent to sacrifice.`);
+      syncState();
+      return;
+    }
     const pendingCastChoice = pendingCastChoiceActionRef.current;
     const pendingLandChoice = pendingPlayLandChoiceRef.current;
     const choiceMode = pendingCastChoiceModeRef.current;
@@ -5315,6 +5577,21 @@ export function useShelectorGame() {
     tutorShuffleRef.current = true;
     tutorSourceInstanceIdRef.current = undefined;
     tutorPromptRequestRef.current = null;
+
+    if (pendingStackSacrificeChoice) {
+      pendingStackSacrificeChoiceRef.current = null;
+      addMessage('player', `${pendingStackSacrificeChoice.sourceName}: no sacrifice selected.`);
+      let state = resolveTopOfStackWithAuthority(engineRef.current);
+      state = runSBAAndTriggers(state);
+      const loopMessages: { role: ChatMessage['role']; text: string }[] = [];
+      const loopLogEntries: GameLogEntry[] = [];
+      state = advanceGameLoop(state, loopMessages, loopLogEntries);
+      engineRef.current = state as GameStateWithAI;
+      for (const msg of loopMessages) addMessage(msg.role, msg.text);
+      if (loopLogEntries.length > 0) setGameLog(prev => [...prev, ...loopLogEntries]);
+      syncState();
+      return;
+    }
 
     if (pendingCastChoice) {
       pendingCastChoiceActionRef.current = null;
@@ -5412,6 +5689,7 @@ export function useShelectorGame() {
     pendingSearchEntryChoiceRef.current = null;
     pendingTargetChoiceRef.current = null;
     pendingHandTopLibraryChoiceRef.current = null;
+    pendingStackSacrificeChoiceRef.current = null;
     optionalTriggerPromptRequestRef.current = null;
     damageAssignmentPromptRequestRef.current = null;
     triggerOrderPromptRequestRef.current = null;
@@ -6063,6 +6341,10 @@ export function useShelectorGame() {
         addMessage('system', `Finish ${pendingHandTopLibraryChoiceRef.current.sourceName} card ordering first.`);
         return;
       }
+      if (pendingStackSacrificeChoiceRef.current) {
+        addMessage('system', `Finish ${pendingStackSacrificeChoiceRef.current.sourceName} sacrifice choice first.`);
+        return;
+      }
 
       if (action.kind === 'SkipRestOfTurn') {
         skipRestOfTurn();
@@ -6167,13 +6449,19 @@ export function useShelectorGame() {
       if (needsCastSacrificeCreatureChoice(engineAction, engine as GameState)) {
         const card = engine.cards.get(engineAction.cardInstanceId);
         const def = card ? getCardDefinition(engine, card) : undefined;
-        const sacrificeOptions = [...engine.cards.values()]
-          .filter(instance => instance.zone === 'battlefield')
-          .filter(instance => {
-            const permanentDef = getCardDefinition(engine, instance);
-            return permanentDef.card_types.includes('creature');
-          })
-          .flatMap(instance => {
+        const sacrificeRequest = createSelectCardsPromptRequest(engine as GameState, humanIdRef.current, {
+          subject: 'SacrificeChoice',
+          zone: 'battlefield',
+          destination: 'graveyard',
+          filter: { types: ['creature'] },
+          commitSelection: false,
+          minSelections: 1,
+          maxSelections: 1,
+        });
+        const sacrificeOptions = sacrificeRequest.legalChoices
+          .flatMap(choice => {
+            const instance = engine.cards.get(choice.cardInstanceId);
+            if (!instance) return [];
             const option = toTutorCardOption(engine as GameState, instance);
             return option
               ? [{ ...option, legal: true, reason: 'Creature that can be sacrificed', destination: 'graveyard' as const }]
@@ -6184,6 +6472,7 @@ export function useShelectorGame() {
         if (sacrificeOptions.length > 0) {
           pendingCastChoiceActionRef.current = action;
           pendingCastChoiceModeRef.current = 'sacrificeCreature';
+          pendingCastSelectCardsPromptRef.current = sacrificeRequest;
           tutorRemainingRef.current = 0;
           tutorFilterRef.current = undefined;
           tutorFilterSpecRef.current = { types: ['creature'] };
@@ -7247,6 +7536,7 @@ export function useShelectorGame() {
       pendingSearchEntryChoiceRef.current = snapshot.pendingSearchEntryChoice || null;
       pendingTargetChoiceRef.current = snapshot.pendingTargetChoice || null;
       pendingHandTopLibraryChoiceRef.current = null;
+      pendingStackSacrificeChoiceRef.current = null;
       tutorPromptRequestRef.current = snapshot.tutorPromptRequest || null;
       tutorRemainingRef.current = snapshot.tutorRemaining || 0;
       tutorFilterRef.current = snapshot.tutorFilter;

@@ -311,7 +311,8 @@ export type SelectCardsSubject =
   | 'AdditionalCost'
   | 'OpeningMulligan'
   | 'OpeningMulliganBottom'
-  | 'PutOnTopOfLibrary';
+  | 'PutOnTopOfLibrary'
+  | 'SacrificeChoice';
 
 export interface SelectCardsChoice {
   cardInstanceId: string;
@@ -327,6 +328,8 @@ export interface SelectCardsPromptRequest {
   playerId: string;
   expectedStateId: string;
   sourceInstanceId?: string;
+  stackItemId?: string;
+  choiceKey?: string;
   subject: SelectCardsSubject;
   zone: Zone;
   destination: Zone;
@@ -342,6 +345,8 @@ export interface SelectCardsPromptRequest {
 export interface CreateSelectCardsPromptOptions {
   id?: string;
   sourceInstanceId?: string;
+  stackItemId?: string;
+  choiceKey?: string;
   subject?: SelectCardsSubject;
   zone?: Zone;
   destination?: Zone;
@@ -2998,6 +3003,8 @@ export function createSelectCardsPromptRequest(
     playerId,
     expectedStateId,
     sourceInstanceId: options.sourceInstanceId,
+    stackItemId: options.stackItemId,
+    choiceKey: options.choiceKey,
     subject,
     zone,
     destination,
@@ -3166,6 +3173,7 @@ export function applySelectCardsPromptResponse(
     }
   }
 
+  let nextState: GameState = state;
   let newCards = new Map(state.cards);
   if (request.commitSelection) {
     if (request.destination === 'library') {
@@ -3183,8 +3191,30 @@ export function applySelectCardsPromptResponse(
         });
       }
     }
+    nextState = { ...state, cards: newCards };
+  } else if (request.stackItemId && request.choiceKey) {
+    const stackIndex = state.stack.findIndex(item => item.id === request.stackItemId);
+    if (stackIndex < 0) {
+      const message = 'The stack item for this card-selection prompt is no longer available.';
+      return {
+        requestId: response.requestId,
+        ok: false,
+        reason: 'stale_state',
+        message,
+        update: selectCardsRejectUpdate(state, request, response, 'stale_state', message),
+      };
+    }
+    const stackItem = state.stack[stackIndex] as StackItem & { namedCardChoices?: Record<string, string> };
+    const stack = [...state.stack];
+    stack[stackIndex] = {
+      ...stackItem,
+      namedCardChoices: {
+        ...(stackItem.namedCardChoices || {}),
+        [request.choiceKey]: selectedIds.join(','),
+      },
+    } as StackItem;
+    nextState = { ...state, stack };
   }
-  const nextState: GameState = request.commitSelection ? { ...state, cards: newCards } : state;
   const invariantReport = validateStateInvariants(nextState);
   if (!invariantReport.ok) {
     const message = `Engine invariant failed: ${invariantReport.violations[0]?.message || 'invalid state'}`;

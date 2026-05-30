@@ -1423,6 +1423,48 @@ describe('authority action boundary', () => {
     expect(bottomAccepted.state?.cards.get(forest!.instanceId)?.zone).toBe('library');
   });
 
+  it('can attach a validated card selection to a stack item without moving the card', () => {
+    const state = stateWithForestInHand();
+    const forest = [...state.cards.values()].find(card => card.definitionId === 'forest' && card.ownerId === 'p1');
+    expect(forest).toBeDefined();
+    state.stack = [{
+      kind: 'TriggeredAbility',
+      id: 'stack-sacrifice-choice',
+      sourceInstanceId: forest!.instanceId,
+      controllerId: 'p1',
+      ability: {
+        kind: 'TriggeredAbility',
+        trigger: { kind: 'ETB', who: 'self' },
+        effects: [],
+      },
+      targets: [],
+    }];
+
+    const request = createSelectCardsPromptRequest(state, 'p1', {
+      id: 'prompt-stack-card-choice',
+      subject: 'SacrificeChoice',
+      zone: 'hand',
+      destination: 'graveyard',
+      commitSelection: false,
+      stackItemId: 'stack-sacrifice-choice',
+      choiceKey: 'sacrificeCardId:p1',
+      minSelections: 1,
+      maxSelections: 1,
+      createdAt: 225,
+    });
+    const accepted = applySelectCardsPromptResponse(state, request, {
+      requestId: request.id,
+      kind: 'SelectCards',
+      playerId: 'p1',
+      selectedCardInstanceIds: [forest!.instanceId],
+    });
+
+    expect(accepted.ok).toBe(true);
+    expect(accepted.state?.cards.get(forest!.instanceId)?.zone).toBe('hand');
+    expect((accepted.state?.stack[0] as StackItem & { namedCardChoices?: Record<string, string> }).namedCardChoices)
+      .toEqual({ 'sacrificeCardId:p1': forest!.instanceId });
+  });
+
   it('validates combat damage blocker ordering and uses it during combat damage', () => {
     const attacker: CardDefinition = {
       ...def('attacker', 'Charging Beast', 'Creature - Beast'),

@@ -1077,12 +1077,27 @@ export function executeSacrificeSpecific(state: GameState, cardInstanceId: strin
 /**
  * Sacrifice N permanents matching a filter (player choice, v0 auto-selects).
  */
-function executeSacrifice(state: GameState, playerId: string, count: number, filter?: CardFilter): GameState {
+function executeSacrifice(
+  state: GameState,
+  playerId: string,
+  count: number,
+  filter?: CardFilter,
+  selectedCardIds: string[] = [],
+): GameState {
   // Find matching permanents on the player's battlefield
   const candidates = getSacrificeCandidates(state, playerId, filter);
+  const candidateIds = new Set(candidates.map(card => card.instanceId));
+  const selected = selectedCardIds.filter(id => candidateIds.has(id));
 
   let newState = state;
   const toSacrifice = Math.min(count, candidates.length);
+  if (selected.length >= toSacrifice && toSacrifice > 0) {
+    for (let i = 0; i < toSacrifice; i++) {
+      newState = executeSacrificeSpecific(newState, selected[i]);
+    }
+    return newState;
+  }
+
   for (let i = 0; i < toSacrifice; i++) {
     newState = executeSacrificeSpecific(newState, candidates[i].instanceId);
   }
@@ -1109,9 +1124,13 @@ function executeSacrificeSelfUnlessPlayerSacrifices(
   playerId: string,
   count: number,
   filter?: CardFilter,
+  selectedCardId?: string,
 ): GameState {
   if (!sourceInstanceId) return state;
   const candidates = getSacrificeCandidates(state, playerId, filter);
+  if (selectedCardId && candidates.some(candidate => candidate.instanceId === selectedCardId)) {
+    return executeSacrificeSpecific(state, selectedCardId);
+  }
   if (candidates.length >= count && count > 0) {
     let next = state;
     for (let i = 0; i < count; i++) {
@@ -2127,7 +2146,8 @@ function executeEffect(
         let s = state;
         for (const p of state.players) {
           if (p.id !== casterId && !p.hasLost) {
-            s = executeSacrifice(s, p.id, sacCount, effect.filter);
+            const selectedIds = splitChoiceIds(namedCardChoices.get(`sacrificeCardIds:${p.id}`));
+            s = executeSacrifice(s, p.id, sacCount, effect.filter, selectedIds);
           }
         }
         return s;
@@ -2137,14 +2157,16 @@ function executeEffect(
         let s = state;
         for (const p of state.players) {
           if (!p.hasLost) {
-            s = executeSacrifice(s, p.id, sacCount, effect.filter);
+            const selectedIds = splitChoiceIds(namedCardChoices.get(`sacrificeCardIds:${p.id}`));
+            s = executeSacrifice(s, p.id, sacCount, effect.filter, selectedIds);
           }
         }
         return s;
       }
       const sacrificePlayerId = resolveTargetRef(effect.player, casterId, chosenTargets);
       const sacrificeCount = resolveAmount(effect.count, xValue, state, casterId);
-      return executeSacrifice(state, sacrificePlayerId, sacrificeCount, effect.filter);
+      const selectedIds = splitChoiceIds(namedCardChoices.get(`sacrificeCardIds:${sacrificePlayerId}`) || namedCardChoices.get('sacrificeCardIds'));
+      return executeSacrifice(state, sacrificePlayerId, sacrificeCount, effect.filter, selectedIds);
     }
     case 'SacrificeSelfUnlessPlayerSacrifices': {
       const sacrificePlayerId = resolveTargetRef(effect.player, casterId, chosenTargets);
@@ -2155,6 +2177,7 @@ function executeEffect(
         sacrificePlayerId,
         sacrificeCount,
         effect.filter,
+        namedCardChoices.get(`sacrificeCardId:${sacrificePlayerId}`) || namedCardChoices.get('sacrificeCardId'),
       );
     }
     case 'Mill': {
