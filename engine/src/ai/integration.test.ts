@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   makeDecision,
   applyAction,
+  dispatchAIAction,
   runAITurn,
   createAIConfig,
 } from './agent';
@@ -131,6 +132,41 @@ describe('applyAction', () => {
 
     expect(newState.cards.get('bear1')!.zone).toBe('stack');
     expect(newState.stack.length).toBe(1);
+  });
+
+  it('fills named-card choices for AI exile-until-named spells before they hit the stack', () => {
+    const state = createTestState({
+      activePlayerIndex: 0,
+      phase: 'precombat_main',
+    });
+
+    state.players[0].manaPool = { W: 0, U: 0, B: 1, R: 0, G: 0, C: 1 };
+
+    addCard(state, 'pact1', 'p1', 'hand', {
+      id: 'tainted-pact',
+      name: 'Tainted Pact',
+      type_line: 'Instant',
+      mana_cost: '{1}{B}',
+      cmc: 2,
+      card_types: ['instant'],
+      oracle_text: 'Exile the top card of your library. You may put that card into your hand unless it has the same name as another card exiled this way. Repeat this process until you put a card into your hand or you exile two cards with the same name, whichever comes first.',
+    });
+    addCard(state, 'oracle1', 'p1', 'library', {
+      name: "Thassa's Oracle",
+      type_line: 'Creature — Merfolk Wizard',
+      mana_cost: '{U}{U}',
+      cmc: 2,
+      card_types: ['creature'],
+      oracle_text: '',
+    });
+
+    const action: AIAction = { kind: 'CastSpell', cardInstanceId: 'pact1', targets: [] };
+    const result = dispatchAIAction(state, 'p1', action, { autoNameMissingCardChoices: true });
+
+    expect(result.ok).toBe(true);
+    expect(result.state.stack).toHaveLength(1);
+    expect((result.state.stack[0] as { namedCardChoices?: Record<string, string> }).namedCardChoices)
+      .toEqual({ namedCard: "Thassa's Oracle" });
   });
 
   it('applies PassPriority action', () => {

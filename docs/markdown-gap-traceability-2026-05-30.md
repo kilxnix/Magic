@@ -43,7 +43,7 @@ Source files audited:
 | 11. Mandatory choices separate from priority | partial | Search/scry/surveil choices exist, and Brainstorm now pauses for mandatory hand-to-library-top selection after draw resolution. Universal mandatory-choice handling is not complete. |
 | 12. Auto-pay as proposal | partial | Auto-pay preview and Sisay auto-pay are browser-proven. `/play` synthetic auto-pay action generation now includes both registered battlefield cost reducers and intrinsic reducers printed on the spell itself, matching the engine cast path for cards such as Blasphemous Act/Cavern-Hoard Dragon. Full trust UI for every special mana case is incomplete. |
 | 13. Continuous effects/derived characteristics | partial | Sisay power and some layers/effective types work. Full CR-style layer/dependency system is not complete. |
-| 14. AI uses same engine contract | partial | AI action tests pass and AI uses try paths in slices. Full 4p politics/hidden-info safe AI is not complete. |
+| 14. AI uses same engine contract | partial | AI action tests pass, AI uses try paths in slices, and AI-sourced ExileUntilNamed casts now receive source-aware named-card choices without bypassing the human UI prompt. Full 4p politics/hidden-info safe AI is not complete. |
 | 15. Deterministic scenario testing | partial | Many scenarios exist; not the whole listed minimum bar. |
 | 16. Replay/audit layer | partial/test-proven | `auditEngineEventLogReplay` can replay committed action/prompt records from event-log state hashes, verify rules-event and visible-diff sequences, audit expected prompt/action rejections, and fail on mismatch. `/play` save slots now persist the replay initial state, per-record state seeds, and authority event-log records for routed actions and typed prompt responses; the save-slot UI audits those records and the browser playtest verifies the audit badge. This is not yet a full persisted/shareable replay product. |
 
@@ -78,7 +78,7 @@ Minimum acceptance bar from that file:
 | Fix 10: Replacement/Choice Prompts | partial | Some ETB/tapped/pay-life prompts exist; not global replacement handling. |
 | Fix 11: Continuous Effects And Layers | partial | Practical layer slices exist; not full Arena-like layer fidelity. |
 | Fix 12: Presentation Events | partial | Feed/last-played/modal polish exists, d20 rolls now persist through the engine authority update as DiceRolled events with a playfield toast, and attachment corrections emit validated manual events. This is still not a full animation/event pipeline. |
-| Fix 13: AI Must Use Same Engine | partial | Better action wrappers; not full AI legality/hidden-info proof. |
+| Fix 13: AI Must Use Same Engine | partial | Better action wrappers, source-aware authority dispatch, and AI-only named-card fallback for ExileUntilNamed spells; not full AI legality/hidden-info proof. |
 | Fix 14: Unsupported Rules Handling | partial | Unsupported actions fail clearly, manual override entries expose metadata for reason/owner/fixture reporting, and room Engine Beta now has a server-side deck preflight with user-visible unsupported-card reasons; full card support/fallback coverage is still incomplete. |
 | Fix 15: Test Plan | partial | Many tests added; listed golden tests are not all fully browser-proven. |
 | Fix 16: Development Roadmap | partial | Phase 1-ish slices landed; phases 2-6 are not complete. |
@@ -137,7 +137,7 @@ Minimum acceptance bar from that file:
 | 11.3 Coaching Blends With Gameplay | partial |
 | 12.1 AI Actions Are Still Summarized | partial |
 | 12.2 No Opponent Thinking/Intent Feedback | partial |
-| 12.3 AI Legality And Hidden Information | partial |
+| 12.3 AI Legality And Hidden Information | partial; AI ExileUntilNamed fallback uses only its own library/card names and the same authority dispatch source flag, but broad hidden-info-safe AI remains incomplete |
 | 14.1 Need Golden Rule Tests | partial |
 | 14.2 Need Replay Regression Harness | partial/test-proven; engine event-log replay auditing exists and `/play` saved games persist audit seeds plus authority-routed action/prompt records with a visible audit badge, but broad replay corpus/UI replay is still incomplete |
 | 14.3 Need Unsupported-Card Surfacing | partial; room Engine Beta now has server-side deck preflight and UI surfacing for known unsupported cards, plus parser coverage reports for syntax clusters; solo game-start surfacing and full unsupported taxonomy are still incomplete |
@@ -174,6 +174,8 @@ Minimum acceptance bar from that file:
 | Phase 6: Arena-Like Play Surface | not done |
 
 Additional certification added after this audit: the included starter decks now have both engine-level card QA (`starter-decks-card-qa.test.ts`) and browser UI certification (`scripts/starter_deck_ui_certification.js`) for loading, starting, keeping, and driving visible actions. This improves the `ui-gameplay` and starter-deck trust lane, but it still is not exhaustive proof of every card line.
+
+Additional named-card verification added after this audit: AI-sourced ExileUntilNamed casts can be auto-named through `dispatchAIAction(..., { autoNameMissingCardChoices: true })`, while `/play` human casts remain browser-proven through the typed NamedCard prompt for both known deck names and arbitrary custom names.
 
 ## Direct Answer
 

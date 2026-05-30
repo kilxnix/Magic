@@ -13,6 +13,7 @@ Scope: recent `game-reliability-refactor` work from `88e54bb..597d918`, with Sis
 | Engine build | `cd engine && npm.cmd run build` | Passed |
 | Frontend build | `cd frontend && npm.cmd run build` | Passed |
 | Cost modifier slice | `cd engine && npm.cmd test -- --run src/effects/continuous.test.ts src/ai/legal-actions.test.ts` | 95 passed; covers registered cost reducers, intrinsic self-reducers in the broader continuous suite, and new noncreature/opponent spell cost increasers in legal action generation. |
+| AI named-card fallback | `cd engine && npm.cmd test -- --run src/ai/integration.test.ts src/authority.test.ts src/playtesting-report-regressions.test.ts` | 96 passed; AI-sourced ExileUntilNamed casts can receive a deterministic named-card fallback while UI-sourced casts still pause for the typed NamedCard prompt. |
 | Mobile typecheck | `cd mobile && npm.cmd run typecheck` | Passed |
 | Mobile lint | `cd mobile && npm.cmd run lint` | Initially broken because ESLint was not installed/configured; fixed during this audit and now passes |
 | Mobile dependency audit | `cd mobile && npm.cmd audit --omit=dev --json` | Fails with 28 production dependency advisories, mostly Expo/Metro transitive packages; the available bundled fix is a semver-major Expo upgrade and was not applied in this audit |
@@ -28,7 +29,7 @@ Scope: recent `game-reliability-refactor` work from `88e54bb..597d918`, with Sis
 | Multiplayer rooms | `DECKREPS_BASE_URL=http://127.0.0.1:5173 DECKREPS_QA_ADMIN_TOKEN=local-ui-qa-token node scripts/room_ui_playtest.js` | Passed locally; covered shared tracker, engine beta start, 4-player room, mobile room checks, and unsupported-action error |
 | Search picker UI | `DECKREPS_BASE_URL=http://127.0.0.1:5179 node scripts/play_search_picker_ui_playtest.js` | Passed against fresh built preview; hover card preview and search picker legality/destination/reveal metadata verified. |
 | Scry/surveil choice UI | `DECKREPS_BASE_URL=http://127.0.0.1:5179 node scripts/play_library_choice_ui_playtest.js` | Passed against fresh built preview |
-| Named-card choice UI | `DECKREPS_BASE_URL=http://127.0.0.1:5179 node scripts/play_named_card_choice_ui_playtest.js` and `NAMED_CARD_CHOICE=Black Lotus ... node scripts/play_named_card_choice_ui_playtest.js` | Passed against fresh built preview; cast Tainted Pact through the browser, opened the typed "name a card" picker, selected Thassa's Oracle from the searchable card list, accepted an arbitrary typed Black Lotus name, recorded accepted NamedCard prompt responses, and resolved the stack. |
+| Named-card choice UI | `DECKREPS_BASE_URL=http://127.0.0.1:5179 node scripts/play_named_card_choice_ui_playtest.js` and `NAMED_CARD_CHOICE=Black Lotus ... node scripts/play_named_card_choice_ui_playtest.js` | Passed against fresh built preview after the AI fallback fix; cast Tainted Pact through the browser, opened the typed "name a card" picker, selected Thassa's Oracle from the searchable card list, accepted an arbitrary typed Black Lotus name, recorded accepted NamedCard prompt responses, and resolved the stack. |
 | Polish surface | `DECKREPS_BASE_URL=http://127.0.0.1:5173 node scripts/polish_ui_playtest.js` | Passed locally |
 | Event Center | `DECKREPS_BASE_URL=http://127.0.0.1:5173 DECKREPS_QA_ADMIN_TOKEN=local-ui-qa-token node scripts/event_ui_playtest.js` | Passed locally |
 | Four-agent lane | `DECKREPS_BASE_URL=http://127.0.0.1:5173 DECKREPS_QA_ADMIN_TOKEN=local-ui-qa-token GOLDFISH_POD_ACTIONS=40 SHELECTOR_4P_ACTIONS=20 node scripts/four_agent_full_playtest.js` | Passed locally; ran a 4-context multiplayer pod and a `/play` 1v1v1v1 Shelector run |
@@ -42,6 +43,8 @@ Scope: recent `game-reliability-refactor` work from `88e54bb..597d918`, with Sis
 - Added engine parsing/execution support for generic spell cost increasers such as `Noncreature spells cost {1} more to cast` and `Spells your opponents cast cost {1} more to cast`.
 - Updated the starter deck browser certification to handle real picker prompts during starter deck turns instead of trying to click through an open modal.
 - Added engine-authoritative `/play` browser support for live "name a card" stack choices, using a typed `NamedCard` prompt plus the searchable picker surface/custom text naming for Tainted Pact / Demonic Consultation style effects instead of relying on a deterministic named-card shortcut.
+- Added AI-only fallback naming for ExileUntilNamed spells and kept the authority path source-aware so human/UI Tainted Pact casts still open the live named-card prompt instead of being silently auto-named.
+- Hardened `scripts/play_named_card_choice_ui_playtest.js` so it does not click Undo while driving toward the prompt and captures the final body/screenshot on prompt failures.
 
 ## What This Does Not Prove
 

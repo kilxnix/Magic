@@ -6,6 +6,10 @@
  */
 
 import { GameState } from '../types';
+import { getCardDefinition, getCardsInZone } from '../game-state';
+import { parseOracleText } from '../effects/parser';
+import { getOverride } from '../effects/overrides';
+import type { Effect } from '../effects/ast';
 import { getLegalActions, getSpellTargetSpecs } from './legal-actions';
 import { evaluateActions, getBestAction } from './evaluate';
 import { selectTargetsForSpell, selectBestAttackTarget } from './targeting';
@@ -34,6 +38,50 @@ import type { ActionResult } from '../actions-public';
 
 /** Maximum consecutive failed dispatches before the AI forces a priority pass. */
 const AI_RETRY_BUDGET = 5;
+
+export interface DispatchAIActionOptions {
+  autoNameMissingCardChoices?: boolean;
+}
+
+function normalizeOracleForAIParser(oracleText: string, cardName: string): string {
+  if (!cardName) return oracleText;
+  const escaped = cardName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return oracleText.replace(new RegExp(escaped, 'gi'), '~');
+}
+
+function effectsForAICast(state: GameState, cardInstanceId: string): Effect[] {
+  const card = state.cards.get(cardInstanceId);
+  if (!card) return [];
+  const def = getCardDefinition(state, card);
+  const override = getOverride(def.id, def.name);
+  if (override?.kind === 'Spell') return override.effects as Effect[];
+  const parsed = parseOracleText(normalizeOracleForAIParser(def.oracle_text, def.name), def.mana_cost);
+  if (parsed.kind === 'Spell') return parsed.effects as Effect[];
+  return [];
+}
+
+function chooseNamedCardForAI(state: GameState, playerId: string, cardInstanceId: string): Record<string, string> | undefined {
+  const effects = effectsForAICast(state, cardInstanceId);
+  const nameEffects = effects.filter((effect): effect is Extract<Effect, { kind: 'ExileUntilNamed' }> =>
+    effect.kind === 'ExileUntilNamed',
+  );
+  if (nameEffects.length === 0) return undefined;
+  const library = getCardsInZone(state, playerId, 'library');
+  const preferred = library.find(card => {
+    const def = getCardDefinition(state, card);
+    return /oracle|consultation|pact|combo|win/i.test(def.name);
+  }) || library.find(card => !getCardDefinition(state, card).card_types.includes('land')) || library[0];
+  const named = preferred ? getCardDefinition(state, preferred).name : 'Black Lotus';
+  return Object.fromEntries(nameEffects.map(effect => [effect.namedCardChoiceId || 'namedCard', named]));
+}
+
+export function prepareAIActionForDispatch(state: GameState, playerId: string, action: AIAction): AIAction {
+  if (action.kind !== 'CastSpell' || action.namedCardChoices) return action;
+  const namedCardChoices = chooseNamedCardForAI(state, playerId, action.cardInstanceId);
+  return namedCardChoices
+    ? { ...action, namedCardChoices }
+    : action;
+}
 
 /**
  * AI decision result including the chosen action and new game state.
@@ -65,6 +113,7 @@ export function dispatchAIAction(
   state: GameState,
   playerId: string,
   action: AIAction,
+  options: DispatchAIActionOptions = {},
 ): ActionResult {
   switch (action.kind) {
     case 'PlayLand':
@@ -112,7 +161,9 @@ export function dispatchAIAction(
         W: 0, U: 0, B: 0, R: 0, G: 0, C: 0, generic: 0,
       }, {
         chosenModes: action.chosenModes,
-        namedCardChoices: action.namedCardChoices,
+        namedCardChoices: action.namedCardChoices || (options.autoNameMissingCardChoices
+          ? chooseNamedCardForAI(state, playerId, action.cardInstanceId)
+          : undefined),
         cardChoices: action.cardChoices,
         xValue: action.xValue,
         faceName: action.faceName,
@@ -285,7 +336,7 @@ export function chooseAction(
   const bestEvaluation = evaluations[0];
   if (!bestEvaluation) return null;
   return {
-    action: bestEvaluation.action,
+    action: prepareAIActionForDispatch(state, config.playerId, bestEvaluation.action),
     reasoning: bestEvaluation.reasoning,
   };
 }
@@ -314,10 +365,11 @@ export function makeDecision(
   }
 
   // Dispatch through the try* API
-  const result = dispatchAIAction(state, playerId, bestEvaluation.action);
+  const preparedAction = prepareAIActionForDispatch(state, playerId, bestEvaluation.action);
+  const result = dispatchAIAction(state, playerId, preparedAction, { autoNameMissingCardChoices: true });
   if (result.ok) {
     return {
-      action: bestEvaluation.action,
+      action: preparedAction,
       newState: result.state,
       reasoning: bestEvaluation.reasoning,
     };

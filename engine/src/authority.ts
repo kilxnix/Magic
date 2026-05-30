@@ -5178,7 +5178,9 @@ export function applyClientActionRequest(
     };
   }
 
-  const result = dispatchAIAction(state, request.playerId, request.action);
+  const result = dispatchAIAction(state, request.playerId, request.action, {
+    autoNameMissingCardChoices: request.source === 'ai',
+  });
   if (!result.ok) {
     return {
       requestId: request.id,

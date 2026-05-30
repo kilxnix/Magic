@@ -144,6 +144,7 @@ async function visibleActionButtons(page) {
       if (!(await button.isVisible().catch(() => false))) continue;
       if (!(await button.isEnabled().catch(() => false))) continue;
       const text = (await button.innerText().catch(() => '')).replace(/\s+/g, ' ').trim();
+      if (/^Undo\b/i.test(text)) continue;
       if (text) result.push({ button, text });
     }
   }
@@ -169,6 +170,7 @@ function chooseAction(actions, castStarted) {
     const found = actions.find(action => pattern.test(action.text));
     if (found) return found;
   }
+  if (castStarted) return null;
   return actions[0] || null;
 }
 
@@ -191,6 +193,9 @@ async function driveToNamedCardPrompt(page) {
     await selected.button.click();
     await page.waitForTimeout(850);
   }
+  const finalBody = await page.locator('body').innerText().catch(error => `Could not read body: ${error.message}`);
+  fs.writeFileSync(artifact('debug-final-body.txt'), finalBody);
+  await screenshot(page, 'debug-final-state.png').catch(() => {});
   throw new Error(`Could not reach Tainted Pact card-name prompt. Trace: ${JSON.stringify(trace.slice(-30))}`);
 }
 
