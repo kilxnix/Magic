@@ -8,6 +8,7 @@ Scope: recent `game-reliability-refactor` work from `88e54bb..597d918`, with Sis
 | --- | --- | --- |
 | Backend + agent | `pytest backend/tests backend/agent/tests` | 187 passed, 13 skipped |
 | Engine | `cd engine && npm.cmd test -- --run` | 1141 passed, 1 skipped |
+| Starter deck card QA | `cd engine && npm.cmd test -- --run src/__tests__/starter-decks-card-qa.test.ts` | 16 passed |
 | Frontend | `cd frontend && npm.cmd test -- --run` | 30 passed |
 | Engine build | `cd engine && npm.cmd run build` | Passed |
 | Frontend build | `cd frontend && npm.cmd run build` | Passed |
@@ -21,10 +22,11 @@ Scope: recent `game-reliability-refactor` work from `88e54bb..597d918`, with Sis
 | --- | --- | --- |
 | `/play` save slots/review audit | `DECKREPS_BASE_URL=http://127.0.0.1:5179 node scripts/play_save_slots_playtest.js` | Passed against fresh built preview; now verifies saved-game replay audit fields (`engineEventLogInitialState`, per-record seeds, authority action/prompt records), the save-slot audit badge, and the Game Review replay audit entry. |
 | `/play` selected mulligan | `DECKREPS_BASE_URL=http://127.0.0.1:5179 node scripts/play_mulligan_ui_playtest.js` | Passed against fresh built preview; selected-card mulligan redraw requires a bottom choice before game actions appear. |
+| `/play` starter decks | `DECKREPS_BASE_URL=http://127.0.0.1:5179 node scripts/starter_deck_ui_certification.js` | Passed against fresh built preview for Green Big Creatures, Red Goblin Swarm, and Blue Spell Practice through import/start/keep/visible actions. |
 | Admin console | `DECKREPS_QA_ADMIN_TOKEN=local-ui-qa-token node scripts/admin_console_playtest.js` | Passed locally |
 | Multiplayer rooms | `DECKREPS_BASE_URL=http://127.0.0.1:5173 DECKREPS_QA_ADMIN_TOKEN=local-ui-qa-token node scripts/room_ui_playtest.js` | Passed locally; covered shared tracker, engine beta start, 4-player room, mobile room checks, and unsupported-action error |
 | Search picker UI | `DECKREPS_BASE_URL=http://127.0.0.1:5179 node scripts/play_search_picker_ui_playtest.js` | Passed against fresh built preview; hover card preview and search picker legality/destination/reveal metadata verified. |
-| Scry/surveil choice UI | `DECKREPS_BASE_URL=http://127.0.0.1:5173 node scripts/play_library_choice_ui_playtest.js` | Passed locally |
+| Scry/surveil choice UI | `DECKREPS_BASE_URL=http://127.0.0.1:5179 node scripts/play_library_choice_ui_playtest.js` | Passed against fresh built preview |
 | Polish surface | `DECKREPS_BASE_URL=http://127.0.0.1:5173 node scripts/polish_ui_playtest.js` | Passed locally |
 | Event Center | `DECKREPS_BASE_URL=http://127.0.0.1:5173 DECKREPS_QA_ADMIN_TOKEN=local-ui-qa-token node scripts/event_ui_playtest.js` | Passed locally |
 | Four-agent lane | `DECKREPS_BASE_URL=http://127.0.0.1:5173 DECKREPS_QA_ADMIN_TOKEN=local-ui-qa-token GOLDFISH_POD_ACTIONS=40 SHELECTOR_4P_ACTIONS=20 node scripts/four_agent_full_playtest.js` | Passed locally; ran a 4-context multiplayer pod and a `/play` 1v1v1v1 Shelector run |

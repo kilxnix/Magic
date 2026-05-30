@@ -173,6 +173,8 @@ Minimum acceptance bar from that file:
 | Phase 5: Presentation Events | partial |
 | Phase 6: Arena-Like Play Surface | not done |
 
+Additional certification added after this audit: the included starter decks now have both engine-level card QA (`starter-decks-card-qa.test.ts`) and browser UI certification (`scripts/starter_deck_ui_certification.js`) for loading, starting, keeping, and driving visible actions. This improves the `ui-gameplay` and starter-deck trust lane, but it still is not exhaustive proof of every card line.
+
 ## Direct Answer
 
 Yes, relative to the actual size and meaning of these markdown files, I was effectively treating large portions as direction/backlog while reporting progress too broadly. The right status is not "done." The right status is "a verified slice is done; most of the Arena/MTGA parity roadmap remains partial or incomplete."
