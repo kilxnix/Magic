@@ -170,6 +170,9 @@ def _load_rooms_from_disk() -> None:
             room.setdefault("settings", _default_room_settings())
             room["settings"] = {**_default_room_settings(), **(room.get("settings") or {})}
             room.setdefault("spectators", [])
+            room.setdefault("muted_player_ids", [])
+            room.setdefault("banned_player_ids", [])
+            room.setdefault("banned_player_names", [])
             for spectator in room.get("spectators", []):
                 spectator["joined_at"] = _parse_datetime(spectator["joined_at"])
             for message in room.get("chat", []):
@@ -367,6 +370,28 @@ def _check_password(room: dict, password: Optional[str]) -> None:
         raise HTTPException(status_code=403, detail="Incorrect room password")
 
 
+def _normalized_player_name(value: str | None) -> str:
+    return re.sub(r"\s+", " ", (value or "").strip()).lower()
+
+
+def _ensure_not_room_banned(room: dict, *, player_id: str | None = None, player_name: str | None = None) -> None:
+    if player_id and player_id in set(room.get("banned_player_ids") or []):
+        raise HTTPException(status_code=403, detail="This player is banned from the room")
+    normalized = _normalized_player_name(player_name)
+    banned_names = {
+        _normalized_player_name(name)
+        for name in (room.get("banned_player_names") or [])
+        if _normalized_player_name(name)
+    }
+    if normalized and normalized in banned_names:
+        raise HTTPException(status_code=403, detail="This player name is banned from the room")
+
+
+def _ensure_not_room_muted(room: dict, player_id: str) -> None:
+    if player_id in set(room.get("muted_player_ids") or []):
+        raise HTTPException(status_code=403, detail="This player is muted in the room")
+
+
 def _cleanup_rooms_locked() -> None:
     cutoff = _now() - ROOM_EXPIRY
     expired = [
@@ -398,6 +423,12 @@ def _find_player(room: dict, player_id: str) -> dict:
         if seat.get("player_id") == player_id:
             return seat
     raise HTTPException(status_code=403, detail="Player is not seated in this room")
+
+
+def _find_authorized_player(room: dict, player_id: str) -> dict:
+    seat = _find_player(room, player_id)
+    _ensure_not_room_banned(room, player_id=player_id, player_name=seat.get("name"))
+    return seat
 
 
 def _add_chat(room: dict, player_name: str, message: str, *, system: bool = False) -> None:
@@ -2512,6 +2543,9 @@ async def create_room(req: CreateRoomRequest):
             "updated_at": _now(),
             "settings": _default_room_settings(),
             "spectators": [],
+            "muted_player_ids": [],
+            "banned_player_ids": [],
+            "banned_player_names": [],
             "seats": [
                 {
                     "seat": index + 1,
@@ -2617,6 +2651,7 @@ async def join_room(room_id: str, req: JoinRoomRequest):
     with _lock:
         room = _find_room(room_id)
         _check_password(room, req.password)
+        _ensure_not_room_banned(room, player_name=player_name)
         existing_seat = next(
             (
                 seat
@@ -2626,6 +2661,7 @@ async def join_room(room_id: str, req: JoinRoomRequest):
             None,
         )
         if existing_seat:
+            _ensure_not_room_banned(room, player_id=existing_seat.get("player_id"), player_name=player_name)
             existing_seat["disconnected"] = False
             _add_chat(room, "System", f"{player_name} rejoined the room.", system=True)
             _ensure_real_game_authority_locked(room)
@@ -2659,6 +2695,7 @@ async def spectate_room(room_id: str, req: SpectateRoomRequest):
     with _lock:
         room = _find_room(room_id)
         _check_password(room, req.password)
+        _ensure_not_room_banned(room, player_name=spectator_name)
         settings = _settings_for_room(room)
         if not settings.get("spectators_allowed", True):
             raise HTTPException(status_code=403, detail="Spectators are disabled for this room")
@@ -2684,6 +2721,7 @@ async def spectate_room(room_id: str, req: SpectateRoomRequest):
 async def update_room_settings(room_id: str, req: RoomSettingsRequest):
     with _lock:
         room = _find_room(room_id)
+        _find_authorized_player(room, req.player_id)
         if req.player_id != room["host_player_id"]:
             raise HTTPException(status_code=403, detail="Only the host can update room settings")
         settings = _settings_for_room(room)
@@ -2716,7 +2754,7 @@ async def update_seat(room_id: str, req: SeatUpdateRequest):
         room = _find_room(room_id)
         if room["status"] != "waiting":
             raise HTTPException(status_code=409, detail="Room has already started")
-        seat = _find_player(room, req.player_id)
+        seat = _find_authorized_player(room, req.player_id)
         seat["ready"] = req.ready
         seat["deck_name"] = _clean_name(req.deck_name, field_name="Deck name", max_length=80) if req.deck_name else None
         seat["commander"] = _clean_name(req.commander, field_name="Commander", max_length=80) if req.commander else None
@@ -2747,7 +2785,8 @@ async def send_chat(room_id: str, req: ChatRequest):
     message = _clean_chat_message(req.message)
     with _lock:
         room = _find_room(room_id)
-        seat = _find_player(room, req.player_id)
+        seat = _find_authorized_player(room, req.player_id)
+        _ensure_not_room_muted(room, req.player_id)
         _add_chat(room, seat["name"], message)
         _save_rooms_locked()
         return _room_detail(room)
@@ -2757,6 +2796,7 @@ async def send_chat(room_id: str, req: ChatRequest):
 async def start_room(room_id: str, req: PlayerActionRequest):
     with _lock:
         room = _find_room(room_id)
+        _find_authorized_player(room, req.player_id)
         if req.player_id != room["host_player_id"]:
             raise HTTPException(status_code=403, detail="Only the host can start the room")
         occupied = _occupied_seats(room)
@@ -2775,6 +2815,7 @@ async def start_room(room_id: str, req: PlayerActionRequest):
 async def rematch_room(room_id: str, req: PlayerActionRequest):
     with _lock:
         room = _find_room(room_id)
+        _find_authorized_player(room, req.player_id)
         if req.player_id != room["host_player_id"]:
             raise HTTPException(status_code=403, detail="Only the host can start a new shared table")
         occupied = _occupied_seats(room)
@@ -2792,6 +2833,7 @@ async def rematch_room(room_id: str, req: PlayerActionRequest):
 async def start_real_game(room_id: str, req: PlayerActionRequest):
     with _lock:
         room = _find_room(room_id)
+        _find_authorized_player(room, req.player_id)
         if req.player_id != room["host_player_id"]:
             raise HTTPException(status_code=403, detail="Only the host can start the real engine session")
         occupied = _occupied_seats(room)
@@ -2829,6 +2871,7 @@ async def get_real_game_start_payload(room_id: str, player_id: str = Query(...))
         real_game = room.get("real_game")
         if not real_game:
             raise HTTPException(status_code=409, detail="The real engine session has not started")
+        _find_authorized_player(room, player_id)
         _ensure_real_game_authority_locked(room)
         if player_id != real_game["authority_player_id"]:
             raise HTTPException(status_code=403, detail="Only the authority player can fetch the full start payload")
@@ -2844,6 +2887,7 @@ async def get_pending_real_game_actions(room_id: str, player_id: str = Query(...
         real_game = room.get("real_game")
         if not real_game:
             raise HTTPException(status_code=409, detail="The real engine session has not started")
+        _find_authorized_player(room, player_id)
         _ensure_real_game_authority_locked(room)
         if player_id != real_game["authority_player_id"]:
             raise HTTPException(status_code=403, detail="Only the authority player can fetch pending actions")
@@ -2869,7 +2913,7 @@ async def submit_real_game_action(room_id: str, req: SubmitRealGameActionRequest
         if not real_game:
             raise HTTPException(status_code=409, detail="The real engine session has not started")
         _ensure_real_game_authority_locked(room)
-        seat = _find_player(room, req.player_id)
+        seat = _find_authorized_player(room, req.player_id)
         clean_action = _clean_real_game_action(req.action)
         kind = clean_action["kind"]
         pending = real_game.setdefault("pending_actions", [])
@@ -2901,6 +2945,7 @@ async def publish_real_game_snapshot(room_id: str, req: RealGameSnapshotRequest)
         real_game = room.get("real_game")
         if not real_game:
             raise HTTPException(status_code=409, detail="The real engine session has not started")
+        _find_authorized_player(room, req.player_id)
         _ensure_real_game_authority_locked(room)
         if req.player_id != real_game["authority_player_id"]:
             raise HTTPException(status_code=403, detail="Only the authority player can publish engine snapshots")
@@ -2962,7 +3007,7 @@ async def get_real_game_view(room_id: str, player_id: str = Query(...)):
         if not real_game:
             raise HTTPException(status_code=409, detail="The real engine session has not started")
         _ensure_real_game_authority_locked(room)
-        _find_player(room, player_id)
+        _find_authorized_player(room, player_id)
         authority = _real_authority_seat(room)
         _save_rooms_locked()
         return RealGameViewResponse(
@@ -3029,6 +3074,7 @@ async def apply_game_action(room_id: str, req: GameActionRequest):
         game = room.get("game")
         if not game:
             raise HTTPException(status_code=409, detail="The shared tracker has not started")
+        _find_authorized_player(room, req.player_id)
         if game["status"] == "finished" and req.action != "undo":
             raise HTTPException(status_code=409, detail="The shared game has finished")
         player = _find_game_player(room, req.player_id)
@@ -3277,7 +3323,7 @@ async def apply_game_action(room_id: str, req: GameActionRequest):
 async def leave_room(room_id: str, req: PlayerActionRequest):
     with _lock:
         room = _find_room(room_id)
-        seat = _find_player(room, req.player_id)
+        seat = _find_authorized_player(room, req.player_id)
         player_name = seat["name"]
         if room["status"] == "in_game":
             seat["disconnected"] = True
@@ -3301,6 +3347,7 @@ async def leave_room(room_id: str, req: PlayerActionRequest):
 async def close_room(room_id: str, req: PlayerActionRequest):
     with _lock:
         room = _find_room(room_id)
+        _find_authorized_player(room, req.player_id)
         if req.player_id != room["host_player_id"]:
             raise HTTPException(status_code=403, detail="Only the host can close the room")
         room["status"] = "closed"

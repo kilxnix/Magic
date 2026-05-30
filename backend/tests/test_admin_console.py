@@ -87,6 +87,73 @@ def test_admin_can_kick_seat_and_remove_chat(monkeypatch, tmp_path):
     assert multiplayer._rooms[room_id]["seats"][1]["player_id"] is None
 
 
+def test_admin_can_mute_and_unmute_room_player(monkeypatch, tmp_path):
+    client = make_client(monkeypatch, tmp_path)
+    payload = create_room(client)
+    room_id = payload["room"]["id"]
+    joined = client.post(f"/api/multiplayer/rooms/{room_id}/join", json={"player_name": "Guest"})
+    assert joined.status_code == 200
+    guest_id = joined.json()["player_id"]
+
+    muted = client.post(
+        f"/api/admin/rooms/{room_id}/seats/2/mute",
+        headers=auth_headers(),
+        json={"reason": "spam"},
+    )
+    assert muted.status_code == 200
+    assert muted.json()["room"]["seats"][1]["muted"] is True
+
+    rejected = client.post(
+        f"/api/multiplayer/rooms/{room_id}/chat",
+        json={"player_id": guest_id, "message": "normal mtg table chat"},
+    )
+    assert rejected.status_code == 403
+    assert rejected.json()["detail"] == "This player is muted in the room"
+
+    unmuted = client.post(
+        f"/api/admin/rooms/{room_id}/seats/2/unmute",
+        headers=auth_headers(),
+        json={"reason": "resolved"},
+    )
+    assert unmuted.status_code == 200
+    assert unmuted.json()["room"]["seats"][1]["muted"] is False
+
+    accepted = client.post(
+        f"/api/multiplayer/rooms/{room_id}/chat",
+        json={"player_id": guest_id, "message": "ready to play"},
+    )
+    assert accepted.status_code == 200
+    assert accepted.json()["chat"][-1]["message"] == "ready to play"
+
+
+def test_admin_can_ban_room_player(monkeypatch, tmp_path):
+    client = make_client(monkeypatch, tmp_path)
+    payload = create_room(client)
+    room_id = payload["room"]["id"]
+    joined = client.post(f"/api/multiplayer/rooms/{room_id}/join", json={"player_name": "Guest"})
+    assert joined.status_code == 200
+    guest_id = joined.json()["player_id"]
+
+    banned = client.post(
+        f"/api/admin/rooms/{room_id}/seats/2/ban",
+        headers=auth_headers(),
+        json={"reason": "abuse"},
+    )
+    assert banned.status_code == 200
+    assert banned.json()["room"]["banned_player_count"] == 1
+    assert multiplayer._rooms[room_id]["seats"][1]["player_id"] is None
+
+    rejected_chat = client.post(
+        f"/api/multiplayer/rooms/{room_id}/chat",
+        json={"player_id": guest_id, "message": "still here"},
+    )
+    assert rejected_chat.status_code == 403
+
+    rejected_rejoin = client.post(f"/api/multiplayer/rooms/{room_id}/join", json={"player_name": "Guest"})
+    assert rejected_rejoin.status_code == 403
+    assert rejected_rejoin.json()["detail"] == "This player name is banned from the room"
+
+
 def test_admin_can_announce_to_room(monkeypatch, tmp_path):
     client = make_client(monkeypatch, tmp_path)
     room_id = create_room(client)["room"]["id"]

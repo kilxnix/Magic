@@ -15,13 +15,16 @@ import {
 import {
   adminAuthCheck,
   announceAdminRoom,
+  banAdminSeat,
   closeAdminEvent,
   closeAdminRoom,
   deleteAdminEvent,
   deleteAdminRoom,
   fetchAdminOverview,
   kickAdminSeat,
+  muteAdminSeat,
   removeAdminChat,
+  unmuteAdminSeat,
   type AdminOverview,
   type AdminRoomSummary,
 } from '../lib/admin';
@@ -442,30 +445,64 @@ function RoomAdminCard({
         <div>
           <h2 className="font-black text-stone-50">{room.name}</h2>
           <p className="font-mono text-xs text-stone-500">{room.id}</p>
+          {(room.muted_player_count || room.banned_player_count) ? (
+            <p className="mt-1 text-xs font-bold text-amber-200">
+              {room.muted_player_count || 0} muted / {room.banned_player_count || 0} banned
+            </p>
+          ) : null}
         </div>
         <span className={`rounded border px-2 py-1 text-xs font-black uppercase ${statusClass(room.status)}`}>{room.status}</span>
       </div>
 
       <div className="mb-4 space-y-2">
         {room.seats.map(seat => (
-          <div key={seat.seat} className="flex items-center justify-between gap-2 rounded border border-stone-800 bg-neutral-950 px-3 py-2 text-sm">
+          <div key={seat.seat} className="flex flex-wrap items-center justify-between gap-2 rounded border border-stone-800 bg-neutral-950 px-3 py-2 text-sm">
             <div className="min-w-0">
               <div className="truncate font-bold text-stone-100">
                 Seat {seat.seat}: {seat.name || 'Open'}
               </div>
               <div className="truncate text-xs text-stone-500">
-                {seat.commander || 'No commander'} {seat.is_host ? '· host' : ''} {seat.disconnected ? '· disconnected' : ''}
+                {seat.commander || 'No commander'} {seat.is_host ? ' / host' : ''} {seat.disconnected ? ' / disconnected' : ''} {seat.muted ? ' / muted' : ''} {seat.banned ? ' / banned' : ''}
               </div>
             </div>
             {seat.player_id && (
-              <button
-                type="button"
-                onClick={() => runAction('Seat removed.', () => kickAdminSeat(token, room.id, seat.seat, reason))}
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded border border-red-500/40 text-red-200 hover:bg-red-950/40"
-                aria-label={`Remove ${seat.name || `seat ${seat.seat}`}`}
-              >
-                <UserX className="h-4 w-4" />
-              </button>
+              <div className="flex shrink-0 items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => runAction(seat.muted ? 'Seat unmuted.' : 'Seat muted.', () => (
+                    seat.muted
+                      ? unmuteAdminSeat(token, room.id, seat.seat, reason)
+                      : muteAdminSeat(token, room.id, seat.seat, reason)
+                  ))}
+                  className={`flex h-8 w-8 shrink-0 items-center justify-center rounded border ${
+                    seat.muted
+                      ? 'border-emerald-500/40 text-emerald-200 hover:bg-emerald-950/40'
+                      : 'border-amber-500/40 text-amber-200 hover:bg-amber-950/40'
+                  }`}
+                  aria-label={`${seat.muted ? 'Unmute' : 'Mute'} ${seat.name || `seat ${seat.seat}`}`}
+                  title={seat.muted ? 'Unmute player chat' : 'Mute player chat'}
+                >
+                  <Megaphone className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => runAction('Seat removed.', () => kickAdminSeat(token, room.id, seat.seat, reason))}
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded border border-red-500/40 text-red-200 hover:bg-red-950/40"
+                  aria-label={`Remove ${seat.name || `seat ${seat.seat}`}`}
+                  title="Kick player from room"
+                >
+                  <UserX className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => runAction('Seat banned.', () => banAdminSeat(token, room.id, seat.seat, reason))}
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded border border-red-600/50 text-red-100 hover:bg-red-950/60"
+                  aria-label={`Ban ${seat.name || `seat ${seat.seat}`}`}
+                  title="Ban player from room"
+                >
+                  <Ban className="h-4 w-4" />
+                </button>
+              </div>
             )}
           </div>
         ))}

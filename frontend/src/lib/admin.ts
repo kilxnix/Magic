@@ -6,6 +6,8 @@ export interface AdminSeat {
   commander: string | null;
   deck_locked: boolean;
   disconnected: boolean;
+  muted?: boolean;
+  banned?: boolean;
   is_host: boolean;
 }
 
@@ -29,6 +31,8 @@ export interface AdminRoomSummary {
   player_count: number;
   spectator_count: number;
   chat_count: number;
+  muted_player_count?: number;
+  banned_player_count?: number;
   game_status?: string | null;
   real_game_status?: string | null;
   created_at: string;
@@ -110,6 +114,27 @@ export function deleteAdminRoom(token: string, roomId: string, reason = '') {
 
 export function kickAdminSeat(token: string, roomId: string, seat: number, reason = '') {
   return adminJson(`/api/admin/rooms/${roomId}/seats/${seat}/kick`, token, {
+    method: 'POST',
+    body: JSON.stringify({ reason }),
+  });
+}
+
+export function muteAdminSeat(token: string, roomId: string, seat: number, reason = '') {
+  return adminJson(`/api/admin/rooms/${roomId}/seats/${seat}/mute`, token, {
+    method: 'POST',
+    body: JSON.stringify({ reason }),
+  });
+}
+
+export function unmuteAdminSeat(token: string, roomId: string, seat: number, reason = '') {
+  return adminJson(`/api/admin/rooms/${roomId}/seats/${seat}/unmute`, token, {
+    method: 'POST',
+    body: JSON.stringify({ reason }),
+  });
+}
+
+export function banAdminSeat(token: string, roomId: string, seat: number, reason = '') {
+  return adminJson(`/api/admin/rooms/${roomId}/seats/${seat}/ban`, token, {
     method: 'POST',
     body: JSON.stringify({ reason }),
   });

@@ -381,7 +381,19 @@ export interface ShelectorGameSaveSnapshot {
   tutorPhase: boolean;
   tutorCards: TutorCardOption[];
   tutorTitle: string;
+  tutorPromptRequest?: SearchLibraryPromptRequest | null;
+  tutorRemaining?: number;
+  tutorFilter?: string;
+  tutorFilterSpec?: SearchFilterSpec;
+  tutorTapped?: boolean;
+  tutorShuffle?: boolean;
+  tutorDestination?: SearchDestination;
+  tutorSourceName?: string;
+  tutorSourceInstanceId?: string;
+  pendingSearchEntryChoice?: PendingSearchEntryChoice | null;
+  pendingTargetChoice?: PendingTargetChoice | null;
   libraryChoice?: LibraryManipulationChoice | null;
+  libraryManipulationPromptRequest?: LibraryManipulationPromptRequest | null;
   optionalTriggerChoice?: OptionalTriggerChoice | null;
   damageAssignmentChoice?: DamageAssignmentChoice | null;
   triggerOrderChoice?: TriggerOrderChoiceState | null;
@@ -6055,7 +6067,19 @@ export function useShelectorGame() {
       tutorPhase,
       tutorCards,
       tutorTitle,
+      tutorPromptRequest: tutorPromptRequestRef.current,
+      tutorRemaining: tutorRemainingRef.current,
+      tutorFilter: tutorFilterRef.current,
+      tutorFilterSpec: tutorFilterSpecRef.current,
+      tutorTapped: tutorTappedRef.current,
+      tutorShuffle: tutorShuffleRef.current,
+      tutorDestination: tutorDestinationRef.current,
+      tutorSourceName: tutorSourceNameRef.current,
+      tutorSourceInstanceId: tutorSourceInstanceIdRef.current,
+      pendingSearchEntryChoice: pendingSearchEntryChoiceRef.current,
+      pendingTargetChoice: pendingTargetChoiceRef.current,
       libraryChoice,
+      libraryManipulationPromptRequest: libraryManipulationPromptRequestRef.current,
       optionalTriggerChoice,
       damageAssignmentChoice,
       triggerOrderChoice,
@@ -6144,12 +6168,24 @@ export function useShelectorGame() {
       pendingCastChoiceActionRef.current = null;
       pendingCastSelectCardsPromptRef.current = null;
       pendingPlayLandChoiceRef.current = null;
-      pendingSearchEntryChoiceRef.current = null;
-      pendingTargetChoiceRef.current = null;
-      libraryManipulationPromptRequestRef.current = null;
+      pendingSearchEntryChoiceRef.current = snapshot.pendingSearchEntryChoice || null;
+      pendingTargetChoiceRef.current = snapshot.pendingTargetChoice || null;
+      tutorPromptRequestRef.current = snapshot.tutorPromptRequest || null;
+      tutorRemainingRef.current = snapshot.tutorRemaining || 0;
+      tutorFilterRef.current = snapshot.tutorFilter;
+      tutorFilterSpecRef.current = snapshot.tutorFilterSpec;
+      tutorTappedRef.current = Boolean(snapshot.tutorTapped);
+      tutorShuffleRef.current = snapshot.tutorShuffle ?? true;
+      tutorDestinationRef.current = snapshot.tutorDestination || 'hand';
+      tutorSourceNameRef.current = snapshot.tutorSourceName || 'Search';
+      tutorSourceInstanceIdRef.current = snapshot.tutorSourceInstanceId;
+      libraryManipulationPromptRequestRef.current = snapshot.libraryManipulationPromptRequest || null;
       const restoredLibraryChoice = snapshot.libraryChoice || null;
       pendingLibraryChoiceRef.current = restoredLibraryChoice
-        ? { stackItemId: restoredLibraryChoice.id.split(':')[0], mode: restoredLibraryChoice.mode }
+        ? {
+            stackItemId: snapshot.libraryManipulationPromptRequest?.stackItemId || restoredLibraryChoice.id.split(':')[0],
+            mode: restoredLibraryChoice.mode,
+          }
         : null;
       setOpponentInfo(snapshot.opponentInfo || null);
       setChatMessages(snapshot.chatMessages || []);

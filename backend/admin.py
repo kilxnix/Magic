@@ -89,6 +89,8 @@ def _redacted_room_summary(room: dict) -> dict[str, Any]:
         "player_count": len([seat for seat in room.get("seats", []) if seat.get("player_id")]),
         "spectator_count": len(room.get("spectators") or []),
         "chat_count": len(room.get("chat") or []),
+        "muted_player_count": len(room.get("muted_player_ids") or []),
+        "banned_player_count": max(len(room.get("banned_player_ids") or []), len(room.get("banned_player_names") or [])),
         "game_status": game.get("status"),
         "real_game_status": real_game.get("status"),
         "created_at": _iso(room.get("created_at")),
@@ -102,6 +104,14 @@ def _redacted_room_summary(room: dict) -> dict[str, Any]:
                 "commander": seat.get("commander"),
                 "deck_locked": bool(seat.get("deck")),
                 "disconnected": bool(seat.get("disconnected")),
+                "muted": seat.get("player_id") in set(room.get("muted_player_ids") or []),
+                "banned": (
+                    seat.get("player_id") in set(room.get("banned_player_ids") or [])
+                    or multiplayer._normalized_player_name(seat.get("name")) in {
+                        multiplayer._normalized_player_name(name)
+                        for name in (room.get("banned_player_names") or [])
+                    }
+                ),
                 "is_host": seat.get("player_id") == room.get("host_player_id"),
             }
             for seat in room.get("seats", [])
@@ -281,6 +291,79 @@ async def kick_room_seat(room_id: str, seat: int, req: AdminActionRequest, reque
         multiplayer._add_chat(room, "System", f"Admin removed {kicked_name} from the room.", system=True)
         multiplayer._save_rooms_locked()
         audit = _append_audit("kick_seat", "room", room_id, {"seat": seat, "player_name": kicked_name, "reason": req.reason})
+        return {"ok": True, "room": _redacted_room_summary(room), "audit": audit}
+
+
+@router.post("/rooms/{room_id}/seats/{seat}/mute")
+async def mute_room_seat(room_id: str, seat: int, req: AdminActionRequest, request: Request) -> dict[str, Any]:
+    _require_admin(request)
+    with multiplayer._lock:
+        room = _room_or_404(room_id)
+        target = next((item for item in room.get("seats", []) if int(item.get("seat", 0)) == seat), None)
+        if not target or not target.get("player_id"):
+            raise HTTPException(status_code=404, detail="Seat is empty")
+        muted = room.setdefault("muted_player_ids", [])
+        if target["player_id"] not in muted:
+            muted.append(target["player_id"])
+        room["updated_at"] = multiplayer._now()
+        multiplayer._add_chat(room, "System", f"Admin muted {target.get('name') or f'Seat {seat}'} in room chat.", system=True)
+        multiplayer._save_rooms_locked()
+        audit = _append_audit("mute_seat", "room", room_id, {"seat": seat, "player_name": target.get("name"), "reason": req.reason})
+        return {"ok": True, "room": _redacted_room_summary(room), "audit": audit}
+
+
+@router.post("/rooms/{room_id}/seats/{seat}/unmute")
+async def unmute_room_seat(room_id: str, seat: int, req: AdminActionRequest, request: Request) -> dict[str, Any]:
+    _require_admin(request)
+    with multiplayer._lock:
+        room = _room_or_404(room_id)
+        target = next((item for item in room.get("seats", []) if int(item.get("seat", 0)) == seat), None)
+        if not target or not target.get("player_id"):
+            raise HTTPException(status_code=404, detail="Seat is empty")
+        room["muted_player_ids"] = [
+            player_id for player_id in (room.get("muted_player_ids") or [])
+            if player_id != target["player_id"]
+        ]
+        room["updated_at"] = multiplayer._now()
+        multiplayer._add_chat(room, "System", f"Admin unmuted {target.get('name') or f'Seat {seat}'} in room chat.", system=True)
+        multiplayer._save_rooms_locked()
+        audit = _append_audit("unmute_seat", "room", room_id, {"seat": seat, "player_name": target.get("name"), "reason": req.reason})
+        return {"ok": True, "room": _redacted_room_summary(room), "audit": audit}
+
+
+@router.post("/rooms/{room_id}/seats/{seat}/ban")
+async def ban_room_seat(room_id: str, seat: int, req: AdminActionRequest, request: Request) -> dict[str, Any]:
+    _require_admin(request)
+    with multiplayer._lock:
+        room = _room_or_404(room_id)
+        target = next((item for item in room.get("seats", []) if int(item.get("seat", 0)) == seat), None)
+        if not target or not target.get("player_id"):
+            raise HTTPException(status_code=404, detail="Seat is empty")
+        banned_ids = room.setdefault("banned_player_ids", [])
+        banned_names = room.setdefault("banned_player_names", [])
+        if target["player_id"] not in banned_ids:
+            banned_ids.append(target["player_id"])
+        name = target.get("name") or f"Seat {seat}"
+        if name and name not in banned_names:
+            banned_names.append(name)
+        if room.get("game") or room.get("real_game"):
+            target["disconnected"] = True
+            if room.get("game"):
+                for player in room["game"].get("players", []):
+                    if player.get("player_id") == target["player_id"]:
+                        player["conceded"] = True
+        else:
+            for key in ["player_id", "name", "deck_name", "commander", "deck"]:
+                target[key] = None
+            target["ready"] = False
+            target["disconnected"] = False
+        if room.get("host_player_id") in banned_ids:
+            replacement = next((item for item in room.get("seats", []) if item.get("player_id")), None)
+            room["host_player_id"] = replacement.get("player_id") if replacement else None
+        room["updated_at"] = multiplayer._now()
+        multiplayer._add_chat(room, "System", f"Admin banned {name} from the room.", system=True)
+        multiplayer._save_rooms_locked()
+        audit = _append_audit("ban_seat", "room", room_id, {"seat": seat, "player_name": name, "reason": req.reason})
         return {"ok": True, "room": _redacted_room_summary(room), "audit": audit}
 
 
