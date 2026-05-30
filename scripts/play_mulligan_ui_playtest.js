@@ -3,8 +3,9 @@
  * Browser UI playtest for selected-card opening mulligans in /play.
  *
  * It seeds a deterministic imported deck, starts a 1v1 practice game through
- * the rendered UI, selects a card to mulligan, confirms the redraw requires a
- * bottom choice, then keeps after choosing the bottom card.
+ * the rendered UI, selects cards across repeated mulligan redraws, confirms
+ * bottom selection starts only after keeping, then keeps after choosing the
+ * bottom cards.
  */
 
 const fs = require('node:fs');
@@ -70,6 +71,13 @@ async function waitBodyIncludes(page, needle, timeout = 60000) {
   throw new Error(`Timed out waiting for ${needle}. Last body: ${body.replace(/\s+/g, ' ').slice(0, 1600)}`);
 }
 
+async function clickFirstSelectableCard(page, index = 0) {
+  const card = page.locator('button[title="Use card"]').nth(index);
+  await card.waitFor({ state: 'visible', timeout: 30000 });
+  await card.click();
+  await page.waitForTimeout(150);
+}
+
 async function fetchCardData() {
   const seedDeck = [
     'Commander',
@@ -123,23 +131,40 @@ async function fetchCardData() {
     await waitBodyIncludes(page, 'Keep');
     await dismissOverlays(page);
 
-    await page.getByRole('button', { name: /Island/i }).first().click();
+    await clickFirstSelectableCard(page);
     await waitBodyIncludes(page, 'Mulligan 1');
     await clickButton(page, 'Mulligan 1');
-    await waitBodyIncludes(page, 'Choose 1 to bottom');
-    await page.getByRole('button', { name: /Island/i }).first().click();
+    await waitBodyIncludes(page, 'Keep, Bottom 1');
+    let body = await page.locator('body').innerText();
+    if (body.includes('Choose 1 to bottom')) {
+      throw new Error('Mulligan bottom prompt appeared before the player chose to keep.');
+    }
+
+    await clickFirstSelectableCard(page);
+    await waitBodyIncludes(page, 'Mulligan 1');
+    await clickButton(page, 'Mulligan 1');
+    await waitBodyIncludes(page, 'Keep, Bottom 2');
+    body = await page.locator('body').innerText();
+    if (body.includes('Choose 2 to bottom')) {
+      throw new Error('Second mulligan forced bottom selection before keep.');
+    }
+
+    await clickButton(page, 'Keep, Bottom 2');
+    await waitBodyIncludes(page, 'Choose 2 to bottom');
+    await clickFirstSelectableCard(page, 0);
+    await clickFirstSelectableCard(page, 0);
     await waitBodyIncludes(page, 'Keep Selected');
     await clickButton(page, 'Keep Selected');
-    const body = await waitBodyIncludes(page, 'Choose an action');
+    body = await waitBodyIncludes(page, 'Choose an action');
 
-    if (body.includes('Choose 1 to bottom')) {
+    if (body.includes('Choose 2 to bottom')) {
       throw new Error('Mulligan bottom prompt remained open after keeping selected cards.');
     }
 
     console.log(JSON.stringify({
       ok: true,
       baseUrl: BASE_URL,
-      verification: 'selected mulligan redraw required and accepted a bottom choice before game actions appeared',
+      verification: 'selected mulligan redraw can repeat before keep, then requires and accepts bottom choices before game actions appear',
     }, null, 2));
   } finally {
     await context.close();

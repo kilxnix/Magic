@@ -28,7 +28,7 @@ Scope: recent `game-reliability-refactor` work from `88e54bb..597d918`, with Sis
 | Engine autosave slot count | `cd engine && npm.cmd test -- --run src/persistence/manager.test.ts`; `cd engine && npm.cmd run build` | 20 passed plus engine build passed; engine persistence autosaves now rotate through four slots, matching `/play`'s four user-facing save slots. |
 | Picker availability/destination/reveal wording | `cd frontend && npm.cmd test -- --run tests/cardPickerModal.test.ts`; `cd frontend && npm.cmd run build` | 4 passed plus frontend build passed; card/search picker badges and prompt reasons now say `Selectable`/`Unavailable` instead of overclaiming full rules legality, destination chips distinguish top/bottom of library and command zone movement, and hidden/revealed choice chips are explicit. |
 | Opponent-turn yield label | `cd frontend && npm.cmd run build` | Frontend build passed; empty priority on another player's turn now labels the skip action as `Yield Until My Turn` instead of `Skip Rest of Turn`, while the active player's own turn keeps `Skip Rest of Turn`. |
-| Selected-card mulligan iteration | `cd frontend && npm.cmd test -- --run tests/gameBoardLayout.test.ts tests/cardPickerModal.test.ts`; `cd frontend && npm.cmd run build` | 6 focused frontend tests passed plus frontend build passed; after redrawing selected mulligan cards, the UI stays in card-selection mode so the player can mulligan more cards, and only switches to bottom-card selection after pressing keep. |
+| Selected-card mulligan iteration | `cd frontend && npm.cmd test -- --run tests/gameBoardLayout.test.ts tests/cardPickerModal.test.ts`; `cd frontend && npm.cmd run build`; `node scripts/play_mulligan_ui_playtest.js` | 6 focused frontend tests passed, frontend build passed, and the browser UI playtest passed; after redrawing selected mulligan cards, the UI stays in card-selection mode so the player can mulligan more cards, only switches to bottom-card selection after pressing keep, and bottom-selection cards remain visually/selectably actionable. |
 | Mobile typecheck | `cd mobile && npm.cmd run typecheck` | Passed |
 | Mobile lint | `cd mobile && npm.cmd run lint` | Initially broken because ESLint was not installed/configured; fixed during this audit and now passes |
 | Mobile dependency audit | `cd mobile && npm.cmd audit --omit=dev --json` | Fails with 28 production dependency advisories, mostly Expo/Metro transitive packages; the available bundled fix is a semver-major Expo upgrade and was not applied in this audit |
@@ -38,7 +38,7 @@ Scope: recent `game-reliability-refactor` work from `88e54bb..597d918`, with Sis
 | Flow | Command | Result |
 | --- | --- | --- |
 | `/play` save slots/review audit | `DECKREPS_BASE_URL=http://127.0.0.1:5179 node scripts/play_save_slots_playtest.js` | Passed against fresh built preview; now verifies saved-game replay audit fields (`engineEventLogInitialState`, per-record seeds, authority action/prompt records), the save-slot audit badge, and the Game Review replay audit entry. |
-| `/play` selected mulligan | `DECKREPS_BASE_URL=http://127.0.0.1:5179 node scripts/play_mulligan_ui_playtest.js` | Passed against fresh built preview; selected-card mulligan redraw requires a bottom choice before game actions appear. |
+| `/play` selected mulligan | `node scripts/play_mulligan_ui_playtest.js` | Passed locally against the rendered dev UI; selected-card mulligan redraw can repeat before keep, then requires and accepts bottom choices before game actions appear. |
 | `/play` starter decks | `DECKREPS_BASE_URL=http://127.0.0.1:5179 node scripts/starter_deck_ui_certification.js` | Passed against fresh built preview for Green Big Creatures, Red Goblin Swarm, and Blue Spell Practice through import/start/keep/visible actions. |
 | Admin console | `DECKREPS_QA_ADMIN_TOKEN=local-ui-qa-token node scripts/admin_console_playtest.js` | Passed locally |
 | Multiplayer rooms | `DECKREPS_BASE_URL=http://127.0.0.1:5173 DECKREPS_QA_ADMIN_TOKEN=local-ui-qa-token node scripts/room_ui_playtest.js` | Passed locally; covered shared tracker, engine beta start, 4-player room, mobile room checks, and unsupported-action error |
@@ -76,6 +76,7 @@ Scope: recent `game-reliability-refactor` work from `88e54bb..597d918`, with Sis
 - Aligned the lower-level engine `SaveManager` autosave rotation with the four-slot `/play` save-slot product surface.
 - Renamed the opponent-turn empty-priority skip action to `Yield Until My Turn` so the UI no longer implies it is skipping the human player's own active turn.
 - Fixed the selected-card mulligan flow so a player can keep choosing cards to redraw through multiple mulligan passes; bottom-card selection starts only after the player chooses to keep, instead of immediately blocking further mulligans after the first redraw.
+- Kept bottom-selection cards visually playable/clickable during the mulligan bottom step and updated the browser mulligan playtest to drive the actual repeated-redraw flow.
 
 ## What This Does Not Prove
 

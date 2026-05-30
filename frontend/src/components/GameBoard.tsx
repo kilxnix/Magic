@@ -3817,7 +3817,7 @@ export function GameBoard({
                   <CardTile
                     key={card.instanceId}
                     card={card}
-                    playable={discardPhase || mulliganSelectable || (!mulliganPhase && playableIds.has(card.instanceId))}
+                    playable={discardPhase || mulliganSelectable || needsMulliganBottomSelection || (!mulliganPhase && playableIds.has(card.instanceId))}
                     selected={selectedForBottom || selectedForMulligan}
                     selectedLabel={selectedForBottom ? 'Bottom' : selectedForMulligan ? 'Mulligan' : undefined}
                     compact
