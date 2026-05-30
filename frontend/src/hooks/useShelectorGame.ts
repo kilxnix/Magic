@@ -48,7 +48,6 @@ import {
   type ManaCost,
   type ManaPool,
   type TriggeredAbilityStackItem,
-  tryTapLandForMana,
   tryPassPriority,
   tryAdjustCounters,
   getCostReduction,
@@ -4824,6 +4823,39 @@ export function useShelectorGame() {
           return response.state;
         };
 
+        const applyAuthoritativeManaTap = (
+          state: GameState,
+          manaAction: Extract<AIAction, { kind: 'ActivateManaAbility' }>,
+        ): GameState | null => {
+          const beforePool = state.players.find(p => p.id === humanIdRef.current)?.manaPool;
+          const tappedCard = state.cards.get(manaAction.cardInstanceId);
+          const tappedDef = tappedCard ? getCardDefinition(state, tappedCard) : undefined;
+          const next = applyAuthoritativeAction(
+            state,
+            humanIdRef.current,
+            {
+              kind: 'ActivateManaAbility',
+              cardInstanceId: manaAction.cardInstanceId,
+              cardName: tappedDef?.name,
+              label: `Tap ${tappedDef?.name || 'a permanent'} for ${manaAction.color}`,
+              _engineAction: manaAction,
+            },
+            { rejectionPrefix: 'Cannot auto-tap for mana' },
+          );
+          if (!next) return null;
+
+          const afterPool = next.players.find(p => p.id === humanIdRef.current)?.manaPool;
+          const gained: string[] = [];
+          if (afterPool && beforePool) {
+            for (const c of ['W', 'U', 'B', 'R', 'G', 'C'] as const) {
+              const diff = afterPool[c] - beforePool[c];
+              if (diff > 0) gained.push(`+${diff}${c}`);
+            }
+          }
+          addMessage('system', `Auto-tapped ${tappedDef?.name || 'a permanent'} (${gained.join(' ') || '+mana'}).`);
+          return next;
+        };
+
         const validateTargetPromptResponse = (
           state: GameState,
           spec: TargetSpec | undefined,
@@ -4923,31 +4955,15 @@ export function useShelectorGame() {
               const landsToTap = findLandsToTap(engine, humanId, totalCost, manaActions);
 
               if (landsToTap && landsToTap.length > 0) {
-                // Apply each mana ability action sequentially via tryTapLandForMana
+                // Apply each auto-tap through the same authority path as a manual tap.
                 let tapState: GameState = engine as GameState;
                 for (const manaAction of landsToTap) {
                   if (manaAction.kind !== 'ActivateManaAbility') continue;
-                  const beforePool = tapState.players.find(p => p.id === humanId)?.manaPool;
-                  const tapResult = tryTapLandForMana(tapState, humanId, manaAction.cardInstanceId, manaAction.color);
-                  if (!tapResult.ok) {
-                    // Fallback: skip this tap (should not happen if findLandsToTap is correct)
-                    console.warn('Auto-tap failed:', tapResult.message);
+                  const nextTapState = applyAuthoritativeManaTap(tapState, manaAction);
+                  if (!nextTapState) {
                     continue;
                   }
-                  tapState = tapResult.state;
-                  collectedEvents.push(...tapResult.events);
-                  const afterPool = tapState.players.find(p => p.id === humanId)?.manaPool;
-                  // Narrate the tap
-                  const tappedCard = tapState.cards.get(manaAction.cardInstanceId);
-                  const tappedDef = tappedCard ? getCardDefinition(tapState, tappedCard) : undefined;
-                  const gained: string[] = [];
-                  if (afterPool && beforePool) {
-                    for (const c of ['W', 'U', 'B', 'R', 'G', 'C'] as const) {
-                      const diff = afterPool[c] - beforePool[c];
-                      if (diff > 0) gained.push(`+${diff}${c}`);
-                    }
-                  }
-                  addMessage('system', `Auto-tapped ${tappedDef?.name || 'a permanent'} (${gained.join(' ') || '+mana'}).`);
+                  tapState = nextTapState;
                 }
                 const poolBeforeCast = tapState.players.find(p => p.id === humanId)?.manaPool;
                 addMessage('system', `Mana available: ${poolBeforeCast ? formatManaPool(poolBeforeCast) : '?'}`);
@@ -4965,7 +4981,7 @@ export function useShelectorGame() {
             precastState,
             humanIdRef.current,
             action,
-            { recordAcceptedUpdate: false, rejectionPrefix: 'Cannot cast' },
+            { rejectionPrefix: 'Cannot cast' },
           );
           if (!castState) {
             return;
@@ -5027,26 +5043,11 @@ export function useShelectorGame() {
                 let tapState = preActivateState;
                 for (const manaAction of landsToTap) {
                   if (manaAction.kind !== 'ActivateManaAbility') continue;
-                  const beforePool = tapState.players.find(p => p.id === humanIdRef.current)?.manaPool;
-                  const tapResult = tryTapLandForMana(tapState, humanIdRef.current, manaAction.cardInstanceId, manaAction.color);
-                  if (!tapResult.ok) {
-                    console.warn('Auto-tap failed:', tapResult.message);
+                  const nextTapState = applyAuthoritativeManaTap(tapState, manaAction);
+                  if (!nextTapState) {
                     continue;
                   }
-                  tapState = tapResult.state;
-                  collectedEvents.push(...tapResult.events);
-
-                  const afterPool = tapState.players.find(p => p.id === humanIdRef.current)?.manaPool;
-                  const tappedCard = tapState.cards.get(manaAction.cardInstanceId);
-                  const tappedDef = tappedCard ? getCardDefinition(tapState, tappedCard) : undefined;
-                  const gained: string[] = [];
-                  if (afterPool && beforePool) {
-                    for (const c of ['W', 'U', 'B', 'R', 'G', 'C'] as const) {
-                      const diff = afterPool[c] - beforePool[c];
-                      if (diff > 0) gained.push(`+${diff}${c}`);
-                    }
-                  }
-                  addMessage('system', `Auto-tapped ${tappedDef?.name || 'a permanent'} (${gained.join(' ') || '+mana'}).`);
+                  tapState = nextTapState;
                 }
                 const poolBeforeAbility = tapState.players.find(p => p.id === humanIdRef.current)?.manaPool;
                 addMessage('system', `Mana available: ${poolBeforeAbility ? formatManaPool(poolBeforeAbility) : '?'}`);
@@ -5061,7 +5062,7 @@ export function useShelectorGame() {
             preActivateState,
             humanIdRef.current,
             action,
-            { recordAcceptedUpdate: false, rejectionPrefix: 'Cannot activate ability' },
+            { rejectionPrefix: 'Cannot activate ability' },
           );
           if (!activatedState) {
             return;
@@ -5127,23 +5128,9 @@ export function useShelectorGame() {
                 let tapState = preEquipState;
                 for (const manaAction of landsToTap) {
                   if (manaAction.kind !== 'ActivateManaAbility') continue;
-                  const beforePool = tapState.players.find(p => p.id === humanIdRef.current)?.manaPool;
-                  const tapResult = tryTapLandForMana(tapState, humanIdRef.current, manaAction.cardInstanceId, manaAction.color);
-                  if (!tapResult.ok) continue;
-                  tapState = tapResult.state;
-                  collectedEvents.push(...tapResult.events);
-
-                  const afterPool = tapState.players.find(p => p.id === humanIdRef.current)?.manaPool;
-                  const tappedCard = tapState.cards.get(manaAction.cardInstanceId);
-                  const tappedDef = tappedCard ? getCardDefinition(tapState, tappedCard) : undefined;
-                  const gained: string[] = [];
-                  if (afterPool && beforePool) {
-                    for (const c of ['W', 'U', 'B', 'R', 'G', 'C'] as const) {
-                      const diff = afterPool[c] - beforePool[c];
-                      if (diff > 0) gained.push(`+${diff}${c}`);
-                    }
-                  }
-                  addMessage('system', `Auto-tapped ${tappedDef?.name || 'a permanent'} (${gained.join(' ') || '+mana'}).`);
+                  const nextTapState = applyAuthoritativeManaTap(tapState, manaAction);
+                  if (!nextTapState) continue;
+                  tapState = nextTapState;
                 }
                 const poolBeforeEquip = tapState.players.find(p => p.id === humanIdRef.current)?.manaPool;
                 addMessage('system', `Mana available: ${poolBeforeEquip ? formatManaPool(poolBeforeEquip) : '?'}`);
@@ -5158,7 +5145,7 @@ export function useShelectorGame() {
             preEquipState,
             humanIdRef.current,
             action,
-            { recordAcceptedUpdate: false, rejectionPrefix: 'Cannot equip' },
+            { rejectionPrefix: 'Cannot equip' },
           );
           if (!equippedState) {
             return;
