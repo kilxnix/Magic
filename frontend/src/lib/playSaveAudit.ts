@@ -61,7 +61,9 @@ export function auditPlaySaveSnapshot(snapshot: unknown): PlaySaveAuditSummary {
             ok: false,
             status: 'failed',
             recordCount: eventLog.length,
-            message: failed?.message || `Audit failed at event ${record.sequence}`,
+            message: failed?.message
+              ? `Event ${record.sequence}: ${failed.message}`
+              : `Audit failed at event ${record.sequence}`,
           };
         }
       }

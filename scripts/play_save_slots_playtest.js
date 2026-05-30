@@ -61,6 +61,24 @@ async function openGameSaves(page) {
   await page.getByRole('button', { name: /^Saves\b/ }).click();
 }
 
+async function openReview(page) {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const reviewButton = page.getByRole('button', { name: 'Review', exact: true });
+    if ((await reviewButton.count()) > 0 && (await reviewButton.first().isVisible().catch(() => false))) {
+      await reviewButton.first().click();
+      return;
+    }
+    const closeSaveSlots = page.getByRole('button', { name: 'Close save slots', exact: true });
+    if ((await closeSaveSlots.count()) > 0 && (await closeSaveSlots.first().isVisible().catch(() => false))) {
+      await closeSaveSlots.first().click();
+      await page.waitForTimeout(150);
+    }
+    await page.getByRole('button', { name: 'Open game menu' }).click();
+    await page.waitForTimeout(150);
+  }
+  throw new Error('Could not open the game review from the menu');
+}
+
 async function readSavedSlot(page, slot) {
   return page.evaluate(targetSlot => new Promise((resolve, reject) => {
     const request = indexedDB.open('deckreps_play_saves_v1', 1);
@@ -108,6 +126,9 @@ async function readSavedSlot(page, slot) {
     assert(Object.keys(savedSlot.snapshot.engineEventLogSeeds || {}).length > 0, 'save slot is missing per-record audit seeds');
     await page.getByText(/Audit OK|Audit ready/).first().waitFor({ timeout: 10000 });
     await page.screenshot({ path: artifact('play-save-slots-game.png'), fullPage: false });
+    await openReview(page);
+    await page.getByText(/Replay audit passed/).first().waitFor({ timeout: 10000 });
+    await page.screenshot({ path: artifact('play-save-slots-review-audit.png'), fullPage: false });
 
     await page.reload({ waitUntil: 'domcontentloaded' });
     await dismissOverlays(page);

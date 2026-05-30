@@ -5307,7 +5307,9 @@ export function createEngineEventLogRecord(
 }
 
 function eventKinds(events: EngineEvent[]): EngineEvent['kind'][] {
-  return events.map(event => event.kind);
+  return events
+    .map(event => event.kind)
+    .filter(kind => kind !== 'RulesEvent');
 }
 
 function diffKinds(diffs: VisibleDiff[]): VisibleDiff['kind'][] {
@@ -5414,7 +5416,7 @@ export function auditEngineEventLogReplay(
         ...step,
         ok: false,
         reason: 'event_mismatch',
-        message: 'Event log rules-event sequence does not match replayed engine output.',
+        message: `Event log rules-event sequence does not match replayed engine output. Expected ${step.expectedRuleEventKinds.join(', ') || 'none'}; got ${actualRuleEventKinds?.join(', ') || 'none'}.`,
       };
       return { ok: false, steps };
     }
@@ -5424,7 +5426,7 @@ export function auditEngineEventLogReplay(
         ...step,
         ok: false,
         reason: 'diff_mismatch',
-        message: 'Event log visible-diff sequence does not match replayed engine output.',
+        message: `Event log visible-diff sequence does not match replayed engine output. Expected ${step.expectedVisibleDiffKinds.join(', ') || 'none'}; got ${actualVisibleDiffKinds?.join(', ') || 'none'}.`,
       };
       return { ok: false, steps };
     }

@@ -349,6 +349,13 @@ function buildVisibleActionPrompt(
   };
 }
 
+function cloneEngineEventLogRecord(record: EngineEventLogRecord): EngineEventLogRecord {
+  if (typeof structuredClone === 'function') {
+    return structuredClone(record);
+  }
+  return JSON.parse(JSON.stringify(record)) as EngineEventLogRecord;
+}
+
 export interface LastPlayedCard {
   card: SimpleCard;
   playerId: string;
@@ -2403,7 +2410,9 @@ export function useShelectorGame() {
     stateBefore?: GameState,
   ) => {
     if (!update) return;
-    const nextRecord = createEngineEventLogRecord(engineEventLogRef.current.length, record, update, expectedOk);
+    const nextRecord = cloneEngineEventLogRecord(
+      createEngineEventLogRecord(engineEventLogRef.current.length, record, update, expectedOk),
+    );
     const next = [...engineEventLogRef.current, nextRecord];
     engineEventLogRef.current = next;
     const seedState = stateBefore || engineRef.current;
@@ -2454,32 +2463,37 @@ export function useShelectorGame() {
       source: options.source || 'ui',
       label: action.label,
     });
+    const requestInfo = {
+      requestId: request.id,
+      playerId,
+      actionKind: request.action.kind,
+      label: request.label,
+      review: options.decisionReview
+        ? {
+            decisionId: options.decisionReview.decisionId,
+            selectedLabel: options.decisionReview.selected.label,
+            selectedScore: options.decisionReview.selected.score,
+            bestLabel: options.decisionReview.best?.label,
+            bestScore: options.decisionReview.best?.score,
+            scoreDelta: options.decisionReview.scoreDelta,
+            confidence: options.decisionReview.confidence,
+            legalActionCount: options.decisionReview.legalActionCount,
+            rulesAuditOk: options.decisionReview.rulesAudit.ok,
+          }
+        : undefined,
+    };
     const update = buildStateUpdate(
       before,
       after,
-      {
-        requestId: request.id,
-        playerId,
-        actionKind: request.action.kind,
-        label: request.label,
-        review: options.decisionReview
-          ? {
-              decisionId: options.decisionReview.decisionId,
-              selectedLabel: options.decisionReview.selected.label,
-              selectedScore: options.decisionReview.selected.score,
-              bestLabel: options.decisionReview.best?.label,
-              bestScore: options.decisionReview.best?.score,
-              scoreDelta: options.decisionReview.scoreDelta,
-              confidence: options.decisionReview.confidence,
-              legalActionCount: options.decisionReview.legalActionCount,
-              rulesAuditOk: options.decisionReview.rulesAudit.ok,
-            }
-          : undefined,
-      },
+      requestInfo,
       events,
       );
+    const replayResponse = applyClientActionRequest(before, request);
+    const eventLogUpdate = replayResponse.ok && replayResponse.update?.newStateId === update.newStateId
+      ? replayResponse.update
+      : update;
     recordAuthorityUpdate(update);
-    appendEngineEventLogRecord({ kind: 'Action', request }, update, true, before);
+    appendEngineEventLogRecord({ kind: 'Action', request }, eventLogUpdate, true, before);
   }, [appendEngineEventLogRecord, recordAuthorityUpdate]);
 
   const applyActionThroughAuthority = useCallback((
@@ -7754,6 +7768,9 @@ export function useShelectorGame() {
       triggerOrderChoice,
       gameLog,
       authorityUpdates,
+      engineEventLog: engineEventLogRef.current,
+      engineEventLogSeeds: engineEventLogSeedsRef.current,
+      engineEventLogInitialState: engineEventLogInitialStateRef.current,
       lastStateUpdate,
       currentPrompt,
       lastPlayedCard,

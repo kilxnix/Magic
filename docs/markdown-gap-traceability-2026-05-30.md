@@ -72,7 +72,7 @@ Minimum acceptance bar from that file:
 | Fix 4: Prompt System | partial | Search/scry/surveil/equipment style prompts exist, Brainstorm hand-to-library-top selection exists, and manual attach/detach plus turn/phase correction now use validated action requests; no fully generic typed request system. |
 | Fix 5: Transactional Engine Updates | partial | Authority/action response structures exist; not a complete event-sourced transaction model. |
 | Fix 6: Event-Sourced Replay | partial/test-proven | Engine event-log records now carry request, before/after state IDs, expected accepted/rejected result, rules events, and visible diffs; `auditEngineEventLogReplay` replays and rejects tampered/mismatched records. `/play` saved games persist replay seeds plus authority-routed action and typed prompt-response records, and the saves panel displays an audit badge verified through `scripts/play_save_slots_playtest.js`. UI replay is still incomplete. |
-| Fix 7: Review Must Audit Legality | partial | Review wording and some legality surfacing exist; no full legality audit. |
+| Fix 7: Review Must Audit Legality | partial/test-proven | The `/play` review now includes a replay audit entry from the saved-game authority event log, and the save-slot browser playtest verifies the review shows the replay audit. Full line-by-line legality audit across all review surfaces is still incomplete. |
 | Fix 8: Stack And Priority | partial | Visible stack/priority exists; full-control/stop settings are incomplete. |
 | Fix 9: Turn And Phase Labels | partial/browser-checked in UI scripts | Labels improved and a validated turn/phase correction surface exists; event consistency is not globally audited. |
 | Fix 10: Replacement/Choice Prompts | partial | Some ETB/tapped/pay-life prompts exist; not global replacement handling. |
@@ -132,7 +132,7 @@ Minimum acceptance bar from that file:
 | 10.2 Cause And Effect Need Better Timing | partial |
 | 10.3 Battlefield Visual Hierarchy | partial |
 | 10.4 Card Presentation | partial |
-| 11.1 Review Does Not Catch Engine Illegality | not done |
+| 11.1 Review Does Not Catch Engine Illegality | partial/test-proven; `/play` review surfaces replay audit pass/fail from authority event logs, but broader post-game legality analysis is still incomplete |
 | 11.2 Review Move Granularity Is Too Coarse | partial |
 | 11.3 Coaching Blends With Gameplay | partial |
 | 12.1 AI Actions Are Still Summarized | partial |

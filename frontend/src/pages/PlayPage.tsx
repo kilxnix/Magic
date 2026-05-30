@@ -105,6 +105,9 @@ export function PlayPage() {
     triggerOrderChoice,
     gameLog,
     authorityUpdates,
+    engineEventLog,
+    engineEventLogSeeds,
+    engineEventLogInitialState,
     lastStateUpdate,
     currentPrompt,
     lastPlayedCard,
@@ -836,6 +839,9 @@ export function PlayPage() {
             finalState={gameState}
             winner={winner}
             authorityUpdates={authorityUpdates}
+            engineEventLog={engineEventLog}
+            engineEventLogSeeds={engineEventLogSeeds}
+            engineEventLogInitialState={engineEventLogInitialState}
             onClose={() => setShowReview(false)}
           />
         )}

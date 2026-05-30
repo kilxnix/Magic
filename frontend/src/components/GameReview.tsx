@@ -8,8 +8,9 @@
 import { useState, useMemo } from 'react';
 import { X, ChevronRight } from 'lucide-react';
 import type { GameLogEntry, SimpleGameState } from '../hooks/useShelectorGame';
+import { auditPlaySaveSnapshot } from '../lib/playSaveAudit';
 import { ratingFromDecisionDelta } from '../lib/turnReview';
-import type { EngineStateUpdate } from 'commander-engine';
+import type { EngineEventLogRecord, EngineStateUpdate, SerializedGameStateV1 } from 'commander-engine';
 
 // ========== Rating Types ==========
 
@@ -77,6 +78,40 @@ function authorityReviewEntries(
   });
 
   return entries;
+}
+
+function replayAuditReviewEntry(
+  eventLog: EngineEventLogRecord[] | undefined,
+  eventLogSeeds: Record<number, SerializedGameStateV1> | undefined,
+  eventLogInitialState: SerializedGameStateV1 | null | undefined,
+  finalState: SimpleGameState,
+): GameLogEntry[] {
+  if (!eventLogInitialState && (!eventLog || eventLog.length === 0)) return [];
+
+  const audit = auditPlaySaveSnapshot({
+    engineEventLog: eventLog || [],
+    engineEventLogSeeds: eventLogSeeds,
+    engineEventLogInitialState: eventLogInitialState,
+  });
+  const stats = emptyReviewStats(finalState);
+
+  return [{
+    turnNumber: finalState.turnNumber,
+    player: 'human',
+    playerId: finalState.humanPlayer.id,
+    action: audit.ok
+      ? `Replay audit passed (${audit.recordCount} records)`
+      : 'Replay audit failed',
+    phase: finalState.phase,
+    manaSpent: 0,
+    timestamp: Number.MAX_SAFE_INTEGER - 1,
+    playByPlay: audit.message,
+    rulesAudit: {
+      severity: audit.ok ? 'info' : 'error',
+      reason: audit.message,
+    },
+    ...stats,
+  }];
 }
 
 // ========== Rating Config ==========
@@ -334,18 +369,32 @@ export interface GameReviewProps {
   onClose: () => void;
   embedded?: boolean;
   authorityUpdates?: EngineStateUpdate[];
+  engineEventLog?: EngineEventLogRecord[];
+  engineEventLogSeeds?: Record<number, SerializedGameStateV1>;
+  engineEventLogInitialState?: SerializedGameStateV1 | null;
 }
 
 // ========== Component ==========
 
-export function GameReview({ gameLog, finalState, winner, onClose, embedded = false, authorityUpdates = [] }: GameReviewProps) {
+export function GameReview({
+  gameLog,
+  finalState,
+  winner,
+  onClose,
+  embedded = false,
+  authorityUpdates = [],
+  engineEventLog,
+  engineEventLogSeeds,
+  engineEventLogInitialState,
+}: GameReviewProps) {
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [filterPlayer, setFilterPlayer] = useState<'all' | 'human' | 'ai'>('human');
 
   const reviewLog = useMemo(() => {
     const authorityEntries = authorityReviewEntries(authorityUpdates, finalState);
-    return [...gameLog, ...authorityEntries];
-  }, [authorityUpdates, finalState, gameLog]);
+    const replayEntries = replayAuditReviewEntry(engineEventLog, engineEventLogSeeds, engineEventLogInitialState, finalState);
+    return [...gameLog, ...authorityEntries, ...replayEntries];
+  }, [authorityUpdates, engineEventLog, engineEventLogInitialState, engineEventLogSeeds, finalState, gameLog]);
 
   // Rate all entries
   const ratedEntries = useMemo(() => {

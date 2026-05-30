@@ -2405,7 +2405,7 @@ describe('authority action boundary', () => {
       requestId: 'req-event-log-tampered-diff',
       ok: false,
       reason: 'diff_mismatch',
-      message: 'Event log visible-diff sequence does not match replayed engine output.',
+      message: 'Event log visible-diff sequence does not match replayed engine output. Expected none; got CardZoneChanged, CardSummoningSicknessChanged.',
     }));
   });
 
