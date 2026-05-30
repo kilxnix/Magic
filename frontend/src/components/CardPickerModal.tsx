@@ -22,16 +22,27 @@ interface CardPickerModalProps {
   cancelLabel?: string;
 }
 
+export function sortCardPickerCards<T extends Pick<CardPickerCard, 'legal' | 'name' | 'typeLine'>>(cards: T[]): T[] {
+  return [...cards].sort((a, b) => {
+    const aLegal = a.legal !== false;
+    const bLegal = b.legal !== false;
+    if (aLegal !== bLegal) return aLegal ? -1 : 1;
+    const nameCompare = a.name.localeCompare(b.name);
+    if (nameCompare !== 0) return nameCompare;
+    return a.typeLine.localeCompare(b.typeLine);
+  });
+}
+
 export function CardPickerModal({ title, cards, filter, onPick, onCancel, cancelLabel = 'Cancel search' }: CardPickerModalProps) {
   const [search, setSearch] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  const filtered = useMemo(() => cards.filter(card => {
+  const filtered = useMemo(() => sortCardPickerCards(cards.filter(card => {
     const haystack = [card.name, card.typeLine, card.manaCost, card.oracleText || ''].join(' ').toLowerCase();
     if (search && !haystack.includes(search.toLowerCase())) return false;
     if (filter && !card.typeLine.toLowerCase().includes(filter.toLowerCase())) return false;
     return true;
-  }), [cards, filter, search]);
+  })), [cards, filter, search]);
   const selected = filtered.find(card => card.instanceId === selectedId)
     || filtered.find(card => card.legal !== false)
     || filtered[0];
@@ -130,12 +141,12 @@ export function CardPickerModal({ title, cards, filter, onPick, onCancel, cancel
                 )}
                 {card.mustReveal !== undefined && (
                   <span className="rounded bg-stone-600/50 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-stone-200">
-                    {card.mustReveal ? 'Reveal' : 'Hidden pick'}
+                    {card.mustReveal ? 'Reveal' : 'Private pick'}
                   </span>
                 )}
               </div>
               {card.reason && (
-                <div className="mt-1 text-[11px] font-semibold leading-snug text-emerald-100/80">
+                <div className={`mt-1 text-[11px] font-semibold leading-snug ${card.legal === false ? 'text-red-100/85' : 'text-emerald-100/80'}`}>
                   {card.reason}
                 </div>
               )}
