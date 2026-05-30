@@ -100,6 +100,7 @@ export function PlayPage() {
     libraryChoice,
     optionalTriggerChoice,
     damageAssignmentChoice,
+    triggerOrderChoice,
     gameLog,
     authorityUpdates,
     lastStateUpdate,
@@ -119,6 +120,7 @@ export function PlayPage() {
     resolveLibraryChoice,
     resolveOptionalTriggerChoice,
     resolveDamageAssignmentChoice,
+    resolveTriggerOrderChoice,
     undosRemaining,
     undoAction,
     coachMode,
@@ -758,6 +760,8 @@ export function PlayPage() {
             onResolveOptionalTrigger={resolveOptionalTriggerChoice}
             damageAssignmentChoice={damageAssignmentChoice}
             onResolveDamageAssignment={resolveDamageAssignmentChoice}
+            triggerOrderChoice={triggerOrderChoice}
+            onResolveTriggerOrder={resolveTriggerOrderChoice}
             undosRemaining={undosRemaining}
             onUndo={undoAction}
             coachMode={coachMode}

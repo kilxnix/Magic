@@ -77,6 +77,8 @@ import {
   applyOptionalTriggerPromptResponse,
   createDamageAssignmentPromptRequest,
   applyDamageAssignmentPromptResponse,
+  createOrderTriggersPromptRequest,
+  applyOrderTriggersPromptResponse,
   createChooseModePromptRequest,
   applyChooseModePromptResponse,
   type ActionPromptChoice,
@@ -89,6 +91,7 @@ import {
   type OptionalTriggerPromptRequest,
   type DamageAssignmentOrder,
   type DamageAssignmentPromptRequest,
+  type OrderTriggersPromptRequest,
   type TargetSpec,
   summarizeActionPromptChoices,
   serializeGameState,
@@ -378,6 +381,7 @@ export interface ShelectorGameSaveSnapshot {
   libraryChoice?: LibraryManipulationChoice | null;
   optionalTriggerChoice?: OptionalTriggerChoice | null;
   damageAssignmentChoice?: DamageAssignmentChoice | null;
+  triggerOrderChoice?: TriggerOrderChoiceState | null;
   undosRemaining: number;
   coachMode: boolean;
   newPlayerMode: boolean;
@@ -650,6 +654,16 @@ export interface DamageAssignmentChoice {
       legal: boolean;
       reason?: string;
     }[];
+  }[];
+}
+
+export interface TriggerOrderChoiceState {
+  id: string;
+  title: string;
+  triggers: {
+    triggerId: string;
+    sourceName: string;
+    triggerKind: string;
   }[];
 }
 
@@ -2043,6 +2057,8 @@ export function useShelectorGame() {
   const optionalTriggerPromptRequestRef = useRef<OptionalTriggerPromptRequest | null>(null);
   const [damageAssignmentChoice, setDamageAssignmentChoice] = useState<DamageAssignmentChoice | null>(null);
   const damageAssignmentPromptRequestRef = useRef<DamageAssignmentPromptRequest | null>(null);
+  const [triggerOrderChoice, setTriggerOrderChoice] = useState<TriggerOrderChoiceState | null>(null);
+  const triggerOrderPromptRequestRef = useRef<OrderTriggersPromptRequest | null>(null);
   const submitActionRef = useRef<((action: SimpleLegalAction) => void) | null>(null);
   const [undosRemaining, setUndosRemaining] = useState(10);
 
@@ -2603,6 +2619,40 @@ export function useShelectorGame() {
     return true;
   }, []);
 
+  const queueHumanTriggerOrderChoice = useCallback((current: GameState): boolean => {
+    if (current.pendingTriggers.length < 2) {
+      triggerOrderPromptRequestRef.current = null;
+      setTriggerOrderChoice(null);
+      return false;
+    }
+
+    const allHumanControlled = current.pendingTriggers.every(trigger => trigger.controllerId === humanIdRef.current);
+    if (!allHumanControlled) {
+      triggerOrderPromptRequestRef.current = null;
+      setTriggerOrderChoice(null);
+      return false;
+    }
+
+    const request = createOrderTriggersPromptRequest(current, humanIdRef.current);
+    if (request.triggers.length < 2) {
+      triggerOrderPromptRequestRef.current = null;
+      setTriggerOrderChoice(null);
+      return false;
+    }
+
+    triggerOrderPromptRequestRef.current = request;
+    setTriggerOrderChoice({
+      id: request.id,
+      title: 'Order triggered abilities',
+      triggers: request.triggers.map(trigger => ({
+        triggerId: trigger.triggerId,
+        sourceName: trigger.sourceName,
+        triggerKind: trigger.triggerKind,
+      })),
+    });
+    return true;
+  }, []);
+
   const runSBAAndTriggers = useCallback((s: GameState): GameState => {
     let current = s;
     // SBAs may produce triggers, and resolving triggers may cause more SBAs,
@@ -2614,6 +2664,9 @@ export function useShelectorGame() {
         if (queueHumanOptionalTriggerChoice(current)) {
           break;
         }
+        if (queueHumanTriggerOrderChoice(current)) {
+          break;
+        }
         current = putTriggersOnStack(current);
         // New stack items mean we should check SBAs again after they resolve,
         // but we don't resolve here — the main loop handles that.
@@ -2623,7 +2676,7 @@ export function useShelectorGame() {
       break;
     }
     return current;
-  }, [queueHumanOptionalTriggerChoice]);
+  }, [queueHumanOptionalTriggerChoice, queueHumanTriggerOrderChoice]);
 
   /**
    * Check if the top of the stack is a "tax" triggered ability (Rhystic Study,
@@ -3039,11 +3092,11 @@ export function useShelectorGame() {
         `${s.turnNumber}:${s.activePlayerIndex}:${s.step}:${suffix}`;
 
       state = runSBAAndTriggers(state);
-      if (optionalTriggerPromptRequestRef.current) return state;
+      if (optionalTriggerPromptRequestRef.current || triggerOrderPromptRequestRef.current) return state;
       if (checkGameOver(state)) return state;
 
       while (safety-- > 0) {
-        if (optionalTriggerPromptRequestRef.current) break;
+        if (optionalTriggerPromptRequestRef.current || triggerOrderPromptRequestRef.current) break;
         // Check game over: human lost, or all AIs lost
         const humanLostCheck = state.players.find(p => p.id === humanIdRef.current)?.hasLost;
         const allAIsLostCheck = aiIdsRef.current.every(id => {
@@ -3667,6 +3720,44 @@ export function useShelectorGame() {
     syncState();
   }, [addMessage, advanceGameLoop, recordAuthorityUpdate, syncState]);
 
+  const resolveTriggerOrderChoice = useCallback((orderedTriggerIds: string[]) => {
+    const engine = engineRef.current;
+    const promptRequest = triggerOrderPromptRequestRef.current;
+    if (!engine || !promptRequest) {
+      triggerOrderPromptRequestRef.current = null;
+      setTriggerOrderChoice(null);
+      syncState();
+      return;
+    }
+
+    const promptResponse = applyOrderTriggersPromptResponse(engine, promptRequest, {
+      requestId: promptRequest.id,
+      kind: 'OrderTriggers',
+      playerId: humanIdRef.current,
+      orderedTriggerIds,
+    });
+    recordAuthorityUpdate(promptResponse.update);
+    if (!promptResponse.ok || !promptResponse.state) {
+      addMessage('system', promptResponse.message || 'Could not apply trigger order.');
+      syncState();
+      return;
+    }
+
+    triggerOrderPromptRequestRef.current = null;
+    setTriggerOrderChoice(null);
+
+    let state = promptResponse.state as GameStateWithAI;
+    const loopMessages: { role: ChatMessage['role']; text: string }[] = [];
+    const loopLogEntries: GameLogEntry[] = [];
+    state = advanceGameLoop(state, loopMessages, loopLogEntries) as GameStateWithAI;
+
+    engineRef.current = state;
+    addMessage('player', 'Ordered triggered abilities.');
+    for (const msg of loopMessages) addMessage(msg.role, msg.text);
+    if (loopLogEntries.length > 0) setGameLog(prev => [...prev, ...loopLogEntries]);
+    syncState();
+  }, [addMessage, advanceGameLoop, recordAuthorityUpdate, syncState]);
+
   // Spawn opponent via the Shelector API
   const spawnOpponent = useCallback(async (options?: SpawnOptions) => {
     setIsLoading(true);
@@ -3776,12 +3867,14 @@ export function useShelectorGame() {
       libraryManipulationPromptRequestRef.current = null;
       optionalTriggerPromptRequestRef.current = null;
       damageAssignmentPromptRequestRef.current = null;
+      triggerOrderPromptRequestRef.current = null;
       setTutorPhase(false);
       setTutorCards([]);
       setTutorTitle('');
       setLibraryChoice(null);
       setOptionalTriggerChoice(null);
       setDamageAssignmentChoice(null);
+      setTriggerOrderChoice(null);
       pendingLibraryChoiceRef.current = null;
       const format = options?.format ?? 'commander';
 
@@ -4754,8 +4847,10 @@ export function useShelectorGame() {
     pendingTargetChoiceRef.current = null;
     optionalTriggerPromptRequestRef.current = null;
     damageAssignmentPromptRequestRef.current = null;
+    triggerOrderPromptRequestRef.current = null;
     setOptionalTriggerChoice(null);
     setDamageAssignmentChoice(null);
+    setTriggerOrderChoice(null);
     setDiscardPhase(false);
     setTutorPhase(false);
     setTutorCards([]);
@@ -4845,7 +4940,7 @@ export function useShelectorGame() {
 
   const skipEmptyPhases = useCallback(() => {
     let state = engineRef.current as GameState | null;
-    if (!state || gameState?.gameOver || mulliganPhase || discardPhase || tutorPhase || libraryChoice || optionalTriggerChoice || damageAssignmentChoice) return;
+    if (!state || gameState?.gameOver || mulliganPhase || discardPhase || tutorPhase || libraryChoice || optionalTriggerChoice || damageAssignmentChoice || triggerOrderChoice) return;
 
     const humanId = humanIdRef.current;
     const loopMessages: { role: ChatMessage['role']; text: string }[] = [];
@@ -4938,6 +5033,7 @@ export function useShelectorGame() {
     libraryChoice,
     mulliganPhase,
     optionalTriggerChoice,
+    triggerOrderChoice,
     syncState,
     tutorPhase,
     applyActionThroughAuthority,
@@ -4945,7 +5041,7 @@ export function useShelectorGame() {
 
   const skipRestOfTurn = useCallback(() => {
     let state = engineRef.current as GameState | null;
-    if (!state || gameState?.gameOver || mulliganPhase || discardPhase || tutorPhase || libraryChoice || optionalTriggerChoice || damageAssignmentChoice) return;
+    if (!state || gameState?.gameOver || mulliganPhase || discardPhase || tutorPhase || libraryChoice || optionalTriggerChoice || damageAssignmentChoice || triggerOrderChoice) return;
 
     const humanId = humanIdRef.current;
     if (state.players[state.activePlayerIndex]?.id !== humanId) {
@@ -5096,6 +5192,7 @@ export function useShelectorGame() {
     libraryChoice,
     mulliganPhase,
     optionalTriggerChoice,
+    triggerOrderChoice,
     queueHumanDamageAssignmentChoice,
     runSBAAndTriggers,
     skipEmptyPhases,
@@ -5115,6 +5212,10 @@ export function useShelectorGame() {
       }
       if (damageAssignmentChoice) {
         addMessage('system', 'Choose combat damage order first.');
+        return;
+      }
+      if (triggerOrderChoice) {
+        addMessage('system', 'Order the pending triggers first.');
         return;
       }
 
@@ -6041,7 +6142,7 @@ export function useShelectorGame() {
         syncState();
       }
     },
-    [gameState, addMessage, appendLog, syncState, advanceGameLoop, applyEvents, damageAssignmentChoice, lastPlayedCard, optionalTriggerChoice, rememberLastPlayedCard, recordAuthorityUpdate, recordStateUpdate, skipEmptyPhases, skipRestOfTurn],
+    [gameState, addMessage, appendLog, syncState, advanceGameLoop, applyEvents, damageAssignmentChoice, lastPlayedCard, optionalTriggerChoice, rememberLastPlayedCard, recordAuthorityUpdate, recordStateUpdate, skipEmptyPhases, skipRestOfTurn, triggerOrderChoice],
   );
   submitActionRef.current = submitAction;
 
@@ -6077,6 +6178,7 @@ export function useShelectorGame() {
       libraryChoice,
       optionalTriggerChoice,
       damageAssignmentChoice,
+      triggerOrderChoice,
       undosRemaining,
       coachMode,
       newPlayerMode,
@@ -6105,6 +6207,7 @@ export function useShelectorGame() {
     libraryChoice,
     optionalTriggerChoice,
     damageAssignmentChoice,
+    triggerOrderChoice,
     undosRemaining,
     coachMode,
     newPlayerMode,
@@ -6199,6 +6302,13 @@ export function useShelectorGame() {
           })
         : null;
       setDamageAssignmentChoice(restoredDamageAssignmentChoice);
+      const restoredTriggerOrderChoice = snapshot.triggerOrderChoice || null;
+      triggerOrderPromptRequestRef.current = restoredTriggerOrderChoice
+        ? createOrderTriggersPromptRequest(restored, humanIdRef.current, {
+            id: restoredTriggerOrderChoice.id,
+          })
+        : null;
+      setTriggerOrderChoice(restoredTriggerOrderChoice);
       setUndosRemaining(snapshot.undosRemaining ?? 10);
       setCoachMode(Boolean(snapshot.coachMode));
       setNewPlayerMode(Boolean(snapshot.newPlayerMode));
@@ -6246,6 +6356,7 @@ export function useShelectorGame() {
       libraryChoice,
       optionalTriggerChoice,
       damageAssignmentChoice,
+      triggerOrderChoice,
       gameLog,
       authorityUpdates,
       lastStateUpdate,
@@ -6292,6 +6403,7 @@ export function useShelectorGame() {
     resolveLibraryChoice,
     resolveOptionalTriggerChoice,
     resolveDamageAssignmentChoice,
+    resolveTriggerOrderChoice,
     undoAction,
     setCoachMode,
     setNewPlayerMode,

@@ -7,7 +7,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import type { DamageAssignmentChoice, LibraryManipulationChoice, OptionalTriggerChoice, SimpleGameState, SimpleLegalAction, SimpleCard, LastPlayedCard } from '../hooks/useShelectorGame';
+import type { DamageAssignmentChoice, LibraryManipulationChoice, OptionalTriggerChoice, SimpleGameState, SimpleLegalAction, SimpleCard, LastPlayedCard, TriggerOrderChoiceState } from '../hooks/useShelectorGame';
 import type { DamageAssignmentOrder } from 'commander-engine';
 import type { EnginePrompt, EngineStateUpdate } from 'commander-engine';
 import { Loader2, ChevronDown, ChevronRight, Search, X, Lightbulb, Menu } from 'lucide-react';
@@ -108,6 +108,8 @@ interface GameBoardProps {
   onResolveOptionalTrigger?: (use: boolean) => void;
   damageAssignmentChoice?: DamageAssignmentChoice | null;
   onResolveDamageAssignment?: (orders: DamageAssignmentOrder[]) => void;
+  triggerOrderChoice?: TriggerOrderChoiceState | null;
+  onResolveTriggerOrder?: (orderedTriggerIds: string[]) => void;
   undosRemaining?: number;
   onUndo?: () => void;
   coachMode?: boolean;
@@ -1271,6 +1273,86 @@ function DamageAssignmentModal({
   );
 }
 
+function TriggerOrderModal({
+  choice,
+  onResolve,
+}: {
+  choice: TriggerOrderChoiceState;
+  onResolve: (orderedTriggerIds: string[]) => void;
+}) {
+  const [orderedIds, setOrderedIds] = useState<string[]>(() => choice.triggers.map(trigger => trigger.triggerId));
+
+  useEffect(() => {
+    setOrderedIds(choice.triggers.map(trigger => trigger.triggerId));
+  }, [choice.id, choice.triggers]);
+
+  const triggerById = new Map(choice.triggers.map(trigger => [trigger.triggerId, trigger]));
+  const moveTrigger = (triggerId: string, delta: number) => {
+    setOrderedIds(prev => {
+      const index = prev.indexOf(triggerId);
+      const target = index + delta;
+      if (index < 0 || target < 0 || target >= prev.length) return prev;
+      const next = [...prev];
+      [next[index], next[target]] = [next[target], next[index]];
+      return next;
+    });
+  };
+
+  return (
+    <div className="fixed inset-0 z-[86] flex items-center justify-center bg-black/75 p-3 backdrop-blur-sm">
+      <div className="w-full max-w-xl overflow-hidden rounded-lg border border-sky-500/45 bg-neutral-950 shadow-2xl">
+        <div className="border-b border-neutral-800 px-4 py-3">
+          <div className="text-[10px] font-black uppercase tracking-wider text-sky-300">Trigger Order</div>
+          <div className="mt-1 text-lg font-black text-stone-100">{choice.title}</div>
+          <div className="mt-1 text-xs text-stone-400">Top trigger resolves first. Move your triggered abilities into the order you want.</div>
+        </div>
+        <div className="space-y-2 p-3">
+          {orderedIds.map((triggerId, index) => {
+            const trigger = triggerById.get(triggerId);
+            if (!trigger) return null;
+            return (
+              <div key={triggerId} className="flex items-center gap-2 rounded border border-neutral-800 bg-neutral-900/70 p-2">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded bg-sky-500 text-sm font-black text-neutral-950">
+                  {index + 1}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-sm font-bold text-stone-100">{trigger.sourceName}</div>
+                  <div className="text-[11px] text-stone-500">{trigger.triggerKind}</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => moveTrigger(triggerId, -1)}
+                  disabled={index === 0}
+                  className="min-h-9 rounded border border-stone-700 px-2 text-xs font-bold text-stone-200 disabled:opacity-35"
+                >
+                  Up
+                </button>
+                <button
+                  type="button"
+                  onClick={() => moveTrigger(triggerId, 1)}
+                  disabled={index === orderedIds.length - 1}
+                  className="min-h-9 rounded border border-stone-700 px-2 text-xs font-bold text-stone-200 disabled:opacity-35"
+                >
+                  Down
+                </button>
+              </div>
+            );
+          })}
+        </div>
+        <div className="flex justify-end border-t border-neutral-800 px-4 py-3">
+          <button
+            type="button"
+            onClick={() => onResolve(orderedIds)}
+            className="min-h-11 rounded bg-sky-400 px-5 text-sm font-black text-neutral-950 hover:bg-sky-300"
+          >
+            Confirm Trigger Order
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /** Expandable graveyard viewer */
 function GraveyardViewer({
   cards,
@@ -1350,6 +1432,8 @@ export function GameBoard({
   onResolveOptionalTrigger,
   damageAssignmentChoice,
   onResolveDamageAssignment,
+  triggerOrderChoice,
+  onResolveTriggerOrder,
   undosRemaining,
   onUndo,
   coachMode,
@@ -1709,6 +1793,12 @@ export function GameBoard({
         <DamageAssignmentModal
           choice={damageAssignmentChoice}
           onResolve={onResolveDamageAssignment}
+        />
+      )}
+      {triggerOrderChoice && onResolveTriggerOrder && (
+        <TriggerOrderModal
+          choice={triggerOrderChoice}
+          onResolve={onResolveTriggerOrder}
         />
       )}
       {inspectedCard && (
