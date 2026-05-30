@@ -439,6 +439,30 @@ describe('Stack', () => {
       expect(next.cards.get(spell.instanceId)?.zone).toBe('stack');
     });
 
+    it('charges and resolves selected X values for X spells', () => {
+      const xSpell: CardDefinition = {
+        id: 'x-bolt-1',
+        name: 'X Bolt',
+        type_line: 'Sorcery',
+        oracle_text: 'X Bolt deals X damage to any target.',
+        mana_cost: '{X}{R}',
+        cmc: 1,
+        colors: ['R'],
+        color_identity: ['R'],
+        keywords: [],
+        card_types: ['sorcery'],
+      };
+      const { state, cardInstanceId } = setupWithCardInHand(xSpell);
+      state.players[0].manaPool = { W: 0, U: 0, B: 0, R: 1, G: 0, C: 3 };
+
+      const cast = castSpell(state, 'p1', cardInstanceId, ['p2'], { xValue: 3 });
+      expect(cast.players[0].manaPool).toEqual({ W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 });
+      expect((cast.stack[0] as any).xValue).toBe(3);
+
+      const resolved = resolveTopOfStack(cast);
+      expect(resolved.players[1].life).toBe(37);
+    });
+
     it('resets priority passed after casting', () => {
       const { state, cardInstanceId } = setupWithCardInHand(makeCreature());
       state.hasPriorityPassed[0] = true;

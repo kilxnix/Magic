@@ -125,6 +125,7 @@ export interface SpellStackItem {
   chosenModes?: number[];
   namedCardChoices?: Record<string, string>;
   cardChoices?: CardInstance['choices'];
+  xValue?: number;
   cantBeCountered?: boolean;
   isCopy?: boolean;
   copyOfCardInstanceId?: string;

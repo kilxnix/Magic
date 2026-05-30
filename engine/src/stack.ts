@@ -21,6 +21,7 @@ export interface CastSpellOptions {
   chosenModes?: number[];
   namedCardChoices?: Record<string, string>;
   cardChoices?: CardInstance['choices'];
+  xValue?: number;
   delveCardIds?: string[];
   convokeCreatureIds?: string[];
   improviseArtifactIds?: string[];
@@ -31,6 +32,10 @@ function normalizeCastOptions(options?: number[] | CastSpellOptions): CastSpellO
     return { chosenModes: options };
   }
   return options || {};
+}
+
+function normalizedXValue(options: CastSpellOptions): number {
+  return Math.max(0, Math.floor(options.xValue ?? 0));
 }
 
 function copyCardChoices(choices?: CardInstance['choices']): CardInstance['choices'] {
@@ -566,6 +571,7 @@ function executeSpellEffectsWithCopySupport(
   sourceInstanceId: string,
   namedCardChoices?: Record<string, string>,
   eventContext?: { casterId?: string; cardInstanceId?: string },
+  xValue: number = 0,
 ): GameState {
   const executableEffects = effects.filter(effect => effect.kind !== 'CopySpell');
   let resultState = state;
@@ -577,7 +583,7 @@ function executeSpellEffectsWithCopySupport(
       casterId,
       targets,
       targetSpecs,
-      0,
+      xValue,
       { namedCardChoices, sourceInstanceId, eventContext },
     );
   }
@@ -809,8 +815,9 @@ export function getEffectiveCastCost(
   if (!card) return null;
   const def = getCardDefinition(state, card);
   const baseCost = parseManaString(def.mana_cost);
+  const xCost = /\{X\}/i.test(def.mana_cost) ? normalizedXValue(options) : 0;
   const taxAmount = card.zone === 'command' ? getCommanderTaxForCast(state, playerId, cardInstanceId) : 0;
-  const reducedCost = reduceGenericCost(state, playerId, { ...baseCost, generic: baseCost.generic + taxAmount }, def);
+  const reducedCost = reduceGenericCost(state, playerId, { ...baseCost, generic: baseCost.generic + taxAmount + xCost }, def);
   return buildCostMechanicPlan(state, playerId, card, def, reducedCost, options).cost;
 }
 
@@ -877,7 +884,8 @@ export function castSpell(
   const player = state.players[playerIndex];
   const isFromCommandZone = card.zone === 'command';
   const taxAmount = isFromCommandZone ? getCommanderTaxForCast(state, playerId, cardInstanceId) : 0;
-  const reducedCost = reduceGenericCost(state, playerId, { ...cost, generic: cost.generic + taxAmount }, def);
+  const xCost = /\{X\}/i.test(def.mana_cost) ? normalizedXValue(castOptions) : 0;
+  const reducedCost = reduceGenericCost(state, playerId, { ...cost, generic: cost.generic + taxAmount + xCost }, def);
   const mechanicPlan = buildCostMechanicPlan(state, playerId, card, def, reducedCost, castOptions);
   const totalCost = mechanicPlan.cost;
   const usedRestrictedMana = getSpellPaymentRestrictedMana(player, totalCost, def, card);
@@ -931,6 +939,7 @@ export function castSpell(
     ...(castOptions.chosenModes ? { chosenModes: castOptions.chosenModes } : {}),
     ...(castOptions.namedCardChoices ? { namedCardChoices: castOptions.namedCardChoices } : {}),
     ...(castOptions.cardChoices ? { cardChoices: copyCardChoices(castOptions.cardChoices) } : {}),
+    ...(/\{X\}/i.test(def.mana_cost) ? { xValue: normalizedXValue(castOptions) } : {}),
     ...(paymentMakesSpellUncounterable(state, usedRestrictedMana) || hasCantBeCounteredText(def.oracle_text)
       ? { cantBeCountered: true }
       : {}),
@@ -1261,6 +1270,8 @@ export function resolveTopOfStack(state: GameState): GameState {
           override.targets,
           spellItem.cardInstanceId,
           spellItem.namedCardChoices,
+          undefined,
+          spellItem.xValue ?? 0,
         );
       }
     } else {
@@ -1278,6 +1289,8 @@ export function resolveTopOfStack(state: GameState): GameState {
             parsed.targets,
             spellItem.cardInstanceId,
             spellItem.namedCardChoices,
+            undefined,
+            spellItem.xValue ?? 0,
           );
         }
       } else if (parsed.kind === 'Modal' && spellItem.chosenModes && spellItem.chosenModes.length > 0) {
@@ -1314,6 +1327,8 @@ export function resolveTopOfStack(state: GameState): GameState {
             allTargetSpecs,
             spellItem.cardInstanceId,
             spellItem.namedCardChoices,
+            undefined,
+            spellItem.xValue ?? 0,
           );
         }
       } else {

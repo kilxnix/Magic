@@ -86,6 +86,10 @@ export function dispatchAIAction(
         chosenModes: action.chosenModes,
         namedCardChoices: action.namedCardChoices,
         cardChoices: action.cardChoices,
+        xValue: action.xValue,
+        delveCardIds: action.delveCardIds,
+        convokeCreatureIds: action.convokeCreatureIds,
+        improviseArtifactIds: action.improviseArtifactIds,
       });
 
     case 'DeclareAttackers':
