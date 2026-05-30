@@ -259,6 +259,46 @@ function stateWithSearchedShockLand(): GameState {
   };
 }
 
+function stateWithFetchSearchTargets(): GameState {
+  const templeGarden = {
+    ...def('temple_garden_fetch', 'Temple Garden', 'Land - Forest Plains', ''),
+    cmc: 0,
+  };
+  const mountain = {
+    ...def('mountain_fetch', 'Mountain', 'Basic Land - Mountain', ''),
+    cmc: 0,
+  };
+  const island = {
+    ...def('island_fetch', 'Island', 'Basic Land - Island', ''),
+    cmc: 0,
+  };
+  const wateryGrave = {
+    ...def('watery_grave_fetch', 'Watery Grave', 'Land - Island Swamp', ''),
+    cmc: 0,
+  };
+  const aridMesa = {
+    ...def('arid_mesa_fetch', 'Arid Mesa', 'Land', ''),
+    cmc: 0,
+  };
+  return {
+    ...stateWithSearchedShockLand(),
+    cards: new Map<string, CardInstance>([
+      ['temple_garden_fetch_1', cardInstance('temple_garden_fetch_1', templeGarden.id, 'p1', 'library')],
+      ['mountain_fetch_1', cardInstance('mountain_fetch_1', mountain.id, 'p1', 'library')],
+      ['island_fetch_1', cardInstance('island_fetch_1', island.id, 'p1', 'library')],
+      ['watery_grave_fetch_1', cardInstance('watery_grave_fetch_1', wateryGrave.id, 'p1', 'library')],
+      ['arid_mesa_fetch_1', cardInstance('arid_mesa_fetch_1', aridMesa.id, 'p1', 'library')],
+    ]),
+    cardDefinitions: new Map<string, CardDefinition>([
+      [templeGarden.id, templeGarden],
+      [mountain.id, mountain],
+      [island.id, island],
+      [wateryGrave.id, wateryGrave],
+      [aridMesa.id, aridMesa],
+    ]),
+  };
+}
+
 function stateWithSearchedEtbCreature(): GameState {
   const visionary: CardDefinition = {
     ...def(
@@ -764,6 +804,59 @@ describe('authority action boundary', () => {
     expect(rejected.message).toContain('effect puts the card onto the battlefield tapped');
     expect(rejected.state).toBeUndefined();
     expect(state.cards.get('temple_garden_1')?.zone).toBe('library');
+  });
+
+  it('limits fetch-land search prompts by land subtype instead of card name', () => {
+    const state = stateWithFetchSearchTargets();
+    const filter: CardFilter = { types: ['land'], subtypes: ['Mountain', 'Plains'] };
+    const request = createSearchLibraryPromptRequest(state, 'p1', filter, 'battlefield', {
+      id: 'prompt-arid-mesa-fetch',
+      sourceInstanceId: 'arid_mesa_fetch_1',
+      minSelections: 1,
+      maxSelections: 1,
+      createdAt: 151,
+    });
+
+    expect(request.legalChoices.map(choice => choice.cardName)).toEqual([
+      'Mountain',
+      'Temple Garden',
+    ]);
+    expect(request.invalidChoices).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        cardInstanceId: 'island_fetch_1',
+        cardName: 'Island',
+        reason: 'Missing subtype Mountain or Plains',
+      }),
+      expect.objectContaining({
+        cardInstanceId: 'watery_grave_fetch_1',
+        cardName: 'Watery Grave',
+        reason: 'Missing subtype Mountain or Plains',
+      }),
+      expect.objectContaining({
+        cardInstanceId: 'arid_mesa_fetch_1',
+        cardName: 'Arid Mesa',
+        reason: 'Missing subtype Mountain or Plains',
+      }),
+    ]));
+
+    const rejected = applySearchLibraryPromptResponse(state, request, {
+      requestId: request.id,
+      kind: 'SearchLibrary',
+      playerId: 'p1',
+      selectedCardInstanceIds: ['watery_grave_fetch_1'],
+    });
+    expect(rejected.ok).toBe(false);
+    expect(rejected.message).toBe('Illegal search selection: Missing subtype Mountain or Plains');
+
+    const accepted = applySearchLibraryPromptResponse(state, request, {
+      requestId: request.id,
+      kind: 'SearchLibrary',
+      playerId: 'p1',
+      selectedCardInstanceIds: ['temple_garden_fetch_1'],
+    });
+    expect(accepted.ok).toBe(true);
+    expect(accepted.state?.cards.get('temple_garden_fetch_1')?.zone).toBe('battlefield');
+    expect(accepted.state?.cards.get('watery_grave_fetch_1')?.zone).toBe('library');
   });
 
   it('registers searched battlefield entries and queues their ETB triggers in the engine transaction', () => {
