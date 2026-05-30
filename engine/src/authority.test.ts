@@ -2438,6 +2438,45 @@ describe('authority action boundary', () => {
     expect(response.state?.cards.get(forest.instanceId)?.tapped).toBe(true);
   });
 
+  it('does not create a stack search prompt while priority is still pending', () => {
+    const base = stateWithForestInHand();
+    const forest = [...base.cards.values()].find(card => card.definitionId === 'forest' && card.ownerId === 'p1')!;
+    const rampantGrowth = def(
+      'rampant_growth',
+      'Rampant Growth',
+      'Sorcery',
+      '{1}{G}',
+      'Search your library for a basic land card, put that card onto the battlefield tapped, then shuffle.',
+    );
+    const cards = new Map(base.cards);
+    cards.set(forest.instanceId, { ...forest, zone: 'library' });
+    cards.set('rampant_growth_1', cardInstance('rampant_growth_1', 'rampant_growth', 'p1', 'stack'));
+    const state: GameState = {
+      ...base,
+      cardDefinitions: new Map(base.cardDefinitions).set('rampant_growth', rampantGrowth),
+      cards,
+      stack: [{
+        kind: 'Spell',
+        id: 'stack-rampant-growth',
+        cardInstanceId: 'rampant_growth_1',
+        casterId: 'p1',
+        targets: [],
+      }],
+      hasPriorityPassed: [true, false],
+    };
+
+    const result = resolveTopStackSearchPrompt(state, {
+      playerId: 'p1',
+      createdAt: 102,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.reason).toBe('priority_pending');
+    expect(state.stack).toHaveLength(1);
+    expect(state.cards.get('rampant_growth_1')?.zone).toBe('stack');
+    expect(state.cards.get(forest.instanceId)?.zone).toBe('library');
+  });
+
   it('keeps Cultivate multi-destination searches in one typed prompt', () => {
     const base = stateWithForestInHand();
     const forest = [...base.cards.values()].find(card => card.definitionId === 'forest' && card.ownerId === 'p1')!;

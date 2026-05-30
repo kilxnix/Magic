@@ -145,6 +145,7 @@ export interface SearchLibraryPromptResponse {
 
 export type ResolveStackSearchPromptFailure =
   | 'stack_empty'
+  | 'priority_pending'
   | 'not_controller'
   | 'no_search_effect'
   | 'unsupported_search_player';
@@ -1894,12 +1895,24 @@ function removeTopStackItemForPrompt(state: GameState, item: StackItem): GameSta
   };
 }
 
+function allNonLostPlayersPassedPriority(state: GameState): boolean {
+  return state.players.every((player, index) => player.hasLost || state.hasPriorityPassed[index] === true);
+}
+
 export function resolveTopStackSearchPrompt(
   state: GameState,
   options: ResolveStackSearchPromptOptions = {},
 ): ResolveStackSearchPromptResult {
   if (state.stack.length === 0) {
     return { ok: false, reason: 'stack_empty', message: 'Stack is empty' };
+  }
+
+  if (!allNonLostPlayersPassedPriority(state)) {
+    return {
+      ok: false,
+      reason: 'priority_pending',
+      message: 'The stack object cannot resolve into a search prompt until all non-lost players pass priority',
+    };
   }
 
   const item = state.stack[state.stack.length - 1];

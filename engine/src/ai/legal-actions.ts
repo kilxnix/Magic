@@ -236,17 +236,14 @@ function generateModalActions(
           type: t.type as any,
           count: 1,
         }));
-        if (specs.length === 1) {
-          const legalTargets = getLegalTargets(state, playerId, specs[0]);
-          for (const target of legalTargets) {
-            actions.push({
-              kind: 'CastSpell',
-              cardInstanceId: card.instanceId,
-              targets: [target],
-              chosenModes: [i],
-              ...baseOptions,
-            });
-          }
+        for (const targets of generateTargetCombinations(state, playerId, specs)) {
+          actions.push({
+            kind: 'CastSpell',
+            cardInstanceId: card.instanceId,
+            targets,
+            chosenModes: [i],
+            ...baseOptions,
+          });
         }
       }
     }
@@ -254,14 +251,18 @@ function generateModalActions(
     // Generate pairs of modes
     for (let i = 0; i < modal.choices.length; i++) {
       for (let j = i + 1; j < modal.choices.length; j++) {
-        // For simplicity, only generate targetless combinations in v0
         const ci = modal.choices[i];
         const cj = modal.choices[j];
-        if (ci.targets.length === 0 && cj.targets.length === 0) {
+        const specs: TargetSpec[] = [...ci.targets, ...cj.targets].map(t => ({
+          id: t.id,
+          type: t.type as any,
+          count: 1,
+        }));
+        for (const targets of generateTargetCombinations(state, playerId, specs)) {
           actions.push({
             kind: 'CastSpell',
             cardInstanceId: card.instanceId,
-            targets: [],
+            targets,
             chosenModes: [i, j],
             ...baseOptions,
           });
@@ -523,26 +524,19 @@ function generateActivateAbilityActions(state: GameState, playerId: string): Act
         continue;
       }
 
-      // Single-target ability: enumerate legal targets, one action each.
-      // Multi-target abilities are skipped for v0 (combinatorial blowup).
-      if (abilityTargets.length === 1) {
-        const spec: TargetSpec = {
-          id: abilityTargets[0].id,
-          type: abilityTargets[0].type as TargetSpec['type'],
-          count: 1,
-        };
-        const legalTargets = getLegalTargets(state, playerId, spec);
-        for (const target of legalTargets) {
-          actions.push({
-            kind: 'ActivateAbility',
-            cardInstanceId: card.instanceId,
-            abilityIndex: i,
-            targets: [target],
-          });
-        }
+      const specs = abilityTargets.map((target): TargetSpec => ({
+        id: target.id,
+        type: target.type as TargetSpec['type'],
+        count: 1,
+      }));
+      for (const targets of generateTargetCombinations(state, playerId, specs)) {
+        actions.push({
+          kind: 'ActivateAbility',
+          cardInstanceId: card.instanceId,
+          abilityIndex: i,
+          targets,
+        });
       }
-      // (Abilities with 2+ target specs are not yet enumerated. They'll be
-      // missing from the legal-actions list rather than crash on activation.)
     }
   }
 

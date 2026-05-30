@@ -615,9 +615,52 @@ describe('getLegalActions', () => {
       )).toBe(true);
     });
   });
-});
+  });
 
-describe('getSpellTargetSpecs', () => {
+  describe('ActivateAbility actions', () => {
+    it('generates bounded target combinations for activated abilities with multiple targets', () => {
+      const state = createTestState({
+        priorityPlayerIndex: 0,
+        activePlayerIndex: 0,
+        phase: 'precombat_main',
+      });
+
+      addCard(state, 'fight_device', 'p1', 'battlefield', {
+        name: 'Fight Device',
+        type_line: 'Artifact',
+        oracle_text: "{T}: Target creature you control fights target creature you don't control.",
+        card_types: ['artifact'],
+      });
+      addCard(state, 'friendly_bear', 'p1', 'battlefield', {
+        name: 'Friendly Bear',
+        type_line: 'Creature - Bear',
+        card_types: ['creature'],
+        power: 2,
+        toughness: 2,
+      });
+      addCard(state, 'enemy_bear', 'p2', 'battlefield', {
+        name: 'Enemy Bear',
+        type_line: 'Creature - Bear',
+        card_types: ['creature'],
+        power: 2,
+        toughness: 2,
+      });
+
+      const actions = getLegalActions(state, 'p1')
+        .filter((action): action is import('./types').ActivateAbilityAction =>
+          action.kind === 'ActivateAbility' && action.cardInstanceId === 'fight_device',
+        );
+
+      expect(actions).toContainEqual({
+        kind: 'ActivateAbility',
+        cardInstanceId: 'fight_device',
+        abilityIndex: 0,
+        targets: ['friendly_bear', 'enemy_bear'],
+      });
+    });
+  });
+
+  describe('getSpellTargetSpecs', () => {
   it('returns empty array for spells without targets', () => {
     const state = createTestState();
 
@@ -1077,5 +1120,53 @@ describe('Modal spell actions', () => {
       return a[1] - b[1];
     });
     expect(modeSets).toEqual([[0, 1], [0, 2], [1, 2]]);
+  });
+
+  it('generates paired modes for "Choose two" spells when one selected mode needs a target', () => {
+    const state = createTestState({
+      priorityPlayerIndex: 0,
+      activePlayerIndex: 0,
+      phase: 'precombat_main',
+    });
+
+    state.players[0].manaPool = { W: 0, U: 1, B: 0, R: 1, G: 0, C: 1 };
+
+    addCard(state, 'targeted_modal', 'p1', 'hand', {
+      name: 'Targeted Command',
+      type_line: 'Instant',
+      oracle_text: 'Choose two - • Targeted Command deals 2 damage to any target. • Draw two cards. • Create a Treasure token.',
+      mana_cost: '{1}{U}{R}',
+      cmc: 3,
+      colors: ['U', 'R'],
+      color_identity: ['U', 'R'],
+      card_types: ['instant'],
+    });
+    addCard(state, 'enemy_bear', 'p2', 'battlefield', {
+      name: 'Enemy Bear',
+      type_line: 'Creature - Bear',
+      card_types: ['creature'],
+      power: 2,
+      toughness: 2,
+    });
+
+    const castActions = getLegalActions(state, 'p1')
+      .filter((action): action is import('./types').CastSpellAction =>
+        action.kind === 'CastSpell' && action.cardInstanceId === 'targeted_modal',
+      );
+
+    expect(castActions).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        chosenModes: [0, 1],
+        targets: ['enemy_bear'],
+      }),
+      expect.objectContaining({
+        chosenModes: [0, 2],
+        targets: ['enemy_bear'],
+      }),
+      expect.objectContaining({
+        chosenModes: [1, 2],
+        targets: [],
+      }),
+    ]));
   });
 });
