@@ -90,6 +90,8 @@ interface ManualTokenInput {
   keywords?: string[];
 }
 
+type ManualMoveZone = 'hand' | 'battlefield' | 'graveyard' | 'exile' | 'command';
+
 interface GameBoardProps {
   gameState: SimpleGameState;
   legalActions: SimpleLegalAction[];
@@ -135,6 +137,7 @@ interface GameBoardProps {
   onUntapMana?: (cardInstanceId: string) => void;
   onAdjustCounters?: (cardInstanceId: string, counterType: string, delta: number) => void;
   onAdjustPlayerCounter?: (playerId: string, counterType: string, delta: number) => void;
+  onMoveCard?: (cardInstanceId: string, zone: ManualMoveZone) => void;
   onCreateToken?: (token: ManualTokenInput) => void;
   untappableCardIds?: string[];
   lastPlayedCard?: LastPlayedCard | null;
@@ -749,6 +752,7 @@ function CardInspectorModal({
   onPrimaryAction,
   onSecondaryAction,
   onAdjustCounter,
+  onMoveCard,
   onClose,
 }: {
   card: SimpleCard;
@@ -759,13 +763,22 @@ function CardInspectorModal({
   onPrimaryAction?: () => void;
   onSecondaryAction?: () => void;
   onAdjustCounter?: (counterType: string, delta: number) => void;
+  onMoveCard?: (zone: ManualMoveZone) => void;
   onClose: () => void;
 }) {
   const isCreature = card.cardTypes.includes('creature');
   const counters = getCounterBadges(card.counters);
   const [customCounter, setCustomCounter] = useState('');
   const canAdjustCounters = card.zone === 'battlefield' && !!onAdjustCounter;
+  const canMoveCard = !!onMoveCard && card.zone !== 'stack' && card.zone !== 'library';
   const quickCounters = ['+1/+1', '-1/-1', 'loyalty', 'shield', 'stun'];
+  const zoneChoices: { zone: ManualMoveZone; label: string; commanderOnly?: boolean }[] = [
+    { zone: 'battlefield', label: 'Battlefield' },
+    { zone: 'graveyard', label: 'Graveyard' },
+    { zone: 'exile', label: 'Exile' },
+    { zone: 'hand', label: 'Hand' },
+    { zone: 'command', label: 'Command Zone', commanderOnly: true },
+  ];
   const submitCustomCounter = (delta: number) => {
     const counter = customCounter.trim();
     if (!counter || !onAdjustCounter) return;
@@ -961,6 +974,38 @@ function CardInspectorModal({
                   >
                     Add
                   </button>
+                </div>
+              </div>
+            )}
+
+            {canMoveCard && (
+              <div className="rounded border border-neutral-800 bg-neutral-900 p-3">
+                <div className="mb-2 text-[10px] font-bold uppercase tracking-wider text-stone-400">
+                  Manual Zones
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {zoneChoices
+                    .filter(choice => !choice.commanderOnly || card.isCommander)
+                    .map(choice => {
+                      const isCurrent = card.zone === choice.zone;
+                      return (
+                        <button
+                          key={choice.zone}
+                          type="button"
+                          disabled={isCurrent}
+                          onClick={() => {
+                            onMoveCard(choice.zone);
+                            onClose();
+                          }}
+                          className="min-h-10 rounded border border-neutral-700 bg-neutral-950 px-3 text-sm font-bold text-stone-200 transition-colors hover:bg-neutral-800 disabled:cursor-not-allowed disabled:border-neutral-800 disabled:text-stone-600"
+                        >
+                          {choice.label}
+                        </button>
+                      );
+                    })}
+                </div>
+                <div className="mt-2 text-[11px] leading-relaxed text-stone-500">
+                  Manual correction for missed zone changes, commander replacement, exile, and graveyard movement.
                 </div>
               </div>
             )}
@@ -1912,6 +1957,7 @@ export function GameBoard({
   onUntapMana,
   onAdjustCounters,
   onAdjustPlayerCounter,
+  onMoveCard,
   onCreateToken,
   untappableCardIds,
   lastPlayedCard,
@@ -2308,6 +2354,11 @@ export function GameBoard({
           onAdjustCounter={
             onAdjustCounters
               ? (counterType, delta) => onAdjustCounters(inspectedCard.instanceId, counterType, delta)
+              : undefined
+          }
+          onMoveCard={
+            onMoveCard
+              ? zone => onMoveCard(inspectedCard.instanceId, zone)
               : undefined
           }
           onClose={() => setInspectedCard(null)}

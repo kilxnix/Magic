@@ -271,6 +271,7 @@ function isMeaningfulAutoSkipAction(action: AIAction): boolean {
     case 'ManualUntapManaSource':
     case 'ManualAdjustCounters':
     case 'ManualAdjustPlayerCounter':
+    case 'ManualMoveCard':
     case 'ManualCreateToken':
       return false;
     case 'DeclareAttackers':
@@ -1735,6 +1736,17 @@ function toSimpleLegalAction(action: AIAction, engineState: GameState): SimpleLe
       return {
         kind: 'ManualAdjustPlayerCounter',
         label: `${sign}${action.delta} ${action.counterType} counter on ${playerName}`,
+        _engineAction: action,
+      };
+    }
+    case 'ManualMoveCard': {
+      const inst = engineState.cards.get(action.cardInstanceId);
+      const def = inst ? getCardDefinition(engineState, inst) : undefined;
+      return {
+        kind: 'ManualMoveCard',
+        cardInstanceId: action.cardInstanceId,
+        cardName: def?.name,
+        label: `Move ${def?.name || 'card'} to ${action.zone}`,
         _engineAction: action,
       };
     }
@@ -5112,6 +5124,39 @@ export function useShelectorGame() {
     syncState();
   }, [addMessage, applyActionThroughAuthority, applyEvents, syncState]);
 
+  const moveCardManually = useCallback((
+    cardInstanceId: string,
+    zone: 'hand' | 'battlefield' | 'graveyard' | 'exile' | 'command',
+  ) => {
+    const engine = engineRef.current;
+    if (!engine) return;
+
+    const card = engine.cards.get(cardInstanceId);
+    const def = card ? getCardDefinition(engine, card) : undefined;
+    const action: AIAction = {
+      kind: 'ManualMoveCard',
+      cardInstanceId,
+      zone,
+    };
+    const response = applyActionThroughAuthority(engine, humanIdRef.current, action, {
+      source: 'system',
+      label: toSimpleLegalAction(action, engine).label,
+    });
+    if (!response.ok || !response.state) {
+      const message = response.message || 'That zone correction was rejected.';
+      setActionError({ reason: response.reason || 'illegal_action', message });
+      addMessage('system', `Cannot move card: ${message}`);
+      syncState();
+      return;
+    }
+
+    engineRef.current = response.state as GameStateWithAI;
+    applyEvents(response.events || [], response.state);
+
+    addMessage('system', `Manual correction: moved ${def?.name || 'card'} to ${zone}.`);
+    syncState();
+  }, [addMessage, applyActionThroughAuthority, applyEvents, syncState]);
+
   const createManualToken = useCallback((token: {
     name: string;
     count: number;
@@ -6727,6 +6772,7 @@ export function useShelectorGame() {
     untapManaSource,
     adjustCounters,
     adjustPlayerCounter,
+    moveCardManually,
     createManualToken,
     clearActionError: () => setActionError(null),
   };

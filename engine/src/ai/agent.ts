@@ -16,6 +16,7 @@ import {
   tryUntapManaSource,
   tryAdjustCounters,
   tryAdjustPlayerCounter,
+  tryMoveCardManually,
   tryCreateManualToken,
   tryCastSpell,
   tryActivateAbility,
@@ -79,6 +80,9 @@ export function dispatchAIAction(
 
     case 'ManualAdjustPlayerCounter':
       return tryAdjustPlayerCounter(state, playerId, action.playerId, action.counterType, action.delta);
+
+    case 'ManualMoveCard':
+      return tryMoveCardManually(state, playerId, action.cardInstanceId, action.zone);
 
     case 'ManualCreateToken':
       return tryCreateManualToken(state, playerId, action);

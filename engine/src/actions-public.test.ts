@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { tryPlayLand, tryTapLandForMana, tryUntapManaSource, tryCastSpell, tryActivateAbility, tryPassPriority, tryDeclareAttackers, tryDeclareBlockers, tryEquip, tryAdjustCounters, tryAdjustPlayerCounter, tryCreateManualToken, resetLoopDetector } from './actions-public';
+import { tryPlayLand, tryTapLandForMana, tryUntapManaSource, tryCastSpell, tryActivateAbility, tryPassPriority, tryDeclareAttackers, tryDeclareBlockers, tryEquip, tryAdjustCounters, tryAdjustPlayerCounter, tryMoveCardManually, tryCreateManualToken, resetLoopDetector } from './actions-public';
 import { makeTestState } from './__tests__/test-helpers';
 import { populateParsedCache } from './cards/card-parser-cache';
 import type { CardDefinition, GameState } from './types';
@@ -497,6 +497,86 @@ describe('tryAdjustPlayerCounter', () => {
 
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.reason).toBe('illegal_target');
+  });
+});
+
+describe('tryMoveCardManually', () => {
+  it('moves a visible permanent to exile and clears battlefield state', () => {
+    const state = makeTestState({ battlefieldCreature: true });
+    state.cards.set('vanilla_creature_0', {
+      ...state.cards.get('vanilla_creature_0')!,
+      tapped: true,
+      counters: { '+1/+1': 2 },
+      damage: 1,
+    });
+
+    const result = tryMoveCardManually(state, 'human', 'vanilla_creature_0', 'exile');
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const moved = result.state.cards.get('vanilla_creature_0');
+    expect(moved?.zone).toBe('exile');
+    expect(moved?.tapped).toBe(false);
+    expect(moved?.counters).toEqual({});
+    expect(moved?.damage).toBe(0);
+    expect(result.events).toContainEqual(expect.objectContaining({
+      kind: 'CardMovedManually',
+      playerId: 'human',
+      cardId: 'vanilla_creature_0',
+      from: 'battlefield',
+      to: 'exile',
+      manual: true,
+    }));
+  });
+
+  it('removes tokens moved away from the battlefield', () => {
+    const created = tryCreateManualToken(makeTestState({}), 'human', {
+      name: 'Goblin',
+      count: 1,
+      power: 1,
+      toughness: 1,
+      colors: ['R'],
+      types: ['creature'],
+      subtypes: ['Goblin'],
+    });
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+    const token = [...created.state.cards.values()].find(card => card.isToken);
+    expect(token).toBeDefined();
+
+    const result = tryMoveCardManually(created.state, 'human', token!.instanceId, 'graveyard');
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.cards.has(token!.instanceId)).toBe(false);
+  });
+
+  it('rejects moving non-commanders to command', () => {
+    const state = makeTestState({ battlefieldCreature: true });
+
+    const result = tryMoveCardManually(state, 'human', 'vanilla_creature_0', 'command');
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe('illegal_target');
+  });
+
+  it('allows commanders to be moved back to command', () => {
+    const state = makeTestState({ battlefieldCreature: true });
+    state.cards.set('vanilla_creature_0', {
+      ...state.cards.get('vanilla_creature_0')!,
+      isCommander: true,
+    });
+    state.players[0] = {
+      ...state.players[0],
+      commanderInstanceId: 'vanilla_creature_0',
+      commanderInstanceIds: ['vanilla_creature_0'],
+    };
+
+    const result = tryMoveCardManually(state, 'human', 'vanilla_creature_0', 'command');
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.cards.get('vanilla_creature_0')?.zone).toBe('command');
   });
 });
 

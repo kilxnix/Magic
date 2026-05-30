@@ -134,6 +134,7 @@ export function PlayPage() {
     untapManaSource,
     adjustCounters,
     adjustPlayerCounter,
+    moveCardManually,
     createManualToken,
     untappableCardIds,
     endGame,
@@ -780,6 +781,7 @@ export function PlayPage() {
             onUntapMana={untapManaSource}
             onAdjustCounters={adjustCounters}
             onAdjustPlayerCounter={adjustPlayerCounter}
+            onMoveCard={moveCardManually}
             onCreateToken={createManualToken}
             untappableCardIds={untappableCardIds}
             lastPlayedCard={lastPlayedCard}

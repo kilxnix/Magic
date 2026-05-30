@@ -1964,6 +1964,35 @@ describe('authority action boundary', () => {
     expect(report.finalState?.players.find(player => player.id === 'p1')?.playerCounters?.experience).toBe(3);
   });
 
+  it('replays validated manual zone corrections through the authority boundary', () => {
+    const state = stateWithForestInHand();
+    const forest = [...state.cards.values()].find(card => card.ownerId === 'p1' && card.definitionId === 'forest');
+    expect(forest).toBeDefined();
+    const request = createClientActionRequest(state, 'p1', {
+      kind: 'ManualMoveCard',
+      cardInstanceId: forest!.instanceId,
+      zone: 'graveyard',
+    }, {
+      id: 'req-replay-manual-zone',
+      source: 'system',
+      createdAt: 40,
+    });
+
+    const moved = applyClientActionRequest(state, request);
+    expect(moved.ok).toBe(true);
+    expect(moved.state?.cards.get(forest!.instanceId)?.zone).toBe('graveyard');
+    expect(moved.update?.visibleDiffs).toContainEqual(expect.objectContaining({
+      kind: 'CardZoneChanged',
+      cardId: forest!.instanceId,
+      from: 'hand',
+      to: 'graveyard',
+    }));
+
+    const report = auditActionReplay(state, [request]);
+    expect(report.ok).toBe(true);
+    expect(report.finalState?.cards.get(forest!.instanceId)?.zone).toBe('graveyard');
+  });
+
   it('fails replay audit when a committed request no longer matches the previous state', () => {
     const state = stateWithForestInHand();
     const prompt = buildActionPrompt(state, 'p1');

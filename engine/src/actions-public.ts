@@ -1,5 +1,5 @@
 // engine/src/actions-public.ts
-import type { GameState, ManaColor, ManaCost, AttackerDeclaration, BlockerDeclaration } from './types';
+import type { GameState, ManaColor, ManaCost, AttackerDeclaration, BlockerDeclaration, Zone } from './types';
 import {
   playLand,
   canPlayLandDetailed,
@@ -72,6 +72,14 @@ export type GameEvent =
       delta: number;
       previous: number;
       next: number;
+      manual: true;
+    }
+  | {
+      kind: 'CardMovedManually';
+      playerId: string;
+      cardId: string;
+      from: Zone;
+      to: Zone;
       manual: true;
     }
   | {
@@ -526,6 +534,65 @@ export function tryAdjustPlayerCounter(
       delta,
       previous,
       next: nextCount,
+      manual: true,
+    },
+    ...runWinCheck(next),
+  ]);
+}
+
+export function tryMoveCardManually(
+  state: GameState,
+  playerId: string,
+  cardInstanceId: string,
+  zone: Exclude<Zone, 'library' | 'stack'>,
+): ActionResult {
+  if (!state.players.some(p => p.id === playerId)) return fail('card_not_found', 'Player not found');
+  const card = state.cards.get(cardInstanceId);
+  if (!card) return fail('card_not_found', 'Card not found');
+  if (card.zone === 'stack') return fail('wrong_phase', 'Cards on the stack must resolve or be countered through the stack');
+  if (card.zone === zone) return fail('illegal_target', `Card is already in ${zone}`);
+  if (!['hand', 'battlefield', 'graveyard', 'exile', 'command'].includes(zone)) {
+    return fail('illegal_target', 'Unsupported destination zone');
+  }
+
+  const def = getCardDefinition(state, card);
+  const permanentTypes = ['artifact', 'battle', 'creature', 'enchantment', 'land', 'planeswalker'];
+  if (zone === 'battlefield' && !def.card_types.some(type => permanentTypes.includes(type))) {
+    return fail('illegal_target', 'Only permanent cards can be moved to the battlefield');
+  }
+  if (zone === 'command' && !card.isCommander) {
+    return fail('illegal_target', 'Only commanders can be moved to the command zone');
+  }
+
+  const cards = new Map(state.cards);
+  const from = card.zone;
+  if (card.isToken && zone !== 'battlefield') {
+    cards.delete(card.instanceId);
+  } else {
+    cards.set(cardInstanceId, {
+      ...card,
+      zone,
+      tapped: false,
+      summoningSick: zone === 'battlefield',
+      counters: zone === 'battlefield' ? card.counters : {},
+      damage: 0,
+      attachedTo: undefined,
+    });
+  }
+  for (const [id, candidate] of cards) {
+    if (candidate.attachedTo === cardInstanceId || (candidate.zone !== 'battlefield' && candidate.attachedTo)) {
+      cards.set(id, { ...candidate, attachedTo: undefined });
+    }
+  }
+
+  const next = { ...state, cards };
+  return success(next, [
+    {
+      kind: 'CardMovedManually',
+      playerId,
+      cardId: cardInstanceId,
+      from,
+      to: zone,
       manual: true,
     },
     ...runWinCheck(next),

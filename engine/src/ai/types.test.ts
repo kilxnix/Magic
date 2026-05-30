@@ -7,10 +7,13 @@ import type {
   ManualUntapManaSourceAction,
   ManualAdjustCountersAction,
   ManualAdjustPlayerCounterAction,
+  ManualMoveCardAction,
   ManualCreateTokenAction,
+  ActivateAbilityAction,
   DeclareAttackersAction,
   DeclareBlockersAction,
   PassPriorityAction,
+  EquipAction,
   AIDifficulty,
   AIPlayerConfig,
   ActionEvaluation,
@@ -112,6 +115,18 @@ describe('AI Types', () => {
     expect(action.delta).toBe(1);
   });
 
+  it('creates ManualMoveCardAction correctly', () => {
+    const action: ManualMoveCardAction = {
+      kind: 'ManualMoveCard',
+      cardInstanceId: 'creature_1',
+      zone: 'graveyard',
+    };
+
+    expect(action.kind).toBe('ManualMoveCard');
+    expect(action.cardInstanceId).toBe('creature_1');
+    expect(action.zone).toBe('graveyard');
+  });
+
   it('creates DeclareAttackersAction correctly', () => {
     const action: DeclareAttackersAction = {
       kind: 'DeclareAttackers',
@@ -156,13 +171,16 @@ describe('AI Types', () => {
       { kind: 'ManualUntapManaSource', cardInstanceId: 'l1', color: 'U', amount: 1 },
       { kind: 'ManualAdjustCounters', cardInstanceId: 'c1', counterType: '+1/+1', delta: 1 },
       { kind: 'ManualAdjustPlayerCounter', playerId: 'p1', counterType: 'experience', delta: 1 },
+      { kind: 'ManualMoveCard', cardInstanceId: 'c1', zone: 'graveyard' },
       { kind: 'ManualCreateToken', name: 'Treasure', count: 1, power: 0, toughness: 0, colors: [], types: ['artifact'], subtypes: ['Treasure'] },
+      { kind: 'ActivateAbility', cardInstanceId: 'c1', abilityIndex: 0, targets: [] },
       { kind: 'DeclareAttackers', attacks: [] },
       { kind: 'DeclareBlockers', blocks: [] },
+      { kind: 'Equip', equipmentInstanceId: 'eq1', targetCreatureId: 'c1' },
       { kind: 'PassPriority' },
     ];
 
-    expect(actions).toHaveLength(10);
+    expect(actions).toHaveLength(13);
     expect(actions.map(a => a.kind)).toEqual([
       'CastSpell',
       'PlayLand',
@@ -170,9 +188,12 @@ describe('AI Types', () => {
       'ManualUntapManaSource',
       'ManualAdjustCounters',
       'ManualAdjustPlayerCounter',
+      'ManualMoveCard',
       'ManualCreateToken',
+      'ActivateAbility',
       'DeclareAttackers',
       'DeclareBlockers',
+      'Equip',
       'PassPriority',
     ]);
   });

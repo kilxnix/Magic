@@ -113,6 +113,7 @@ export function ShelectorGamePage() {
     untapManaSource,
     adjustCounters,
     adjustPlayerCounter,
+    moveCardManually,
     createManualToken,
     untappableCardIds,
     endGame,
@@ -794,6 +795,7 @@ export function ShelectorGamePage() {
           onUntapMana={untapManaSource}
           onAdjustCounters={adjustCounters}
           onAdjustPlayerCounter={adjustPlayerCounter}
+          onMoveCard={moveCardManually}
           onCreateToken={createManualToken}
           untappableCardIds={untappableCardIds}
           lastPlayedCard={lastPlayedCard}
