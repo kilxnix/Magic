@@ -3130,9 +3130,10 @@ export function useShelectorGame() {
 
       const canSkipRestOfTurn = engine.stack.length === 0;
       if (canSkipRestOfTurn) {
+        const humanIsActivePlayer = engine.players[engine.activePlayerIndex]?.id === humanId;
         simpleActions.unshift({
           kind: 'SkipRestOfTurn',
-          label: 'Skip Rest of Turn',
+          label: humanIsActivePlayer ? 'Skip Rest of Turn' : 'Yield Until My Turn',
           _engineAction: { kind: 'PassPriority' },
         });
       } else if (isEmptyWindowSkippable(simpleActions)) {

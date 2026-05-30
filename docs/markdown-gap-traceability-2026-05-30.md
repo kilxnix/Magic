@@ -107,7 +107,7 @@ Minimum acceptance bar from that file:
 | 2.12 Modal And Optional Choices | partial; Brainstorm now has prompt-backed hand-to-library-top ordering |
 | 3.1 Priority Is Visible But Not Central | partial |
 | 3.2 Stack Is Evented But Not Visually Dominant | partial |
-| 3.3 Pass Priority Flow Is Compressed | partial |
+| 3.3 Pass Priority Flow Is Compressed | partial; opponent-turn empty-priority action now says `Yield Until My Turn` instead of using the active-turn `Skip Rest of Turn` label. |
 | 3.4 Stop Settings Are Incomplete Or Not Exposed Enough | partial | Hold priority and individual priority stops exist, and the game menu now has a Full control shortcut that enables hold priority plus all stops. This is still not a full Arena-equivalent stop system. |
 | 4.1 Internal Step Labels Mismatch Visible UI | partial; Main 2 display handles the existing postcombat-main/end representation, and manual phase correction offers explicit user-facing step names |
 | 4.2 Main Phase And Begin Combat Confusion | partial; manual phase correction can recover a stuck/incorrect step, but the underlying turn-manager model still needs a cleaner main-step representation |
@@ -192,6 +192,8 @@ Additional picker-wording verification added after this audit: card/search picke
 Additional search-rule verification added after this audit: unrestricted tutor prompts now default to one required selection when the library contains a findable card, and a paired authority test confirms restricted hidden-library searches can still fail to find.
 
 Additional commander-zone verification added after this audit: manual move corrections now call commander replacement before mutation, so a commander moved toward graveyard/exile/hand by correction lands in command zone and the manual event reports the final command-zone destination. The `/play` manual correction message now reads from the resulting state so it says command zone instead of the requested graveyard/exile destination.
+
+Additional priority-flow wording added after this audit: when the human has priority on someone else's turn and the stack is empty, the phase action is labelled `Yield Until My Turn`; the `Skip Rest of Turn` label is reserved for the human active player's turn.
 
 ## Direct Answer
 
