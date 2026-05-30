@@ -81,6 +81,7 @@ export function initGameState(decks: DeckInput[]): GameState {
     step: 'untap',
     turnNumber: 1,
     spellsCastThisTurn: 0,
+    playersWhoAttackedThisTurn: [],
     hasPriorityPassed: new Array(decks.length).fill(false),
     stack: [],
     combat: null,

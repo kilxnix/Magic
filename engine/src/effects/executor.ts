@@ -2236,6 +2236,11 @@ function evaluateCondition(state: GameState, condition: Condition, casterId: str
         : state.players.find(p => p.id !== casterId && !p.hasLost);
       return player ? player.life >= condition.amount : false;
     }
+    case 'PlayerAttackedThisTurn': {
+      const attacked = new Set(state.playersWhoAttackedThisTurn || []);
+      if (condition.controller === 'you') return attacked.has(casterId);
+      return state.players.some(player => player.id !== casterId && !player.hasLost && attacked.has(player.id));
+    }
     default: {
       const _never: never = condition;
       return false;

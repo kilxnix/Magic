@@ -333,6 +333,7 @@ export interface GameState {
   step: Step;
   turnNumber: number;
   spellsCastThisTurn?: number;
+  playersWhoAttackedThisTurn?: string[];
   hasPriorityPassed: boolean[];
   stack: StackItem[];
   combat: CombatState | null;

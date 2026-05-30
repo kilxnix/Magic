@@ -707,9 +707,7 @@ registerOverrideByName('Impulse', {
   targets: [],
 });
 
-// Chart a Course — draw two, then discard a card unless you attacked. The engine
-// does not yet carry attacked-this-turn choice state, so the conservative floor is
-// the normal draw-two-discard-one mode.
+// Chart a Course - draw two, then discard a card unless you attacked this turn.
 registerOverrideByName('Chart a Course', {
   kind: 'Spell',
   effects: [
@@ -719,9 +717,18 @@ registerOverrideByName('Chart a Course', {
       count: 2,
     },
     {
-      kind: 'Discard',
-      player: { kind: 'Controller' },
-      count: 1,
+      kind: 'Conditional',
+      condition: { kind: 'PlayerAttackedThisTurn', controller: 'you' },
+      effect: {
+        kind: 'Draw',
+        player: { kind: 'Controller' },
+        count: 0,
+      },
+      elseEffect: {
+        kind: 'Discard',
+        player: { kind: 'Controller' },
+        count: 1,
+      },
     },
   ],
   targets: [],

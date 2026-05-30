@@ -234,6 +234,7 @@ export interface SerializedGameStateV1 {
   step: string;
   turnNumber: number;
   spellsCastThisTurn?: number;
+  playersWhoAttackedThisTurn?: string[];
   hasPriorityPassed: boolean[];
   stack: SerializedStackItemV1[];
   combat: SerializedCombatStateV1 | null;

@@ -104,7 +104,7 @@ Minimum acceptance bar from that file:
 | 2.8 State-Based Actions | partial/test-proven |
 | 2.9 Target Legality | partial; duplicate same-name target choices are now disambiguated by controller/zone/ordinal in typed prompts and `/play` pickers |
 | 2.10 Cost Payment Rules | partial; dynamic mana production now supports AmountRef-backed AddMana entries, a threshold-style zone count condition, and target-opponent hand-count mana for Jeska's Will, with regressions for Cabal Ritual, Rite of Flame, Songs of the Damned, and Jeska's Will replacing fixed shortcut mana amounts. Toxic Deluge now also carries non-mana X through the stack and pays X life as an additional cast cost before resolving -X/-X. |
-| 2.11 Timing Permissions | partial; temporary exile play permissions are now persisted and included in cast/play-land/legal-action generation for this-turn effects such as Jeska's Will, but broader duration modeling is incomplete |
+| 2.11 Timing Permissions | partial; temporary exile play permissions are now persisted and included in cast/play-land/legal-action generation for this-turn effects such as Jeska's Will, and attacked-this-turn state now drives Chart a Course's discard condition through combat, turn reset, and save/load. Broader duration modeling is incomplete |
 | 2.12 Modal And Optional Choices | partial; Brainstorm now has explicit hand-to-library-top ordering, Fact or Fiction has `/play` pile selection, Ward has `/play` pay/decline choice handling, and parser-backed `choose one or both` modal spells now accept one-or-both mode selections through stack validation/authority/legal actions; broad modal/optional choice UI is still incomplete |
 | 3.1 Priority Is Visible But Not Central | partial |
 | 3.2 Stack Is Evented But Not Visually Dominant | partial |
@@ -208,7 +208,7 @@ Additional commander-zone verification added after this audit: manual move corre
 
 Additional priority-flow wording added after this audit: when the human has priority on someone else's turn and the stack is empty, the phase action is labelled `Yield Until My Turn`; the `Skip Rest of Turn` label is reserved for the human active player's turn.
 
-Additional stack-choice verification added after this audit: Jeska's Will now counts the chosen target opponent's hand for red mana and grants this-turn play permission to the exiled top three cards; Brainstorm supports explicit hand-to-library-top selection; Fact or Fiction supports `/play` pile selection from the revealed top cards; copy effects preserve copiable face/choice values while excluding damage/counters; Ward can be explicitly paid or declined from `/play`; and parser-backed `choose one or both` modal spells accept one selected mode or both selected modes while rejecting empty/duplicate selections.
+Additional stack-choice and turn-state verification added after this audit: Jeska's Will now counts the chosen target opponent's hand for red mana and grants this-turn play permission to the exiled top three cards; Brainstorm supports explicit hand-to-library-top selection; Fact or Fiction supports `/play` pile selection from the revealed top cards; copy effects preserve copiable face/choice values while excluding damage/counters; Ward can be explicitly paid or declined from `/play`; parser-backed `choose one or both` modal spells accept one selected mode or both selected modes while rejecting empty/duplicate selections; and Chart a Course now uses attacked-this-turn state instead of an always-discard shortcut.
 
 ## Direct Answer
 

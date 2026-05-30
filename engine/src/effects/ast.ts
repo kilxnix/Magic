@@ -577,7 +577,8 @@ export type Condition =
   | { kind: 'ControlsMoreThan'; who: 'opponent'; what: CardFilter; thanWho: 'you' }
   | { kind: 'CardsInZoneAtLeast'; controller: 'you' | 'opponent' | 'each'; zone: 'battlefield' | 'hand' | 'graveyard' | 'library'; count: number; filter?: CardFilter }
   | { kind: 'LifeAtOrBelow'; controller: 'you' | 'opponent'; amount: number }
-  | { kind: 'LifeAtOrAbove'; controller: 'you' | 'opponent'; amount: number };
+  | { kind: 'LifeAtOrAbove'; controller: 'you' | 'opponent'; amount: number }
+  | { kind: 'PlayerAttackedThisTurn'; controller: 'you' | 'opponent' };
 
 /**
  * A conditional effect that checks a condition before executing.

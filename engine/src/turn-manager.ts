@@ -102,6 +102,7 @@ export function advanceToNextTurn(state: GameState): GameState {
     step: 'untap',
     turnNumber: state.turnNumber + 1,
     spellsCastThisTurn: 0,
+    playersWhoAttackedThisTurn: [],
     hasPriorityPassed: new Array(playerCount).fill(false),
     combat: null,
     damagePreventionEffects: [],

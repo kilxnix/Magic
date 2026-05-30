@@ -356,6 +356,48 @@ describe('playtesting report regressions', () => {
     )).toEqual(expect.arrayContaining(['Opponent Hand 1', 'Opponent Hand 2']));
   });
 
+  it('uses attacked-this-turn state for Chart a Course discard condition', () => {
+    const chart = card('chart', 'Chart a Course', 'Sorcery', '{1}{U}', ['sorcery']);
+    const keep = card('keep', 'Kept Card', 'Instant', '{U}', ['instant']);
+    const drawA = card('draw-a', 'Drawn Card A', 'Instant', '{U}', ['instant']);
+    const drawB = card('draw-b', 'Drawn Card B', 'Instant', '{U}', ['instant']);
+    const attacker = creature('attacker', 'Practice Attacker');
+    const p2Land = card('p2-land', 'Opponent Land', 'Basic Land', '', ['land']);
+
+    let noAttack = initGameState([
+      { playerId: 'p1', name: 'Pilot', commanderId: 'none', cards: [chart, keep, drawA, drawB] },
+      { playerId: 'p2', name: 'Opponent', commanderId: 'none-2', cards: [p2Land] },
+    ]);
+    noAttack = moveFirstNamed(moveFirstNamed(noAttack, 'Chart a Course', 'hand'), 'Kept Card', 'hand');
+    noAttack.players[0].manaPool = { W: 0, U: 1, B: 0, R: 0, G: 0, C: 1 };
+    noAttack = { ...noAttack, activePlayerIndex: 0, priorityPlayerIndex: 0, phase: 'precombat_main', step: 'draw' };
+    const noAttackChart = getCardsInZone(noAttack, 'p1', 'hand')
+      .find(instance => noAttack.cardDefinitions.get(instance.definitionId)?.name === 'Chart a Course')!;
+
+    noAttack = resolveTopOfStack(castSpell(noAttack, 'p1', noAttackChart.instanceId));
+    expect(getCardsInZone(noAttack, 'p1', 'hand')).toHaveLength(2);
+
+    let attacked = initGameState([
+      { playerId: 'p1', name: 'Pilot', commanderId: 'none', cards: [chart, keep, drawA, drawB, attacker] },
+      { playerId: 'p2', name: 'Opponent', commanderId: 'none-2', cards: [p2Land] },
+    ]);
+    attacked = moveFirstNamed(moveFirstNamed(attacked, 'Chart a Course', 'hand'), 'Kept Card', 'hand');
+    attacked = moveFirstNamed(attacked, 'Practice Attacker', 'battlefield', false);
+    attacked = { ...attacked, activePlayerIndex: 0, priorityPlayerIndex: 0, phase: 'combat', step: 'declare_attackers' };
+    const attackerId = getCardsInZone(attacked, 'p1', 'battlefield')
+      .find(instance => attacked.cardDefinitions.get(instance.definitionId)?.name === 'Practice Attacker')!.instanceId;
+    attacked = declareAttackers(attacked, 'p1', [{ cardInstanceId: attackerId, defendingPlayerId: 'p2' }]);
+    expect(attacked.playersWhoAttackedThisTurn).toContain('p1');
+
+    attacked.players[0].manaPool = { W: 0, U: 1, B: 0, R: 0, G: 0, C: 1 };
+    attacked = { ...attacked, phase: 'postcombat_main', step: 'end_of_combat', priorityPlayerIndex: 0, stack: [] };
+    const attackedChart = getCardsInZone(attacked, 'p1', 'hand')
+      .find(instance => attacked.cardDefinitions.get(instance.definitionId)?.name === 'Chart a Course')!;
+
+    attacked = resolveTopOfStack(castSpell(attacked, 'p1', attackedChart.instanceId));
+    expect(getCardsInZone(attacked, 'p1', 'hand')).toHaveLength(3);
+  });
+
   it('parses Dragonhawk enters-or-attacks as a power-counted exile trigger', () => {
     const oracle = "Whenever ~ enters or attacks, exile the top X cards of your library, where X is the number of creatures you control with power 4 or greater. You may play those cards until your next end step. At the beginning of your next end step, ~ deals 2 damage to each opponent for each of those cards that are still exiled.";
     const parsed = parseOracleText(oracle);

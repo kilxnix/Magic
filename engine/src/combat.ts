@@ -67,6 +67,9 @@ export function declareAttackers(state: GameState, playerId: string, attacks: At
     ...state,
     cards: newCards,
     combat,
+    playersWhoAttackedThisTurn: attacks.length > 0
+      ? [...new Set([...(state.playersWhoAttackedThisTurn || []), playerId])]
+      : state.playersWhoAttackedThisTurn,
     hasPriorityPassed: new Array(state.players.length).fill(false),
     priorityPlayerIndex: state.activePlayerIndex,
   };
