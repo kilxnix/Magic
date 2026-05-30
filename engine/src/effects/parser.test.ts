@@ -301,6 +301,19 @@ describe('parseOracleText', () => {
       if (add.kind !== 'AddCounters') return;
       expect(add.count).toBe(3);
     });
+
+    it('parses energy counter gain', () => {
+      const result = parseOracleText('You get {E}{E} (two energy counters).');
+
+      expect(result.kind).toBe('Spell');
+      if (result.kind !== 'Spell') return;
+
+      expect(result.effects[0].kind).toBe('AddCounters');
+      if (result.effects[0].kind !== 'AddCounters') return;
+      expect(result.effects[0].target).toEqual({ kind: 'Controller' });
+      expect(result.effects[0].counterType).toBe('energy');
+      expect(result.effects[0].count).toBe(2);
+    });
   });
 
   describe('tap/untap patterns', () => {

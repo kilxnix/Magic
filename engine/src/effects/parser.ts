@@ -975,6 +975,28 @@ function matchAddCounters(tokens: string[], startIndex: number): PatternResult {
   return null;
 }
 
+/**
+ * Match: "you get {E}{E}" / "you get {E}" for energy counters.
+ */
+function matchGainEnergy(tokens: string[], startIndex: number): PatternResult {
+  const slice = tokens.slice(startIndex);
+  if (slice[0] !== 'you' || slice[1] !== 'get') return null;
+  const energyToken = slice[2];
+  if (!energyToken || !/^(?:\{e\})+$/i.test(energyToken)) return null;
+
+  let consumed = 3;
+  if (slice[consumed] === '.') consumed++;
+
+  const count = (energyToken.match(/\{e\}/gi) || []).length;
+  const effect: Effect = {
+    kind: 'AddCounters',
+    target: { kind: 'Controller' },
+    counterType: 'energy',
+    count,
+  };
+  return { effects: [effect], targets: [], consumed };
+}
+
 function targetTypeFromSimplePermanentWord(word: string): TargetType | null {
   if (word === 'creature') return 'Creature';
   if (word === 'land') return 'Land';
@@ -3598,7 +3620,7 @@ function parseEffectClauseInternal(tokens: string[], startIndex: number): Patter
     matchEachOpponentDiscardsCard, matchDestroyAll, matchDealDamage, matchDestroy,
     matchLookAtTargetPlayerHand, matchLookAtTopPutOneIntoHand, matchPutLandFromHandOntoBattlefield, matchThatPlayerDraw, matchTargetPlayerDraw, matchDraw,
     matchGainLife, matchLoseLife, matchExile, matchReturnFromGraveyard,
-    matchReturnToHand, matchMill, matchAddCounters, matchModifyPT, matchTap,
+    matchReturnToHand, matchMill, matchGainEnergy, matchAddCounters, matchModifyPT, matchTap,
     matchUntap, matchRollD20, matchThatPlayerCreatesToken, matchCreateToken, matchDiscard, matchDiscardSelf, matchScry,
     matchSurveil, matchCounterSpell,
   ];
@@ -3684,6 +3706,7 @@ function parseEffectClause(tokens: string[], startIndex: number): PatternResult 
     matchReturnFromGraveyard, // before ReturnToHand — "return target creature card from..."
     matchReturnToHand,
     matchMill,
+    matchGainEnergy,
     matchAddCounters,
     matchModifyPT,
     matchTap,

@@ -622,7 +622,8 @@ function executeAddCounters(
   // Check if the target is a player (for poison counters and similar)
   const playerIndex = state.players.findIndex(p => p.id === targetId);
   if (playerIndex !== -1) {
-    // Only poison counters are tracked on players via poisonCounters
+    // Poison has a first-class loss condition; every other player counter is
+    // stored generically for energy, experience, rad, ticket, and similar mechanics.
     if (counterType === 'poison') {
       const newPlayers = state.players.map((p, i) =>
         i === playerIndex
@@ -631,8 +632,19 @@ function executeAddCounters(
       );
       return { ...state, players: newPlayers };
     }
-    // Other player-targeted counter types: no-op for now
-    return state;
+    const normalizedCounter = counterType.trim().replace(/\s+/g, ' ').toLowerCase();
+    const newPlayers = state.players.map((p, i) => {
+      if (i !== playerIndex) return p;
+      const current = p.playerCounters?.[normalizedCounter] ?? 0;
+      return {
+        ...p,
+        playerCounters: {
+          ...(p.playerCounters || {}),
+          [normalizedCounter]: current + finalCount,
+        },
+      };
+    });
+    return { ...state, players: newPlayers };
   }
 
   const card = state.cards.get(targetId);

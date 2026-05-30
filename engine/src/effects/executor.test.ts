@@ -639,6 +639,22 @@ describe('Phase 10 effects', () => {
 
       expect(newState.cards.get('creature-1')?.counters['+1/+1']).toBe(3);
     });
+
+    it('adds generic player counters such as energy', () => {
+      const state = createTestState();
+      const effects: Effect[] = [
+        {
+          kind: 'AddCounters',
+          target: { kind: 'Controller' },
+          counterType: 'energy',
+          count: 2,
+        },
+      ];
+
+      const newState = executeEffects(state, effects, 'player-1', [], []);
+
+      expect(newState.players[0].playerCounters?.energy).toBe(2);
+    });
   });
 
   describe('RemoveCounters effect', () => {

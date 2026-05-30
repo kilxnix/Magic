@@ -1,18 +1,18 @@
 {
-  "generatedAt": "2026-05-30T11:46:02.386Z",
+  "generatedAt": "2026-05-30T11:48:02.471Z",
   "source": "mtg_data/cards_min.jsonl",
   "commanderLegalOnly": true,
   "includedCards": 30969,
   "totalOracleFaces": 31420,
-  "parsedFaces": 15260,
-  "unparsedFaces": 16160,
-  "parsedPercent": 48.57,
+  "parsedFaces": 15325,
+  "unparsedFaces": 16095,
+  "parsedPercent": 48.77,
   "parsedKindCounts": {
-    "Unparsed": 16160,
-    "Spell": 11571,
-    "ETB": 1217,
+    "Unparsed": 16095,
+    "Spell": 11614,
+    "ETB": 1237,
     "KeywordOnly": 887,
-    "Triggered": 652,
+    "Triggered": 654,
     "EntryCounters": 361,
     "StaticAbility": 340,
     "Modal": 232
@@ -20,29 +20,23 @@
   "unparsedReasons": [
     {
       "reason": "No recognized pattern",
-      "count": 14718
+      "count": 14675
     },
     {
       "reason": "Could not parse ETB effect clause",
-      "count": 786
+      "count": 766
     },
     {
       "reason": "Could not parse trigger effect clause",
-      "count": 656
+      "count": 654
     }
   ],
   "syntaxClusters": [
     {
       "id": "trigger-timing",
       "reason": "Triggered or delayed triggered abilities need event registration and APNAP ordering.",
-      "count": 7009,
+      "count": 6954,
       "samples": [
-        {
-          "name": "Nissa, Worldsoul Speaker",
-          "set": "drc",
-          "reason": "No recognized pattern",
-          "text": "Landfall — Whenever a land you control enters, you get {E}{E} (two energy counters). You may pay eight {E} rather than pay the mana cost for permanent spells you cast."
-        },
         {
           "name": "Waterknot",
           "set": "jmp",
@@ -84,13 +78,19 @@
           "set": "neo",
           "reason": "No recognized pattern",
           "text": "Flying Whenever this Vehicle becomes crewed for the first time each turn, until end of turn, this Vehicle becomes a copy of target nonlegendary creature that crewed it this turn, except it's 4/3, it's a Vehicle artifact in addition to its other types, and it has flying. Crew 1"
+        },
+        {
+          "name": "Labyrinth Adversary",
+          "set": "acr",
+          "reason": "No recognized pattern",
+          "text": "Trample (This creature can deal excess combat damage to the player it's attacking.) Whenever you attack, you may pay {1}{R}. When you do, target creature can't block this turn."
         }
       ]
     },
     {
       "id": "unclassified",
       "reason": "Unparsed text did not match a known syntax cluster; inspect manually.",
-      "count": 3511,
+      "count": 3509,
       "samples": [
         {
           "name": "Static Orb",
@@ -145,7 +145,7 @@
     {
       "id": "continuous-layers",
       "reason": "Continuous effects need layer/timestamp/dependency handling.",
-      "count": 3348,
+      "count": 3335,
       "samples": [
         {
           "name": "Sensory Deprivation",
@@ -200,7 +200,7 @@
     {
       "id": "combat-multiplayer",
       "reason": "Combat or multiplayer-defender text needs combat/defender-aware execution.",
-      "count": 2438,
+      "count": 2428,
       "samples": [
         {
           "name": "Marang River Prowler",
@@ -255,7 +255,7 @@
     {
       "id": "tokens-counters",
       "reason": "Token/counter wording needs typed objects, counters, and downstream interactions.",
-      "count": 2354,
+      "count": 2327,
       "samples": [
         {
           "name": "Seedship Agrarian",
@@ -310,7 +310,7 @@
     {
       "id": "replacement-prevention",
       "reason": "Replacement/prevention effects require replacement-layer handling.",
-      "count": 1638,
+      "count": 1636,
       "samples": [
         {
           "name": "Sodden Verdure",
@@ -365,7 +365,7 @@
     {
       "id": "non-hand-zones",
       "reason": "Non-hand zone casting/movement needs zone permission and visibility checks.",
-      "count": 1553,
+      "count": 1552,
       "samples": [
         {
           "name": "Road of Return",
@@ -420,14 +420,8 @@
     {
       "id": "cost-system",
       "reason": "Alternative/additional/reduced costs need prompt-backed payment and legality.",
-      "count": 1245,
+      "count": 1240,
       "samples": [
-        {
-          "name": "Nissa, Worldsoul Speaker",
-          "set": "drc",
-          "reason": "No recognized pattern",
-          "text": "Landfall — Whenever a land you control enters, you get {E}{E} (two energy counters). You may pay eight {E} rather than pay the mana cost for permanent spells you cast."
-        },
         {
           "name": "Pteramander",
           "set": "otc",
@@ -469,13 +463,19 @@
           "set": "fdn",
           "reason": "No recognized pattern",
           "text": "Flying Instant and sorcery spells you cast cost {1} less to cast."
+        },
+        {
+          "name": "Icebreaker Kraken",
+          "set": "khm",
+          "reason": "No recognized pattern",
+          "text": "Affinity for snow lands (This spell costs {1} less to cast for each snow land you control.) When this creature enters, artifacts and creatures target opponent controls don't untap during that player's next untap step. Return three snow lands you control to their owner's hand: Return this creature to its owner's hand."
         }
       ]
     },
     {
       "id": "library-selection",
       "reason": "Library search/look/reveal effects need legal choices, destinations, reveal policy, and ordering.",
-      "count": 890,
+      "count": 888,
       "samples": [
         {
           "name": "Safewright Quest",
@@ -530,7 +530,7 @@
     {
       "id": "choice-modal",
       "reason": "Choice/modal/naming text should be prompt-backed instead of deterministic.",
-      "count": 835,
+      "count": 828,
       "samples": [
         {
           "name": "Road of Return",
@@ -585,7 +585,7 @@
     {
       "id": "copy-stack",
       "reason": "Copy/stack mechanics need stack-object identity and trigger multiplication.",
-      "count": 611,
+      "count": 610,
       "samples": [
         {
           "name": "Mindlink Mech",
@@ -640,7 +640,7 @@
     {
       "id": "special-mechanics",
       "reason": "Special mechanics need dedicated state and UI presentation.",
-      "count": 298,
+      "count": 297,
       "samples": [
         {
           "name": "Sword-Swallowing Seraph",
@@ -777,6 +777,11 @@
   },
   "parsedSamples": [
     {
+      "name": "Nissa, Worldsoul Speaker",
+      "kind": "Spell",
+      "text": "Landfall — Whenever a land you control enters, you get {E}{E} (two energy counters). You may pay eight {E} rather than pay the mana cost for permanent spells you cast."
+    },
+    {
       "name": "Storm Crow",
       "kind": "KeywordOnly",
       "text": "Flying (This creature can't be blocked except by creatures with flying or reach.)"
@@ -810,20 +815,9 @@
       "name": "Ruthless Knave",
       "kind": "Spell",
       "text": "{2}{B}, Sacrifice a creature: Create two Treasure tokens. (They're artifacts with \"{T}, Sacrifice this token: Add one mana of any color.\") Sacrifice three Treasures: Draw a card."
-    },
-    {
-      "name": "Palinchron",
-      "kind": "Spell",
-      "text": "Flying When this creature enters, untap up to seven lands. {2}{U}{U}: Return this creature to its owner's hand."
     }
   ],
   "unparsedSamples": [
-    {
-      "name": "Nissa, Worldsoul Speaker",
-      "set": "drc",
-      "reason": "No recognized pattern",
-      "text": "Landfall — Whenever a land you control enters, you get {E}{E} (two energy counters). You may pay eight {E} rather than pay the mana cost for permanent spells you cast."
-    },
     {
       "name": "Static Orb",
       "set": "7ed",
@@ -865,6 +859,12 @@
       "set": "jmp",
       "reason": "No recognized pattern",
       "text": "Enchant creature When this Aura enters, tap enchanted creature. Enchanted creature doesn't untap during its controller's untap step."
+    },
+    {
+      "name": "Hua Tuo, Honored Physician",
+      "set": "c13",
+      "reason": "No recognized pattern",
+      "text": "{T}: Put target creature card from your graveyard on top of your library. Activate only during your turn, before attackers are declared."
     }
   ]
 }
