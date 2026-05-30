@@ -23,6 +23,26 @@ const repoRoot = path.resolve(__dirname, '..', '..');
 const { parseOracleText } = require('../src/effects/parser.ts');
 const { getOverrideMetadata } = require('../src/effects/overrides.ts');
 
+const KNOWN_ENGINE_KEYWORDS = new Set([
+  'deathtouch',
+  'defender',
+  'double strike',
+  'first strike',
+  'flash',
+  'flying',
+  'haste',
+  'hexproof',
+  'indestructible',
+  'lifelink',
+  'menace',
+  'protection',
+  'reach',
+  'trample',
+  'vigilance',
+  'ward',
+  'prowess',
+]);
+
 function parseArgs(argv) {
   const args = {
     cards: path.join(repoRoot, 'mtg_data', 'cards_min.jsonl'),
@@ -67,6 +87,47 @@ Options:
 function normalizeLine(raw) {
   const text = String(raw || '').trim();
   return text.replace(/\s+/g, ' ');
+}
+
+function stripReminderText(text) {
+  let result = '';
+  let depth = 0;
+  for (const char of text) {
+    if (char === '(') {
+      depth += 1;
+      continue;
+    }
+    if (char === ')') {
+      depth = Math.max(0, depth - 1);
+      continue;
+    }
+    if (depth === 0) result += char;
+  }
+  return result;
+}
+
+function isKeywordOnlyOracle(text, cardKeywords = []) {
+  const keywordSet = new Set([
+    ...KNOWN_ENGINE_KEYWORDS,
+    ...cardKeywords.map(keyword => String(keyword).toLowerCase()),
+  ]);
+  const cleaned = stripReminderText(text)
+    .replace(/[.!]/g, '\n')
+    .split(/\n+/)
+    .map(line => line.trim().toLowerCase())
+    .filter(Boolean);
+
+  if (cleaned.length === 0) return false;
+  return cleaned.every(line => {
+    const parts = line
+      .split(/\s*,\s*|\s+and\s+/)
+      .map(part => part.trim())
+      .filter(Boolean);
+    return parts.length > 0 && parts.every(part => {
+      const normalized = part.replace(/\s*\{[^}]+\}\s*$/, '').trim();
+      return keywordSet.has(normalized);
+    });
+  });
 }
 
 function cardFaces(card) {
@@ -170,7 +231,9 @@ function analyze(args) {
       if (!face.oracleText) continue;
       totalFaces += 1;
       const parsed = parseOracleText(face.oracleText);
-      kindCounts[parsed.kind] = (kindCounts[parsed.kind] || 0) + 1;
+      const isKeywordOnly = parsed.kind === 'Unparsed' && isKeywordOnlyOracle(face.oracleText, card.keywords || []);
+      const parsedKind = isKeywordOnly ? 'KeywordOnly' : parsed.kind;
+      kindCounts[parsedKind] = (kindCounts[parsedKind] || 0) + 1;
 
       const override = getOverrideMetadata(card.id || '', card.name || face.name || '');
       if (override) {
@@ -182,11 +245,11 @@ function analyze(args) {
         });
       }
 
-      if (parsed.kind !== 'Unparsed') {
+      if (parsedKind !== 'Unparsed') {
         if (parsedSamples.length < args.maxSamples) {
           parsedSamples.push({
             name: face.name,
-            kind: parsed.kind,
+            kind: parsedKind,
             text: normalizeLine(face.oracleText).slice(0, 240),
           });
         }

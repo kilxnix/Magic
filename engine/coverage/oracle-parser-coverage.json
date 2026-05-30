@@ -1,16 +1,17 @@
 {
-  "generatedAt": "2026-05-30T11:25:25.065Z",
+  "generatedAt": "2026-05-30T11:26:25.165Z",
   "source": "mtg_data/cards_min.jsonl",
   "commanderLegalOnly": true,
   "includedCards": 30969,
   "totalOracleFaces": 31420,
-  "parsedFaces": 13311,
-  "unparsedFaces": 18109,
-  "parsedPercent": 42.36,
+  "parsedFaces": 14220,
+  "unparsedFaces": 17200,
+  "parsedPercent": 45.26,
   "parsedKindCounts": {
-    "Unparsed": 18109,
+    "Unparsed": 17200,
     "Spell": 10915,
     "ETB": 1202,
+    "KeywordOnly": 909,
     "Triggered": 625,
     "StaticAbility": 339,
     "Modal": 230
@@ -18,7 +19,7 @@
   "unparsedReasons": [
     {
       "reason": "No recognized pattern",
-      "count": 16624
+      "count": 15715
     },
     {
       "reason": "Could not parse ETB effect clause",
@@ -33,7 +34,7 @@
     {
       "id": "trigger-timing",
       "reason": "Triggered or delayed triggered abilities need event registration and APNAP ordering.",
-      "count": 7595,
+      "count": 7470,
       "samples": [
         {
           "name": "Nissa, Worldsoul Speaker",
@@ -86,64 +87,9 @@
       ]
     },
     {
-      "id": "unclassified",
-      "reason": "Unparsed text did not match a known syntax cluster; inspect manually.",
-      "count": 4125,
-      "samples": [
-        {
-          "name": "Static Orb",
-          "set": "7ed",
-          "reason": "No recognized pattern",
-          "text": "As long as this artifact is untapped, players can't untap more than two permanents during their untap steps."
-        },
-        {
-          "name": "Storm Crow",
-          "set": "9ed",
-          "reason": "No recognized pattern",
-          "text": "Flying (This creature can't be blocked except by creatures with flying or reach.)"
-        },
-        {
-          "name": "Walking Sponge",
-          "set": "ulg",
-          "reason": "No recognized pattern",
-          "text": "{T}: Target creature loses your choice of flying, first strike, or trample until end of turn."
-        },
-        {
-          "name": "Ravnica at War",
-          "set": "war",
-          "reason": "No recognized pattern",
-          "text": "Exile all multicolored permanents."
-        },
-        {
-          "name": "Torrent of Fire",
-          "set": "scg",
-          "reason": "No recognized pattern",
-          "text": "Torrent of Fire deals damage to any target equal to the greatest mana value among permanents you control."
-        },
-        {
-          "name": "Nantuko Elder",
-          "set": "ody",
-          "reason": "No recognized pattern",
-          "text": "{T}: Add {C}{G}."
-        },
-        {
-          "name": "Wei Strike Force",
-          "set": "me3",
-          "reason": "No recognized pattern",
-          "text": "Horsemanship (This creature can't be blocked except by creatures with horsemanship.)"
-        },
-        {
-          "name": "Aura Graft",
-          "set": "10e",
-          "reason": "No recognized pattern",
-          "text": "Gain control of target Aura that's attached to a permanent. Attach it to another permanent it can enchant."
-        }
-      ]
-    },
-    {
       "id": "continuous-layers",
       "reason": "Continuous effects need layer/timestamp/dependency handling.",
-      "count": 4034,
+      "count": 3962,
       "samples": [
         {
           "name": "Sensory Deprivation",
@@ -196,64 +142,64 @@
       ]
     },
     {
-      "id": "combat-multiplayer",
-      "reason": "Combat or multiplayer-defender text needs combat/defender-aware execution.",
-      "count": 2757,
+      "id": "unclassified",
+      "reason": "Unparsed text did not match a known syntax cluster; inspect manually.",
+      "count": 3583,
       "samples": [
         {
-          "name": "Marang River Prowler",
-          "set": "znc",
+          "name": "Static Orb",
+          "set": "7ed",
           "reason": "No recognized pattern",
-          "text": "This creature can't block and can't be blocked. You may cast this card from your graveyard as long as you control a black or green permanent."
+          "text": "As long as this artifact is untapped, players can't untap more than two permanents during their untap steps."
         },
         {
-          "name": "Whispering Shade",
+          "name": "Walking Sponge",
+          "set": "ulg",
+          "reason": "No recognized pattern",
+          "text": "{T}: Target creature loses your choice of flying, first strike, or trample until end of turn."
+        },
+        {
+          "name": "Ravnica at War",
+          "set": "war",
+          "reason": "No recognized pattern",
+          "text": "Exile all multicolored permanents."
+        },
+        {
+          "name": "Torrent of Fire",
+          "set": "scg",
+          "reason": "No recognized pattern",
+          "text": "Torrent of Fire deals damage to any target equal to the greatest mana value among permanents you control."
+        },
+        {
+          "name": "Nantuko Elder",
           "set": "ody",
           "reason": "No recognized pattern",
-          "text": "Swampwalk (This creature can't be blocked as long as defending player controls a Swamp.) {B}: This creature gets +1/+1 until end of turn."
+          "text": "{T}: Add {C}{G}."
         },
         {
-          "name": "High-Rise Sawjack",
-          "set": "snc",
+          "name": "Aura Graft",
+          "set": "10e",
           "reason": "No recognized pattern",
-          "text": "Reach (This creature can block creatures with flying.) Whenever this creature blocks a creature with flying, this creature gets +2/+0 until end of turn."
+          "text": "Gain control of target Aura that's attached to a permanent. Attach it to another permanent it can enchant."
         },
         {
-          "name": "Carnage Wurm",
-          "set": "m12",
+          "name": "Weakstone",
+          "set": "me4",
           "reason": "No recognized pattern",
-          "text": "Bloodthirst 3 (If an opponent was dealt damage this turn, this creature enters with three +1/+1 counters on it.) Trample (This creature can deal excess combat damage to the player or planeswalker it's attacking.)"
+          "text": "Attacking creatures get -1/-0."
         },
         {
-          "name": "Labyrinth Adversary",
-          "set": "acr",
+          "name": "Dungeon Delver",
+          "set": "clb",
           "reason": "No recognized pattern",
-          "text": "Trample (This creature can deal excess combat damage to the player it's attacking.) Whenever you attack, you may pay {1}{R}. When you do, target creature can't block this turn."
-        },
-        {
-          "name": "Fear of Falling",
-          "set": "dsk",
-          "reason": "No recognized pattern",
-          "text": "Flying Whenever this creature attacks, target creature defending player controls gets -2/-0 and loses flying until your next turn."
-        },
-        {
-          "name": "Dazzling Sphinx",
-          "set": "otc",
-          "reason": "No recognized pattern",
-          "text": "Flying Whenever this creature deals combat damage to a player, that player exiles cards from the top of their library until they exile an instant or sorcery card. You may cast that card without paying its mana cost. Then that player puts the exiled cards that weren't cast this way on the bottom of their library in a random order."
-        },
-        {
-          "name": "Tanglewalker",
-          "set": "dst",
-          "reason": "No recognized pattern",
-          "text": "Each creature you control can't be blocked as long as defending player controls an artifact land."
+          "text": "Commander creatures you own have \"Room abilities of dungeons you own trigger an additional time.\""
         }
       ]
     },
     {
       "id": "tokens-counters",
       "reason": "Token/counter wording needs typed objects, counters, and downstream interactions.",
-      "count": 2757,
+      "count": 2685,
       "samples": [
         {
           "name": "Seedship Agrarian",
@@ -306,9 +252,64 @@
       ]
     },
     {
+      "id": "combat-multiplayer",
+      "reason": "Combat or multiplayer-defender text needs combat/defender-aware execution.",
+      "count": 2548,
+      "samples": [
+        {
+          "name": "Marang River Prowler",
+          "set": "znc",
+          "reason": "No recognized pattern",
+          "text": "This creature can't block and can't be blocked. You may cast this card from your graveyard as long as you control a black or green permanent."
+        },
+        {
+          "name": "Whispering Shade",
+          "set": "ody",
+          "reason": "No recognized pattern",
+          "text": "Swampwalk (This creature can't be blocked as long as defending player controls a Swamp.) {B}: This creature gets +1/+1 until end of turn."
+        },
+        {
+          "name": "High-Rise Sawjack",
+          "set": "snc",
+          "reason": "No recognized pattern",
+          "text": "Reach (This creature can block creatures with flying.) Whenever this creature blocks a creature with flying, this creature gets +2/+0 until end of turn."
+        },
+        {
+          "name": "Carnage Wurm",
+          "set": "m12",
+          "reason": "No recognized pattern",
+          "text": "Bloodthirst 3 (If an opponent was dealt damage this turn, this creature enters with three +1/+1 counters on it.) Trample (This creature can deal excess combat damage to the player or planeswalker it's attacking.)"
+        },
+        {
+          "name": "Labyrinth Adversary",
+          "set": "acr",
+          "reason": "No recognized pattern",
+          "text": "Trample (This creature can deal excess combat damage to the player it's attacking.) Whenever you attack, you may pay {1}{R}. When you do, target creature can't block this turn."
+        },
+        {
+          "name": "Fear of Falling",
+          "set": "dsk",
+          "reason": "No recognized pattern",
+          "text": "Flying Whenever this creature attacks, target creature defending player controls gets -2/-0 and loses flying until your next turn."
+        },
+        {
+          "name": "Dazzling Sphinx",
+          "set": "otc",
+          "reason": "No recognized pattern",
+          "text": "Flying Whenever this creature deals combat damage to a player, that player exiles cards from the top of their library until they exile an instant or sorcery card. You may cast that card without paying its mana cost. Then that player puts the exiled cards that weren't cast this way on the bottom of their library in a random order."
+        },
+        {
+          "name": "Tanglewalker",
+          "set": "dst",
+          "reason": "No recognized pattern",
+          "text": "Each creature you control can't be blocked as long as defending player controls an artifact land."
+        }
+      ]
+    },
+    {
       "id": "replacement-prevention",
       "reason": "Replacement/prevention effects require replacement-layer handling.",
-      "count": 1698,
+      "count": 1696,
       "samples": [
         {
           "name": "Sodden Verdure",
@@ -363,7 +364,7 @@
     {
       "id": "non-hand-zones",
       "reason": "Non-hand zone casting/movement needs zone permission and visibility checks.",
-      "count": 1605,
+      "count": 1590,
       "samples": [
         {
           "name": "Road of Return",
@@ -418,7 +419,7 @@
     {
       "id": "cost-system",
       "reason": "Alternative/additional/reduced costs need prompt-backed payment and legality.",
-      "count": 1354,
+      "count": 1319,
       "samples": [
         {
           "name": "Nissa, Worldsoul Speaker",
@@ -473,7 +474,7 @@
     {
       "id": "library-selection",
       "reason": "Library search/look/reveal effects need legal choices, destinations, reveal policy, and ordering.",
-      "count": 904,
+      "count": 897,
       "samples": [
         {
           "name": "Safewright Quest",
@@ -583,7 +584,7 @@
     {
       "id": "copy-stack",
       "reason": "Copy/stack mechanics need stack-object identity and trigger multiplication.",
-      "count": 646,
+      "count": 624,
       "samples": [
         {
           "name": "Mindlink Mech",
@@ -781,6 +782,11 @@
   },
   "parsedSamples": [
     {
+      "name": "Storm Crow",
+      "kind": "KeywordOnly",
+      "text": "Flying (This creature can't be blocked except by creatures with flying or reach.)"
+    },
+    {
       "name": "Greta, Sweettooth Scourge",
       "kind": "ETB",
       "text": "When Greta enters, create a Food token. (It's an artifact with \"{2}, {T}, Sacrifice this token: You gain 3 life.\") {G}, Sacrifice a Food: Put a +1/+1 counter on target creature. Activate only as a sorcery. {1}{B}, Sacrifice a Food: You draw"
@@ -811,14 +817,9 @@
       "text": "When this creature enters, exile target card from an opponent's graveyard."
     },
     {
-      "name": "Lattice Library",
-      "kind": "Spell",
-      "text": "This enchantment enters with X study counters on it. When this enchantment enters and whenever you cast your first spell with {X} in its mana cost each turn, create a 0/0 green and blue Fractal creature token. Put a number of +1/+1 counters"
-    },
-    {
-      "name": "Saheeli's Artistry",
-      "kind": "Modal",
-      "text": "Choose one or both — • Create a token that's a copy of target artifact. • Create a token that's a copy of target creature, except it's an artifact in addition to its other types."
+      "name": "Wei Strike Force",
+      "kind": "KeywordOnly",
+      "text": "Horsemanship (This creature can't be blocked except by creatures with horsemanship.)"
     }
   ],
   "unparsedSamples": [
@@ -847,12 +848,6 @@
       "text": "Choose one — • Return target permanent card from your graveyard to your hand. • Put your commander into your hand from the command zone. Entwine {2} (Choose both if you pay the entwine cost.)"
     },
     {
-      "name": "Storm Crow",
-      "set": "9ed",
-      "reason": "No recognized pattern",
-      "text": "Flying (This creature can't be blocked except by creatures with flying or reach.)"
-    },
-    {
       "name": "Walking Sponge",
       "set": "ulg",
       "reason": "No recognized pattern",
@@ -869,6 +864,12 @@
       "set": "scg",
       "reason": "No recognized pattern",
       "text": "Torrent of Fire deals damage to any target equal to the greatest mana value among permanents you control."
+    },
+    {
+      "name": "Pteramander",
+      "set": "otc",
+      "reason": "No recognized pattern",
+      "text": "Flying {7}{U}: Adapt 4. This ability costs {1} less to activate for each instant and sorcery card in your graveyard. (If this creature has no +1/+1 counters on it, put four +1/+1 counters on it.)"
     }
   ]
 }
