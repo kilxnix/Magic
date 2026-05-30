@@ -32,6 +32,7 @@ import {
   labelForAction,
   resolveTopStackSearchPrompt,
   stateFingerprint,
+  summarizeActionPromptChoices,
 } from './authority';
 import { resolveCombatDamage } from './combat';
 import { initGameState } from './game-state';
@@ -421,11 +422,54 @@ describe('authority action boundary', () => {
     expect(prompt?.priority.priorityPlayerId).toBe('p1');
     expect(prompt?.priority.stackSize).toBe(0);
     expect(prompt?.legalChoiceSummary).toEqual(expect.arrayContaining([
-      { kind: 'PlayLand', label: 'Land', count: 1 },
-      { kind: 'PassPriority', label: 'Pass', count: 1 },
+      { kind: 'PlayLand', label: 'Playable land', count: 1 },
+      { kind: 'PassPriority', label: 'Pass/resolve', count: 1 },
     ]));
     expect(prompt?.legalChoices.some(choice => choice.kind === 'PlayLand' && choice.label === 'Play Forest')).toBe(true);
     expect(prompt?.legalChoices.some(choice => choice.kind === 'PassPriority')).toBe(true);
+  });
+
+  it('summarizes action prompts by decision workflow categories', () => {
+    const summary = summarizeActionPromptChoices([
+      {
+        id: 'cast-targeted',
+        kind: 'CastSpell',
+        label: 'Cast Beast Within targeting Sol Ring',
+        action: { kind: 'CastSpell', cardInstanceId: 'beast-within', targets: ['sol-ring'] },
+      },
+      {
+        id: 'cast-simple',
+        kind: 'CastSpell',
+        label: 'Cast Sol Ring',
+        action: { kind: 'CastSpell', cardInstanceId: 'sol-ring', targets: [] },
+      },
+      {
+        id: 'mana',
+        kind: 'ActivateManaAbility',
+        label: 'Tap Forest for G',
+        action: { kind: 'ActivateManaAbility', cardInstanceId: 'forest', color: 'G' },
+      },
+      {
+        id: 'equip',
+        kind: 'Equip',
+        label: 'Equip Sword',
+        action: { kind: 'Equip', equipmentInstanceId: 'sword', targetCreatureId: 'bear' },
+      },
+      {
+        id: 'pass',
+        kind: 'PassPriority',
+        label: 'Pass priority',
+        action: { kind: 'PassPriority' },
+      },
+    ]);
+
+    expect(summary).toEqual(expect.arrayContaining([
+      { kind: 'CastSpell', label: 'Castable', count: 1 },
+      { kind: 'CastSpell', label: 'Target/select', count: 1 },
+      { kind: 'ActivateManaAbility', label: 'Mana ability', count: 1 },
+      { kind: 'Equip', label: 'Special action', count: 1 },
+      { kind: 'PassPriority', label: 'Pass/resolve', count: 1 },
+    ]));
   });
 
   it('creates typed Sisay search prompts from canonical legality and rejects forced illegal choices', () => {

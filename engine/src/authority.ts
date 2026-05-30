@@ -1226,27 +1226,49 @@ function promptTitleForState(state: GameState, type: PromptType): string {
 }
 
 const ACTION_KIND_LABELS: Record<AIAction['kind'], string> = {
-  CastSpell: 'Cast',
-  PlayLand: 'Land',
-  ActivateManaAbility: 'Mana',
-  ManualUntapManaSource: 'Undo Mana',
-  ManualAdjustCounters: 'Counters',
-  ActivateAbility: 'Ability',
-  DeclareAttackers: 'Attack',
-  DeclareBlockers: 'Block',
-  Equip: 'Equip',
-  PassPriority: 'Pass',
+  CastSpell: 'Castable',
+  PlayLand: 'Playable land',
+  ActivateManaAbility: 'Mana ability',
+  ManualUntapManaSource: 'Special action',
+  ManualAdjustCounters: 'Special action',
+  ActivateAbility: 'Activated ability',
+  DeclareAttackers: 'Attack/block',
+  DeclareBlockers: 'Attack/block',
+  Equip: 'Special action',
+  PassPriority: 'Pass/resolve',
 };
+
+function actionChoiceSummaryLabel(action: AIAction): string {
+  switch (action.kind) {
+    case 'CastSpell':
+    case 'ActivateAbility':
+      return action.targets.length > 0 ? 'Target/select' : ACTION_KIND_LABELS[action.kind];
+    case 'DeclareAttackers':
+    case 'DeclareBlockers':
+      return 'Attack/block';
+    case 'Equip':
+    case 'ManualAdjustCounters':
+    case 'ManualUntapManaSource':
+      return 'Special action';
+    default:
+      return ACTION_KIND_LABELS[action.kind];
+  }
+}
 
 export function summarizeActionPromptChoices(
   choices: ActionPromptChoice[],
 ): ActionPromptChoiceSummary[] {
-  const counts = new Map<AIAction['kind'], number>();
+  const counts = new Map<string, ActionPromptChoiceSummary>();
   for (const choice of choices) {
-    counts.set(choice.kind, (counts.get(choice.kind) || 0) + 1);
+    const label = actionChoiceSummaryLabel(choice.action);
+    const current = counts.get(label);
+    if (current) {
+      current.count += 1;
+    } else {
+      counts.set(label, { kind: choice.kind, label, count: 1 });
+    }
   }
-  return [...counts.entries()]
-    .map(([kind, count]) => ({ kind, label: ACTION_KIND_LABELS[kind], count }))
+  return [...counts.values()]
     .sort((a, b) => a.label.localeCompare(b.label));
 }
 
