@@ -98,6 +98,14 @@ export type GameEvent =
       count: number;
       manual: true;
     }
+  | {
+      kind: 'AttachmentAdjusted';
+      playerId: string;
+      cardId: string;
+      previousTargetId?: string;
+      nextTargetId?: string;
+      manual: true;
+    }
   | { kind: 'CreatureDied'; cardId: string; ownerId: string }
   | { kind: 'PlayerLost'; playerId: string; reason: WinReason }
   | { kind: 'PossibleLoop'; signature: LoopSignature }
@@ -707,6 +715,48 @@ export function tryCreateManualToken(
       playerId,
       tokenName: name,
       count,
+      manual: true,
+    },
+    ...runWinCheck(next),
+  ]);
+}
+
+export function tryAttachCardManually(
+  state: GameState,
+  playerId: string,
+  cardInstanceId: string,
+  targetId?: string,
+): ActionResult {
+  if (!state.players.some(p => p.id === playerId)) return fail('card_not_found', 'Player not found');
+  const card = state.cards.get(cardInstanceId);
+  if (!card) return fail('card_not_found', 'Card not found');
+  if (card.zone !== 'battlefield') return fail('not_in_zone', 'Only battlefield permanents can be attached');
+
+  const nextTargetId = targetId?.trim() || undefined;
+  if (nextTargetId === cardInstanceId) return fail('illegal_target', 'A card cannot attach to itself');
+
+  if (nextTargetId) {
+    const target = state.cards.get(nextTargetId);
+    if (!target) return fail('card_not_found', 'Attachment target not found');
+    if (target.zone !== 'battlefield') return fail('not_in_zone', 'Attachment target must be on the battlefield');
+  }
+
+  const previousTargetId = card.attachedTo;
+  if (previousTargetId === nextTargetId) {
+    return fail('illegal_target', nextTargetId ? 'Card is already attached to that target' : 'Card is already unattached');
+  }
+
+  const cards = new Map(state.cards);
+  cards.set(cardInstanceId, { ...card, attachedTo: nextTargetId });
+  const next = { ...state, cards };
+
+  return success(next, [
+    {
+      kind: 'AttachmentAdjusted',
+      playerId,
+      cardId: cardInstanceId,
+      previousTargetId,
+      nextTargetId,
       manual: true,
     },
     ...runWinCheck(next),

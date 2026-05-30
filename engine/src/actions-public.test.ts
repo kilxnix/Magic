@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { tryPlayLand, tryTapLandForMana, tryUntapManaSource, tryCastSpell, tryActivateAbility, tryPassPriority, tryDeclareAttackers, tryDeclareBlockers, tryEquip, tryAdjustCounters, tryAdjustPlayerCounter, tryMoveCardManually, tryAdjustDamage, tryCreateManualToken, resetLoopDetector } from './actions-public';
+import { tryPlayLand, tryTapLandForMana, tryUntapManaSource, tryCastSpell, tryActivateAbility, tryPassPriority, tryDeclareAttackers, tryDeclareBlockers, tryEquip, tryAdjustCounters, tryAdjustPlayerCounter, tryMoveCardManually, tryAdjustDamage, tryCreateManualToken, tryAttachCardManually, resetLoopDetector } from './actions-public';
 import { makeTestState } from './__tests__/test-helpers';
 import { populateParsedCache } from './cards/card-parser-cache';
 import type { CardDefinition, GameState } from './types';
@@ -577,6 +577,52 @@ describe('tryMoveCardManually', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.state.cards.get('vanilla_creature_0')?.zone).toBe('command');
+  });
+});
+
+describe('tryAttachCardManually', () => {
+  it('attaches and detaches battlefield permanents through manual correction', () => {
+    const state = makeTestState({ handEquipment: true, battlefieldCreature: true, handInstant: '{G}' });
+    state.cards.set('equipment_0', {
+      ...state.cards.get('equipment_0')!,
+      zone: 'battlefield',
+    });
+
+    const attached = tryAttachCardManually(state, 'human', 'equipment_0', 'vanilla_creature_0');
+
+    expect(attached.ok).toBe(true);
+    if (!attached.ok) return;
+    expect(attached.state.cards.get('equipment_0')?.attachedTo).toBe('vanilla_creature_0');
+    expect(attached.events).toContainEqual(expect.objectContaining({
+      kind: 'AttachmentAdjusted',
+      playerId: 'human',
+      cardId: 'equipment_0',
+      previousTargetId: undefined,
+      nextTargetId: 'vanilla_creature_0',
+      manual: true,
+    }));
+
+    const detached = tryAttachCardManually(attached.state, 'human', 'equipment_0');
+
+    expect(detached.ok).toBe(true);
+    if (!detached.ok) return;
+    expect(detached.state.cards.get('equipment_0')?.attachedTo).toBeUndefined();
+  });
+
+  it('rejects attaching to non-battlefield targets or itself', () => {
+    const state = makeTestState({ handEquipment: true, battlefieldCreature: true, handInstant: '{G}' });
+    state.cards.set('equipment_0', {
+      ...state.cards.get('equipment_0')!,
+      zone: 'battlefield',
+    });
+
+    const self = tryAttachCardManually(state, 'human', 'equipment_0', 'equipment_0');
+    expect(self.ok).toBe(false);
+    if (!self.ok) expect(self.reason).toBe('illegal_target');
+
+    const handTarget = tryAttachCardManually(state, 'human', 'equipment_0', 'instant_0');
+    expect(handTarget.ok).toBe(false);
+    if (!handTarget.ok) expect(handTarget.reason).toBe('not_in_zone');
   });
 });
 

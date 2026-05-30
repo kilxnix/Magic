@@ -119,6 +119,7 @@ export function ShelectorGamePage() {
     moveCardManually,
     adjustDamage,
     createManualToken,
+    attachCardManually,
     untappableCardIds,
     endGame,
     closeEndGame,
@@ -805,6 +806,7 @@ export function ShelectorGamePage() {
           onMoveCard={moveCardManually}
           onAdjustDamage={adjustDamage}
           onCreateToken={createManualToken}
+          onAttachCard={attachCardManually}
           untappableCardIds={untappableCardIds}
           lastPlayedCard={lastPlayedCard}
           authorityUpdates={authorityUpdates}

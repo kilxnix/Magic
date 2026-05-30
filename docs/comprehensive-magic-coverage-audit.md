@@ -27,7 +27,7 @@ Area table:
 | P0 | partial | commander-rules | Add partner/background/doctor companion import and cast certification plus Drannith-style restrictions. |
 | P0 | partial | continuous-effects-layers | Expand layer engine to full CR-style dependency/timestamp model beyond current practical layer 6/7 and devotion coverage. |
 | P0 | partial | deck-import | Add importer golden corpus for real exported lists and bad-data cases. |
-| P0 | partial | equipment-auras | Add UI certification for equip and illegal attachment SBAs. |
+| P0 | partial | equipment-auras | Manual attach/detach correction now flows through validated engine actions and the card inspector; add UI certification for equip, Aura legality, and illegal attachment SBAs. |
 | P0 | partial | high-power-chaos-regression | Run long-mode chaos regularly and promote every found failure into a targeted regression. |
 | P0 | partial | library-search-tutors | Top-library look effects now support limited top-N prompts with unselected looked-at cards moved to bottom for Impulse-style effects; continue replacing deterministic tutor shortcuts with choice UI that supports named card, top-library, graveyard, exile, and battlefield destinations. |
 | P0 | partial | mana-system | Add complete coverage for conditional lands, color choice UI, delayed/restricted mana, and mana replacement/multipliers. |
@@ -45,7 +45,7 @@ Area table:
 | P1 | partial | ai-shelector | Add speed and legality benchmark across archetypes and stack-heavy high-power states. |
 | P1 | partial | graveyard-exile | Add zone permission engine for casting/activating from non-hand zones. |
 | P1 | partial | keywords-evergreen | Audit every evergreen keyword and bind each to at least one fixture card. |
-| P1 | partial | manual-correction-tools | Extend repair tools beyond permanent counters to player counters, token fixes, attachments, damage marked, and zone corrections. |
+| P1 | partial | manual-correction-tools | Manual repair tools now cover permanent counters, player counters/poison, token creation, zone movement, marked damage, mana untap, and attach/detach corrections; continue adding commander damage, phase rewinds, and replay-audited correction summaries. |
 | P1 | partial | manual-overrides | Add override registry metadata with reason, owner, and fixture card. |
 | P1 | partial | multiplayer | Bridge rooms to authoritative engine sessions and add four-player combat/priority browser proof. |
 | P1 | partial | rules-update-process | Wire edge-case generation and coverage audit into a scheduled certification run after every card-data refresh. |

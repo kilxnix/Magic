@@ -73,6 +73,8 @@ export function actionIdentity(action: AIAction): string {
       return `${action.kind}:${action.cardInstanceId}:${action.delta}`;
     case 'ManualCreateToken':
       return `${action.kind}:${action.name}:${action.count}:${action.power}/${action.toughness}:${action.colors.join(',')}:${action.types.join(',')}:${action.subtypes.join(',')}:${action.keywords?.join(',') || ''}`;
+    case 'ManualAttachCard':
+      return `${action.kind}:${action.cardInstanceId}>${action.targetId || 'detached'}`;
     case 'PassPriority':
       return action.kind;
     default:
@@ -146,6 +148,15 @@ export function describeReviewAction(state: GameState, action: AIAction): string
     }
     case 'ManualCreateToken':
       return `Create ${action.count} ${action.name} token${action.count === 1 ? '' : 's'}`;
+    case 'ManualAttachCard': {
+      const inst = state.cards.get(action.cardInstanceId);
+      const target = action.targetId ? state.cards.get(action.targetId) : undefined;
+      const def = inst ? getCardDefinition(state, inst) : undefined;
+      const targetDef = target ? getCardDefinition(state, target) : undefined;
+      return action.targetId
+        ? `Attach ${def?.name || 'a card'} to ${targetDef?.name || 'a permanent'}`
+        : `Detach ${def?.name || 'a card'}`;
+    }
     case 'PassPriority':
       return 'Pass priority';
     default:

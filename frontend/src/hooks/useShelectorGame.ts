@@ -358,6 +358,7 @@ function isMeaningfulAutoSkipAction(action: AIAction): boolean {
     case 'ManualMoveCard':
     case 'ManualAdjustDamage':
     case 'ManualCreateToken':
+    case 'ManualAttachCard':
       return false;
     case 'DeclareAttackers':
       return action.attacks.length > 0;
@@ -1916,6 +1917,21 @@ function toSimpleLegalAction(action: AIAction, engineState: GameState): SimpleLe
       return {
         kind: 'ManualCreateToken',
         label: `Create ${action.count} ${action.name} token${action.count === 1 ? '' : 's'}`,
+        _engineAction: action,
+      };
+    }
+    case 'ManualAttachCard': {
+      const inst = engineState.cards.get(action.cardInstanceId);
+      const target = action.targetId ? engineState.cards.get(action.targetId) : undefined;
+      const def = inst ? getCardDefinition(engineState, inst) : undefined;
+      const targetDef = target ? getCardDefinition(engineState, target) : undefined;
+      return {
+        kind: 'ManualAttachCard',
+        cardInstanceId: action.cardInstanceId,
+        cardName: def?.name,
+        label: action.targetId
+          ? `Attach ${def?.name || 'card'} to ${targetDef?.name || 'target'}`
+          : `Detach ${def?.name || 'card'}`,
         _engineAction: action,
       };
     }
@@ -5548,6 +5564,42 @@ export function useShelectorGame() {
     syncState();
   }, [addMessage, applyActionThroughAuthority, applyEvents, syncState]);
 
+  const attachCardManually = useCallback((cardInstanceId: string, targetId?: string) => {
+    const engine = engineRef.current;
+    if (!engine) return;
+
+    const card = engine.cards.get(cardInstanceId);
+    const target = targetId ? engine.cards.get(targetId) : undefined;
+    const def = card ? getCardDefinition(engine, card) : undefined;
+    const targetDef = target ? getCardDefinition(engine, target) : undefined;
+    const action: AIAction = {
+      kind: 'ManualAttachCard',
+      cardInstanceId,
+      targetId,
+    };
+    const response = applyActionThroughAuthority(engine, humanIdRef.current, action, {
+      source: 'system',
+      label: toSimpleLegalAction(action, engine).label,
+    });
+    if (!response.ok || !response.state) {
+      const message = response.message || 'That attachment correction was rejected.';
+      setActionError({ reason: response.reason || 'illegal_action', message });
+      addMessage('system', `Cannot adjust attachment: ${message}`);
+      syncState();
+      return;
+    }
+
+    engineRef.current = response.state as GameStateWithAI;
+    applyEvents(response.events || [], response.state);
+    addMessage(
+      'system',
+      targetId
+        ? `Manual correction: attached ${def?.name || 'card'} to ${targetDef?.name || 'target'}.`
+        : `Manual correction: detached ${def?.name || 'card'}.`,
+    );
+    syncState();
+  }, [addMessage, applyActionThroughAuthority, applyEvents, syncState]);
+
   // Deep-clone engine state for undo snapshots (Maps need special handling)
   const cloneEngineState = useCallback((s: GameStateWithAI): GameStateWithAI => {
     return {
@@ -7133,6 +7185,7 @@ export function useShelectorGame() {
     moveCardManually,
     adjustDamage,
     createManualToken,
+    attachCardManually,
     clearActionError: () => setActionError(null),
   };
 }

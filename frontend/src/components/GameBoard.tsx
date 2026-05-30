@@ -143,6 +143,7 @@ interface GameBoardProps {
   onMoveCard?: (cardInstanceId: string, zone: ManualMoveZone) => void;
   onAdjustDamage?: (cardInstanceId: string, delta: number) => void;
   onCreateToken?: (token: ManualTokenInput) => void;
+  onAttachCard?: (cardInstanceId: string, targetId?: string) => void;
   untappableCardIds?: string[];
   lastPlayedCard?: LastPlayedCard | null;
   authorityUpdates?: EngineStateUpdate[];
@@ -765,6 +766,7 @@ function CardInspectorModal({
   onAdjustCounter,
   onMoveCard,
   onAdjustDamage,
+  onAttachCard,
   onClose,
 }: {
   card: SimpleCard;
@@ -777,6 +779,7 @@ function CardInspectorModal({
   onAdjustCounter?: (counterType: string, delta: number) => void;
   onMoveCard?: (zone: ManualMoveZone) => void;
   onAdjustDamage?: (delta: number) => void;
+  onAttachCard?: (cardInstanceId: string, targetId?: string) => void;
   onClose: () => void;
 }) {
   const isCreature = card.cardTypes.includes('creature');
@@ -785,6 +788,7 @@ function CardInspectorModal({
   const canAdjustCounters = card.zone === 'battlefield' && !!onAdjustCounter;
   const canAdjustDamage = card.zone === 'battlefield' && !!onAdjustDamage;
   const canMoveCard = !!onMoveCard && card.zone !== 'stack' && card.zone !== 'library';
+  const canAttachCard = card.zone === 'battlefield' && !!onAttachCard;
   const quickCounters = ['+1/+1', '-1/-1', 'loyalty', 'shield', 'stun'];
   const zoneChoices: { zone: ManualMoveZone; label: string; commanderOnly?: boolean }[] = [
     { zone: 'battlefield', label: 'Battlefield' },
@@ -1044,6 +1048,60 @@ function CardInspectorModal({
                 </div>
                 <div className="mt-2 text-[11px] leading-relaxed text-stone-500">
                   Manual correction for missed zone changes, commander replacement, exile, and graveyard movement.
+                </div>
+              </div>
+            )}
+
+            {canAttachCard && (
+              <div className="rounded border border-neutral-800 bg-neutral-900 p-3">
+                <div className="mb-2 text-[10px] font-bold uppercase tracking-wider text-stone-400">
+                  Manual Attachments
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onAttachCard(card.instanceId);
+                      onClose();
+                    }}
+                    className="min-h-10 rounded border border-neutral-700 bg-neutral-950 px-3 text-sm font-bold text-stone-200 transition-colors hover:bg-neutral-800"
+                  >
+                    Attach to...
+                  </button>
+                  {card.attachedTo && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onAttachCard(card.instanceId, '');
+                        onClose();
+                      }}
+                      className="min-h-10 rounded border border-amber-700/60 bg-amber-950/50 px-3 text-sm font-bold text-amber-100 transition-colors hover:bg-amber-900"
+                    >
+                      Detach this card
+                    </button>
+                  )}
+                </div>
+                {card.attachments && card.attachments.length > 0 && (
+                  <div className="mt-3 space-y-2">
+                    {card.attachments.map(attachment => (
+                      <div
+                        key={attachment.instanceId}
+                        className="flex flex-wrap items-center justify-between gap-2 rounded border border-amber-500/25 bg-amber-950/20 px-2 py-1.5"
+                      >
+                        <span className="min-w-0 text-xs font-bold text-amber-100">{attachment.name}</span>
+                        <button
+                          type="button"
+                          onClick={() => onAttachCard(attachment.instanceId, '')}
+                          className="min-h-8 rounded border border-amber-700/60 bg-neutral-950 px-2 text-xs font-bold text-amber-100 transition-colors hover:bg-amber-900"
+                        >
+                          Detach
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="mt-2 text-[11px] leading-relaxed text-stone-500">
+                  Manual correction for equipment, Auras, and other attached permanents when automation misses a move.
                 </div>
               </div>
             )}
@@ -2012,6 +2070,7 @@ export function GameBoard({
   onMoveCard,
   onAdjustDamage,
   onCreateToken,
+  onAttachCard,
   untappableCardIds,
   lastPlayedCard,
   authorityUpdates = [],
@@ -2029,6 +2088,7 @@ export function GameBoard({
   const [showUtilityMenu, setShowUtilityMenu] = useState(false);
   const [showTokenCreator, setShowTokenCreator] = useState(false);
   const [showPlayerCounters, setShowPlayerCounters] = useState(false);
+  const [attachSourceCardId, setAttachSourceCardId] = useState<string | null>(null);
 
   const handleCardHover = (card: SimpleCard | null) => {
     setHoveredCard(card);
@@ -2068,10 +2128,10 @@ export function GameBoard({
     if (!inspectedCard) return;
     const visibleCards = [
       ...gameState.humanHand,
-      ...gameState.humanBattlefield,
+      ...flattenWithAttachments(gameState.humanBattlefield),
       ...gameState.humanGraveyard,
       ...gameState.humanCommandZone,
-      ...Object.values(gameState.aiBattlefields).flat(),
+      ...Object.values(gameState.aiBattlefields).flatMap(flattenWithAttachments),
       ...Object.values(gameState.aiGraveyards).flat(),
       ...Object.values(gameState.aiCommandZones).flat(),
       ...gameState.stack.flatMap(item => item.card ? [item.card] : []),
@@ -2082,6 +2142,9 @@ export function GameBoard({
       setInspectedCard(freshCard);
     }
   }, [gameState, inspectedCard, lastPlayedCard]);
+
+  const flattenWithAttachments = (cards: SimpleCard[]): SimpleCard[] =>
+    cards.flatMap(card => [card, ...(card.attachments || [])]);
 
   // Build set of playable card instance IDs
   const playableIds = new Set(
@@ -2345,6 +2408,27 @@ export function GameBoard({
   const passedPriorityNames = prioritySnapshot?.passedPriorityPlayerIds.map(playerNameForId) ?? [];
   const stackTopId = prioritySnapshot?.stackTop?.id || gameState.stack[gameState.stack.length - 1]?.id;
   const stackItemsTopFirst = [...gameState.stack].reverse();
+  const battlefieldAttachmentCandidates = [
+    ...flattenWithAttachments(gameState.humanBattlefield),
+    ...Object.values(gameState.aiBattlefields).flatMap(flattenWithAttachments),
+  ];
+  const attachSourceCard = attachSourceCardId
+    ? battlefieldAttachmentCandidates.find(card => card.instanceId === attachSourceCardId)
+    : null;
+  const attachTargetOptions = attachSourceCard
+    ? battlefieldAttachmentCandidates
+        .filter(card => card.instanceId !== attachSourceCard.instanceId && card.zone === 'battlefield')
+        .map(card => ({
+          instanceId: card.instanceId,
+          name: card.name,
+          typeLine: card.typeLine,
+          manaCost: card.manaCost,
+          oracleText: card.oracleText,
+          legal: true,
+          reason: card.ownerId === gameState.humanPlayer.id ? 'Your battlefield permanent' : `${playerNameForId(card.ownerId)} battlefield permanent`,
+          destination: 'choice' as const,
+        }))
+    : [];
 
   return (
     <div className="relative h-full min-h-0 overflow-hidden bg-neutral-950 text-stone-200">
@@ -2388,6 +2472,18 @@ export function GameBoard({
           onResolve={onResolveTriggerOrder}
         />
       )}
+      {attachSourceCard && onAttachCard && (
+        <CardPickerModal
+          title={`Attach ${attachSourceCard.name} to...`}
+          cards={attachTargetOptions}
+          onPick={targetId => {
+            onAttachCard(attachSourceCard.instanceId, targetId);
+            setAttachSourceCardId(null);
+          }}
+          onCancel={() => setAttachSourceCardId(null)}
+          cancelLabel="Cancel attachment"
+        />
+      )}
       {showTokenCreator && onCreateToken && (
         <ManualTokenModal
           onCreate={token => {
@@ -2428,6 +2524,19 @@ export function GameBoard({
           onAdjustDamage={
             onAdjustDamage
               ? delta => onAdjustDamage(inspectedCard.instanceId, delta)
+              : undefined
+          }
+          onAttachCard={
+            onAttachCard
+              ? (cardInstanceId, targetId) => {
+                  if (targetId === '') {
+                    onAttachCard(cardInstanceId, undefined);
+                  } else if (targetId) {
+                    onAttachCard(cardInstanceId, targetId);
+                  } else {
+                    setAttachSourceCardId(cardInstanceId);
+                  }
+                }
               : undefined
           }
           onClose={() => setInspectedCard(null)}

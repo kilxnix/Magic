@@ -1195,6 +1195,10 @@ function actionReferencesSameObject(legal: AIAction, requested: AIAction): boole
         && stableJson(legal.types) === stableJson(requested.types)
         && stableJson(legal.subtypes) === stableJson(requested.subtypes)
         && stableJson(legal.keywords || []) === stableJson(requested.keywords || []);
+    case 'ManualAttachCard':
+      return requested.kind === 'ManualAttachCard'
+        && legal.cardInstanceId === requested.cardInstanceId
+        && (legal.targetId || '') === (requested.targetId || '');
     case 'CastSpell':
       return requested.kind === 'CastSpell'
         && legal.cardInstanceId === requested.cardInstanceId
@@ -1264,6 +1268,10 @@ function illegalActionMessage(state: GameState, playerId: string, action: AIActi
     const result = dispatchAIAction(state, playerId, action);
     return result.ok ? 'That token correction is not available now.' : result.message;
   }
+  if (action.kind === 'ManualAttachCard') {
+    const result = dispatchAIAction(state, playerId, action);
+    return result.ok ? 'That attachment correction is not available now.' : result.message;
+  }
   return 'That action is not legal in the current game state.';
 }
 
@@ -1273,7 +1281,8 @@ function isValidatedOutOfBandAction(action: AIAction): boolean {
     || action.kind === 'ManualAdjustPlayerCounter'
     || action.kind === 'ManualMoveCard'
     || action.kind === 'ManualAdjustDamage'
-    || action.kind === 'ManualCreateToken';
+    || action.kind === 'ManualCreateToken'
+    || action.kind === 'ManualAttachCard';
 }
 
 export function labelForAction(state: GameState, action: AIAction): string {
@@ -1296,6 +1305,10 @@ export function labelForAction(state: GameState, action: AIAction): string {
       return `Adjust ${cardName(state, state.cards.get(action.cardInstanceId)) || 'permanent'} damage`;
     case 'ManualCreateToken':
       return `Create ${action.count} ${action.name} token${action.count === 1 ? '' : 's'}`;
+    case 'ManualAttachCard':
+      return action.targetId
+        ? `Attach ${cardName(state, state.cards.get(action.cardInstanceId)) || 'card'} to ${cardName(state, state.cards.get(action.targetId)) || 'target'}`
+        : `Detach ${cardName(state, state.cards.get(action.cardInstanceId)) || 'card'}`;
     case 'ActivateAbility':
       return `Activate ${cardName(state, state.cards.get(action.cardInstanceId)) || 'ability'}${targetSuffix(state, action.targets)}`;
     case 'DeclareAttackers':
@@ -1359,6 +1372,7 @@ const ACTION_KIND_LABELS: Record<AIAction['kind'], string> = {
   ManualMoveCard: 'Special action',
   ManualAdjustDamage: 'Special action',
   ManualCreateToken: 'Special action',
+  ManualAttachCard: 'Special action',
   ActivateAbility: 'Activated ability',
   DeclareAttackers: 'Attack/block',
   DeclareBlockers: 'Attack/block',
@@ -1381,6 +1395,7 @@ function actionChoiceSummaryLabel(action: AIAction): string {
     case 'ManualAdjustDamage':
     case 'ManualUntapManaSource':
     case 'ManualCreateToken':
+    case 'ManualAttachCard':
       return 'Special action';
     default:
       return ACTION_KIND_LABELS[action.kind];

@@ -16,6 +16,7 @@ export type {
   ManualMoveCardAction,
   ManualAdjustDamageAction,
   ManualCreateTokenAction,
+  ManualAttachCardAction,
   ActivateAbilityAction,
   DeclareAttackersAction,
   DeclareBlockersAction,

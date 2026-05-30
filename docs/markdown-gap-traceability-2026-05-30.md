@@ -69,7 +69,7 @@ Minimum acceptance bar from that file:
 | Fix 1: Strict Action Generation | partial | Shared legal-action and try wrappers exist; not every source consumes one canonical predicate. |
 | Fix 2: Sisay Search Legality | browser-proven for one flow | The exact `/play` flow cast Sisay, activated WUBRG, filtered choices, and put Mox Amber on battlefield. |
 | Fix 3: Shared Legality Engine | partial | Action paths improved, review and UI suggestions still not fully unified. |
-| Fix 4: Prompt System | partial | Search/scry/surveil/equipment style prompts exist, plus Brainstorm hand-to-library-top selection; no fully generic typed request system. |
+| Fix 4: Prompt System | partial | Search/scry/surveil/equipment style prompts exist, Brainstorm hand-to-library-top selection exists, and manual attach/detach correction now uses validated action requests; no fully generic typed request system. |
 | Fix 5: Transactional Engine Updates | partial | Authority/action response structures exist; not a complete event-sourced transaction model. |
 | Fix 6: Event-Sourced Replay | not done | Logging exists; deterministic replay/audit is not complete. |
 | Fix 7: Review Must Audit Legality | partial | Review wording and some legality surfacing exist; no full legality audit. |
@@ -77,7 +77,7 @@ Minimum acceptance bar from that file:
 | Fix 9: Turn And Phase Labels | partial/browser-checked in UI scripts | Labels improved; event consistency is not globally audited. |
 | Fix 10: Replacement/Choice Prompts | partial | Some ETB/tapped/pay-life prompts exist; not global replacement handling. |
 | Fix 11: Continuous Effects And Layers | partial | Practical layer slices exist; not full Arena-like layer fidelity. |
-| Fix 12: Presentation Events | partial | Feed/last-played/modal polish exists, and d20 rolls now persist through the engine authority update as DiceRolled events with a playfield toast. This is still not a full animation/event pipeline. |
+| Fix 12: Presentation Events | partial | Feed/last-played/modal polish exists, d20 rolls now persist through the engine authority update as DiceRolled events with a playfield toast, and attachment corrections emit validated manual events. This is still not a full animation/event pipeline. |
 | Fix 13: AI Must Use Same Engine | partial | Better action wrappers; not full AI legality/hidden-info proof. |
 | Fix 14: Unsupported Rules Handling | partial | Some unsupported actions fail clearly; full card support/fallback coverage incomplete. |
 | Fix 15: Test Plan | partial | Many tests added; listed golden tests are not all fully browser-proven. |
@@ -125,10 +125,10 @@ Minimum acceptance bar from that file:
 | 8.1 Combat Still Too Compressed | partial |
 | 8.2 No Observed Blocker Assignment UI | partial/not fully browser-proven |
 | 8.3 Attack Requirements And Restrictions | partial |
-| 9.1 Zone-Change Identity | partial |
+| 9.1 Zone-Change Identity | partial; manual zone moves clear stale attachments, and manual attach/detach now preserves explicit attachment identity |
 | 9.2 Command Zone Rules | partial |
 | 9.3 Graveyard/Exile/Library UX | partial |
-| 10.1 State Changes Need Presentation Events | partial; d20 rolls now have persisted presentation records and authoritative DiceRolled events |
+| 10.1 State Changes Need Presentation Events | partial; d20 rolls now have persisted presentation records and authoritative DiceRolled events, and manual attachment changes emit action events |
 | 10.2 Cause And Effect Need Better Timing | partial |
 | 10.3 Battlefield Visual Hierarchy | partial |
 | 10.4 Card Presentation | partial |

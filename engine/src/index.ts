@@ -65,5 +65,6 @@ export {
   tryMoveCardManually,
   tryAdjustDamage,
   tryCreateManualToken,
+  tryAttachCardManually,
   resetLoopDetector,
 } from './actions-public';

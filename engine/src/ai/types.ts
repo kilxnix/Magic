@@ -97,6 +97,12 @@ export interface ManualCreateTokenAction {
   keywords?: string[];
 }
 
+export interface ManualAttachCardAction {
+  kind: 'ManualAttachCard';
+  cardInstanceId: string;
+  targetId?: string;
+}
+
 /**
  * An action to declare attackers during the declare attackers step.
  */
@@ -152,6 +158,7 @@ export type AIAction =
   | ManualMoveCardAction
   | ManualAdjustDamageAction
   | ManualCreateTokenAction
+  | ManualAttachCardAction
   | ActivateAbilityAction
   | DeclareAttackersAction
   | DeclareBlockersAction
