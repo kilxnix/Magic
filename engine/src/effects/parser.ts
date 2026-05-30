@@ -1654,9 +1654,10 @@ function matchModifyPT(tokens: string[], startIndex: number): PatternResult {
   const slice = tokens.slice(startIndex);
 
   // "~ gets +N/+N until end of turn"
+  // "it gets +N/+N until end of turn"
   if (
     slice.length >= 7 &&
-    slice[0] === '~' &&
+    (slice[0] === '~' || slice[0] === 'it') &&
     slice[1] === 'gets'
   ) {
     const ptMatch = slice[2]?.match(/^([+-]\d+)\/([+-]\d+)$/);
@@ -3656,10 +3657,17 @@ function matchAttacksPrefix(tokens: string[]): number {
 
   const first = tokens[0];
   if (first !== 'when' && first !== 'whenever') return -1;
-  if (tokens[1] !== '~') return -1;
-  if (tokens[2] !== 'attacks') return -1;
+  let idx = 1;
+  if (tokens[idx] === '~') {
+    idx++;
+  } else if (tokens[idx] === 'this' && tokens[idx + 1] === 'creature') {
+    idx += 2;
+  } else {
+    return -1;
+  }
+  if (tokens[idx] !== 'attacks') return -1;
 
-  let idx = 3;
+  idx++;
   if (tokens[idx] === ',') idx++;
 
   return idx;

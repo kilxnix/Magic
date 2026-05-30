@@ -696,6 +696,19 @@ describe('parseOracleText', () => {
   });
 
   describe('P/T modification patterns', () => {
+    it('parses attack triggers where "it gets" modifies the source creature', () => {
+      const result = parseOracleText('Whenever this creature attacks, it gets +0/+2 until end of turn.');
+      expect(result.kind).toBe('Triggered');
+      if (result.kind !== 'Triggered') return;
+      expect(result.ability.trigger.kind).toBe('Attacks');
+      expect(result.ability.effects[0].kind).toBe('ModifyPT');
+      if (result.ability.effects[0].kind !== 'ModifyPT') return;
+      expect(result.ability.effects[0].target.kind).toBe('Source');
+      expect(result.ability.effects[0].power).toBe(0);
+      expect(result.ability.effects[0].toughness).toBe(2);
+      expect(result.ability.effects[0].untilEndOfTurn).toBe(true);
+    });
+
     it('parses "Target creature gets +2/+2 until end of turn."', () => {
       const result = parseOracleText('Target creature gets +2/+2 until end of turn.');
       expect(result.kind).toBe('Spell');
