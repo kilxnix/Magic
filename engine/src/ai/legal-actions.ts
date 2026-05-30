@@ -6,10 +6,10 @@
 
 import { GameState, CardInstance, AttackerDeclaration, BlockerDeclaration, isSpellStackItem } from '../types';
 import { getCardsInZone, getCardDefinition } from '../game-state';
-import { canCastSpell } from '../stack';
+import { canCastSpell, getEffectiveCastCost } from '../stack';
 import { canPlayLand, getActivatedAbilities, canActivateAbility, isBlockedBySummoningSicknessForTap, getAvailableManaColors } from '../actions';
 import { canDeclareAttacker, canDeclareBlocker, hasPlayerDeclaredBlockers } from '../combat';
-import { canPayUnrestrictedCost } from '../mana';
+import { canPaySpellCost, canPayUnrestrictedCost } from '../mana';
 import { getOverride } from '../effects/overrides';
 import { parseOracleText } from '../effects/parser';
 import { matchesCardFilter } from '../effects/executor';
@@ -239,6 +239,41 @@ function generateModalActions(
   return actions.length > startingActionCount;
 }
 
+function hasXCost(def: ReturnType<typeof getCardDefinition>): boolean {
+  return /\{X\}/i.test(def.mana_cost);
+}
+
+function legalXValuesForSpell(
+  state: GameState,
+  playerId: string,
+  card: CardInstance,
+  def: ReturnType<typeof getCardDefinition>,
+): number[] {
+  if (!hasXCost(def)) return [0];
+  const player = state.players.find(p => p.id === playerId);
+  if (!player) return [];
+  const values: number[] = [];
+  for (let xValue = 0; xValue <= 20; xValue++) {
+    const cost = getEffectiveCastCost(state, playerId, card.instanceId, { xValue });
+    if (cost && canPaySpellCost(player, cost, def, card)) values.push(xValue);
+  }
+  return values;
+}
+
+function withXValues(
+  state: GameState,
+  playerId: string,
+  card: CardInstance,
+  def: ReturnType<typeof getCardDefinition>,
+  baseAction: Omit<CastSpellAction, 'xValue'>,
+): CastSpellAction[] {
+  if (!hasXCost(def)) return [baseAction];
+  return legalXValuesForSpell(state, playerId, card, def).map(xValue => ({
+    ...baseAction,
+    xValue,
+  }));
+}
+
 function generateCastSpellActions(state: GameState, playerId: string): CastSpellAction[] {
   const actions: CastSpellAction[] = [];
 
@@ -259,22 +294,22 @@ function generateCastSpellActions(state: GameState, playerId: string): CastSpell
 
       if (specs.length === 0) {
         // No targets needed
-        actions.push({
-          kind: 'CastSpell',
-          cardInstanceId: card.instanceId,
-          targets: [],
-        });
+        actions.push(...withXValues(state, playerId, card, def, {
+            kind: 'CastSpell',
+            cardInstanceId: card.instanceId,
+            targets: [],
+          }));
       } else {
         // Generate actions for each valid target combination
         // For v0, handle single-target spells only
         if (specs.length === 1 && specs[0].count === 1) {
           const legalTargets = getLegalTargets(state, playerId, specs[0]);
           for (const target of legalTargets) {
-            actions.push({
-              kind: 'CastSpell',
-              cardInstanceId: card.instanceId,
-              targets: [target],
-            });
+            actions.push(...withXValues(state, playerId, card, def, {
+                kind: 'CastSpell',
+                cardInstanceId: card.instanceId,
+                targets: [target],
+              }));
           }
         }
         // Multi-target spells would need combinatorial expansion (future)
@@ -296,11 +331,11 @@ function generateCastSpellActions(state: GameState, playerId: string): CastSpell
 
       const specs = getSpellTargetSpecs(state, card);
       if (specs.length === 0) {
-        actions.push({
-          kind: 'CastSpell',
-          cardInstanceId: card.instanceId,
-          targets: [],
-        });
+        actions.push(...withXValues(state, playerId, card, def, {
+            kind: 'CastSpell',
+            cardInstanceId: card.instanceId,
+            targets: [],
+          }));
       }
       // Commanders with targets would follow same pattern as above
     }

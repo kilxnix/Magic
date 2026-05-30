@@ -1617,11 +1617,12 @@ function toSimpleLegalAction(action: AIAction, engineState: GameState): SimpleLe
     case 'CastSpell': {
       const inst = engineState.cards.get(action.cardInstanceId);
       const def = inst ? engineState.cardDefinitions.get(inst.definitionId) : undefined;
+      const xSuffix = typeof action.xValue === 'number' ? ` for X=${action.xValue}` : '';
       return {
         kind: 'CastSpell',
         cardInstanceId: action.cardInstanceId,
         cardName: def?.name,
-        label: `Cast ${def?.name || 'spell'}${targetLabelSuffix(engineState, action.targets)}`,
+        label: `Cast ${def?.name || 'spell'}${xSuffix}${targetLabelSuffix(engineState, action.targets)}`,
         _engineAction: action,
       };
     }
@@ -1780,7 +1781,8 @@ function baseLabelForTargetGroup(engineState: GameState, action: SimpleLegalActi
   if (engineAction.kind === 'CastSpell') {
     const card = engineState.cards.get(engineAction.cardInstanceId);
     const def = card ? engineState.cardDefinitions.get(card.definitionId) : undefined;
-    return `Cast ${def?.name || action.cardName || 'spell'}`;
+    const xSuffix = typeof engineAction.xValue === 'number' ? ` for X=${engineAction.xValue}` : '';
+    return `Cast ${def?.name || action.cardName || 'spell'}${xSuffix}`;
   }
   if (engineAction.kind === 'ActivateAbility') {
     const card = engineState.cards.get(engineAction.cardInstanceId);

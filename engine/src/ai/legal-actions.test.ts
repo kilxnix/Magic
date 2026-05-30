@@ -174,6 +174,31 @@ describe('getLegalActions', () => {
       });
     });
 
+    it('generates affordable X choices for X spells', () => {
+      const state = createTestState({
+        priorityPlayerIndex: 0,
+        activePlayerIndex: 0,
+        phase: 'precombat_main',
+      });
+      state.players[0].manaPool = { W: 0, U: 0, B: 0, R: 1, G: 0, C: 3 };
+
+      addCard(state, 'xbolt1', 'p1', 'hand', {
+        name: 'X Bolt',
+        type_line: 'Sorcery',
+        oracle_text: 'X Bolt deals X damage to any target.',
+        mana_cost: '{X}{R}',
+        cmc: 1,
+        colors: ['R'],
+        color_identity: ['R'],
+        card_types: ['sorcery'],
+      });
+
+      const actions = getLegalActions(state, 'p1')
+        .filter((a): a is import('./types').CastSpellAction => a.kind === 'CastSpell' && a.cardInstanceId === 'xbolt1');
+
+      expect([...new Set(actions.map(action => action.xValue))]).toEqual([0, 1, 2, 3]);
+    });
+
     it('does not generate CastSpell when player cannot afford spell', () => {
       const state = createTestState({
         priorityPlayerIndex: 0,
