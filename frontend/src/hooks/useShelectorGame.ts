@@ -22,11 +22,9 @@ import {
   performUntapStep,
   drawCards,
   resolveTopOfStack,
-  registerBattlefieldAbilities,
   resolveCombatDamage,
   checkStateBasedActions,
   putTriggersOnStack,
-  checkTriggersForEvent,
   parseOracleText,
   parseManaString,
   canPayCost,
@@ -4521,25 +4519,7 @@ export function useShelectorGame() {
       return;
     }
     recordAuthorityUpdate(promptResponse.update);
-    const movedEngine = promptResponse.state as GameStateWithAI;
-
-    let resolvedEngine = movedEngine;
-    if (dest === 'battlefield') {
-      resolvedEngine = registerBattlefieldAbilities(resolvedEngine, selectedCardInstanceId) as GameStateWithAI;
-      if (def?.card_types.includes('land')) {
-        resolvedEngine = checkTriggersForEvent(resolvedEngine, {
-          kind: 'LandETB',
-          instanceId: selectedCardInstanceId,
-          controllerId: humanIdRef.current,
-        }) as GameStateWithAI;
-      } else if (def?.card_types.includes('creature')) {
-        resolvedEngine = checkTriggersForEvent(resolvedEngine, {
-          kind: 'CreatureETB',
-          instanceId: selectedCardInstanceId,
-          controllerId: humanIdRef.current,
-        }) as GameStateWithAI;
-      }
-    }
+    const resolvedEngine = promptResponse.state as GameStateWithAI;
     engineRef.current = resolvedEngine;
 
     const movedCard = resolvedEngine.cards.get(selectedCardInstanceId);

@@ -641,7 +641,7 @@ function additionalStaticKeywordFromLine(line: string): string | null {
   return keywords.find(keyword => new RegExp(`\\b${keyword}\\b`, 'i').test(clause)) ?? null;
 }
 
-function registerContinuousAbilitiesForPermanent(state: GameState, instanceId: string): GameState {
+export function registerContinuousAbilitiesForPermanent(state: GameState, instanceId: string): GameState {
   const card = state.cards.get(instanceId);
   if (!card) return state;
   const def = state.cardDefinitions.get(card.definitionId);
@@ -909,7 +909,7 @@ export function registerBattlefieldAbilities(state: GameState, instanceId: strin
 /**
  * Create pending triggers for a permanent that just entered the battlefield.
  */
-function createETBTriggers(state: GameState, instanceId: string): GameState {
+export function createETBTriggers(state: GameState, instanceId: string): GameState {
   const abilities = state.battlefieldAbilities.get(instanceId);
   if (!abilities || abilities.length === 0) return state;
 

@@ -259,6 +259,37 @@ function stateWithSearchedShockLand(): GameState {
   };
 }
 
+function stateWithSearchedEtbCreature(): GameState {
+  const visionary: CardDefinition = {
+    ...def(
+      'elvish_visionary',
+      'Elvish Visionary',
+      'Creature - Elf Shaman',
+      '{1}{G}',
+      'When Elvish Visionary enters the battlefield, draw a card.',
+    ),
+    cmc: 2,
+  };
+  const commander = def('commander', 'Test Commander', 'Legendary Creature - Human', '{1}{G}');
+  const state = initGameState([
+    { playerId: 'p1', name: 'Player One', cards: [commander, visionary], commanderId: commander.id },
+    { playerId: 'p2', name: 'Player Two', cards: [commander], commanderId: commander.id },
+  ]);
+  const visionaryInstance = [...state.cards.values()].find(card => card.definitionId === visionary.id && card.ownerId === 'p1');
+  if (!visionaryInstance) throw new Error('Elvish Visionary not found');
+  state.cards.set(visionaryInstance.instanceId, { ...visionaryInstance, zone: 'library' });
+  return {
+    ...state,
+    activePlayerIndex: 0,
+    priorityPlayerIndex: 0,
+    phase: 'precombat_main',
+    step: 'main',
+    hasPriorityPassed: [false, false],
+    stack: [],
+    pendingTriggers: [],
+  };
+}
+
 function stateWithTargetChoices(): GameState {
   const forest = def('forest', 'Forest', 'Basic Land - Forest');
   const bear: CardDefinition = {
@@ -732,6 +763,36 @@ describe('authority action boundary', () => {
     expect(rejected.message).toContain('effect puts the card onto the battlefield tapped');
     expect(rejected.state).toBeUndefined();
     expect(state.cards.get('temple_garden_1')?.zone).toBe('library');
+  });
+
+  it('registers searched battlefield entries and queues their ETB triggers in the engine transaction', () => {
+    const state = stateWithSearchedEtbCreature();
+    const visionary = [...state.cards.values()].find(card => card.definitionId === 'elvish_visionary');
+    expect(visionary).toBeDefined();
+
+    const request = createSearchLibraryPromptRequest(
+      state,
+      'p1',
+      { types: ['Creature'] },
+      'battlefield',
+      {
+        id: 'prompt-search-etb-creature',
+        minSelections: 1,
+        maxSelections: 1,
+        createdAt: 18,
+      },
+    );
+    const accepted = applySearchLibraryPromptResponse(state, request, {
+      requestId: request.id,
+      kind: 'SearchLibrary',
+      playerId: 'p1',
+      selectedCardInstanceIds: [visionary!.instanceId],
+    });
+
+    expect(accepted.ok).toBe(true);
+    expect(accepted.state?.cards.get(visionary!.instanceId)?.zone).toBe('battlefield');
+    expect(accepted.state?.battlefieldAbilities.get(visionary!.instanceId)?.length).toBeGreaterThan(0);
+    expect(accepted.state?.pendingTriggers.some(trigger => trigger.sourceInstanceId === visionary!.instanceId)).toBe(true);
   });
 
   it('creates typed replacement prompts and rejects unavailable replacement choices', () => {

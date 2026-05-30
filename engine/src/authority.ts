@@ -16,7 +16,14 @@ import { getLegalTargets } from './ai/legal-actions';
 import { dispatchAIAction } from './ai/agent';
 import { canPlayLandDetailed } from './actions';
 import { canPayCost } from './mana';
-import { putPendingTriggerOnStack, putTriggersOnStack } from './stack';
+import {
+  checkTriggersForEvent,
+  createETBTriggers,
+  putPendingTriggerOnStack,
+  putTriggersOnStack,
+  registerBattlefieldAbilities,
+  registerContinuousAbilitiesForPermanent,
+} from './stack';
 import { executeSearchLibrary, executeShuffleLibrary, matchesCardFilter } from './effects/executor';
 import { getEffectivePower, getEffectiveToughness } from './effects/continuous';
 import { parseOracleText } from './effects/parser';
@@ -1743,6 +1750,36 @@ function validateBattlefieldEntryReplacementResponse(
   return undefined;
 }
 
+function applyBattlefieldEntryFromSearch(state: GameState, cardInstanceId: string): GameState {
+  const card = state.cards.get(cardInstanceId);
+  if (!card || card.zone !== 'battlefield') return state;
+
+  let nextState = registerBattlefieldAbilities(state, cardInstanceId);
+  nextState = registerContinuousAbilitiesForPermanent(nextState, cardInstanceId);
+  nextState = createETBTriggers(nextState, cardInstanceId);
+  const enteredCard = nextState.cards.get(cardInstanceId);
+  const definition = enteredCard ? nextState.cardDefinitions.get(enteredCard.definitionId) : undefined;
+  if (!enteredCard || !definition) return nextState;
+
+  if (definition.card_types.includes('land')) {
+    return checkTriggersForEvent(nextState, {
+      kind: 'LandETB',
+      instanceId: cardInstanceId,
+      controllerId: enteredCard.ownerId,
+    });
+  }
+
+  if (definition.card_types.includes('creature')) {
+    return checkTriggersForEvent(nextState, {
+      kind: 'CreatureETB',
+      instanceId: cardInstanceId,
+      controllerId: enteredCard.ownerId,
+    });
+  }
+
+  return nextState;
+}
+
 export function applySearchLibraryPromptResponse(
   state: GameState,
   request: SearchLibraryPromptRequest,
@@ -1877,6 +1914,9 @@ export function applySearchLibraryPromptResponse(
           payLifeToEnterUntapped: response.payLifeToEnterUntapped,
         },
       );
+      if (request.destination === 'battlefield') {
+        nextState = applyBattlefieldEntryFromSearch(nextState, selectedId);
+      }
     }
     if (request.shuffle) nextState = executeShuffleLibrary(nextState, request.playerId);
   }
