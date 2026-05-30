@@ -45,7 +45,6 @@ import {
   type ManaPool,
   type TriggeredAbilityStackItem,
   tryAdjustCounters,
-  tryUntapManaSource,
   getCostReduction,
   getOverride,
   getEffectivePower,
@@ -4773,42 +4772,33 @@ export function useShelectorGame() {
 
     const card = engine.cards.get(cardInstanceId);
     const def = card ? engine.cardDefinitions.get(card.definitionId) : undefined;
-    const result = tryUntapManaSource(
-      engine,
-      humanIdRef.current,
-      cardInstanceId,
-      tapRecord.color,
-      tapRecord.amount,
-    );
-    if (!result.ok) {
-      setActionError({ reason: result.reason, message: result.message });
-      addMessage('system', `Cannot untap mana source: ${result.message}`);
-      syncState();
-      return;
-    }
-
-    engineRef.current = result.state as GameStateWithAI;
-    applyEvents(result.events, result.state);
-    recordStateUpdate(engine, result.state, {
+    const action: AIAction = {
       kind: 'ManualUntapManaSource',
       cardInstanceId,
       color: tapRecord.color,
       amount: tapRecord.amount,
+    };
+    const response = applyActionThroughAuthority(engine, humanIdRef.current, action, {
+      source: 'system',
       label: `Untap ${def?.name || 'mana source'}`,
-      _engineAction: {
-        kind: 'ManualUntapManaSource',
-        cardInstanceId,
-        color: tapRecord.color,
-        amount: tapRecord.amount,
-      },
-    } as SimpleLegalAction, result.events, { source: 'system' });
+    });
+    if (!response.ok || !response.state) {
+      const message = response.message || 'That mana correction was rejected.';
+      setActionError({ reason: response.reason || 'illegal_action', message });
+      addMessage('system', `Cannot untap mana source: ${message}`);
+      syncState();
+      return;
+    }
+
+    engineRef.current = response.state as GameStateWithAI;
+    applyEvents(response.events || [], response.state);
 
     uncommittedTapsRef.current.delete(cardInstanceId);
-    const player = result.state.players.find(p => p.id === humanIdRef.current);
+    const player = response.state.players.find(p => p.id === humanIdRef.current);
     const pool = player?.manaPool || { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 };
     addMessage('player', `Untapped ${def?.name || 'mana source'}. Floating: ${formatManaPool(pool)}`);
     syncState();
-  }, [addMessage, applyEvents, recordStateUpdate, syncState]);
+  }, [addMessage, applyActionThroughAuthority, applyEvents, syncState]);
 
   const adjustCounters = useCallback((cardInstanceId: string, counterType: string, delta: number) => {
     const engine = engineRef.current;
