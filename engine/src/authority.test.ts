@@ -173,6 +173,67 @@ function stateWithSisaySearchChoices(): GameState {
   };
 }
 
+function stateWithSearchedShockLand(): GameState {
+  const templeGarden: CardDefinition = {
+    ...def(
+      'temple_garden',
+      'Temple Garden',
+      'Land - Forest Plains',
+      '',
+      'As Temple Garden enters the battlefield, you may pay 2 life. If you don\'t, it enters the battlefield tapped.',
+    ),
+    cmc: 0,
+  };
+  return {
+    players: [
+      {
+        id: 'p1',
+        name: 'Player One',
+        life: 40,
+        poisonCounters: 0,
+        commanderDamage: {},
+        commanderTax: 0,
+        commanderInstanceId: null,
+        commanderCastCount: 0,
+        manaPool: { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 },
+        hasPlayedLand: false,
+        hasPriority: true,
+        hasLost: false,
+      },
+      {
+        id: 'p2',
+        name: 'Player Two',
+        life: 40,
+        poisonCounters: 0,
+        commanderDamage: {},
+        commanderTax: 0,
+        commanderInstanceId: null,
+        commanderCastCount: 0,
+        manaPool: { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 },
+        hasPlayedLand: false,
+        hasPriority: false,
+        hasLost: false,
+      },
+    ],
+    cards: new Map<string, CardInstance>([
+      ['temple_garden_1', cardInstance('temple_garden_1', templeGarden.id, 'p1', 'library')],
+    ]),
+    cardDefinitions: new Map<string, CardDefinition>([
+      [templeGarden.id, templeGarden],
+    ]),
+    activePlayerIndex: 0,
+    priorityPlayerIndex: 0,
+    phase: 'precombat_main',
+    step: 'upkeep',
+    turnNumber: 1,
+    hasPriorityPassed: [false, false],
+    stack: [],
+    combat: null,
+    battlefieldAbilities: new Map(),
+    pendingTriggers: [],
+  };
+}
+
 describe('authority action boundary', () => {
   it('builds typed prompts from canonical legal actions', () => {
     const state = stateWithForestInHand();
@@ -366,6 +427,51 @@ describe('authority action boundary', () => {
       reason: 'illegal_response',
       message: 'Illegal search selection: Not Legendary',
     })]);
+  });
+
+  it('validates replacement responses for searched shock lands', () => {
+    const state = stateWithSearchedShockLand();
+    const filter: CardFilter = { types: ['land'], subtypes: ['Forest', 'Plains'] };
+    const untappedRequest = createSearchLibraryPromptRequest(state, 'p1', filter, 'battlefield', {
+      id: 'prompt-shock-untapped',
+      tapped: false,
+      minSelections: 1,
+      maxSelections: 1,
+      createdAt: 15,
+    });
+    const accepted = applySearchLibraryPromptResponse(state, untappedRequest, {
+      requestId: untappedRequest.id,
+      kind: 'SearchLibrary',
+      playerId: 'p1',
+      selectedCardInstanceIds: ['temple_garden_1'],
+      payLifeToEnterUntapped: true,
+    });
+
+    expect(accepted.ok).toBe(true);
+    expect(accepted.state?.players.find(player => player.id === 'p1')?.life).toBe(38);
+    expect(accepted.state?.cards.get('temple_garden_1')?.zone).toBe('battlefield');
+    expect(accepted.state?.cards.get('temple_garden_1')?.tapped).toBe(false);
+
+    const tappedRequest = createSearchLibraryPromptRequest(state, 'p1', filter, 'battlefield', {
+      id: 'prompt-shock-forced-tapped',
+      tapped: true,
+      minSelections: 1,
+      maxSelections: 1,
+      createdAt: 16,
+    });
+    const rejected = applySearchLibraryPromptResponse(state, tappedRequest, {
+      requestId: tappedRequest.id,
+      kind: 'SearchLibrary',
+      playerId: 'p1',
+      selectedCardInstanceIds: ['temple_garden_1'],
+      payLifeToEnterUntapped: true,
+    });
+
+    expect(rejected.ok).toBe(false);
+    expect(rejected.reason).toBe('illegal_response');
+    expect(rejected.message).toContain('effect puts the card onto the battlefield tapped');
+    expect(rejected.state).toBeUndefined();
+    expect(state.cards.get('temple_garden_1')?.zone).toBe('library');
   });
 
   it('includes selected target names in command labels', () => {

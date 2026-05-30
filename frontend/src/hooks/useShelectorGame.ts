@@ -3972,11 +3972,13 @@ export function useShelectorGame() {
       payLifeToEnterUntapped: payLifeForSearchEntry,
     });
     if (!promptResponse.ok || !promptResponse.state) {
+      recordAuthorityUpdate(promptResponse.update);
       const message = promptResponse.message || 'Could not resolve that search choice.';
       addMessage('system', message);
       syncState();
       return;
     }
+    recordAuthorityUpdate(promptResponse.update);
     const movedEngine = promptResponse.state as GameStateWithAI;
 
     let resolvedEngine = movedEngine;
@@ -4118,7 +4120,7 @@ export function useShelectorGame() {
     syncState();
     return;
 
-  }, [addMessage, appendLog, syncState, advanceGameLoop]);
+  }, [addMessage, appendLog, recordAuthorityUpdate, syncState, advanceGameLoop]);
 
   /** Cancel the active tutor — useful for "up to N" searches when the user wants
    * fewer than N picks, or to skip the search entirely. */
@@ -4175,8 +4177,10 @@ export function useShelectorGame() {
         selectedCardInstanceIds: [],
       });
       if (promptResponse.ok && promptResponse.state) {
+        recordAuthorityUpdate(promptResponse.update);
         engineRef.current = promptResponse.state as GameStateWithAI;
       } else {
+        recordAuthorityUpdate(promptResponse.update);
         addMessage('system', promptResponse.message || 'Could not stop this search cleanly.');
         syncState();
         return;
@@ -4193,7 +4197,7 @@ export function useShelectorGame() {
     for (const msg of loopMessages) addMessage(msg.role, msg.text);
     if (loopLogEntries.length > 0) setGameLog(prev => [...prev, ...loopLogEntries]);
     syncState();
-  }, [addMessage, syncState, advanceGameLoop]);
+  }, [addMessage, recordAuthorityUpdate, syncState, advanceGameLoop]);
 
   // Undo last human action
   const undoAction = useCallback(() => {

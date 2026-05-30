@@ -20,7 +20,7 @@ export interface BattlefieldEntryPlan {
 export function getOptionalUntappedLifeCost(oracleText: string): number | undefined {
   if (!oracleText) return undefined;
   const lower = oracleText.toLowerCase();
-  const match = lower.match(/\byou may pay\s+(\d+)\s+life\b[^.]*\.\s*if\s+you\s+don'?t\b[^.]*enters?\s+tapped/);
+  const match = lower.match(/\byou may pay\s+(\d+)\s+life\b[^.]*\.\s*if\s+you\s+don'?t\b[^.]*enters?(?:\s+the\s+battlefield)?\s+tapped/);
   return match ? parseInt(match[1], 10) : undefined;
 }
 

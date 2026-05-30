@@ -14,6 +14,7 @@ import { dispatchAIAction } from './ai/agent';
 import { canPlayLandDetailed } from './actions';
 import { executeSearchLibrary, executeShuffleLibrary, matchesCardFilter } from './effects/executor';
 import { getEffectivePower } from './effects/continuous';
+import { getOptionalUntappedLifeCost } from './permanent-entry';
 import { validateStateInvariants } from './invariants';
 import type { AIAction } from './ai/types';
 import type { ActionFailure, GameEvent as ActionGameEvent } from './actions-public';
@@ -1025,6 +1026,35 @@ function selectedPromptChoiceReason(
   ).reason || 'Selection is not legal for this search';
 }
 
+function validateBattlefieldEntryReplacementResponse(
+  state: GameState,
+  request: SearchLibraryPromptRequest,
+  response: SearchLibraryPromptResponse,
+  selectedCardInstanceId: string,
+): string | undefined {
+  if (request.destination !== 'battlefield') return undefined;
+  if (response.payLifeToEnterUntapped === undefined) return undefined;
+
+  const card = state.cards.get(selectedCardInstanceId);
+  const def = card ? state.cardDefinitions.get(card.definitionId) : undefined;
+  if (!card || !def) return 'Selected card is no longer available';
+
+  const optionalLifeCost = getOptionalUntappedLifeCost(def.oracle_text);
+  if (request.tapped) {
+    return 'This effect puts the card onto the battlefield tapped, so an untapped replacement choice is not available';
+  }
+  if (optionalLifeCost === undefined) {
+    return `${def.name} has no optional life payment to enter untapped`;
+  }
+  if (response.payLifeToEnterUntapped) {
+    const player = state.players.find(candidate => candidate.id === request.playerId);
+    if (!player || player.life < optionalLifeCost) {
+      return `Cannot pay ${optionalLifeCost} life for ${def.name}`;
+    }
+  }
+  return undefined;
+}
+
 export function applySearchLibraryPromptResponse(
   state: GameState,
   request: SearchLibraryPromptRequest,
@@ -1114,6 +1144,23 @@ export function applySearchLibraryPromptResponse(
     );
     if (!currentChoice.legal) {
       const message = `Illegal search selection: ${currentChoice.reason || 'selection no longer matches this search'}`;
+      return {
+        requestId: response.requestId,
+        ok: false,
+        reason: 'illegal_response',
+        message,
+        update: promptRejectUpdate(state, request, response, 'illegal_response', message),
+      };
+    }
+
+    const replacementFailure = validateBattlefieldEntryReplacementResponse(
+      state,
+      request,
+      response,
+      selectedId,
+    );
+    if (replacementFailure) {
+      const message = `Illegal replacement response: ${replacementFailure}`;
       return {
         requestId: response.requestId,
         ok: false,
