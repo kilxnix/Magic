@@ -105,7 +105,7 @@ export interface TriggeredAbilityRef {
     | { kind: 'Unblocked'; who: 'self' }
     | { kind: 'Upkeep'; whose: 'yours' | 'each' }
     | { kind: 'BeginningCombat'; whose: 'yours' | 'each' }
-    | { kind: 'EndStep'; whose: 'yours' | 'opponents' }
+    | { kind: 'EndStep'; whose: 'yours' | 'opponents' | 'next' }
     | { kind: 'AnotherCreatureETB'; controller: 'yours'; nontoken?: boolean; tokenOnly?: boolean }
     | { kind: 'CreatureYouControlDies' }
     | { kind: 'CreatureYouControlAttacks' }
@@ -129,7 +129,7 @@ export interface DelayedTriggeredAbilityRef {
   id: string;
   sourceInstanceId?: string;
   controllerId: string;
-  trigger: { kind: 'EndStep'; whose: 'yours' | 'opponents' };
+  trigger: { kind: 'EndStep'; whose: 'yours' | 'opponents' | 'next' };
   effects: unknown[];
   oneShot: boolean;
 }

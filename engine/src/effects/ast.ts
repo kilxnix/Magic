@@ -42,6 +42,7 @@ export type Effect =
   | GainControlEffect
   | ConditionalEffect
   | BlinkEffect
+  | ReturnFromExileEffect
   | CopyEffect
   | CopySpellEffect
   | GrantKeywordEffect
@@ -321,8 +322,13 @@ export interface GainControlEffect {
 export interface BlinkEffect {
   kind: 'Blink';
   target: TargetRef;
-  delayed?: boolean; // true = "return at the beginning of the next end step" (simplified to immediate)
+  delayed?: boolean; // true = "return at the beginning of the next end step"
   ownerControl?: boolean; // true = "under its owner's control"
+}
+
+export interface ReturnFromExileEffect {
+  kind: 'ReturnFromExile';
+  target: TargetRef;
 }
 
 // Copy: create a token copy of target creature
@@ -448,7 +454,7 @@ export type Trigger =
   | { kind: 'Unblocked'; who: 'self' }
   | { kind: 'Upkeep'; whose: 'yours' | 'each' }
   | { kind: 'BeginningCombat'; whose: 'yours' | 'each' }
-  | { kind: 'EndStep'; whose: 'yours' | 'opponents' }
+  | { kind: 'EndStep'; whose: 'yours' | 'opponents' | 'next' }
   | { kind: 'AnotherCreatureETB'; controller: 'yours'; nontoken?: boolean; tokenOnly?: boolean }
   | { kind: 'CreatureYouControlDies' }
   | { kind: 'CreatureYouControlAttacks' }

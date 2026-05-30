@@ -1782,8 +1782,11 @@ export function checkTriggersForEvent(state: GameState, event: GameEvent): GameS
     const remainingDelayed = [];
     for (const delayed of delayedTriggers) {
       const shouldFire = delayed.trigger.kind === 'EndStep'
-        && delayed.trigger.whose === 'yours'
-        && event.activePlayerId === delayed.controllerId;
+        && (
+          delayed.trigger.whose === 'next'
+          || (delayed.trigger.whose === 'yours' && event.activePlayerId === delayed.controllerId)
+          || (delayed.trigger.whose === 'opponents' && event.activePlayerId !== delayed.controllerId)
+        );
 
       if (shouldFire) {
         newPendingTriggers.push({

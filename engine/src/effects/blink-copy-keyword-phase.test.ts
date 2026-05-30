@@ -4,6 +4,7 @@ import { describe, it, expect } from 'vitest';
 import { parseOracleText } from './parser';
 import { executeEffects } from './executor';
 import { canAttackThisTurn, canBlock, instanceHasKeyword } from '../keywords';
+import { checkTriggersForEvent, putTriggersOnStack, resolveTopOfStack } from '../stack';
 import type { Effect } from './ast';
 import type { GameState, CardInstance, CardDefinition } from '../types';
 
@@ -352,6 +353,33 @@ describe('Blink/Flicker', () => {
 
       const newState = executeEffects(stateWithGraveyard, effects, 'player-1', ['creature-1'], [{ id: 'target_1' }]);
       expect(newState.cards.get('creature-1')!.zone).toBe('graveyard');
+    });
+
+    it('delayed blink returns the exiled card at the next end step', () => {
+      const state = createTestState();
+      const effects: Effect[] = [
+        { kind: 'Blink', target: { kind: 'Chosen', targetId: 'target_1' }, delayed: true },
+      ];
+
+      let next = executeEffects(state, effects, 'player-1', ['creature-1'], [{ id: 'target_1' }]);
+
+      expect(next.cards.get('creature-1')!.zone).toBe('exile');
+      expect(next.delayedTriggers).toHaveLength(1);
+      expect(next.pendingTriggers).toHaveLength(0);
+
+      next = checkTriggersForEvent(next, { kind: 'EndStepStart', activePlayerId: 'player-2' });
+      expect(next.pendingTriggers).toHaveLength(1);
+      expect(next.delayedTriggers).toHaveLength(0);
+
+      next = putTriggersOnStack(next);
+      next = resolveTopOfStack(next);
+
+      const returned = next.cards.get('creature-1')!;
+      expect(returned.zone).toBe('battlefield');
+      expect(returned.tapped).toBe(false);
+      expect(returned.damage).toBe(0);
+      expect(returned.counters).toEqual({});
+      expect(returned.summoningSick).toBe(true);
     });
   });
 });

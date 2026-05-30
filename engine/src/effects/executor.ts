@@ -2109,9 +2109,66 @@ function evaluateCondition(state: GameState, condition: Condition, casterId: str
  * In a full implementation, this would create a new object identity for triggers,
  * but for our engine we reset all transient state.
  */
-function executeBlink(state: GameState, targetId: string): GameState {
+function executeReturnFromExile(state: GameState, targetId: string): GameState {
+  const card = state.cards.get(targetId);
+  if (!card || card.zone !== 'exile') return state;
+
+  const def = getCardDefinition(state, card);
+  const entry = buildBattlefieldEntryPlan(
+    state,
+    card.ownerId,
+    {
+      ...card,
+      zone: 'battlefield',
+      counters: {},
+      damage: 0,
+      grantedKeywords: undefined,
+      lostKeywords: undefined,
+      phasedOut: undefined,
+      attachedTo: undefined,
+    },
+    def,
+    { summoningSick: true },
+  );
+  const newCards = new Map(state.cards);
+  newCards.set(targetId, entry.card);
+
+  return applyDirectBattlefieldEntrySideEffects({ ...state, cards: newCards, players: entry.players }, targetId);
+}
+
+function executeBlink(state: GameState, targetId: string, delayed = false): GameState {
   const card = state.cards.get(targetId);
   if (!card || card.zone !== 'battlefield') return state;
+
+  if (delayed) {
+    const destination = getCommanderDestinationZone(state, targetId, 'exile');
+    const newCards = new Map(state.cards);
+    newCards.set(targetId, {
+      ...card,
+      zone: destination,
+      tapped: false,
+      damage: 0,
+      counters: {},
+      grantedKeywords: undefined,
+      lostKeywords: undefined,
+      phasedOut: undefined,
+      attachedTo: undefined,
+    });
+    const delayedTriggers = destination === 'exile'
+      ? [
+          ...(state.delayedTriggers || []),
+          {
+            id: `delayed_blink_${targetId}_${state.turnNumber}_${(state.delayedTriggers || []).length + 1}`,
+            sourceInstanceId: targetId,
+            controllerId: card.ownerId,
+            trigger: { kind: 'EndStep' as const, whose: 'next' as const },
+            effects: [{ kind: 'ReturnFromExile' as const, target: { kind: 'Source' as const } }],
+            oneShot: true,
+          },
+        ]
+      : state.delayedTriggers;
+    return pruneDetachedEffects({ ...state, cards: newCards, delayedTriggers });
+  }
 
   const def = getCardDefinition(state, card);
   const entry = buildBattlefieldEntryPlan(
@@ -2702,7 +2759,14 @@ function executeEffect(
     // Phase 16: Blink — exile then return to battlefield
     case 'Blink': {
       const blinkTargetId = resolveTargetRef(effect.target, casterId, chosenTargets);
-      return executeBlink(state, blinkTargetId);
+      return executeBlink(state, blinkTargetId, effect.delayed === true);
+    }
+    case 'ReturnFromExile': {
+      const returnTargetId = effect.target.kind === 'Source'
+        ? sourceInstanceId
+        : resolveTargetRef(effect.target, casterId, chosenTargets);
+      if (!returnTargetId) return state;
+      return executeReturnFromExile(state, returnTargetId);
     }
     // Phase 16: Copy — create token copy (simplified)
     case 'Copy': {

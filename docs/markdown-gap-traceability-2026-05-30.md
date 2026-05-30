@@ -100,7 +100,7 @@ Minimum acceptance bar from that file:
 | 2.4 Mana Value Constraints | partial/test-proven; generic library searches, targeted removal/bounce, legal target generation, target validation, and static spell-cost modifiers now parse `with mana value` limits, including strict `less than` / `greater than` phrasing, into CMC filters that authority prompts, target validation, and continuous cost effects enforce. |
 | 2.5 Continuous Effects And Layers | partial |
 | 2.6 Triggered Abilities | partial |
-| 2.7 Replacement And Prevention Effects | partial |
+| 2.7 Replacement And Prevention Effects | partial; delayed blink/flicker effects now exile immediately and return from exile through a one-shot next-end-step delayed trigger instead of using the previous immediate-return shortcut. |
 | 2.8 State-Based Actions | partial/test-proven |
 | 2.9 Target Legality | partial; duplicate same-name target choices are now disambiguated by controller/zone/ordinal in typed prompts and `/play` pickers |
 | 2.10 Cost Payment Rules | partial; dynamic mana production now supports AmountRef-backed AddMana entries and a threshold-style zone count condition, with regressions for Cabal Ritual, Rite of Flame, and Songs of the Damned replacing fixed shortcut mana amounts. Toxic Deluge now also carries non-mana X through the stack and pays X life as an additional cast cost before resolving -X/-X. |
