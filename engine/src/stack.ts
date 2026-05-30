@@ -1643,6 +1643,7 @@ export type GameEvent =
   | { kind: 'Unblocked'; attackerInstanceId: string; controllerId: string }
   | { kind: 'PermanentTapped'; instanceId: string; controllerId: string }
   | { kind: 'CombatDamageToPlayer'; sourceInstanceId: string; controllerId: string; damagedPlayerId: string; damage: number }
+  | { kind: 'LifeGained'; playerId: string; amount: number }
   | { kind: 'LandETB'; instanceId: string; controllerId: string }
   | { kind: 'UpkeepStart'; activePlayerId: string }
   | { kind: 'BeginningCombatStart'; activePlayerId: string }
@@ -1901,6 +1902,13 @@ export function checkTriggersForEvent(state: GameState, event: GameEvent): GameS
             if (damageTrigger.who === 'creatureYouControl' && event.controllerId === controllerId) {
               shouldFire = true;
             }
+          }
+          break;
+        }
+
+        case 'LifeGained': {
+          if (trigger.kind === 'LifeGain' && event.playerId === controllerId && event.amount > 0) {
+            shouldFire = true;
           }
           break;
         }

@@ -14,7 +14,7 @@ import { initGameState, getCardsInZone, getCardDefinition } from '../game-state'
 import { castSpell, canCastSpell, resolveTopOfStack, putTriggersOnStack, checkTriggersForEvent, registerBattlefieldAbilities, createETBTriggers } from '../stack';
 import { checkStateBasedActions, cleanupDamage } from '../state-based';
 import { activateAbility, getActivatedAbilities, playLand, tapLandForMana, drawCards } from '../actions';
-import { declareAttackers, declareBlockers } from '../combat';
+import { declareAttackers, declareBlockers, resolveCombatDamage } from '../combat';
 import { addMana } from '../mana';
 import { getEffectivePower } from '../effects/continuous';
 import { instanceHasKeyword } from '../keywords';
@@ -1307,6 +1307,90 @@ describe('YouCastSpell Trigger Pipeline', () => {
 
     // Should have gained 1 life
     expect(state.players[0].life).toBe(lifeBefore + 1);
+  });
+
+  it('fires life-gain triggers created while another trigger resolves', () => {
+    const reservoir = makeEnchantment(
+      'reservoir',
+      'Aetherflux Reservoir',
+      'Whenever you cast a spell, gain 1 life.',
+    );
+    const bloodArtist = makeEnchantment(
+      'life-drain',
+      'Essence Drainer',
+      'Whenever you gain life, each opponent loses 1 life.',
+    );
+    const bear = makeVanillaCreature('bear', 'Grizzly Bears', '{1}{G}');
+    const forest = makeLand('forest', 'Forest');
+
+    let state = createTestGame(
+      [reservoir, bloodArtist, bear, forest, forest],
+      [forest],
+    );
+
+    const reservoirInst = findCard(state, 'reservoir')!;
+    const drainInst = findCard(state, 'life-drain')!;
+    state = moveToZone(state, reservoirInst.instanceId, 'battlefield');
+    state = registerBattlefieldAbilities(state, reservoirInst.instanceId);
+    state = moveToZone(state, drainInst.instanceId, 'battlefield');
+    state = registerBattlefieldAbilities(state, drainInst.instanceId);
+
+    const bearInst = findCard(state, 'bear')!;
+    state = moveToZone(state, bearInst.instanceId, 'hand');
+    state = giveMana(state, 'p1', 5, 'G');
+    state = { ...state, activePlayerIndex: 0, priorityPlayerIndex: 0, phase: 'precombat_main' as any, step: 'upkeep' as any };
+
+    const p1LifeBefore = state.players[0].life;
+    const p2LifeBefore = state.players[1].life;
+
+    state = castSpell(state, 'p1', bearInst.instanceId);
+    expect(state.pendingTriggers.map(trigger => trigger.ability.trigger.kind)).toEqual(['YouCastSpell']);
+
+    state = putTriggersOnStack(state);
+    state = resolveTopOfStack(state);
+    expect(state.players[0].life).toBe(p1LifeBefore + 1);
+    expect(state.pendingTriggers.map(trigger => trigger.ability.trigger.kind)).toEqual(['LifeGain']);
+
+    state = putTriggersOnStack(state);
+    state = resolveTopOfStack(state);
+    expect(state.players[1].life).toBe(p2LifeBefore - 1);
+  });
+
+  it('fires life-gain triggers from lifelink combat damage', () => {
+    const lifelinker: CardDefinition = {
+      ...makeVanillaCreature('lifelinker', 'Healer Hawk', '{W}'),
+      keywords: ['Flying', 'Lifelink'],
+      power: 2,
+      toughness: 2,
+    };
+    const lifeDrain = makeEnchantment(
+      'life-drain',
+      'Essence Drainer',
+      'Whenever you gain life, each opponent loses 1 life.',
+    );
+    const forest = makeLand('forest', 'Forest');
+
+    let state = createTestGame([lifelinker, lifeDrain], [forest]);
+    const lifelinkerInst = findCard(state, 'lifelinker')!;
+    const drainInst = findCard(state, 'life-drain')!;
+    state = moveToZone(state, lifelinkerInst.instanceId, 'battlefield');
+    state = moveToZone(state, drainInst.instanceId, 'battlefield');
+    state = registerBattlefieldAbilities(state, drainInst.instanceId);
+    state = { ...state, activePlayerIndex: 0, priorityPlayerIndex: 0, phase: 'combat' as any, step: 'declare_attackers' as any };
+
+    state = declareAttackers(state, 'p1', [{
+      cardInstanceId: lifelinkerInst.instanceId,
+      defendingPlayerId: 'p2',
+    }]);
+    state = resolveCombatDamage(state);
+
+    expect(state.players[0].life).toBe(42);
+    expect(state.players[1].life).toBe(38);
+    expect(state.pendingTriggers.map(trigger => trigger.ability.trigger.kind)).toEqual(['LifeGain']);
+
+    state = putTriggersOnStack(state);
+    state = resolveTopOfStack(state);
+    expect(state.players[1].life).toBe(37);
   });
 
   it('fires Vivi-style triggers only for noncreature spells and resolves self counter plus opponent damage', () => {

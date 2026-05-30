@@ -15,6 +15,8 @@ import type { ReplacementEvent } from './replacement';
 import { getEffectivePower } from './continuous';
 import { isEffectiveCreature } from '../effective-types';
 import { buildBattlefieldEntryPlan } from '../permanent-entry';
+import { parseOracleText } from './parser';
+import type { TargetSpec } from './targets';
 
 /**
  * Context for effect execution, includes X value from spell casting.
@@ -456,6 +458,68 @@ function markPlayerWonGame(state: GameState, winnerId: string): GameState {
   };
 }
 
+function stripKeywordAbilityPrefix(oracleText: string): string {
+  return oracleText.replace(
+    /^(?!Choose\b)[A-Z][A-Za-z\-]*(?:\s+[a-z]+){0,2}\s+[â€”â€“-]\s+/gm,
+    '',
+  );
+}
+
+function normalizeTriggeredOracleLine(oracleText: string, cardName: string): string {
+  let text = stripKeywordAbilityPrefix(oracleText);
+  if (!cardName) return text;
+
+  const escaped = cardName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  text = text.replace(new RegExp(escaped, 'gi'), '~');
+  const shortName = cardName.split(',')[0]?.trim();
+  if (shortName && shortName.length >= 3 && shortName !== cardName) {
+    const escapedShort = shortName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    text = text.replace(new RegExp(`\\b${escapedShort}\\b`, 'gi'), '~');
+  }
+  return text;
+}
+
+function targetSpecsForLifeGainTrigger(
+  state: GameState,
+  card: CardInstance,
+  abilityTargets: unknown[] | undefined,
+): TargetSpec[] {
+  const existing = (abilityTargets as TargetSpec[] | undefined) || [];
+  if (existing.length > 0) return existing;
+
+  const cardDef = getCardDefinition(state, card);
+  for (const line of cardDef.oracle_text.split('\n')) {
+    const parsed = parseOracleText(normalizeTriggeredOracleLine(line.trim(), cardDef.name));
+    if (parsed.kind === 'Triggered' && parsed.ability.trigger.kind === 'LifeGain') {
+      return parsed.targets;
+    }
+  }
+  return [];
+}
+
+function enqueueLifeGainTriggers(state: GameState, playerId: string): GameState {
+  if (!state.battlefieldAbilities || state.battlefieldAbilities.size === 0) return state;
+
+  const pendingTriggers: PendingTrigger[] = [...(state.pendingTriggers || [])];
+  for (const [instanceId, abilities] of state.battlefieldAbilities) {
+    const card = state.cards.get(instanceId);
+    if (!card || card.zone !== 'battlefield' || card.ownerId !== playerId) continue;
+
+    for (const ability of abilities) {
+      if (ability.trigger.kind !== 'LifeGain') continue;
+      pendingTriggers.push({
+        id: `trigger_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+        sourceInstanceId: instanceId,
+        controllerId: card.ownerId,
+        ability,
+        requiredTargets: targetSpecsForLifeGainTrigger(state, card, ability.targets),
+      });
+    }
+  }
+
+  return { ...state, pendingTriggers };
+}
+
 /**
  * Execute a GainLife effect.
  */
@@ -476,7 +540,7 @@ function executeGainLife(state: GameState, playerId: string, amount: number): Ga
     i === playerIndex ? { ...p, life: p.life + finalAmount } : p
   );
 
-  return { ...state, players: newPlayers };
+  return enqueueLifeGainTriggers({ ...state, players: newPlayers }, playerId);
 }
 
 /**

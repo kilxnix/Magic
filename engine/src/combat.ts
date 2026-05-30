@@ -213,17 +213,19 @@ function applyLifelink(
   newPlayers: Player[],
   sourceId: string,
   damageDealt: number,
-): void {
-  if (damageDealt <= 0) return;
-  if (!instanceHasKeyword(state, sourceId, 'Lifelink')) return;
+): { playerId: string; amount: number } | null {
+  if (damageDealt <= 0) return null;
+  if (!instanceHasKeyword(state, sourceId, 'Lifelink')) return null;
 
   const sourceCard = state.cards.get(sourceId);
-  if (!sourceCard) return;
+  if (!sourceCard) return null;
 
   const ownerIndex = newPlayers.findIndex(p => p.id === sourceCard.ownerId);
   if (ownerIndex !== -1) {
     newPlayers[ownerIndex].life += damageDealt;
+    return { playerId: sourceCard.ownerId, amount: damageDealt };
   }
+  return null;
 }
 
 /**
@@ -378,6 +380,7 @@ function resolveDamageStep(state: GameState, step: 'first' | 'normal'): GameStat
     damagedPlayerId: string;
     damage: number;
   }> = [];
+  const lifeGainEvents: Array<{ playerId: string; amount: number }> = [];
 
   for (const attacker of state.combat.attackers) {
     const attackerCard = newCards.get(attacker.cardInstanceId);
@@ -411,7 +414,8 @@ function resolveDamageStep(state: GameState, step: 'first' | 'normal'): GameStat
           replacementState = prevented.state;
           const damageDealt = prevented.amount;
           newPlayers[defenderIndex].life -= damageDealt;
-          applyLifelink(state, newPlayers, attacker.cardInstanceId, damageDealt);
+          const lifelinkEvent = applyLifelink(state, newPlayers, attacker.cardInstanceId, damageDealt);
+          if (lifelinkEvent) lifeGainEvents.push(lifelinkEvent);
           trackCommanderDamage(state, newPlayers, attacker.cardInstanceId, attacker.defendingPlayerId, damageDealt);
           if (damageDealt > 0) {
             combatDamageEvents.push({
@@ -462,7 +466,8 @@ function resolveDamageStep(state: GameState, step: 'first' | 'normal'): GameStat
               deathtouchDamage: blockerCard.deathtouchDamage || (damageDealt > 0 && attackerHasDeathtouch),
             });
             remainingDamage -= damageToBlocker;
-            applyLifelink(state, newPlayers, attacker.cardInstanceId, damageDealt);
+            const lifelinkEvent = applyLifelink(state, newPlayers, attacker.cardInstanceId, damageDealt);
+            if (lifelinkEvent) lifeGainEvents.push(lifelinkEvent);
           }
 
           if (!hasTrample) break; // Without trample, all damage goes to first blocker
@@ -483,7 +488,8 @@ function resolveDamageStep(state: GameState, step: 'first' | 'normal'): GameStat
             replacementState = prevented.state;
             const damageDealt = prevented.amount;
             newPlayers[defenderIndex].life -= damageDealt;
-            applyLifelink(state, newPlayers, attacker.cardInstanceId, damageDealt);
+            const lifelinkEvent = applyLifelink(state, newPlayers, attacker.cardInstanceId, damageDealt);
+            if (lifelinkEvent) lifeGainEvents.push(lifelinkEvent);
             trackCommanderDamage(state, newPlayers, attacker.cardInstanceId, attacker.defendingPlayerId, damageDealt);
             if (damageDealt > 0) {
               combatDamageEvents.push({
@@ -526,7 +532,8 @@ function resolveDamageStep(state: GameState, step: 'first' | 'normal'): GameStat
           damage: currentAttacker.damage + damageDealt,
           deathtouchDamage: currentAttacker.deathtouchDamage || (damageDealt > 0 && blockerHasDeathtouch),
         });
-        applyLifelink(state, newPlayers, blocker.cardInstanceId, damageDealt);
+        const lifelinkEvent = applyLifelink(state, newPlayers, blocker.cardInstanceId, damageDealt);
+        if (lifelinkEvent) lifeGainEvents.push(lifelinkEvent);
       }
     }
   }
@@ -545,6 +552,12 @@ function resolveDamageStep(state: GameState, step: 'first' | 'normal'): GameStat
   for (const event of combatDamageEvents) {
     resultState = checkTriggersForEvent(resultState, {
       kind: 'CombatDamageToPlayer',
+      ...event,
+    });
+  }
+  for (const event of lifeGainEvents) {
+    resultState = checkTriggersForEvent(resultState, {
+      kind: 'LifeGained',
       ...event,
     });
   }
