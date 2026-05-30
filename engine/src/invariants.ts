@@ -61,9 +61,24 @@ export function validateStateInvariants(state: GameState): StateInvariantReport 
         message: `Token ${card.instanceId} exists in ${card.zone}; tokens should cease to exist outside the battlefield.`,
       });
     }
+    if (card.attachedTo) {
+      const target = state.cards.get(card.attachedTo);
+      if (!target) {
+        violations.push({
+          code: 'missing_attachment_target',
+          message: `${card.instanceId} is attached to missing object ${card.attachedTo}.`,
+        });
+      } else if (card.zone !== 'battlefield' || target.zone !== 'battlefield') {
+        violations.push({
+          code: 'invalid_attachment_zone',
+          message: `${card.instanceId} attached to ${card.attachedTo}, but one or both objects are not on the battlefield.`,
+        });
+      }
+    }
   });
 
   const stackIds = new Set<string>();
+  const spellStackCardIdsSeen = new Set<string>();
   for (const item of state.stack) {
     const id = stackItemId(item);
     if (stackIds.has(id)) {
@@ -75,6 +90,13 @@ export function validateStateInvariants(state: GameState): StateInvariantReport 
     stackIds.add(id);
 
     if (item.kind === 'Spell') {
+      if (spellStackCardIdsSeen.has(item.cardInstanceId)) {
+        violations.push({
+          code: 'duplicate_spell_stack_card',
+          message: `${item.cardInstanceId} appears in more than one spell stack object.`,
+        });
+      }
+      spellStackCardIdsSeen.add(item.cardInstanceId);
       const card = state.cards.get(item.cardInstanceId);
       if (!card) {
         violations.push({

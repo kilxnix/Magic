@@ -94,4 +94,42 @@ describe('validateStateInvariants', () => {
       code: 'token_outside_battlefield',
     }));
   });
+
+  it('rejects attachments pointing at missing or non-battlefield objects', () => {
+    const cmd = commander();
+    const state = initGameState([
+      { playerId: 'p1', name: 'Alice', cards: [cmd], commanderId: cmd.id },
+      { playerId: 'p2', name: 'Bob', cards: [cmd], commanderId: cmd.id },
+    ]);
+    const attached = [...state.cards.values()].find(card => card.ownerId === 'p1');
+    expect(attached).toBeDefined();
+    state.cards.set(attached!.instanceId, { ...attached!, zone: 'graveyard', attachedTo: 'missing-target' });
+
+    const report = validateStateInvariants(state);
+    expect(report.ok).toBe(false);
+    expect(report.violations).toContainEqual(expect.objectContaining({
+      code: 'missing_attachment_target',
+    }));
+  });
+
+  it('rejects duplicate spell stack objects for the same card', () => {
+    const cmd = commander();
+    const state = initGameState([
+      { playerId: 'p1', name: 'Alice', cards: [cmd], commanderId: cmd.id },
+      { playerId: 'p2', name: 'Bob', cards: [cmd], commanderId: cmd.id },
+    ]);
+    const spell = [...state.cards.values()].find(card => card.ownerId === 'p1');
+    expect(spell).toBeDefined();
+    state.cards.set(spell!.instanceId, { ...spell!, zone: 'stack' });
+    state.stack = [
+      { kind: 'Spell', id: 'stack-a', cardInstanceId: spell!.instanceId, casterId: 'p1', targets: [] },
+      { kind: 'Spell', id: 'stack-b', cardInstanceId: spell!.instanceId, casterId: 'p1', targets: [] },
+    ];
+
+    const report = validateStateInvariants(state);
+    expect(report.ok).toBe(false);
+    expect(report.violations).toContainEqual(expect.objectContaining({
+      code: 'duplicate_spell_stack_card',
+    }));
+  });
 });
