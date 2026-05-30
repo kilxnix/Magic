@@ -76,6 +76,8 @@ import {
   applyPayCostsPromptResponse,
   createSelectCardsPromptRequest,
   applySelectCardsPromptResponse,
+  createNamedCardPromptRequest,
+  applyNamedCardPromptResponse,
   applyOpeningMulliganRedraw,
   redrawOpeningHandForMulligan,
   bottomOpeningHandCardsForMulligan,
@@ -98,6 +100,7 @@ import {
   type EngineStateUpdate,
   type SearchLibraryPromptRequest,
   type SelectCardsPromptRequest,
+  type NamedCardPromptRequest,
   type LibraryManipulationPromptRequest,
   type OptionalTriggerPromptRequest,
   type DamageAssignmentOrder,
@@ -872,9 +875,8 @@ type PendingStackSacrificeChoice = {
 };
 
 type PendingStackNamedCardChoice = {
-  stackItemId: string;
-  choiceKey: string;
   sourceName: string;
+  promptRequest: NamedCardPromptRequest;
   namesByOptionId: Record<string, string>;
 };
 
@@ -1152,34 +1154,35 @@ function namedCardChoiceInfoFromEffects(
   return undefined;
 }
 
-function namedCardChoiceOptionsForPlayer(
+function namedCardChoiceOptionsFromPrompt(
   state: GameState,
-  playerId: string,
-  foundDestination: TutorDestination | undefined,
+  prompt: NamedCardPromptRequest,
+  destination: TutorDestination | undefined,
 ): { cards: TutorCardOption[]; namesByOptionId: Record<string, string> } {
-  const knownByName = new Map<string, TutorCardOption>();
-  for (const card of state.cards.values()) {
-    if (card.ownerId !== playerId) continue;
-    const option = toTutorCardOption(state, card);
-    if (!option) continue;
-    const key = normalizeLookupName(option.name);
-    if (!key || knownByName.has(key)) continue;
-    knownByName.set(key, {
-      ...option,
-      instanceId: `named-card:${key}`,
-      legal: true,
-      reason: 'Name this card for the resolving search effect',
-      destination: foundDestination || 'choice',
-    });
-  }
-
   const namesByOptionId: Record<string, string> = {};
-  const cards = [...knownByName.values()]
-    .sort((a, b) => a.name.localeCompare(b.name))
-    .map(option => {
-      namesByOptionId[option.instanceId] = option.name;
-      return option;
-    });
+  const cards = prompt.legalChoices
+    .map(choice => {
+      const matchingCard = [...state.cards.values()].find(card =>
+        card.ownerId === prompt.playerId
+        && normalizeLookupName(getCardDefinition(state, card).name) === normalizeLookupName(choice.cardName),
+      );
+      const option = matchingCard ? toTutorCardOption(state, matchingCard) : null;
+      const fallback = option || {
+        instanceId: choice.optionId,
+        name: choice.cardName,
+        typeLine: 'Card name',
+        manaCost: '',
+      };
+      namesByOptionId[choice.optionId] = choice.cardName;
+      return {
+        ...fallback,
+        instanceId: choice.optionId,
+        legal: choice.legal,
+        reason: choice.reason || 'Name this card for the resolving search effect',
+        destination: destination || 'choice',
+      };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
   return { cards, namesByOptionId };
 }
 
@@ -3683,18 +3686,22 @@ export function useShelectorGame() {
         const info = namedCardChoiceInfoFromEffects(effects, top.namedCardChoices);
         if (!info) return false;
 
-        const { cards, namesByOptionId } = namedCardChoiceOptionsForPlayer(
+        const promptRequest = createNamedCardPromptRequest(state, humanIdRef.current, {
+          sourceInstanceId,
+          stackItemId: top.id,
+          choiceKey: info.choiceKey,
+        });
+        const { cards, namesByOptionId } = namedCardChoiceOptionsFromPrompt(
           state,
-          humanIdRef.current,
+          promptRequest,
           info.foundDestination,
         );
         if (cards.length === 0) return false;
 
         engineRef.current = state as GameStateWithAI;
         pendingStackNamedCardChoiceRef.current = {
-          stackItemId: top.id,
-          choiceKey: info.choiceKey,
           sourceName,
+          promptRequest,
           namesByOptionId,
         };
         tutorRemainingRef.current = 0;
@@ -5321,35 +5328,34 @@ export function useShelectorGame() {
         syncState();
         return;
       }
-      const stackIndex = engineForChoice.stack.findIndex(item => item.id === pendingStackNamedCardChoice.stackItemId);
-      if (stackIndex < 0) {
-        pendingStackNamedCardChoiceRef.current = null;
-        setTutorPhase(false);
-        setTutorCards([]);
-        setTutorTitle('');
-        addMessage('system', `${pendingStackNamedCardChoice.sourceName}: the stack item is no longer available.`);
+      const namedCardSubmission = {
+        requestId: pendingStackNamedCardChoice.promptRequest.id,
+        kind: 'NamedCard' as const,
+        playerId: humanIdRef.current,
+        chosenCardName: namedCard,
+      };
+      const namedCardResponse = applyNamedCardPromptResponse(
+        engineForChoice,
+        pendingStackNamedCardChoice.promptRequest,
+        namedCardSubmission,
+      );
+      appendEnginePromptEventLogRecord(
+        { kind: 'Prompt', request: pendingStackNamedCardChoice.promptRequest, response: namedCardSubmission },
+        namedCardResponse,
+      );
+      recordAuthorityUpdate(namedCardResponse.update);
+      if (!namedCardResponse.ok || !namedCardResponse.state) {
+        addMessage('system', namedCardResponse.message || `${pendingStackNamedCardChoice.sourceName}: that card name is not legal right now.`);
         syncState();
         return;
       }
-      const stackItem = engineForChoice.stack[stackIndex] as StackItem & { namedCardChoices?: Record<string, string> };
-      const stack = [...engineForChoice.stack];
-      stack[stackIndex] = {
-        ...stackItem,
-        namedCardChoices: {
-          ...(stackItem.namedCardChoices || {}),
-          [pendingStackNamedCardChoice.choiceKey]: namedCard,
-        },
-      } as StackItem;
 
       pendingStackNamedCardChoiceRef.current = null;
       setTutorPhase(false);
       setTutorCards([]);
       setTutorTitle('');
 
-      let state: GameState = {
-        ...engineForChoice,
-        stack,
-      };
+      let state: GameState = namedCardResponse.state;
       state = resolveTopOfStackWithAuthority(state);
       state = runSBAAndTriggers(state);
 

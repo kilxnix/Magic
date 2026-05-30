@@ -69,7 +69,7 @@ Minimum acceptance bar from that file:
 | Fix 1: Strict Action Generation | partial | Shared legal-action and try wrappers exist; not every source consumes one canonical predicate. |
 | Fix 2: Sisay Search Legality | browser-proven for one flow | The exact `/play` flow cast Sisay, activated WUBRG, filtered choices, and put Mox Amber on battlefield. |
 | Fix 3: Shared Legality Engine | partial | Action paths improved, review and UI suggestions still not fully unified. |
-| Fix 4: Prompt System | partial | Search/scry/surveil/equipment style prompts exist, Brainstorm hand-to-library-top selection exists, Tainted Pact / Demonic Consultation style "name a card" stack choices now use a browser picker in `/play`, and manual attach/detach plus turn/phase correction now use validated action requests; no fully generic typed request system. |
+| Fix 4: Prompt System | partial | Search/scry/surveil/equipment style prompts exist, Brainstorm hand-to-library-top selection exists, Tainted Pact / Demonic Consultation style "name a card" stack choices now use a typed `NamedCard` prompt and browser picker in `/play`, and manual attach/detach plus turn/phase correction now use validated action requests; no fully generic typed request system. |
 | Fix 5: Transactional Engine Updates | partial | Authority/action response structures exist; not a complete event-sourced transaction model. |
 | Fix 6: Event-Sourced Replay | partial/test-proven | Engine event-log records now carry request, before/after state IDs, expected accepted/rejected result, rules events, and visible diffs; `auditEngineEventLogReplay` replays and rejects tampered/mismatched records. `/play` saved games persist replay seeds plus authority-routed action and typed prompt-response records, and the saves panel displays an audit badge verified through `scripts/play_save_slots_playtest.js`. UI replay is still incomplete. |
 | Fix 7: Review Must Audit Legality | partial/test-proven | The `/play` review now includes a replay audit entry from the saved-game authority event log, and the save-slot browser playtest verifies the review shows the replay audit. Full line-by-line legality audit across all review surfaces is still incomplete. |
@@ -94,7 +94,7 @@ Minimum acceptance bar from that file:
 | 1.3 No Clear Separation Between Legal Actions, Suggested Actions, And Coach Actions | partial |
 | 1.4 No Proven Canonical Event-Sourced State | partial/test-proven for engine event-log replay records and `/play` saved-game audit fields |
 | 2.1 Sisay Legal Choice Filtering | browser-proven for tested flow |
-| 2.2 Search Legality In General | partial; top-N search prompts now limit choices to the looked-at cards and bottom unselected cards for Impulse-style effects, and ExileUntilNamed effects now prompt for the live named-card choice in `/play` instead of forcing a hard-coded Oracle line |
+| 2.2 Search Legality In General | partial; top-N search prompts now limit choices to the looked-at cards and bottom unselected cards for Impulse-style effects, and ExileUntilNamed effects now prompt through a typed live named-card choice in `/play` instead of forcing a hard-coded Oracle line |
 | 2.3 Card Type Constraints | partial |
 | 2.4 Mana Value Constraints | partial |
 | 2.5 Continuous Effects And Layers | partial |
@@ -114,7 +114,7 @@ Minimum acceptance bar from that file:
 | 4.3 AI Turn Compression | partial |
 | 5.1 Action Text Is Improved But Still Tool-Like | partial |
 | 5.2 Action Categories Are Coarse | partial |
-| 5.3 No Unified Typed Prompt Surface | partial; `/play` now covers search, scry, surveil, sacrifice, library-top ordering, and named-card choice prompts, but the prompt system is still not one fully generic typed request surface across every rule/action path |
+| 5.3 No Unified Typed Prompt Surface | partial; `/play` now covers search, scry, surveil, sacrifice, library-top ordering, and typed named-card choice prompts, but the prompt system is still not one fully generic typed request surface across every rule/action path |
 | 6.1 Invalid Choices Are Not Hidden Or Disabled | partial |
 | 6.2 "Legal" Label Is Not Trustworthy | partial |
 | 6.3 Destination Labels Are Too Broad | partial |

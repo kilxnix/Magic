@@ -9,6 +9,7 @@ import {
   applyOptionalTriggerPromptResponse,
   applyOpeningMulliganRedraw,
   applyLibraryManipulationPromptResponse,
+  applyNamedCardPromptResponse,
   applySearchLibraryPromptResponse,
   applySelectCardsPromptResponse,
   applySelectTargetPromptResponse,
@@ -27,6 +28,7 @@ import {
   createOrderTriggersPromptRequest,
   createOptionalTriggerPromptRequest,
   createLibraryManipulationPromptRequest,
+  createNamedCardPromptRequest,
   createSearchLibraryPromptRequest,
   createSelectCardsPromptRequest,
   createSelectTargetPromptRequest,
@@ -1894,6 +1896,59 @@ describe('authority action boundary', () => {
     });
     expect(illegal.ok).toBe(false);
     expect(illegal.message).toContain('required selection filter');
+  });
+
+  it('validates named-card prompt responses and stores the live choice on the stack item', () => {
+    const state = stateWithForestInHand();
+    const pact = def('tainted_pact', 'Tainted Pact', 'Instant', '{1}{B}');
+    const oracle = def('oracle', "Thassa's Oracle", 'Creature - Merfolk Wizard', '{U}{U}');
+    state.cardDefinitions.set(pact.id, pact);
+    state.cardDefinitions.set(oracle.id, oracle);
+    state.cards.set('pact_stack', cardInstance('pact_stack', pact.id, 'p1', 'stack'));
+    state.cards.set('oracle_library', cardInstance('oracle_library', oracle.id, 'p1', 'library'));
+    state.stack = [{
+      kind: 'Spell',
+      id: 'stack-pact',
+      cardInstanceId: 'pact_stack',
+      casterId: 'p1',
+      targets: [],
+    }];
+
+    const request = createNamedCardPromptRequest(state, 'p1', {
+      id: 'prompt-name-card',
+      stackItemId: 'stack-pact',
+      choiceKey: 'namedCard',
+      sourceInstanceId: 'pact_stack',
+      createdAt: 26,
+    });
+    expect(request.legalChoices.map(choice => choice.cardName)).toContain("Thassa's Oracle");
+
+    const accepted = applyNamedCardPromptResponse(state, request, {
+      requestId: request.id,
+      kind: 'NamedCard',
+      playerId: 'p1',
+      chosenCardName: "Thassa's Oracle",
+    });
+    expect(accepted.ok).toBe(true);
+    expect(accepted.namedCardName).toBe("Thassa's Oracle");
+    expect((accepted.state?.stack[0] as StackItem & { namedCardChoices?: Record<string, string> }).namedCardChoices)
+      .toEqual({ namedCard: "Thassa's Oracle" });
+    expect(accepted.update?.rulesEvents).toEqual([{
+      kind: 'PromptResponseAccepted',
+      requestId: request.id,
+      playerId: 'p1',
+      promptKind: 'NamedCard',
+      namedCardName: "Thassa's Oracle",
+    }]);
+
+    const illegal = applyNamedCardPromptResponse(state, request, {
+      requestId: request.id,
+      kind: 'NamedCard',
+      playerId: 'p1',
+      chosenCardName: 'Black Lotus',
+    });
+    expect(illegal.ok).toBe(false);
+    expect(illegal.message).toContain('Illegal named-card choice');
   });
 
   it('validates scry and surveil library manipulation responses against the revealed card set', () => {

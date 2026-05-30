@@ -74,6 +74,7 @@ export type EnginePromptKind =
   | 'ChooseReplacement'
   | 'PayCosts'
   | 'SelectCards'
+  | 'NamedCard'
   | 'LibraryManipulation'
   | 'OptionalTrigger'
   | 'OrderTriggers'
@@ -181,6 +182,7 @@ export interface ClientPromptResponse {
   selectedReplacementOptionId?: ReplacementOptionId;
   selectedManaActions?: ManaPaymentAction[];
   selectedCardInstanceIds?: string[];
+  namedCardName?: string;
   libraryManipulationChoices?: Record<string, string>;
   orderedTriggerIds?: string[];
   optionalTriggerId?: string;
@@ -533,6 +535,41 @@ export interface SelectCardsPromptResponse {
   selectedCardInstanceIds: string[];
 }
 
+export interface NamedCardChoice {
+  optionId: string;
+  cardName: string;
+  legal: boolean;
+  reason?: string;
+}
+
+export interface NamedCardPromptRequest {
+  id: string;
+  kind: 'NamedCard';
+  playerId: string;
+  expectedStateId: string;
+  sourceInstanceId?: string;
+  stackItemId: string;
+  choiceKey: string;
+  legalChoices: NamedCardChoice[];
+  invalidChoices: NamedCardChoice[];
+  createdAt: number;
+}
+
+export interface CreateNamedCardPromptOptions {
+  id?: string;
+  sourceInstanceId?: string;
+  stackItemId: string;
+  choiceKey?: string;
+  createdAt?: number;
+}
+
+export interface NamedCardPromptResponse {
+  requestId: string;
+  kind: 'NamedCard';
+  playerId: string;
+  chosenCardName: string;
+}
+
 export interface ActionReplayAuditStep {
   index: number;
   requestId: string;
@@ -574,6 +611,11 @@ export interface PayCostsPromptReplayRecord {
 export interface SelectCardsPromptReplayRecord {
   request: SelectCardsPromptRequest;
   response: SelectCardsPromptResponse;
+}
+
+export interface NamedCardPromptReplayRecord {
+  request: NamedCardPromptRequest;
+  response: NamedCardPromptResponse;
 }
 
 export type OpeningMulliganRedrawFailure =
@@ -627,6 +669,7 @@ export type PromptReplayRecord =
   | ReplacementPromptReplayRecord
   | PayCostsPromptReplayRecord
   | SelectCardsPromptReplayRecord
+  | NamedCardPromptReplayRecord
   | LibraryManipulationPromptReplayRecord
   | OptionalTriggerPromptReplayRecord
   | OrderTriggersPromptReplayRecord
@@ -947,6 +990,7 @@ export type EngineEvent =
       selectedTargetIds?: string[];
       selectedReplacementOptionId?: ReplacementOptionId;
       selectedManaActions?: ManaPaymentAction[];
+      namedCardName?: string;
       orderedTriggerIds?: string[];
       optionalTriggerId?: string;
       useOptionalTrigger?: boolean;
@@ -964,6 +1008,7 @@ export type EngineEvent =
       selectedTargetIds?: string[];
       selectedReplacementOptionId?: ReplacementOptionId;
       selectedManaActions?: ManaPaymentAction[];
+      namedCardName?: string;
       orderedTriggerIds?: string[];
       optionalTriggerId?: string;
       useOptionalTrigger?: boolean;
@@ -1069,6 +1114,10 @@ export function actionKey(action: AIAction): string {
 function cardName(state: GameState, card?: CardInstance): string | undefined {
   if (!card) return undefined;
   return getCardDefinition(state, card).name;
+}
+
+function normalizeCardNameChoice(name: string): string {
+  return name.trim().toLowerCase().replace(/[\s_]+/g, ' ');
 }
 
 function activePlayerId(state: GameState): string | undefined {
@@ -3299,6 +3348,181 @@ export function applySelectCardsPromptResponse(
   };
 }
 
+export function createNamedCardPromptRequest(
+  state: GameState,
+  playerId: string,
+  options: CreateNamedCardPromptOptions,
+): NamedCardPromptRequest {
+  const expectedStateId = stateFingerprint(state);
+  const createdAt = options.createdAt ?? Date.now();
+  const uniqueNames = new Map<string, string>();
+  for (const card of state.cards.values()) {
+    if (card.ownerId !== playerId) continue;
+    const name = cardName(state, card);
+    if (!name) continue;
+    const normalized = normalizeCardNameChoice(name);
+    if (!normalized || uniqueNames.has(normalized)) continue;
+    uniqueNames.set(normalized, name);
+  }
+
+  const legalChoices = [...uniqueNames.entries()]
+    .sort(([, a], [, b]) => a.localeCompare(b))
+    .map(([normalized, name]) => ({
+      optionId: `named_card_${hashText(normalized)}`,
+      cardName: name,
+      legal: true,
+      reason: 'Known card name from this player deck',
+    }));
+
+  return {
+    id: options.id || `named_card_${expectedStateId}_${hashText(`${playerId}:${options.stackItemId}:${options.choiceKey || 'namedCard'}:${createdAt}`)}`,
+    kind: 'NamedCard',
+    playerId,
+    expectedStateId,
+    sourceInstanceId: options.sourceInstanceId,
+    stackItemId: options.stackItemId,
+    choiceKey: options.choiceKey || 'namedCard',
+    legalChoices,
+    invalidChoices: [],
+    createdAt,
+  };
+}
+
+function namedCardPromptRejectUpdate(
+  state: GameState,
+  request: NamedCardPromptRequest,
+  response: NamedCardPromptResponse,
+  reason: ClientPromptFailure,
+  message: string,
+): EngineStateUpdate {
+  const currentStateId = stateFingerprint(state);
+  return {
+    oldStateId: request.expectedStateId,
+    newStateId: currentStateId,
+    activePlayerId: activePlayerId(state),
+    priorityPlayerId: priorityPlayerId(state),
+    phase: state.phase,
+    step: state.step,
+    turnNumber: state.turnNumber,
+    priority: prioritySnapshot(state),
+    visibleDiffs: [],
+    rulesEvents: [{
+      kind: 'PromptResponseRejected',
+      requestId: response.requestId,
+      playerId: response.playerId,
+      promptKind: request.kind,
+      reason,
+      message,
+      namedCardName: response.chosenCardName,
+    }],
+    prompt: buildActionPrompt(state),
+  };
+}
+
+export function applyNamedCardPromptResponse(
+  state: GameState,
+  request: NamedCardPromptRequest,
+  response: NamedCardPromptResponse,
+): ClientPromptResponse {
+  if (request.kind !== 'NamedCard' || response.kind !== 'NamedCard' || request.id !== response.requestId) {
+    const message = 'Named-card prompt response does not match the request.';
+    return {
+      requestId: response.requestId,
+      ok: false,
+      reason: 'invalid_request',
+      message,
+      update: namedCardPromptRejectUpdate(state, request, response, 'invalid_request', message),
+    };
+  }
+  if (request.playerId !== response.playerId) {
+    const message = 'Named-card prompt response belongs to a different player.';
+    return {
+      requestId: response.requestId,
+      ok: false,
+      reason: 'wrong_player',
+      message,
+      update: namedCardPromptRejectUpdate(state, request, response, 'wrong_player', message),
+    };
+  }
+  const currentStateId = stateFingerprint(state);
+  if (request.expectedStateId !== currentStateId) {
+    const message = 'Named-card prompt is stale because the game state changed.';
+    return {
+      requestId: response.requestId,
+      ok: false,
+      reason: 'stale_state',
+      message,
+      update: namedCardPromptRejectUpdate(state, request, response, 'stale_state', message),
+    };
+  }
+
+  const normalizedChoice = normalizeCardNameChoice(response.chosenCardName);
+  const legalChoice = request.legalChoices.find(choice =>
+    normalizeCardNameChoice(choice.cardName) === normalizedChoice,
+  );
+  if (!normalizedChoice || !legalChoice || legalChoice.legal === false) {
+    const message = `Illegal named-card choice: ${response.chosenCardName || 'blank'}.`;
+    return {
+      requestId: response.requestId,
+      ok: false,
+      reason: 'illegal_response',
+      message,
+      update: namedCardPromptRejectUpdate(state, request, response, 'illegal_response', message),
+    };
+  }
+
+  const stackIndex = state.stack.findIndex(item => item.id === request.stackItemId);
+  if (stackIndex < 0) {
+    const message = 'The stack item for this named-card prompt is no longer available.';
+    return {
+      requestId: response.requestId,
+      ok: false,
+      reason: 'stale_state',
+      message,
+      update: namedCardPromptRejectUpdate(state, request, response, 'stale_state', message),
+    };
+  }
+
+  const stackItem = state.stack[stackIndex] as StackItem & { namedCardChoices?: Record<string, string> };
+  const stack = [...state.stack];
+  stack[stackIndex] = {
+    ...stackItem,
+    namedCardChoices: {
+      ...(stackItem.namedCardChoices || {}),
+      [request.choiceKey]: legalChoice.cardName,
+    },
+  } as StackItem;
+  const nextState: GameState = { ...state, stack };
+  const invariantReport = validateStateInvariants(nextState);
+  if (!invariantReport.ok) {
+    const message = `Engine invariant failed: ${invariantReport.violations[0]?.message || 'invalid state'}`;
+    return {
+      requestId: response.requestId,
+      ok: false,
+      reason: 'invariant_violation',
+      message,
+      update: namedCardPromptRejectUpdate(state, request, response, 'invariant_violation', message),
+    };
+  }
+
+  return {
+    requestId: response.requestId,
+    ok: true,
+    state: nextState,
+    update: {
+      ...buildStateUpdate(state, nextState),
+      rulesEvents: [{
+        kind: 'PromptResponseAccepted',
+        requestId: response.requestId,
+        playerId: response.playerId,
+        promptKind: 'NamedCard',
+        namedCardName: legalChoice.cardName,
+      }],
+    },
+    namedCardName: legalChoice.cardName,
+  };
+}
+
 function shuffleCardEntries(entries: [string, CardInstance][]): [string, CardInstance][] {
   const shuffled = [...entries];
   for (let index = shuffled.length - 1; index > 0; index -= 1) {
@@ -5114,6 +5338,8 @@ export function auditPromptReplay(
           ? applyPayCostsPromptResponse(state, request, response as PayCostsPromptResponse)
           : request.kind === 'SelectCards'
             ? applySelectCardsPromptResponse(state, request, response as SelectCardsPromptResponse)
+            : request.kind === 'NamedCard'
+              ? applyNamedCardPromptResponse(state, request, response as NamedCardPromptResponse)
               : request.kind === 'LibraryManipulation'
                 ? applyLibraryManipulationPromptResponse(state, request, response as LibraryManipulationPromptResponse)
                 : request.kind === 'OptionalTrigger'
@@ -5178,6 +5404,8 @@ function applyEngineReplayRecord(state: GameState, record: EngineReplayRecord): 
           ? applyPayCostsPromptResponse(state, record.request, record.response as PayCostsPromptResponse)
           : record.request.kind === 'SelectCards'
             ? applySelectCardsPromptResponse(state, record.request, record.response as SelectCardsPromptResponse)
+            : record.request.kind === 'NamedCard'
+              ? applyNamedCardPromptResponse(state, record.request, record.response as NamedCardPromptResponse)
             : record.request.kind === 'LibraryManipulation'
               ? applyLibraryManipulationPromptResponse(state, record.request, record.response as LibraryManipulationPromptResponse)
               : record.request.kind === 'OptionalTrigger'
