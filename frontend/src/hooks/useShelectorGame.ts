@@ -2095,6 +2095,32 @@ export function useShelectorGame() {
     return response;
   }, [recordAuthorityUpdate]);
 
+  const recordSystemStateTransition = useCallback((before: GameState, after: GameState): GameState => {
+    if (before === after) return after;
+    recordAuthorityUpdate(buildStateUpdate(before, after));
+    return after;
+  }, [recordAuthorityUpdate]);
+
+  const advanceStepWithAuthority = useCallback((state: GameState): GameState =>
+    recordSystemStateTransition(state, advanceStep(state)),
+  [recordSystemStateTransition]);
+
+  const performUntapStepWithAuthority = useCallback((state: GameState): GameState =>
+    recordSystemStateTransition(state, performUntapStep(state)),
+  [recordSystemStateTransition]);
+
+  const drawCardsWithAuthority = useCallback((state: GameState, playerId: string, count: number): GameState =>
+    recordSystemStateTransition(state, drawCards(state, playerId, count)),
+  [recordSystemStateTransition]);
+
+  const resolveTopOfStackWithAuthority = useCallback((state: GameState): GameState =>
+    recordSystemStateTransition(state, resolveTopOfStack(state)),
+  [recordSystemStateTransition]);
+
+  const resolveCombatDamageWithAuthority = useCallback((state: GameState): GameState =>
+    recordSystemStateTransition(state, resolveCombatDamage(state)),
+  [recordSystemStateTransition]);
+
   const rememberLastPlayedCard = useCallback((
     state: GameState,
     cardInstanceId: string | undefined,
@@ -2691,9 +2717,9 @@ export function useShelectorGame() {
         }
       }
 
-      return { state: newState, handled: true };
+      return { state: recordSystemStateTransition(state, newState), handled: true };
     },
-    [],
+    [recordSystemStateTransition],
   );
 
   /**
@@ -3026,7 +3052,7 @@ export function useShelectorGame() {
               console.log(`  -> all passed, resolving stack (${state.stack.length} items)`);
               if (tryPauseForLibraryChoice()) break;
               if (tryResolveTutor()) break;
-              { const taxResult = resolveTaxTrigger(state, messages); if (taxResult.handled) { state = taxResult.state; } else { state = resolveTopOfStack(state); } }
+              { const taxResult = resolveTaxTrigger(state, messages); if (taxResult.handled) { state = taxResult.state; } else { state = resolveTopOfStackWithAuthority(state); } }
               state = runSBAAndTriggers(state);
               if (checkGameOver(state)) break;
               continue;
@@ -3055,7 +3081,7 @@ export function useShelectorGame() {
                   console.log(`  -> all passed, resolving stack (${state.stack.length} items)`);
                   if (tryPauseForLibraryChoice()) break;
                   if (tryResolveTutor()) break;
-                  { const taxResult = resolveTaxTrigger(state, messages); if (taxResult.handled) { state = taxResult.state; } else { state = resolveTopOfStack(state); } }
+                  { const taxResult = resolveTaxTrigger(state, messages); if (taxResult.handled) { state = taxResult.state; } else { state = resolveTopOfStackWithAuthority(state); } }
                   state = runSBAAndTriggers(state);
                   if (checkGameOver(state)) break;
                 }
@@ -3088,7 +3114,7 @@ export function useShelectorGame() {
           console.log(`  -> resolving stack (${state.stack.length} items)`);
           if (tryPauseForLibraryChoice()) break;
           if (tryResolveTutor()) break;
-          state = resolveTopOfStack(state);
+          state = resolveTopOfStackWithAuthority(state);
           state = runSBAAndTriggers(state);
           if (checkGameOver(state)) break;
           continue;
@@ -3100,8 +3126,8 @@ export function useShelectorGame() {
 
         // Step-specific handling
         if (state.step === 'untap') {
-          state = performUntapStep(state);
-          state = advanceStep(state);
+          state = performUntapStepWithAuthority(state);
+          state = advanceStepWithAuthority(state);
           state = runSBAAndTriggers(state);
           if (checkGameOver(state)) break;
           continue;
@@ -3110,7 +3136,7 @@ export function useShelectorGame() {
         if (state.step === 'draw') {
           const drawKey = stepKey(state, 'draw');
           if (!stepEffectsDoneRef.current.has(drawKey)) {
-            state = drawCards(state, activeId, 1);
+            state = drawCardsWithAuthority(state, activeId, 1);
             stepEffectsDoneRef.current.add(drawKey);
             state = runSBAAndTriggers(state);
             if (checkGameOver(state)) break;
@@ -3120,7 +3146,7 @@ export function useShelectorGame() {
           state = priority.state;
           if (priority.pause) break;
 
-          state = advanceStep(state);
+          state = advanceStepWithAuthority(state);
           stepEffectsDoneRef.current.delete(drawKey);
           state = runSBAAndTriggers(state);
           if (checkGameOver(state)) break;
@@ -3149,7 +3175,7 @@ export function useShelectorGame() {
                 aiIdsRef.current.includes(priorityPlayer.id) ? 'ai' : 'system',
               );
             }
-            state = advanceStep(state);
+            state = advanceStepWithAuthority(state);
             state = runSBAAndTriggers(state);
             if (checkGameOver(state)) break;
             continue;
@@ -3166,7 +3192,7 @@ export function useShelectorGame() {
                 const priority = passUntilHumanOrAllPassed(state);
                 state = priority.state;
                 if (priority.pause) break;
-                state = advanceStep(state);
+                state = advanceStepWithAuthority(state);
                 state = runSBAAndTriggers(state);
                 if (checkGameOver(state)) break;
                 continue;
@@ -3182,7 +3208,7 @@ export function useShelectorGame() {
                 const priority = passUntilHumanOrAllPassed(state);
                 state = priority.state;
                 if (priority.pause) break;
-                state = advanceStep(state);
+                state = advanceStepWithAuthority(state);
                 state = runSBAAndTriggers(state);
                 if (checkGameOver(state)) break;
                 continue;
@@ -3201,7 +3227,7 @@ export function useShelectorGame() {
                 const priority = passUntilHumanOrAllPassed(state);
                 state = priority.state;
                 if (priority.pause) break;
-                state = advanceStep(state);
+                state = advanceStepWithAuthority(state);
                 state = runSBAAndTriggers(state);
                 if (checkGameOver(state)) break;
                 continue;
@@ -3244,7 +3270,7 @@ export function useShelectorGame() {
               const priority = passUntilHumanOrAllPassed(state);
               state = priority.state;
               if (priority.pause) break;
-              state = advanceStep(state);
+              state = advanceStepWithAuthority(state);
               state = runSBAAndTriggers(state);
               if (checkGameOver(state)) break;
               continue;
@@ -3265,7 +3291,7 @@ export function useShelectorGame() {
             const priority = passUntilHumanOrAllPassed(state);
             state = priority.state;
             if (priority.pause) break;
-            state = advanceStep(state);
+            state = advanceStepWithAuthority(state);
             state = runSBAAndTriggers(state);
             if (checkGameOver(state)) break;
             continue;
@@ -3315,7 +3341,7 @@ export function useShelectorGame() {
             const priority = passUntilHumanOrAllPassed(state);
             state = priority.state;
             if (priority.pause) break;
-            state = advanceStep(state);
+            state = advanceStepWithAuthority(state);
             state = runSBAAndTriggers(state);
             if (checkGameOver(state)) break;
             continue;
@@ -3355,7 +3381,7 @@ export function useShelectorGame() {
             const priority = passUntilHumanOrAllPassed(state);
             state = priority.state;
             if (priority.pause) break;
-            state = advanceStep(state);
+            state = advanceStepWithAuthority(state);
             state = runSBAAndTriggers(state);
             if (checkGameOver(state)) break;
             continue;
@@ -3368,7 +3394,7 @@ export function useShelectorGame() {
                 break;
               }
               try {
-                state = resolveCombatDamage(state);
+                state = resolveCombatDamageWithAuthority(state);
                 console.log('  -> resolved combat damage');
                 // Combat damage may kill creatures — check SBAs and triggers
                 state = runSBAAndTriggers(state);
@@ -3388,7 +3414,7 @@ export function useShelectorGame() {
             const priority = passUntilHumanOrAllPassed(state);
             state = priority.state;
             if (priority.pause) break;
-            state = advanceStep(state);
+            state = advanceStepWithAuthority(state);
             state = runSBAAndTriggers(state);
             if (checkGameOver(state)) break;
             continue;
@@ -3397,7 +3423,7 @@ export function useShelectorGame() {
           const priority = passUntilHumanOrAllPassed(state);
           state = priority.state;
           if (priority.pause) break;
-          state = advanceStep(state);
+          state = advanceStepWithAuthority(state);
           state = runSBAAndTriggers(state);
           if (checkGameOver(state)) break;
           continue;
@@ -3464,7 +3490,7 @@ export function useShelectorGame() {
             }
 
             const oldTurn = state.turnNumber;
-            state = advanceStep(state);
+            state = advanceStepWithAuthority(state);
             state = runSBAAndTriggers(state);
             if (checkGameOver(state)) break;
             if (state.turnNumber !== oldTurn) {
@@ -3485,7 +3511,7 @@ export function useShelectorGame() {
           const priority = passUntilHumanOrAllPassed(state);
           state = priority.state;
           if (priority.pause) break;
-          state = advanceStep(state);
+          state = advanceStepWithAuthority(state);
           state = runSBAAndTriggers(state);
           if (checkGameOver(state)) break;
           continue;
@@ -3495,7 +3521,7 @@ export function useShelectorGame() {
         const priority = passUntilHumanOrAllPassed(state);
         state = priority.state;
         if (priority.pause) break;
-        state = advanceStep(state);
+        state = advanceStepWithAuthority(state);
         state = runSBAAndTriggers(state);
         if (checkGameOver(state)) break;
         continue;
@@ -3503,7 +3529,19 @@ export function useShelectorGame() {
 
       return state;
     },
-    [applyActionThroughAuthority, narrateDecisions, queueHumanDamageAssignmentChoice, recordAuthorityUpdate, resolveTaxTrigger, runSBAAndTriggers],
+    [
+      advanceStepWithAuthority,
+      applyActionThroughAuthority,
+      drawCardsWithAuthority,
+      narrateDecisions,
+      performUntapStepWithAuthority,
+      queueHumanDamageAssignmentChoice,
+      recordAuthorityUpdate,
+      resolveCombatDamageWithAuthority,
+      resolveTaxTrigger,
+      resolveTopOfStackWithAuthority,
+      runSBAAndTriggers,
+    ],
   );
 
   const resolveLibraryChoice = useCallback((topIds: string[], movedIds: string[]) => {
@@ -3561,7 +3599,7 @@ export function useShelectorGame() {
     pendingLibraryChoiceRef.current = null;
     libraryManipulationPromptRequestRef.current = null;
 
-    state = resolveTopOfStack(state);
+    state = resolveTopOfStackWithAuthority(state);
     state = runSBAAndTriggers(state);
 
     const loopMessages: { role: ChatMessage['role']; text: string }[] = [];
@@ -3573,7 +3611,7 @@ export function useShelectorGame() {
     for (const msg of loopMessages) addMessage(msg.role, msg.text);
     if (loopLogEntries.length > 0) setGameLog(prev => [...prev, ...loopLogEntries]);
     syncState();
-  }, [addMessage, advanceGameLoop, recordAuthorityUpdate, runSBAAndTriggers, syncState]);
+  }, [addMessage, advanceGameLoop, recordAuthorityUpdate, resolveTopOfStackWithAuthority, runSBAAndTriggers, syncState]);
 
   const resolveOptionalTriggerChoice = useCallback((use: boolean) => {
     const engine = engineRef.current;
@@ -3967,16 +4005,16 @@ export function useShelectorGame() {
     let safety = 20;
     while (current.phase === 'beginning' && safety-- > 0) {
       if (current.step === 'untap') {
-        current = performUntapStep(current);
+        current = performUntapStepWithAuthority(current);
       }
       if (current.step === 'draw') {
         const activePlayer = current.players[current.activePlayerIndex];
-        current = drawCards(current, activePlayer.id, 1);
+        current = drawCardsWithAuthority(current, activePlayer.id, 1);
       }
-      current = advanceStep(current);
+      current = advanceStepWithAuthority(current);
     }
     return current;
-  }, []);
+  }, [advanceStepWithAuthority, drawCardsWithAuthority, performUntapStepWithAuthority]);
 
   // Keep hand -- end mulligan phase, proceed to normal gameplay
   const keepHand = useCallback(() => {
@@ -4261,7 +4299,7 @@ export function useShelectorGame() {
         const loopLogEntries: GameLogEntry[] = [];
         let state: GameState = newEngine;
         const oldTurn = state.turnNumber;
-        state = advanceStep(state);
+        state = advanceStepWithAuthority(state);
         state = runSBAAndTriggers(state);
         if (state.turnNumber !== oldTurn) {
           const newActive = state.players[state.activePlayerIndex];
@@ -4288,7 +4326,7 @@ export function useShelectorGame() {
 
       syncState();
     },
-    [discardPhase, addMessage, syncState, advanceGameLoop, recordAuthorityUpdate],
+    [advanceGameLoop, advanceStepWithAuthority, addMessage, discardPhase, recordAuthorityUpdate, runSBAAndTriggers, syncState],
   );
 
   const resolveTutor = useCallback((cardInstanceId: string) => {
@@ -4999,6 +5037,7 @@ export function useShelectorGame() {
   }, [
     addMessage,
     advanceGameLoop,
+    advanceStepWithAuthority,
     applyEvents,
     damageAssignmentChoice,
     discardPhase,
@@ -5059,7 +5098,7 @@ export function useShelectorGame() {
       }
 
       try {
-        return runSBAAndTriggers(resolveCombatDamage(s));
+        return runSBAAndTriggers(resolveCombatDamageWithAuthority(s));
       } catch (combatErr: unknown) {
         console.error('Combat damage error while skipping turn:', combatErr);
         return s;
@@ -5078,7 +5117,7 @@ export function useShelectorGame() {
       }
       next = resolveCombatDamageBeforeAdvance(next);
       if (next.stack.length > 0) return next;
-      return advanceStep(next);
+      return advanceStepWithAuthority(next);
     };
     const skipRemainingCombat = (s: GameState): GameState => {
       let next = s;
@@ -5171,6 +5210,7 @@ export function useShelectorGame() {
     optionalTriggerChoice,
     triggerOrderChoice,
     queueHumanDamageAssignmentChoice,
+    resolveCombatDamageWithAuthority,
     runSBAAndTriggers,
     skipEmptyPhases,
     syncState,
@@ -5685,7 +5725,7 @@ export function useShelectorGame() {
               }
               newState = passResponse.state;
             }
-            newState = advanceStep(newState);
+            newState = advanceStepWithAuthority(newState);
           }
         } else if (engineAction.kind === 'CastSpell') {
           // Auto-tap lands if needed before casting the spell
@@ -6150,7 +6190,7 @@ export function useShelectorGame() {
         syncState();
       }
     },
-    [gameState, addMessage, appendLog, syncState, advanceGameLoop, applyEvents, damageAssignmentChoice, lastPlayedCard, optionalTriggerChoice, rememberLastPlayedCard, recordAuthorityUpdate, recordStateUpdate, skipEmptyPhases, skipRestOfTurn, triggerOrderChoice],
+    [gameState, addMessage, appendLog, syncState, advanceGameLoop, advanceStepWithAuthority, applyActionThroughAuthority, applyEvents, damageAssignmentChoice, lastPlayedCard, optionalTriggerChoice, rememberLastPlayedCard, recordAuthorityUpdate, recordStateUpdate, skipEmptyPhases, skipRestOfTurn, triggerOrderChoice],
   );
   submitActionRef.current = submitAction;
 
