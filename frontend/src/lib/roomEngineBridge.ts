@@ -2,6 +2,7 @@ import {
   advanceStep,
   allPlayersPassed,
   getPlayerView,
+  getCardDefinition,
   initRoomGame,
   resolveCombatDamage,
   resolveTopOfStack,
@@ -176,7 +177,7 @@ const ZERO_MANA_COST: ManaCost = { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0, generic: 
 
 function cardName(state: GameState, cardInstanceId: string) {
   const card = state.cards.get(cardInstanceId);
-  const definition = card ? state.cardDefinitions.get(card.definitionId) : undefined;
+  const definition = card ? getCardDefinition(state, card) : undefined;
   return definition?.name || 'card';
 }
 

@@ -201,7 +201,7 @@ interface TargetActionChoice {
 function displayNameForTarget(engineState: GameState, targetId: string): string {
   const card = engineState.cards.get(targetId);
   if (card) {
-    return engineState.cardDefinitions.get(card.definitionId)?.name || targetId;
+    return getCardDefinition(engineState, card).name || targetId;
   }
   return engineState.players.find(player => player.id === targetId)?.name || targetId;
 }
@@ -728,8 +728,7 @@ type PendingTargetChoice = {
 type PendingCastChoiceMode = 'discardLand' | 'sacrificeCreature';
 
 function toTutorCardOption(state: GameState, card: CardInstance): TutorCardOption | null {
-  const def = state.cardDefinitions.get(card.definitionId);
-  if (!def) return null;
+  const def = getCardDefinition(state, card);
   return {
     instanceId: card.instanceId,
     name: def.name,
@@ -769,7 +768,7 @@ function needsMoxDiamondDiscardChoice(
   if (action.cardChoices?.discardedCardIds?.length) return false;
 
   const card = state.cards.get(action.cardInstanceId);
-  const def = card ? state.cardDefinitions.get(card.definitionId) : undefined;
+  const def = card ? getCardDefinition(state, card) : undefined;
   return !!def && isMoxDiamondLikeDefinition(def);
 }
 
@@ -781,7 +780,7 @@ function needsCastSacrificeCreatureChoice(
   if (action.namedCardChoices?.sacrificeCardId) return false;
 
   const card = state.cards.get(action.cardInstanceId);
-  const def = card ? state.cardDefinitions.get(card.definitionId) : undefined;
+  const def = card ? getCardDefinition(state, card) : undefined;
   if (!def) return false;
   return /\bwhen you cast this spell,\s*any player may sacrifice a creature\b/i.test(def.oracle_text)
     && /\bif a player does,\s*counter\b/i.test(def.oracle_text);
@@ -807,8 +806,8 @@ function getCreatureTypeChoices(state: GameState, playerId: string): string[] {
 
   for (const card of state.cards.values()) {
     if (card.ownerId !== playerId) continue;
-    const def = state.cardDefinitions.get(card.definitionId);
-    if (!def || !def.card_types.includes('creature')) continue;
+    const def = getCardDefinition(state, card);
+    if (!def.card_types.includes('creature')) continue;
     const subtypeText = def.type_line.split(/[—-]/).slice(1).join(' ');
     for (const rawType of subtypeText.split(/\s+/)) {
       const clean = rawType.replace(/[^A-Za-z]/g, '');
@@ -963,7 +962,7 @@ function definitionLooksPermanent(def: CardDefinition): boolean {
 function spellEffectsForChoicePrompt(state: GameState, item: Extract<StackItem, { kind: 'Spell' }>): Effect[] {
   const card = state.cards.get(item.cardInstanceId);
   const def = getCastSpellDefinition(state, item.cardInstanceId, { faceName: item.faceName })
-    || (card ? state.cardDefinitions.get(card.definitionId) : undefined);
+    || (card ? getCardDefinition(state, card) : undefined);
   if (!def) return [];
 
   const override = getOverride(def.id, def.name);
@@ -1080,7 +1079,7 @@ function enumerateVirtualActivatedAbilityTargets(state: GameState, playerId: str
 function getManaActionAmount(state: GameState, playerId: string, action: AIAction): number {
   if (action.kind !== 'ActivateManaAbility') return 1;
   const card = state.cards.get(action.cardInstanceId);
-  const def = card ? state.cardDefinitions.get(card.definitionId) : undefined;
+  const def = card ? getCardDefinition(state, card) : undefined;
   const info = def?.manaProduction;
   if (!info) return 1;
 
@@ -1088,8 +1087,8 @@ function getManaActionAmount(state: GameState, playerId: string, action: AIActio
   if (info.amountScale === 'creaturesYouControl') {
     const creatureCount = [...state.cards.values()].filter(instance => {
       if (instance.ownerId !== playerId || instance.zone !== 'battlefield') return false;
-      const cardDef = state.cardDefinitions.get(instance.definitionId);
-      return cardDef?.card_types.includes('creature');
+      const cardDef = getCardDefinition(state, instance);
+      return cardDef.card_types.includes('creature');
     }).length;
     amount *= creatureCount;
   }
@@ -1098,7 +1097,7 @@ function getManaActionAmount(state: GameState, playerId: string, action: AIActio
 
 function manaSourceAutoTapRank(state: GameState, cardInstanceId: string): number {
   const card = state.cards.get(cardInstanceId);
-  const def = card ? state.cardDefinitions.get(card.definitionId) : undefined;
+  const def = card ? getCardDefinition(state, card) : undefined;
   if (!def) return 4;
   if (def.card_types.includes('land')) return 0;
   if (def.manaProduction?.requiresSacrifice || def.manaProduction?.sacrificeFilter || def.manaProduction?.activationZone === 'hand') return 4;
@@ -1119,7 +1118,7 @@ function describeManaPaymentPlan(state: GameState, playerId: string, actions: AI
     )
     .map(action => {
       const card = state.cards.get(action.cardInstanceId);
-      const def = card ? state.cardDefinitions.get(card.definitionId) : undefined;
+      const def = card ? getCardDefinition(state, card) : undefined;
       const amount = getManaActionAmount(state, playerId, action);
       const mana = amount > 1 ? `${amount}${action.color}` : action.color;
       return `${def?.name || 'source'} -> ${mana}`;
@@ -1480,7 +1479,7 @@ function deriveSimpleState(
       const inst = engine.cards.get(item.cardInstanceId);
       if (inst) {
         const def = getCastSpellDefinition(engine, item.cardInstanceId, { faceName: item.faceName })
-          || engine.cardDefinitions.get(inst.definitionId);
+          || getCardDefinition(engine, inst);
         name = def?.name || '(unknown spell)';
         if (def) card = toSimpleCard(inst, def);
       }
@@ -1488,7 +1487,7 @@ function deriveSimpleState(
     } else if (item.kind === 'TriggeredAbility') {
       const inst = engine.cards.get(item.sourceInstanceId);
       if (inst) {
-        const def = engine.cardDefinitions.get(inst.definitionId);
+        const def = getCardDefinition(engine, inst);
         name = `${def?.name || '?'} trigger`;
         if (def) card = toSimpleCard(inst, def);
       }
@@ -1496,7 +1495,7 @@ function deriveSimpleState(
     } else if (item.kind === 'ActivatedAbility') {
       const inst = engine.cards.get(item.sourceInstanceId);
       if (inst) {
-        const def = engine.cardDefinitions.get(inst.definitionId);
+        const def = getCardDefinition(engine, inst);
         name = `${def?.name || '?'} ability`;
         if (def) card = toSimpleCard(inst, def);
       }
@@ -1648,7 +1647,7 @@ function toSimpleLegalAction(action: AIAction, engineState: GameState): SimpleLe
   switch (action.kind) {
     case 'PlayLand': {
       const inst = engineState.cards.get(action.cardInstanceId);
-      const def = inst ? engineState.cardDefinitions.get(inst.definitionId) : undefined;
+      const def = inst ? getCardDefinition(engineState, inst) : undefined;
       return {
         kind: 'PlayLand',
         cardInstanceId: action.cardInstanceId,
@@ -1659,7 +1658,7 @@ function toSimpleLegalAction(action: AIAction, engineState: GameState): SimpleLe
     }
     case 'CastSpell': {
       const inst = engineState.cards.get(action.cardInstanceId);
-      const def = getCastSpellDefinition(engineState, action.cardInstanceId, { faceName: action.faceName }) || (inst ? engineState.cardDefinitions.get(inst.definitionId) : undefined);
+      const def = getCastSpellDefinition(engineState, action.cardInstanceId, { faceName: action.faceName }) || (inst ? getCardDefinition(engineState, inst) : undefined);
       const xSuffix = typeof action.xValue === 'number' ? ` for X=${action.xValue}` : '';
       return {
         kind: 'CastSpell',
@@ -1671,7 +1670,7 @@ function toSimpleLegalAction(action: AIAction, engineState: GameState): SimpleLe
     }
     case 'ActivateManaAbility': {
       const inst = engineState.cards.get(action.cardInstanceId);
-      const def = inst ? engineState.cardDefinitions.get(inst.definitionId) : undefined;
+      const def = inst ? getCardDefinition(engineState, inst) : undefined;
       const verb = def?.manaProduction?.activationZone === 'hand'
         ? 'Exile'
         : 'Tap';
@@ -1685,7 +1684,7 @@ function toSimpleLegalAction(action: AIAction, engineState: GameState): SimpleLe
     }
     case 'ManualUntapManaSource': {
       const inst = engineState.cards.get(action.cardInstanceId);
-      const def = inst ? engineState.cardDefinitions.get(inst.definitionId) : undefined;
+      const def = inst ? getCardDefinition(engineState, inst) : undefined;
       return {
         kind: 'ManualUntapManaSource',
         cardInstanceId: action.cardInstanceId,
@@ -1696,7 +1695,7 @@ function toSimpleLegalAction(action: AIAction, engineState: GameState): SimpleLe
     }
     case 'ManualAdjustCounters': {
       const inst = engineState.cards.get(action.cardInstanceId);
-      const def = inst ? engineState.cardDefinitions.get(inst.definitionId) : undefined;
+      const def = inst ? getCardDefinition(engineState, inst) : undefined;
       const sign = action.delta > 0 ? '+' : '';
       return {
         kind: 'ManualAdjustCounters',
@@ -1708,7 +1707,7 @@ function toSimpleLegalAction(action: AIAction, engineState: GameState): SimpleLe
     }
     case 'ActivateAbility': {
       const inst = engineState.cards.get(action.cardInstanceId);
-      const def = inst ? engineState.cardDefinitions.get(inst.definitionId) : undefined;
+      const def = inst ? getCardDefinition(engineState, inst) : undefined;
       return {
         kind: 'ActivateAbility',
         cardInstanceId: action.cardInstanceId,
@@ -1722,11 +1721,11 @@ function toSimpleLegalAction(action: AIAction, engineState: GameState): SimpleLe
         ? engineState.cards.get(action.attacks[0].cardInstanceId)
         : undefined;
       const attackerDef = attackerInst
-        ? engineState.cardDefinitions.get(attackerInst.definitionId)
+        ? getCardDefinition(engineState, attackerInst)
         : undefined;
       const names = action.attacks.map(a => {
         const inst = engineState.cards.get(a.cardInstanceId);
-        const def = inst ? engineState.cardDefinitions.get(inst.definitionId) : undefined;
+        const def = inst ? getCardDefinition(engineState, inst) : undefined;
         return def?.name || '?';
       });
       const defenderNames = [
@@ -1750,7 +1749,7 @@ function toSimpleLegalAction(action: AIAction, engineState: GameState): SimpleLe
         ? engineState.cards.get(action.blocks[0].cardInstanceId)
         : undefined;
       const blockerDef = blockerInst
-        ? engineState.cardDefinitions.get(blockerInst.definitionId)
+        ? getCardDefinition(engineState, blockerInst)
         : undefined;
       return {
         kind: 'DeclareBlockers',
@@ -1764,9 +1763,9 @@ function toSimpleLegalAction(action: AIAction, engineState: GameState): SimpleLe
     }
     case 'Equip': {
       const equipInst = engineState.cards.get(action.equipmentInstanceId);
-      const equipDef = equipInst ? engineState.cardDefinitions.get(equipInst.definitionId) : undefined;
+      const equipDef = equipInst ? getCardDefinition(engineState, equipInst) : undefined;
       const targetInst = engineState.cards.get(action.targetCreatureId);
-      const targetDef = targetInst ? engineState.cardDefinitions.get(targetInst.definitionId) : undefined;
+      const targetDef = targetInst ? getCardDefinition(engineState, targetInst) : undefined;
       return {
         kind: 'Equip',
         cardInstanceId: action.equipmentInstanceId,
@@ -1824,18 +1823,18 @@ function baseLabelForTargetGroup(engineState: GameState, action: SimpleLegalActi
   if (engineAction.kind === 'CastSpell') {
     const card = engineState.cards.get(engineAction.cardInstanceId);
     const def = getCastSpellDefinition(engineState, engineAction.cardInstanceId, { faceName: engineAction.faceName })
-      || (card ? engineState.cardDefinitions.get(card.definitionId) : undefined);
+      || (card ? getCardDefinition(engineState, card) : undefined);
     const xSuffix = typeof engineAction.xValue === 'number' ? ` for X=${engineAction.xValue}` : '';
     return `Cast ${def?.name || action.cardName || 'spell'}${xSuffix}`;
   }
   if (engineAction.kind === 'ActivateAbility') {
     const card = engineState.cards.get(engineAction.cardInstanceId);
-    const def = card ? engineState.cardDefinitions.get(card.definitionId) : undefined;
+    const def = card ? getCardDefinition(engineState, card) : undefined;
     return `Activate ${def?.name || action.cardName || 'ability'}`;
   }
   if (engineAction.kind === 'Equip') {
     const card = engineState.cards.get(engineAction.equipmentInstanceId);
-    const def = card ? engineState.cardDefinitions.get(card.definitionId) : undefined;
+    const def = card ? getCardDefinition(engineState, card) : undefined;
     return `Equip ${def?.name || action.cardName || 'equipment'}`;
   }
   return action.label;
@@ -2114,8 +2113,7 @@ export function useShelectorGame() {
     if (!cardInstanceId) return;
     const inst = state.cards.get(cardInstanceId);
     if (!inst) return;
-    const def = state.cardDefinitions.get(inst.definitionId);
-    if (!def) return;
+    const def = getCardDefinition(state, inst);
 
     setLastPlayedCard({
       card: toSimpleCard(inst, def),
@@ -2456,13 +2454,13 @@ export function useShelectorGame() {
 
         if (a.kind === 'PlayLand') {
           const inst = state.cards.get(a.cardInstanceId);
-          const def = inst ? state.cardDefinitions.get(inst.definitionId) : undefined;
+          const def = inst ? getCardDefinition(state, inst) : undefined;
           actionText = `Played ${def?.name || 'a land'}`;
           messages.push({ role: 'shelector', text: `${actionText}.` });
           rememberLastPlayedCard(state, a.cardInstanceId, inst?.ownerId || aiIdsRef.current[0], 'Played');
         } else if (a.kind === 'CastSpell') {
           const inst = state.cards.get(a.cardInstanceId);
-          const def = inst ? state.cardDefinitions.get(inst.definitionId) : undefined;
+          const def = inst ? getCardDefinition(state, inst) : undefined;
           actionText = `Cast ${def?.name || 'a spell'}`;
           const costStr = def?.mana_cost || '?';
           if (def) {
@@ -2473,13 +2471,13 @@ export function useShelectorGame() {
           rememberLastPlayedCard(state, a.cardInstanceId, inst?.ownerId || aiIdsRef.current[0], 'Cast');
         } else if (a.kind === 'ActivateManaAbility') {
           const inst = state.cards.get(a.cardInstanceId);
-          const def = inst ? state.cardDefinitions.get(inst.definitionId) : undefined;
+          const def = inst ? getCardDefinition(state, inst) : undefined;
           messages.push({ role: 'shelector', text: `Tapped ${def?.name || 'a permanent'} for mana. Floating: ${aiPoolStr}` });
         } else if (a.kind === 'DeclareAttackers') {
           if (a.attacks.length > 0) {
             const names = a.attacks.map(atk => {
               const inst = state.cards.get(atk.cardInstanceId);
-              const def = inst ? state.cardDefinitions.get(inst.definitionId) : undefined;
+              const def = inst ? getCardDefinition(state, inst) : undefined;
               const defender = state.players.find(p => p.id === atk.defendingPlayerId);
               const defenderName = defender?.name.replace(/\s+\(AI\)$/, '') || atk.defendingPlayerId;
               return `${def?.name || '?'} at ${defenderName}`;
@@ -2494,7 +2492,7 @@ export function useShelectorGame() {
           }
         } else if (a.kind === 'ActivateAbility') {
           const inst = state.cards.get(a.cardInstanceId);
-          const def = inst ? state.cardDefinitions.get(inst.definitionId) : undefined;
+          const def = inst ? getCardDefinition(state, inst) : undefined;
           actionText = `Activated ${def?.name || 'an ability'}`;
           messages.push({ role: 'shelector', text: `${actionText}.` });
           rememberLastPlayedCard(state, a.cardInstanceId, inst?.ownerId || aiIdsRef.current[0], 'Activated');
@@ -2526,7 +2524,7 @@ export function useShelectorGame() {
     }
 
     const sourceCard = current.cards.get(trigger.sourceInstanceId);
-    const sourceDef = sourceCard ? current.cardDefinitions.get(sourceCard.definitionId) : undefined;
+    const sourceDef = sourceCard ? getCardDefinition(current, sourceCard) : undefined;
     const request = createOptionalTriggerPromptRequest(current, humanIdRef.current, trigger.id);
     optionalTriggerPromptRequestRef.current = request;
     setOptionalTriggerChoice({
@@ -2650,7 +2648,7 @@ export function useShelectorGame() {
       // Check if the source card has a cached unlessTax ability
       const sourceCard = state.cards.get(triggerItem.sourceInstanceId);
       if (!sourceCard) return { state, handled: false };
-      const sourceDef = state.cardDefinitions.get(sourceCard.definitionId);
+      const sourceDef = getCardDefinition(state, sourceCard);
       if (!sourceDef?.unlessTax) return { state, handled: false };
 
       const taxInfo = sourceDef.unlessTax;
@@ -2890,21 +2888,21 @@ export function useShelectorGame() {
           controllerId = top.casterId;
           sourceInstanceId = top.cardInstanceId;
           const spellCard = state.cards.get(top.cardInstanceId);
-          const spellDef = spellCard ? state.cardDefinitions.get(spellCard.definitionId) : undefined;
+          const spellDef = spellCard ? getCardDefinition(state, spellCard) : undefined;
           sourceName = spellDef?.name || sourceName;
           effects = spellEffectsForChoicePrompt(state, top);
         } else if (top.kind === 'ActivatedAbility') {
           controllerId = top.controllerId;
           sourceInstanceId = top.sourceInstanceId;
           const sourceCard = state.cards.get(top.sourceInstanceId);
-          const sourceDef = sourceCard ? state.cardDefinitions.get(sourceCard.definitionId) : undefined;
+          const sourceDef = sourceCard ? getCardDefinition(state, sourceCard) : undefined;
           sourceName = sourceDef?.name || sourceName;
           effects = top.ability.effects;
         } else if (top.kind === 'TriggeredAbility') {
           controllerId = top.controllerId;
           sourceInstanceId = top.sourceInstanceId;
           const sourceCard = state.cards.get(top.sourceInstanceId);
-          const sourceDef = sourceCard ? state.cardDefinitions.get(sourceCard.definitionId) : undefined;
+          const sourceDef = sourceCard ? getCardDefinition(state, sourceCard) : undefined;
           sourceName = sourceDef?.name || sourceName;
           effects = top.ability.effects;
         }
@@ -3168,7 +3166,7 @@ export function useShelectorGame() {
 
               const action = decision.action;
               const actionInst = 'cardInstanceId' in action ? state.cards.get(action.cardInstanceId) : undefined;
-              const actionDef = actionInst ? state.cardDefinitions.get(actionInst.definitionId) : undefined;
+              const actionDef = actionInst ? getCardDefinition(state, actionInst) : undefined;
               console.log(`  -> AI main phase: ${action.kind}${actionDef ? ' — ' + actionDef.name : ''}`);
 
               const applied = applyValidatedLoopAction(state, currentAiId, decision.action, 'ai');
@@ -3206,7 +3204,7 @@ export function useShelectorGame() {
                   const humanIdx = state.players.findIndex(p => p.id === humanIdRef.current);
                   if (humanIdx >= 0) {
                     const spellInst = 'cardInstanceId' in action ? state.cards.get(action.cardInstanceId) : undefined;
-                    const spellDef = spellInst ? state.cardDefinitions.get(spellInst.definitionId) : undefined;
+                    const spellDef = spellInst ? getCardDefinition(state, spellInst) : undefined;
                     messages.push({
                       role: 'system',
                       text: `${spellDef?.name || 'A spell or ability'} is on the stack. Inspect it, respond, or pass priority.`,
@@ -4433,8 +4431,8 @@ export function useShelectorGame() {
 
     const card = engine.cards.get(selectedCardInstanceId);
     if (!card) return;
-    const def = engine.cardDefinitions.get(card.definitionId);
-    const cardName = def?.name || 'a card';
+    const def = getCardDefinition(engine, card);
+    const cardName = def.name || 'a card';
     if (payLifeForSearchEntry !== undefined) {
       const replacementRequest = createBattlefieldEntryReplacementPromptRequest(
         engine,
@@ -4493,7 +4491,7 @@ export function useShelectorGame() {
     }
 
     if (dest === 'battlefield' && payLifeForSearchEntry === undefined && !tutorTappedRef.current) {
-      const optionalLifeCost = def ? getOptionalUntappedLifeCostFromText(def.oracle_text) : undefined;
+      const optionalLifeCost = getOptionalUntappedLifeCostFromText(def.oracle_text);
       if (optionalLifeCost !== undefined) {
         pendingSearchEntryChoiceRef.current = { cardInstanceId: selectedCardInstanceId, optionalLifeCost };
         setTutorTitle(`${cardName}: enter untapped?`);
@@ -4793,7 +4791,7 @@ export function useShelectorGame() {
     if (!tapRecord) return;
 
     const card = engine.cards.get(cardInstanceId);
-    const def = card ? engine.cardDefinitions.get(card.definitionId) : undefined;
+    const def = card ? getCardDefinition(engine, card) : undefined;
     const action: AIAction = {
       kind: 'ManualUntapManaSource',
       cardInstanceId,
@@ -4827,7 +4825,7 @@ export function useShelectorGame() {
     if (!engine) return;
 
     const card = engine.cards.get(cardInstanceId);
-    const def = card ? engine.cardDefinitions.get(card.definitionId) : undefined;
+    const def = card ? getCardDefinition(engine, card) : undefined;
     const action: AIAction = {
       kind: 'ManualAdjustCounters',
       cardInstanceId,
@@ -5186,7 +5184,7 @@ export function useShelectorGame() {
         setTutorTitle(action.label);
         setTutorCards(action.targetChoices.map(choice => {
           const card = engine.cards.get(choice.targetId);
-          const def = card ? engine.cardDefinitions.get(card.definitionId) : undefined;
+          const def = card ? getCardDefinition(engine, card) : undefined;
           const player = engine.players.find(candidate => candidate.id === choice.targetId);
           return {
             instanceId: choice.targetId,
@@ -5217,7 +5215,7 @@ export function useShelectorGame() {
 
       if (needsMoxDiamondDiscardChoice(engineAction, engine as GameState)) {
         const card = engine.cards.get(engineAction.cardInstanceId);
-        const def = card ? engine.cardDefinitions.get(card.definitionId) : undefined;
+        const def = card ? getCardDefinition(engine, card) : undefined;
         const discardRequest = createSelectCardsPromptRequest(engine as GameState, humanIdRef.current, {
           subject: 'AdditionalCost',
           zone: 'hand',
@@ -5262,12 +5260,12 @@ export function useShelectorGame() {
 
       if (needsCastSacrificeCreatureChoice(engineAction, engine as GameState)) {
         const card = engine.cards.get(engineAction.cardInstanceId);
-        const def = card ? engine.cardDefinitions.get(card.definitionId) : undefined;
+        const def = card ? getCardDefinition(engine, card) : undefined;
         const sacrificeOptions = [...engine.cards.values()]
           .filter(instance => instance.zone === 'battlefield')
           .filter(instance => {
-            const permanentDef = engine.cardDefinitions.get(instance.definitionId);
-            return permanentDef?.card_types.includes('creature');
+            const permanentDef = getCardDefinition(engine, instance);
+            return permanentDef.card_types.includes('creature');
           })
           .flatMap(instance => {
             const option = toTutorCardOption(engine as GameState, instance);
@@ -5299,7 +5297,7 @@ export function useShelectorGame() {
 
       if (engineAction.kind === 'PlayLand') {
         const card = engine.cards.get(engineAction.cardInstanceId);
-        const def = card ? engine.cardDefinitions.get(card.definitionId) : undefined;
+        const def = card ? getCardDefinition(engine, card) : undefined;
 
         if (def && isCreatureTypeChoiceLand(def) && !engineAction.chosenCreatureType) {
           const creatureTypes = getCreatureTypeChoices(engine as GameState, humanIdRef.current);
@@ -5429,7 +5427,7 @@ export function useShelectorGame() {
                 const bestCard = 'cardInstanceId' in bestEval.action
                   ? engine.cards.get(bestEval.action.cardInstanceId)
                   : null;
-                const bestDef = bestCard ? engine.cardDefinitions.get(bestCard.definitionId) : null;
+                const bestDef = bestCard ? getCardDefinition(engine, bestCard) : null;
                 const bestName = bestDef?.name || bestEval.action.kind;
                 const scoreDiff = bestEval.score - (humanEval?.score ?? 0);
                 if (scoreDiff < 1) {
