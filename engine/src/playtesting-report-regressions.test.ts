@@ -308,6 +308,54 @@ describe('playtesting report regressions', () => {
     expect(getCardsInZone(next, 'p1', 'hand')).toHaveLength(0);
   });
 
+  it('Wheel of Fortune discards every player hand before each player draws seven', () => {
+    const override = getOverride('wheel-of-fortune', 'Wheel of Fortune');
+    expect(override?.kind).toBe('Spell');
+    if (!override || override.kind !== 'Spell') return;
+
+    const p1Hand = [
+      card('p1-hand-1', 'Pilot Hand 1', 'Instant', '{U}', ['instant']),
+      card('p1-hand-2', 'Pilot Hand 2', 'Instant', '{U}', ['instant']),
+      card('p1-hand-3', 'Pilot Hand 3', 'Instant', '{U}', ['instant']),
+    ];
+    const p2Hand = [
+      card('p2-hand-1', 'Opponent Hand 1', 'Instant', '{B}', ['instant']),
+      card('p2-hand-2', 'Opponent Hand 2', 'Instant', '{B}', ['instant']),
+    ];
+    const p1Library = Array.from({ length: 8 }, (_, index) =>
+      card(`p1-library-${index}`, `Pilot Draw ${index}`, 'Sorcery', '{1}{U}', ['sorcery'])
+    );
+    const p2Library = Array.from({ length: 8 }, (_, index) =>
+      card(`p2-library-${index}`, `Opponent Draw ${index}`, 'Sorcery', '{1}{B}', ['sorcery'])
+    );
+
+    let state = initGameState([
+      { playerId: 'p1', name: 'Pilot', commanderId: 'none', cards: [...p1Hand, ...p1Library] },
+      { playerId: 'p2', name: 'Opponent', commanderId: 'none', cards: [...p2Hand, ...p2Library] },
+    ]);
+
+    const cards = new Map(state.cards);
+    for (const [instanceId, instance] of cards) {
+      const name = state.cardDefinitions.get(instance.definitionId)?.name || '';
+      cards.set(instanceId, {
+        ...instance,
+        zone: /Hand/.test(name) ? 'hand' : 'library',
+      });
+    }
+    state = { ...state, cards };
+
+    const next = executeEffects(state, override.effects, 'p1', [], [], 0);
+
+    expect(getCardsInZone(next, 'p1', 'hand')).toHaveLength(7);
+    expect(getCardsInZone(next, 'p2', 'hand')).toHaveLength(7);
+    expect(getCardsInZone(next, 'p1', 'graveyard').map(instance =>
+      next.cardDefinitions.get(instance.definitionId)?.name
+    )).toEqual(expect.arrayContaining(['Pilot Hand 1', 'Pilot Hand 2', 'Pilot Hand 3']));
+    expect(getCardsInZone(next, 'p2', 'graveyard').map(instance =>
+      next.cardDefinitions.get(instance.definitionId)?.name
+    )).toEqual(expect.arrayContaining(['Opponent Hand 1', 'Opponent Hand 2']));
+  });
+
   it('parses Dragonhawk enters-or-attacks as a power-counted exile trigger', () => {
     const oracle = "Whenever ~ enters or attacks, exile the top X cards of your library, where X is the number of creatures you control with power 4 or greater. You may play those cards until your next end step. At the beginning of your next end step, ~ deals 2 damage to each opponent for each of those cards that are still exiled.";
     const parsed = parseOracleText(oracle);

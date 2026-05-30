@@ -178,6 +178,8 @@ Additional certification added after this audit: the included starter decks now 
 
 Additional named-card verification added after this audit: AI-sourced ExileUntilNamed casts can be auto-named through `dispatchAIAction(..., { autoNameMissingCardChoices: true })`, while `/play` human casts remain browser-proven through the typed NamedCard prompt for both known deck names and arbitrary custom names.
 
+Additional Wheel verification added after this audit: Wheel of Fortune now has a regression that executes the override and proves each player discards their full hand before drawing seven.
+
 Additional solo preflight verification added after this audit: `/play` now shares a hard unsupported-card preflight helper with tests for Chaos Orb, Falling Star, and Shahrazad-style failures before engine initialization.
 
 Additional room moderation verification added after this audit: server-side room chat moderation now rejects common spaced/leetspeak sexual and harassment probes before they enter room history, while backend tests continue to verify safe MTG table phrases are accepted.
