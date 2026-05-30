@@ -16,7 +16,6 @@ import {
   getActivatedAbilities,
   getSpellTargetSpecs,
   getLegalTargets,
-  applyAction,
   makeDecision,
   createAIConfig,
   advanceStep,
@@ -48,7 +47,6 @@ import {
   type ManaCost,
   type ManaPool,
   type TriggeredAbilityStackItem,
-  tryPassPriority,
   tryAdjustCounters,
   getCostReduction,
   getOverride,
@@ -2113,6 +2111,24 @@ export function useShelectorGame() {
     recordAuthorityUpdate(update);
   }, [recordAuthorityUpdate]);
 
+  const applyActionThroughAuthority = useCallback((
+    state: GameState,
+    playerId: string,
+    action: AIAction,
+    options: { source?: 'ui' | 'ai' | 'system'; label?: string; recordUpdate?: boolean } = {},
+  ): ClientActionResponse => {
+    const simpleAction = toSimpleLegalAction(action, state);
+    const request = createClientActionRequest(state, playerId, action, {
+      source: options.source || 'system',
+      label: options.label || simpleAction.label,
+    });
+    const response = applyClientActionRequest(state, request);
+    if (options.recordUpdate !== false) {
+      recordAuthorityUpdate(response.update);
+    }
+    return response;
+  }, [recordAuthorityUpdate]);
+
   const rememberLastPlayedCard = useCallback((
     state: GameState,
     cardInstanceId: string | undefined,
@@ -2654,12 +2670,10 @@ export function useShelectorGame() {
         source: 'ai' | 'system' = 'ai',
       ): { state: GameState; events: ActionGameEvent[]; simpleAction: SimpleLegalAction } | null => {
         const simpleAction = toSimpleLegalAction(action, s);
-        const request = createClientActionRequest(s, playerId, action, {
+        const response = applyActionThroughAuthority(s, playerId, action, {
           source,
           label: simpleAction.label,
         });
-        const response = applyClientActionRequest(s, request);
-        recordAuthorityUpdate(response.update);
         if (!response.ok || !response.state) {
           const playerName = s.players.find(player => player.id === playerId)?.name || playerId;
           messages.push({
@@ -3036,7 +3050,7 @@ export function useShelectorGame() {
         // Main phases (precombat_main or postcombat_main)
         if (state.phase === 'precombat_main' || state.phase === 'postcombat_main') {
           if (isHumanActive) {
-            // Check if human already passed priority (from submitAction calling applyAction(PassPriority))
+            // Check if human already passed priority (from submitAction applying PassPriority through authority)
             const humanIdx = state.players.findIndex(p => p.id === humanIdRef.current);
             const humanAlreadyPassed = humanIdx >= 0 && state.hasPriorityPassed[humanIdx];
             if (!humanAlreadyPassed) {
@@ -3184,10 +3198,15 @@ export function useShelectorGame() {
               if (hasRealAttacks) {
                 break; // Show attack UI to human
               }
-              // No creatures to attack with — declare empty attackers via applyAction
+              // No creatures to attack with — declare empty attackers through authority.
               const emptyAttack = actions.find(a => a.kind === 'DeclareAttackers' && a.attacks.length === 0);
               if (emptyAttack) {
-                state = applyAction(state, humanIdRef.current, emptyAttack);
+                const applied = applyValidatedLoopAction(state, humanIdRef.current, emptyAttack, 'system');
+                if (applied) {
+                  state = applied.state;
+                } else {
+                  break;
+                }
               }
             } else if (!isHumanActive) {
               // AI declares attackers
@@ -3239,7 +3258,10 @@ export function useShelectorGame() {
                 }
                 const noBlock = blockActions.find(a => a.kind === 'DeclareBlockers' && a.blocks.length === 0);
                 if (noBlock) {
-                  state = applyAction(state, defenderId, noBlock);
+                  const applied = applyValidatedLoopAction(state, defenderId, noBlock, 'system');
+                  if (applied) {
+                    state = applied.state;
+                  }
                 }
               }
             }
@@ -3371,7 +3393,7 @@ export function useShelectorGame() {
 
       return state;
     },
-    [narrateDecisions, recordAuthorityUpdate, resolveTaxTrigger, runSBAAndTriggers],
+    [applyActionThroughAuthority, narrateDecisions, resolveTaxTrigger, runSBAAndTriggers],
   );
 
   const resolveLibraryChoice = useCallback((topIds: string[], movedIds: string[]) => {
@@ -4554,6 +4576,18 @@ export function useShelectorGame() {
     const collectedEvents: ActionGameEvent[] = [];
     let skippedWindows = 0;
     let safety = 80;
+    const applySkipAction = (s: GameState, action: AIAction): GameState | null => {
+      const response = applyActionThroughAuthority(s, humanId, action, {
+        source: 'system',
+        label: toSimpleLegalAction(action, s).label,
+      });
+      if (!response.ok || !response.state) {
+        addMessage('system', `Could not skip action: ${response.message || 'the current action is not legal.'}`);
+        return null;
+      }
+      collectedEvents.push(...(response.events || []));
+      return response.state;
+    };
 
     while (state && safety-- > 0) {
       const humanIndex = state.players.findIndex(p => p.id === humanId);
@@ -4585,14 +4619,17 @@ export function useShelectorGame() {
       );
 
       if (emptyAttack) {
-        state = applyAction(state, humanId, emptyAttack);
+        const applied = applySkipAction(state, emptyAttack);
+        if (!applied) break;
+        state = applied;
       } else if (emptyBlocks) {
-        state = applyAction(state, humanId, emptyBlocks);
+        const applied = applySkipAction(state, emptyBlocks);
+        if (!applied) break;
+        state = applied;
       } else if (pass) {
-        const result = tryPassPriority(state, humanId);
-        if (!result.ok) break;
-        state = result.state;
-        collectedEvents.push(...result.events);
+        const applied = applySkipAction(state, pass);
+        if (!applied) break;
+        state = applied;
       } else {
         break;
       }
@@ -4624,6 +4661,7 @@ export function useShelectorGame() {
     mulliganPhase,
     syncState,
     tutorPhase,
+    applyActionThroughAuthority,
   ]);
 
   const skipRestOfTurn = useCallback(() => {
@@ -4643,6 +4681,18 @@ export function useShelectorGame() {
     const collectedEvents: ActionGameEvent[] = [];
     let skippedWindows = 0;
     let safety = 120;
+    const applySkipAction = (s: GameState, action: AIAction): GameState | null => {
+      const response = applyActionThroughAuthority(s, humanId, action, {
+        source: 'system',
+        label: toSimpleLegalAction(action, s).label,
+      });
+      if (!response.ok || !response.state) {
+        addMessage('system', `Could not skip action: ${response.message || 'the current action is not legal.'}`);
+        return null;
+      }
+      collectedEvents.push(...(response.events || []));
+      return response.state;
+    };
     const combatSteps = new Set<NonNullable<GameState['step']>>([
       'declare_attackers',
       'declare_blockers',
@@ -4705,12 +4755,16 @@ export function useShelectorGame() {
       );
 
       if (state.step === 'declare_attackers' && emptyAttack) {
-        state = applyAction(state, humanId, emptyAttack);
+        const applied = applySkipAction(state, emptyAttack);
+        if (!applied) break;
+        state = applied;
         skippedWindows += 1;
         state = skipRemainingCombat(state);
         continue;
       } else if (state.step === 'declare_blockers' && emptyBlocks) {
-        state = applyAction(state, humanId, emptyBlocks);
+        const applied = applySkipAction(state, emptyBlocks);
+        if (!applied) break;
+        state = applied;
         skippedWindows += 1;
         state = skipRemainingCombat(state);
         continue;
@@ -4719,10 +4773,9 @@ export function useShelectorGame() {
         state.priorityPlayerIndex === humanIndex &&
         !state.hasPriorityPassed[humanIndex]
       ) {
-        const result = tryPassPriority(state, humanId);
-        if (!result.ok) break;
-        state = result.state;
-        collectedEvents.push(...result.events);
+        const applied = applySkipAction(state, pass);
+        if (!applied) break;
+        state = applied;
         skippedWindows += 1;
       } else {
         const advanced = advanceGameLoop(state, loopMessages, loopLogEntries);
@@ -4763,6 +4816,7 @@ export function useShelectorGame() {
     skipEmptyPhases,
     syncState,
     tutorPhase,
+    applyActionThroughAuthority,
   ]);
 
   // Handle player action
@@ -5203,7 +5257,7 @@ export function useShelectorGame() {
         if (engineAction.kind === 'DeclareAttackers' && engineAction.attacks.length === 0) {
           // Skip combat — pass both players through all remaining combat steps.
           // These are internal state-machine passes (not a single user action), so
-          // we use the raw passPriority loop rather than tryPassPriority.
+          // we use the raw passPriority loop for the internal combat skip sequence.
           newState = engine as GameState;
           let combatSafety = 20;
           while (
