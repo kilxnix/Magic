@@ -108,6 +108,8 @@ export interface SearchLibraryPromptRequest {
   revealPolicy: PromptRevealPolicy;
   minSelections: number;
   maxSelections: number;
+  topCount?: number;
+  putUnselectedTopCardsOnBottom?: boolean;
   legalChoices: SearchLibraryChoice[];
   invalidChoices: SearchLibraryChoice[];
   createdAt: number;
@@ -121,6 +123,8 @@ export interface CreateSearchLibraryPromptOptions {
   revealPolicy?: PromptRevealPolicy;
   minSelections?: number;
   maxSelections?: number;
+  topCount?: number;
+  putUnselectedTopCardsOnBottom?: boolean;
   createdAt?: number;
 }
 
@@ -1635,6 +1639,7 @@ export function createSearchLibraryPromptRequest(
   const createdAt = options.createdAt ?? Date.now();
   const choices = [...state.cards.values()]
     .filter(card => card.ownerId === playerId && card.zone === 'library')
+    .slice(0, options.topCount ? Math.max(0, options.topCount) : undefined)
     .map(card => evaluateSearchLibraryChoice(
       state,
       playerId,
@@ -1642,11 +1647,13 @@ export function createSearchLibraryPromptRequest(
       destination,
       card,
       options.sourceInstanceId,
-    ))
-    .sort((a, b) => {
+    ));
+  if (!options.topCount) {
+    choices.sort((a, b) => {
       if (a.legal !== b.legal) return a.legal ? -1 : 1;
       return a.cardName.localeCompare(b.cardName);
     });
+  }
 
   const legalChoices = choices.filter(choice => choice.legal);
   const invalidChoices = choices.filter(choice => !choice.legal);
@@ -1666,6 +1673,8 @@ export function createSearchLibraryPromptRequest(
     revealPolicy: options.revealPolicy || 'hidden',
     minSelections,
     maxSelections,
+    topCount: options.topCount,
+    putUnselectedTopCardsOnBottom: options.putUnselectedTopCardsOnBottom,
     legalChoices,
     invalidChoices,
     createdAt,
@@ -1812,6 +1821,8 @@ export function resolveTopStackSearchPrompt(
       sourceInstanceId,
       tapped: options.tapped ?? effect.tapped,
       shuffle: options.shuffle ?? effect.shuffle,
+      topCount: options.topCount ?? effect.topCount,
+      putUnselectedTopCardsOnBottom: options.putUnselectedTopCardsOnBottom ?? effect.putUnselectedTopCardsOnBottom,
       revealPolicy,
       createdAt,
     },
@@ -1933,6 +1944,25 @@ function applyBattlefieldEntryFromSearch(state: GameState, cardInstanceId: strin
   }
 
   return nextState;
+}
+
+function moveLibraryCardsToBottom(state: GameState, playerId: string, cardIds: string[]): GameState {
+  const moveSet = new Set(cardIds);
+  if (moveSet.size === 0) return state;
+  const otherEntries: [string, CardInstance][] = [];
+  const movedLibraryEntries: [string, CardInstance][] = [];
+  for (const [id, card] of state.cards) {
+    if (moveSet.has(id) && card.ownerId === playerId && card.zone === 'library') {
+      movedLibraryEntries.push([id, card]);
+    } else {
+      otherEntries.push([id, card]);
+    }
+  }
+  if (movedLibraryEntries.length === 0) return state;
+  return {
+    ...state,
+    cards: new Map([...otherEntries, ...movedLibraryEntries]),
+  };
 }
 
 export function applySearchLibraryPromptResponse(
@@ -2074,6 +2104,13 @@ export function applySearchLibraryPromptResponse(
       }
     }
     if (request.shuffle) nextState = executeShuffleLibrary(nextState, request.playerId);
+  }
+  if (request.putUnselectedTopCardsOnBottom && !request.shuffle) {
+    const selectedSet = new Set(selectedIds);
+    const unselectedTopIds = [...request.legalChoices, ...request.invalidChoices]
+      .map(choice => choice.cardInstanceId)
+      .filter(id => !selectedSet.has(id));
+    nextState = moveLibraryCardsToBottom(nextState, request.playerId, unselectedTopIds);
   }
 
   const invariantReport = validateStateInvariants(nextState);

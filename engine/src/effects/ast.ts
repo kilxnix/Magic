@@ -234,6 +234,8 @@ export interface SearchLibraryEffect {
   destination: 'battlefield' | 'hand' | 'top' | 'graveyard';
   tapped?: boolean;
   shuffle: boolean;
+  topCount?: number;
+  putUnselectedTopCardsOnBottom?: boolean;
   namedCardChoiceId?: string;
   selectedCardChoiceId?: string;
 }

@@ -3305,10 +3305,13 @@ export function useShelectorGame() {
         tutorPromptRequestRef.current = promptRequest;
         const filterDesc = search.filter ? ` for ${search.filter}` : '';
         const countSuffix = totalCount > 1 ? ` (pick 1 of up to ${totalCount})` : '';
-        setTutorTitle(`${resolvedSearch.sourceName}: Search your library${filterDesc}${countSuffix}`);
+        const scopeLabel = promptRequest.topCount
+          ? `look at the top ${promptRequest.topCount} card${promptRequest.topCount === 1 ? '' : 's'}`
+          : `search your library${filterDesc}`;
+        setTutorTitle(`${resolvedSearch.sourceName}: ${scopeLabel}${countSuffix}`);
         setTutorCards(pickerCards);
         setTutorPhase(true);
-        messages.push({ role: 'system', text: `${sourceName} — search your library${filterDesc}${countSuffix}.` });
+        messages.push({ role: 'system', text: `${sourceName} - ${scopeLabel}${countSuffix}.` });
         return true;
       };
 

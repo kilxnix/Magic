@@ -33,7 +33,7 @@ Source files audited:
 | 1. Single engine authority boundary | partial | `engine/src/authority.ts`, `actions-public.ts`, and authority tests exist. UI still has local orchestration and not every mutation is event-sourced. |
 | 2. Split spell casting, ability activation, resolution prompts | partial | Sisay cast/activation split is browser-proven. Generic typed prompt architecture is not complete. |
 | 3. Typed prompt lifecycle | partial | Search, library-choice, and Brainstorm hand-to-library-top prompts improved. No universal `ActionRequest` request-id/state-id system across all decisions. |
-| 4. Search predicates/response validation | partial | Sisay is browser-proven. Search picker and Farseek/fetch-style legality have UI proof. Not all search/tutor destinations are complete. |
+| 4. Search predicates/response validation | partial | Sisay is browser-proven. Search picker, Farseek/fetch-style legality, and Impulse-style top-N choices have UI/authority support. Not all search/tutor destinations are complete. |
 | 5. Stack and priority machine | partial | Stack/priority tests and UI paths exist. Full Arena-like priority stops/hold behavior is not complete. |
 | 6. Replacement effects on all zone changes | partial | Shock/fetch-style entry choices have tests/UI coverage in slices. Replacement coverage is not global. |
 | 7. One legal action generator everywhere | partial | Engine and AI moved closer to shared try/action paths. Review/coaching are not fully unified. |
@@ -94,7 +94,7 @@ Minimum acceptance bar from that file:
 | 1.3 No Clear Separation Between Legal Actions, Suggested Actions, And Coach Actions | partial |
 | 1.4 No Proven Canonical Event-Sourced State | not done |
 | 2.1 Sisay Legal Choice Filtering | browser-proven for tested flow |
-| 2.2 Search Legality In General | partial |
+| 2.2 Search Legality In General | partial; top-N search prompts now limit choices to the looked-at cards and bottom unselected cards for Impulse-style effects |
 | 2.3 Card Type Constraints | partial |
 | 2.4 Mana Value Constraints | partial |
 | 2.5 Continuous Effects And Layers | partial |

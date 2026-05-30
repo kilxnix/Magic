@@ -29,7 +29,7 @@ Area table:
 | P0 | partial | deck-import | Add importer golden corpus for real exported lists and bad-data cases. |
 | P0 | partial | equipment-auras | Add UI certification for equip and illegal attachment SBAs. |
 | P0 | partial | high-power-chaos-regression | Run long-mode chaos regularly and promote every found failure into a targeted regression. |
-| P0 | partial | library-search-tutors | Replace deterministic tutor shortcuts with choice UI that supports named card, top-library, graveyard, exile, and battlefield destinations. |
+| P0 | partial | library-search-tutors | Top-library look effects now support limited top-N prompts with unselected looked-at cards moved to bottom for Impulse-style effects; continue replacing deterministic tutor shortcuts with choice UI that supports named card, top-library, graveyard, exile, and battlefield destinations. |
 | P0 | partial | mana-system | Add complete coverage for conditional lands, color choice UI, delayed/restricted mana, and mana replacement/multipliers. |
 | P0 | partial | oracle-parser-coverage | Run parser coverage against full card database and classify unsupported syntax clusters. |
 | P0 | partial | replacement-prevention | Add affected-player ordering choices when multiple replacements apply and expand cannot-lose/win replacement fixtures. |

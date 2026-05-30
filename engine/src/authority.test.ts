@@ -1303,6 +1303,45 @@ describe('authority action boundary', () => {
     expect(libraryOrder.slice(0, 4)).toEqual(['opt-hand', 'ponder-hand', 'island-library', 'bolt-library']);
   });
 
+  it('limits top-library search prompts and bottoms unselected looked-at cards', () => {
+    const state = stateWithForestInHand();
+    const cards = [
+      def('top-1', 'Top One', 'Instant', '{U}'),
+      def('top-2', 'Top Two', 'Instant', '{U}'),
+      def('top-3', 'Top Three', 'Instant', '{U}'),
+      def('top-4', 'Top Four', 'Instant', '{U}'),
+      def('top-5', 'Top Five', 'Instant', '{U}'),
+    ];
+    for (const cardDef of cards) {
+      state.cardDefinitions.set(cardDef.id, cardDef);
+      state.cards.set(`${cardDef.id}-library`, cardInstance(`${cardDef.id}-library`, cardDef.id, 'p1', 'library'));
+    }
+
+    const request = createSearchLibraryPromptRequest(state, 'p1', {}, 'hand', {
+      id: 'prompt-top-four',
+      topCount: 4,
+      putUnselectedTopCardsOnBottom: true,
+      minSelections: 1,
+      maxSelections: 1,
+      createdAt: 44,
+    });
+
+    expect(request.legalChoices.map(choice => choice.cardName)).toEqual(['Top One', 'Top Two', 'Top Three', 'Top Four']);
+    const accepted = applySearchLibraryPromptResponse(state, request, {
+      requestId: request.id,
+      kind: 'SearchLibrary',
+      playerId: 'p1',
+      selectedCardInstanceIds: ['top-2-library'],
+    });
+
+    expect(accepted.ok).toBe(true);
+    expect(accepted.state?.cards.get('top-2-library')?.zone).toBe('hand');
+    const libraryOrder = [...accepted.state!.cards.values()]
+      .filter(card => card.ownerId === 'p1' && card.zone === 'library')
+      .map(card => card.instanceId);
+    expect(libraryOrder).toEqual(['top-5-library', 'top-1-library', 'top-3-library', 'top-4-library']);
+  });
+
   it('validates opening mulligan card selections before redraw and bottom decisions', () => {
     const state = stateWithForestInHand();
     const forest = [...state.cards.values()].find(card => card.definitionId === 'forest' && card.ownerId === 'p1');

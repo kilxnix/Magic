@@ -599,7 +599,7 @@ registerOverrideByName('Consider', {
   targets: [],
 });
 
-// Impulse — choose a card from the top four; simplified to putting one library card into hand.
+// Impulse - choose a card from the top four, put the rest on bottom.
 registerOverrideByName('Impulse', {
   kind: 'Spell',
   effects: [
@@ -609,6 +609,8 @@ registerOverrideByName('Impulse', {
       filter: {},
       destination: 'hand',
       shuffle: false,
+      topCount: 4,
+      putUnselectedTopCardsOnBottom: true,
     },
   ],
   targets: [],
