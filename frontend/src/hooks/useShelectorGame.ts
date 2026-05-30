@@ -534,7 +534,7 @@ function toSimpleCard(inst: CardInstance, def: CardDefinition): SimpleCard {
     cardTypes: def.card_types as string[],
     isCommander: inst.isCommander,
     counters: inst.counters,
-    isToken: inst.instanceId.startsWith('token_inst_'),
+    isToken: inst.isToken === true || inst.instanceId.startsWith('token_inst_'),
     attachedTo: inst.attachedTo,
   };
 }

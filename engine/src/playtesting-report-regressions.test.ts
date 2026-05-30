@@ -403,6 +403,47 @@ describe('playtesting report regressions', () => {
     expect(state.players.find(player => player.id === 'p2')?.life).toBe(36);
   });
 
+  it('creates tokens for the active opponent from each-opponent end step triggers', () => {
+    const spymaster = creature(
+      'goblin-spymaster',
+      'Goblin Spymaster',
+      'First strike\nAt the beginning of each opponent\'s end step, that player creates a 1/1 red Goblin creature token with "This creature can\'t block."',
+      2,
+      1,
+    );
+
+    let state = initGameState([
+      { playerId: 'p1', name: 'Controller', commanderId: 'none', cards: [spymaster] },
+      { playerId: 'p2', name: 'Opponent', commanderId: 'none', cards: [] },
+    ]);
+
+    state = moveFirstNamed(state, 'Goblin Spymaster', 'battlefield', false);
+    const spymasterInstance = getCardsInZone(state, 'p1', 'battlefield')
+      .find(instance => state.cardDefinitions.get(instance.definitionId)?.name === 'Goblin Spymaster');
+    expect(spymasterInstance).toBeDefined();
+    state = registerBattlefieldAbilities(state, spymasterInstance!.instanceId);
+
+    state = {
+      ...state,
+      phase: 'ending',
+      step: 'end',
+      activePlayerIndex: 1,
+      priorityPlayerIndex: 1,
+    };
+
+    state = checkTriggersForEvent(state, { kind: 'EndStepStart', activePlayerId: 'p2' });
+    state = putTriggersOnStack(state);
+    state = resolveTopOfStack(state);
+
+    const goblinToken = getCardsInZone(state, 'p2', 'battlefield').find(instance => instance.isToken);
+    expect(goblinToken).toBeDefined();
+    const tokenDef = state.cardDefinitions.get(goblinToken!.definitionId);
+    expect(tokenDef?.name).toBe('Goblin');
+    expect(tokenDef?.colors).toEqual(['R']);
+    expect(tokenDef?.card_types).toContain('creature');
+    expect(tokenDef?.type_line.toLowerCase()).toContain('goblin');
+  });
+
   it('removes triggered and continuous effects when their source is bounced', () => {
     const rhystic = card(
       'rhystic',
