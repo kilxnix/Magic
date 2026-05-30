@@ -18,6 +18,7 @@ import { passPriority } from './priority';
 import { declareAttackers, declareBlockers, hasPlayerDeclaredBlockers } from './combat';
 import { LoopDetector, checkWinConditions } from './win-conditions';
 import { findCastZoneRestriction, getCommanderTaxForCast } from './casting-restrictions';
+import { getCommanderDestinationZone } from './commander';
 import { populateParsedCache } from './cards/card-parser-cache';
 import { getCostIncrease, getCostReduction, getIntrinsicCostReduction } from './effects/continuous';
 import { executeEffects } from './effects/executor';
@@ -665,7 +666,8 @@ export function tryMoveCardManually(
   const card = state.cards.get(cardInstanceId);
   if (!card) return fail('card_not_found', 'Card not found');
   if (card.zone === 'stack') return fail('wrong_phase', 'Cards on the stack must resolve or be countered through the stack');
-  if (card.zone === zone) return fail('illegal_target', `Card is already in ${zone}`);
+  const finalZone = getCommanderDestinationZone(state, cardInstanceId, zone);
+  if (card.zone === finalZone) return fail('illegal_target', `Card is already in ${finalZone}`);
   if (!['hand', 'battlefield', 'graveyard', 'exile', 'command'].includes(zone)) {
     return fail('illegal_target', 'Unsupported destination zone');
   }
@@ -675,21 +677,21 @@ export function tryMoveCardManually(
   if (zone === 'battlefield' && !def.card_types.some(type => permanentTypes.includes(type))) {
     return fail('illegal_target', 'Only permanent cards can be moved to the battlefield');
   }
-  if (zone === 'command' && !card.isCommander) {
+  if (finalZone === 'command' && !card.isCommander) {
     return fail('illegal_target', 'Only commanders can be moved to the command zone');
   }
 
   const cards = new Map(state.cards);
   const from = card.zone;
-  if (card.isToken && zone !== 'battlefield') {
+  if (card.isToken && finalZone !== 'battlefield') {
     cards.delete(card.instanceId);
   } else {
     cards.set(cardInstanceId, {
       ...card,
-      zone,
+      zone: finalZone,
       tapped: false,
-      summoningSick: zone === 'battlefield',
-      counters: zone === 'battlefield' ? card.counters : {},
+      summoningSick: finalZone === 'battlefield',
+      counters: finalZone === 'battlefield' ? card.counters : {},
       damage: 0,
       attachedTo: undefined,
     });
@@ -707,7 +709,7 @@ export function tryMoveCardManually(
       playerId,
       cardId: cardInstanceId,
       from,
-      to: zone,
+      to: finalZone,
       manual: true,
     },
     ...runWinCheck(next),

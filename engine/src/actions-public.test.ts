@@ -628,6 +628,37 @@ describe('tryMoveCardManually', () => {
     if (!result.ok) return;
     expect(result.state.cards.get('vanilla_creature_0')?.zone).toBe('command');
   });
+
+  it('applies commander replacement when manually moved to graveyard or exile', () => {
+    const state = makeTestState({ battlefieldCreature: true });
+    state.cards.set('vanilla_creature_0', {
+      ...state.cards.get('vanilla_creature_0')!,
+      isCommander: true,
+      tapped: true,
+      counters: { '+1/+1': 1 },
+      damage: 2,
+    });
+    state.players[0] = {
+      ...state.players[0],
+      commanderInstanceId: 'vanilla_creature_0',
+      commanderInstanceIds: ['vanilla_creature_0'],
+    };
+
+    const result = tryMoveCardManually(state, 'human', 'vanilla_creature_0', 'graveyard');
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const moved = result.state.cards.get('vanilla_creature_0');
+    expect(moved?.zone).toBe('command');
+    expect(moved?.tapped).toBe(false);
+    expect(moved?.counters).toEqual({});
+    expect(moved?.damage).toBe(0);
+    expect(result.events).toContainEqual(expect.objectContaining({
+      kind: 'CardMovedManually',
+      from: 'battlefield',
+      to: 'command',
+    }));
+  });
 });
 
 describe('tryAttachCardManually', () => {
