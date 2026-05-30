@@ -102,6 +102,7 @@ import {
 import {
   buildDecisionReview,
   coachMessageFromDecision,
+  isLikelyInfiniteComboAction,
   playByPlayFromDecision,
   type DecisionReview,
 } from '../lib/turnReview';
@@ -5309,7 +5310,11 @@ export function useShelectorGame() {
           try {
             const allActions = getLegalActions(engine, humanIdRef.current);
             // Only evaluate if there were real choices (not just pass)
-            const meaningfulActions = allActions.filter(a => a.kind !== 'PassPriority' && a.kind !== 'ActivateManaAbility');
+            const meaningfulActions = allActions.filter(a =>
+              a.kind !== 'PassPriority'
+              && a.kind !== 'ActivateManaAbility'
+              && !isLikelyInfiniteComboAction(engine, a)
+            );
             if (meaningfulActions.length > 1) {
               const ranked = evaluateActions(engine, humanIdRef.current, meaningfulActions);
               const humanIdx = ranked.findIndex(r => {

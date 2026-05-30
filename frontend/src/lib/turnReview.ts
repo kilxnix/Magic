@@ -105,6 +105,21 @@ export function describeReviewAction(state: GameState, action: AIAction): string
   }
 }
 
+export function isLikelyInfiniteComboAction(state: GameState, action: AIAction): boolean {
+  const cardInstanceId =
+    action.kind === 'CastSpell' || action.kind === 'ActivateAbility' || action.kind === 'ActivateManaAbility'
+      ? action.cardInstanceId
+      : action.kind === 'Equip'
+        ? action.equipmentInstanceId
+        : undefined;
+  if (!cardInstanceId) return false;
+  const inst = state.cards.get(cardInstanceId);
+  const def = inst ? getCardDefinition(state, inst) : undefined;
+  if (!def) return false;
+  const text = `${def.name}\n${def.oracle_text}`.toLowerCase();
+  return /\binfinite\b|\bcombo\b|repeat this process|any number of times|arbitrarily/.test(text);
+}
+
 export function ratingFromDecisionDelta(delta: number, selectedIsBest: boolean): ReviewRating {
   if (selectedIsBest || delta <= 0.5) return 'excellent';
   if (delta <= 1.5) return 'good';
@@ -120,13 +135,21 @@ export function buildDecisionReview(
   legalActions: ReviewableLegalAction[],
 ): DecisionReview | undefined {
   const started = Date.now();
-  const reviewableActions = legalActions
+  const selectedIdentity = actionIdentity(selectedAction._engineAction);
+  const rawReviewableActions = legalActions
     .filter(action => action._engineAction && action.kind !== 'ActivateManaAbility')
     .slice(0, 50);
+  const comboFilteredCount = rawReviewableActions.filter(action =>
+    actionIdentity(action._engineAction) !== selectedIdentity
+    && isLikelyInfiniteComboAction(state, action._engineAction)
+  ).length;
+  const reviewableActions = rawReviewableActions.filter(action =>
+    actionIdentity(action._engineAction) === selectedIdentity
+    || !isLikelyInfiniteComboAction(state, action._engineAction)
+  );
 
   if (reviewableActions.length === 0) return undefined;
 
-  const selectedIdentity = actionIdentity(selectedAction._engineAction);
   const ranked = evaluateActions(state, playerId, reviewableActions.map(action => action._engineAction));
   const selectedEval = ranked.find(evaluation => actionIdentity(evaluation.action) === selectedIdentity);
   const selectedScore = selectedEval?.score ?? 0;
@@ -158,6 +181,9 @@ export function buildDecisionReview(
   }
   if (reviewableActions.length > 25) {
     confidenceReasons.push('Large decision tree was capped for speed.');
+  }
+  if (comboFilteredCount > 0) {
+    confidenceReasons.push('Likely infinite-combo lines are excluded from general coaching suggestions.');
   }
   if (
     selectedAction._engineAction.kind === 'CastSpell' &&
