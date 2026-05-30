@@ -381,6 +381,9 @@ export interface TokenDefinition {
 
 // Card filter for sacrifice/search effects
 export interface CardFilter {
+  anyOf?: CardFilter[];
+  names?: string[];
+  nameIncludes?: string[];
   types?: string[];
   subtypes?: string[];
   excludeSubtypes?: string[];

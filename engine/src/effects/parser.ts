@@ -502,12 +502,32 @@ function matchLookAtTargetPlayerHand(tokens: string[], startIndex: number): Patt
   return { effects: [effect], targets: [spec], consumed };
 }
 
+function parseRevealCardFilter(tokens: string[]): CardFilter {
+  const meaningful = tokens.filter(token =>
+    token !== ',' && token !== 'and' && token !== 'or' && token !== 'a' && token !== 'an'
+  );
+  if (meaningful.length === 0) return {};
+
+  const cardTypes = new Set(['artifact', 'battle', 'creature', 'enchantment', 'instant', 'land', 'planeswalker', 'sorcery']);
+  const subfilters: CardFilter[] = [];
+
+  for (const token of meaningful) {
+    if (cardTypes.has(token)) {
+      subfilters.push({ types: [token] });
+    } else {
+      const label = token.charAt(0).toUpperCase() + token.slice(1);
+      subfilters.push({ subtypes: [label] });
+      subfilters.push({ nameIncludes: [label] });
+    }
+  }
+
+  return subfilters.length === 1 ? subfilters[0] : { anyOf: subfilters };
+}
+
 /**
  * Match filtering spells like:
- * "look at the top three cards of your library. put one of them into your hand..."
- *
- * The current engine has no live card-selection prompt for this family yet, so
- * the executable behavior is the conservative training shortcut: draw one.
+ * "look at the top three cards of your library. You may reveal a Human card
+ * from among them and put it into your hand..."
  */
 function matchLookAtTopPutOneIntoHand(tokens: string[], startIndex: number): PatternResult {
   const slice = tokens.slice(startIndex);
@@ -520,8 +540,25 @@ function matchLookAtTopPutOneIntoHand(tokens: string[], startIndex: number): Pat
   if (slice[5] !== 'cards' || slice[6] !== 'of' || slice[7] !== 'your' || slice[8] !== 'library') return null;
 
   let idx = 9;
+  let filter: CardFilter = {};
+
+  const revealIdx = slice.indexOf('reveal', idx);
+  if (revealIdx >= 0) {
+    let filterStart = revealIdx + 1;
+    if (slice[filterStart] === 'a' || slice[filterStart] === 'an') filterStart++;
+    let filterEnd = filterStart;
+    while (filterEnd < slice.length && slice[filterEnd] !== 'card' && slice[filterEnd] !== 'cards') {
+      filterEnd++;
+    }
+    if (filterEnd < slice.length) {
+      filter = parseRevealCardFilter(slice.slice(filterStart, filterEnd));
+    }
+    idx = filterEnd;
+  }
+
   while (idx < slice.length) {
     if (slice[idx] === 'put' && slice[idx + 1] === 'one' && slice[idx + 2] === 'of') break;
+    if (slice[idx] === 'put' && slice[idx + 1] === 'it' && slice[idx + 2] === 'into') break;
     idx++;
   }
   if (idx >= slice.length) return null;
@@ -533,9 +570,14 @@ function matchLookAtTopPutOneIntoHand(tokens: string[], startIndex: number): Pat
   if (slice[consumed] === '.') consumed++;
 
   const effect: Effect = {
-    kind: 'Draw',
+    kind: 'SearchLibrary',
     player: { kind: 'Controller' },
-    count: 1,
+    filter,
+    destination: 'hand',
+    shuffle: false,
+    topCount: lookedAt,
+    putUnselectedTopCardsOnBottom: true,
+    selectedCardChoiceId: 'lookTopCardId',
   };
 
   return { effects: [effect], targets: [], consumed };

@@ -1068,6 +1068,41 @@ describe('parseOracleText', () => {
 
   // 4. "Search your library for a card" (generic tutor)
   describe('generic tutor patterns', () => {
+    it('parses look-at-top reveal filters into a top-library search prompt effect', () => {
+      const result = parseOracleText('Look at the top four cards of your library. You may reveal a Human card from among them and put it into your hand. Put the rest on the bottom of your library in any order.');
+      expect(result.kind).toBe('Spell');
+      if (result.kind !== 'Spell') return;
+      expect(result.effects[0]).toMatchObject({
+        kind: 'SearchLibrary',
+        filter: {
+          anyOf: [
+            { subtypes: ['Human'] },
+            { nameIncludes: ['Human'] },
+          ],
+        },
+        destination: 'hand',
+        topCount: 4,
+        putUnselectedTopCardsOnBottom: true,
+        selectedCardChoiceId: 'lookTopCardId',
+      });
+    });
+
+    it('parses multiple reveal filters from top-library selection effects', () => {
+      const result = parseOracleText('Look at the top five cards of your library. You may reveal an Elf, Warrior, or Tyvar card from among them and put it into your hand. Put the rest on the bottom of your library in a random order.');
+      expect(result.kind).toBe('Spell');
+      if (result.kind !== 'Spell') return;
+      expect(result.effects[0]).toMatchObject({
+        kind: 'SearchLibrary',
+        filter: {
+          anyOf: expect.arrayContaining([
+            { subtypes: ['Elf'] },
+            { nameIncludes: ['Tyvar'] },
+          ]),
+        },
+        topCount: 5,
+      });
+    });
+
     it('parses "Search your library for a card, put it into your hand, then shuffle."', () => {
       const result = parseOracleText('Search your library for a card, put it into your hand, then shuffle.');
       expect(result.kind).toBe('Spell');

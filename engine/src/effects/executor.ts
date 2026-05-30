@@ -957,6 +957,23 @@ function isPermanentDefinition(def: CardDefinition): boolean {
  * Check if a card definition matches a CardFilter.
  */
 export function matchesCardFilter(def: CardDefinition, filter: CardFilter, context: CardFilterContext = {}): boolean {
+  if (filter.anyOf && !filter.anyOf.some(candidate => matchesCardFilter(def, candidate, context))) {
+    return false;
+  }
+
+  if (filter.names) {
+    const wantedNames = filter.names.map(name => name.trim().toLowerCase());
+    if (!wantedNames.includes(def.name.trim().toLowerCase())) return false;
+  }
+
+  if (filter.nameIncludes) {
+    const lowerName = def.name.toLowerCase();
+    const hasMatchingName = filter.nameIncludes.some(fragment =>
+      lowerName.includes(fragment.trim().toLowerCase())
+    );
+    if (!hasMatchingName) return false;
+  }
+
   if (filter.permanent && !isPermanentDefinition(def)) {
     return false;
   }
