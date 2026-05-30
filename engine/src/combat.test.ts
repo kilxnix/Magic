@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { canDeclareAttacker, declareAttackers, canDeclareBlocker, declareBlockers, resolveCombatDamage } from './combat';
+import { canDeclareAttacker, declareAttackers, canDeclareBlocker, declareBlockers, getRequiredAttackers, resolveCombatDamage } from './combat';
 import { getCardsInZone, initGameState } from './game-state';
 import { CardDefinition, CombatState } from './types';
 
@@ -34,6 +34,23 @@ function makeWall(): CardDefinition {
     card_types: ['creature'],
     power: 0,
     toughness: 8,
+  };
+}
+
+function makeMustAttack(id: string = 'must-attack'): CardDefinition {
+  return {
+    id,
+    name: 'Reckless Raider',
+    type_line: 'Creature - Goblin Warrior',
+    oracle_text: 'Reckless Raider attacks each combat if able.',
+    mana_cost: '{1}{R}',
+    cmc: 2,
+    colors: ['R'],
+    color_identity: ['R'],
+    keywords: [],
+    card_types: ['creature'],
+    power: 2,
+    toughness: 1,
   };
 }
 
@@ -188,6 +205,43 @@ describe('Declare Attackers', () => {
       const attacks = [{ cardInstanceId: creatures[0].instanceId, defendingPlayerId: 'p2' }];
       expect(() => declareAttackers(state, 'p1', attacks)).toThrow();
     });
+  });
+
+  it('requires creatures with attacks-each-combat-if-able to attack', () => {
+    const decks = [
+      { playerId: 'p1', name: 'Alice', cards: [makeMustAttack(), makeBear('bear-optional')], commanderId: 'cmd1' },
+      { playerId: 'p2', name: 'Bob', cards: [], commanderId: 'cmd2' },
+    ];
+    let state = initGameState(decks);
+    for (const [id, card] of state.cards) {
+      state.cards.set(id, { ...card, zone: 'battlefield', summoningSick: false });
+    }
+    state = { ...state, phase: 'combat', step: 'declare_attackers' };
+    const required = getCardsInZone(state, 'p1', 'battlefield')
+      .find(card => state.cardDefinitions.get(card.definitionId)?.name === 'Reckless Raider')!;
+    const optional = getCardsInZone(state, 'p1', 'battlefield')
+      .find(card => state.cardDefinitions.get(card.definitionId)?.name === 'Grizzly Bears')!;
+
+    expect(getRequiredAttackers(state, 'p1')).toEqual([required.instanceId]);
+    expect(() => declareAttackers(state, 'p1', [])).toThrow('attacks each combat if able');
+    expect(() => declareAttackers(state, 'p1', [{ cardInstanceId: optional.instanceId, defendingPlayerId: 'p2' }]))
+      .toThrow('attacks each combat if able');
+    const next = declareAttackers(state, 'p1', [{ cardInstanceId: required.instanceId, defendingPlayerId: 'p2' }]);
+    expect(next.combat?.attackers.map(attack => attack.cardInstanceId)).toEqual([required.instanceId]);
+  });
+
+  it('does not require tapped or summoning-sick must-attack creatures', () => {
+    const decks = [
+      { playerId: 'p1', name: 'Alice', cards: [makeMustAttack()], commanderId: 'cmd1' },
+      { playerId: 'p2', name: 'Bob', cards: [], commanderId: 'cmd2' },
+    ];
+    let state = initGameState(decks);
+    const required = getCardsInZone(state, 'p1', 'library')[0];
+    state.cards.set(required.instanceId, { ...required, zone: 'battlefield', summoningSick: true });
+    state = { ...state, phase: 'combat', step: 'declare_attackers' };
+
+    expect(getRequiredAttackers(state, 'p1')).toEqual([]);
+    expect(() => declareAttackers(state, 'p1', [])).not.toThrow();
   });
 });
 

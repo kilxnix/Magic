@@ -1,5 +1,5 @@
 import { AttackerDeclaration, BlockerDeclaration, CardInstance, CombatState, GameState, Player } from './types';
-import { getPlayer } from './game-state';
+import { getCardDefinition, getPlayer } from './game-state';
 import {
   canAttackThisTurn,
   shouldTapWhenAttacking,
@@ -33,14 +33,45 @@ export function canDeclareAttacker(state: GameState, playerId: string, cardInsta
   return true;
 }
 
+export function mustAttackIfAble(state: GameState, cardInstanceId: string): boolean {
+  const card = state.cards.get(cardInstanceId);
+  if (!card) return false;
+  const def = getCardDefinition(state, card);
+  return /\battacks\s+(?:each|every)\s+combat\s+if\s+able\b/i.test(def.oracle_text)
+    || /\battacks\s+each\s+turn\s+if\s+able\b/i.test(def.oracle_text);
+}
+
+export function getRequiredAttackers(state: GameState, playerId: string): string[] {
+  return [...state.cards.values()]
+    .filter(card => card.ownerId === playerId && card.zone === 'battlefield')
+    .filter(card => canDeclareAttacker(state, playerId, card.instanceId))
+    .filter(card => mustAttackIfAble(state, card.instanceId))
+    .map(card => card.instanceId);
+}
+
 export function declareAttackers(state: GameState, playerId: string, attacks: AttackerDeclaration[]): GameState {
+  const declaredAttackers = new Set<string>();
+
   // Validate all attackers
   for (const attack of attacks) {
+    if (declaredAttackers.has(attack.cardInstanceId)) {
+      throw new Error(`Duplicate attacker: ${attack.cardInstanceId}`);
+    }
+    declaredAttackers.add(attack.cardInstanceId);
+
     // Defending player must exist
     getPlayer(state, attack.defendingPlayerId);
 
     if (!canDeclareAttacker(state, playerId, attack.cardInstanceId)) {
       throw new Error(`Cannot declare attacker: ${attack.cardInstanceId}`);
+    }
+  }
+
+  for (const requiredAttackerId of getRequiredAttackers(state, playerId)) {
+    if (!declaredAttackers.has(requiredAttackerId)) {
+      const card = state.cards.get(requiredAttackerId);
+      const name = card ? getCardDefinition(state, card).name : requiredAttackerId;
+      throw new Error(`${name} attacks each combat if able`);
     }
   }
 

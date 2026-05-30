@@ -717,6 +717,43 @@ describe('getLegalActions', () => {
       expect(attackActions).toHaveLength(1);
       expect(attackActions[0]).toEqual({ kind: 'DeclareAttackers', attacks: [] });
     });
+
+    it('does not offer no-attack or optional-only attacks when a creature must attack if able', () => {
+      const state = createTestState({
+        activePlayerIndex: 0,
+        priorityPlayerIndex: 0,
+        phase: 'combat',
+        step: 'declare_attackers',
+      });
+
+      addCard(state, 'required1', 'p1', 'battlefield', {
+        name: 'Reckless Raider',
+        type_line: 'Creature - Goblin Warrior',
+        oracle_text: 'Reckless Raider attacks each combat if able.',
+        card_types: ['creature'],
+        power: 2,
+        toughness: 1,
+      });
+      addCard(state, 'optional1', 'p1', 'battlefield', {
+        name: 'Grizzly Bears',
+        type_line: 'Creature - Bear',
+        card_types: ['creature'],
+        power: 2,
+        toughness: 2,
+      });
+      state.cards.get('required1')!.summoningSick = false;
+      state.cards.get('optional1')!.summoningSick = false;
+
+      const attackActions = getLegalActions(state, 'p1').filter(a => a.kind === 'DeclareAttackers');
+
+      expect(attackActions.some(action => action.attacks.length === 0)).toBe(false);
+      expect(attackActions.some(action =>
+        action.attacks.length === 1 && action.attacks[0].cardInstanceId === 'optional1'
+      )).toBe(false);
+      expect(attackActions.some(action =>
+        action.attacks.some(attack => attack.cardInstanceId === 'required1')
+      )).toBe(true);
+    });
   });
 
   describe('DeclareBlockers actions', () => {

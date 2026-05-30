@@ -8,7 +8,7 @@ import { GameState, CardInstance, AttackerDeclaration, BlockerDeclaration, isSpe
 import { getCardsInZone, getCardDefinition } from '../game-state';
 import { canCastSpell, getAdditionalLifeCostForCast, getCastSpellDefinition, getEffectiveCastCost, type CastSpellOptions } from '../stack';
 import { canPlayLand, getActivatedAbilities, canActivateAbility, isBlockedBySummoningSicknessForTap, getAvailableManaColors } from '../actions';
-import { canDeclareAttacker, canDeclareBlocker, hasPlayerDeclaredBlockers } from '../combat';
+import { canDeclareAttacker, canDeclareBlocker, getRequiredAttackers, hasPlayerDeclaredBlockers } from '../combat';
 import { canPaySpellCost, canPayUnrestrictedCost } from '../mana';
 import { getOverride } from '../effects/overrides';
 import { parseOracleText } from '../effects/parser';
@@ -668,6 +668,7 @@ function generateAttackerActions(state: GameState, playerId: string): DeclareAtt
   const defenders = state.players.filter((p, i) =>
     i !== playerIndex && !p.hasLost
   );
+  const requiredAttackerIds = new Set(getRequiredAttackers(state, playerId));
 
   if (defenders.length === 0) {
     // No valid defenders, can only pass
@@ -675,15 +676,32 @@ function generateAttackerActions(state: GameState, playerId: string): DeclareAtt
   }
 
   // Option 1: Attack with no creatures
-  actions.push({ kind: 'DeclareAttackers', attacks: [] });
+  if (requiredAttackerIds.size === 0) {
+    actions.push({ kind: 'DeclareAttackers', attacks: [] });
+  }
 
   // Option 2: Attack with each creature individually (against each defender)
-  for (const attacker of eligibleAttackers) {
+  if (requiredAttackerIds.size <= 1) {
+    for (const attacker of eligibleAttackers) {
+      if (requiredAttackerIds.size > 0 && !requiredAttackerIds.has(attacker.instanceId)) continue;
+      for (const defender of defenders) {
+        actions.push({
+          kind: 'DeclareAttackers',
+          attacks: [{ cardInstanceId: attacker.instanceId, defendingPlayerId: defender.id }],
+        });
+      }
+    }
+  }
+
+  if (requiredAttackerIds.size > 1) {
     for (const defender of defenders) {
-      actions.push({
-        kind: 'DeclareAttackers',
-        attacks: [{ cardInstanceId: attacker.instanceId, defendingPlayerId: defender.id }],
-      });
+      const requiredAttacks: AttackerDeclaration[] = eligibleAttackers
+        .filter(attacker => requiredAttackerIds.has(attacker.instanceId))
+        .map(attacker => ({
+          cardInstanceId: attacker.instanceId,
+          defendingPlayerId: defender.id,
+        }));
+      actions.push({ kind: 'DeclareAttackers', attacks: requiredAttacks });
     }
   }
 
