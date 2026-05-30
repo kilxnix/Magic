@@ -95,7 +95,7 @@ Minimum acceptance bar from that file:
 | 1.4 No Proven Canonical Event-Sourced State | partial/test-proven for engine event-log replay records and `/play` saved-game audit fields |
 | 2.1 Sisay Legal Choice Filtering | browser-proven for tested flow |
 | 2.2 Search Legality In General | partial; top-N search prompts now limit choices to the looked-at cards and bottom unselected cards for Impulse-style effects, ExileUntilNamed effects now prompt through a typed live named-card choice in `/play` with arbitrary card-name entry instead of forcing a hard-coded Oracle line, and unrestricted tutor prompts now require a selection when a card is findable while restricted hidden-library searches still allow fail-to-find. Room deck locking now has tested partner-commander/sideboard exclusion and decorated export cleanup before deck cards are sent to room state. |
-| 2.3 Card Type Constraints | partial/test-proven; engine card filters now match types, supertypes, and subtypes as separated type-line terms instead of broad substrings, with regression coverage for `land` not matching inside `Island` and subtype phrase matching such as `Time Lord`. |
+| 2.3 Card Type Constraints | partial/test-proven; engine card filters and prompt failure reasons now match types, supertypes, and subtypes as separated type-line terms instead of broad substrings, with regression coverage for `land` not matching inside `Island` and subtype phrase matching such as `Time Lord`. |
 | 2.4 Mana Value Constraints | partial |
 | 2.5 Continuous Effects And Layers | partial |
 | 2.6 Triggered Abilities | partial |
@@ -191,7 +191,7 @@ Additional picker-wording verification added after this audit: card/search picke
 
 Additional search-rule verification added after this audit: unrestricted tutor prompts now default to one required selection when the library contains a findable card, and a paired authority test confirms restricted hidden-library searches can still fail to find.
 
-Additional type-filter verification added after this audit: `matchesCardFilter` now separates type-line type/supertype terms from subtype terms before matching, so fetch/tutor filters no longer rely on broad substring checks.
+Additional type-filter verification added after this audit: `matchesCardFilter` and search prompt failure reasons now separate type-line type/supertype terms from subtype terms before matching, so fetch/tutor filters no longer rely on broad substring checks.
 
 Additional commander-zone verification added after this audit: manual move corrections now call commander replacement before mutation, so a commander moved toward graveyard/exile/hand by correction lands in command zone and the manual event reports the final command-zone destination. The `/play` manual correction message now reads from the resulting state so it says command zone instead of the requested graveyard/exile destination.
 

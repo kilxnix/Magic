@@ -1663,8 +1663,32 @@ function isPermanentDefinitionForPrompt(cardDef: CardDefinition): boolean {
   return ['artifact', 'battle', 'creature', 'enchantment', 'land', 'planeswalker']
     .some(type => (
       cardDef.card_types.includes(type as CardDefinition['card_types'][number])
-      || cardDef.type_line.toLowerCase().includes(type)
+      || promptTypeLineSectionHasTerm(cardDef.type_line, 'types', type)
     ));
+}
+
+function normalizePromptTypeLineDashes(text: string): string {
+  return text.replace(/[\u2013\u2014]|\u00e2\u20ac[\u201c\u201d]/g, '-');
+}
+
+function normalizePromptTypeTerm(text: string): string {
+  return normalizePromptTypeLineDashes(text).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+function promptTypeLineSections(typeLine: string): { types: string; subtypes: string } {
+  const normalized = normalizePromptTypeLineDashes(typeLine);
+  const [types, ...subtypes] = normalized.split(/\s+-\s+/);
+  return {
+    types: normalizePromptTypeTerm(types || ''),
+    subtypes: normalizePromptTypeTerm(subtypes.join(' ')),
+  };
+}
+
+function promptTypeLineSectionHasTerm(typeLine: string, section: 'types' | 'subtypes', term: string): boolean {
+  const normalizedTerm = normalizePromptTypeTerm(term);
+  if (!normalizedTerm) return false;
+  const sections = promptTypeLineSections(typeLine);
+  return ` ${sections[section]} `.includes(` ${normalizedTerm} `);
 }
 
 function matchesNumericPromptFilter(
@@ -1692,8 +1716,6 @@ function searchFilterFailureReason(
   filter: CardFilter,
   sourceInstanceId?: string,
 ): string {
-  const typeLine = def.type_line.toLowerCase();
-
   if (filter.permanent && !isPermanentDefinitionForPrompt(def)) {
     return 'Not a permanent card';
   }
@@ -1701,23 +1723,29 @@ function searchFilterFailureReason(
   if (filter.types?.length) {
     const hasMatchingType = filter.types.some(type =>
       def.card_types.includes(type as CardDefinition['card_types'][number])
-      || typeLine.includes(type.toLowerCase()),
+      || promptTypeLineSectionHasTerm(def.type_line, 'types', type),
     );
     if (!hasMatchingType) return `Not a ${filter.types.join(' or ')} card`;
   }
 
   if (filter.subtypes?.length) {
-    const hasMatchingSubtype = filter.subtypes.some(subtype => typeLine.includes(subtype.toLowerCase()));
+    const hasMatchingSubtype = filter.subtypes.some(subtype =>
+      promptTypeLineSectionHasTerm(def.type_line, 'subtypes', subtype)
+    );
     if (!hasMatchingSubtype) return `Missing subtype ${filter.subtypes.join(' or ')}`;
   }
 
   if (filter.excludeSubtypes?.length) {
-    const hasExcludedSubtype = filter.excludeSubtypes.some(subtype => typeLine.includes(subtype.toLowerCase()));
+    const hasExcludedSubtype = filter.excludeSubtypes.some(subtype =>
+      promptTypeLineSectionHasTerm(def.type_line, 'subtypes', subtype)
+    );
     if (hasExcludedSubtype) return `Has excluded subtype ${filter.excludeSubtypes.join(' or ')}`;
   }
 
   if (filter.supertypes?.length) {
-    const hasMatchingSupertype = filter.supertypes.some(supertype => typeLine.includes(supertype.toLowerCase()));
+    const hasMatchingSupertype = filter.supertypes.some(supertype =>
+      promptTypeLineSectionHasTerm(def.type_line, 'types', supertype)
+    );
     if (!hasMatchingSupertype) return `Not ${filter.supertypes.join(' or ')}`;
   }
 

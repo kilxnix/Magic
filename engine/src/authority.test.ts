@@ -951,6 +951,12 @@ describe('authority action boundary', () => {
 
   it('limits fetch-land search prompts by land subtype instead of card name', () => {
     const state = stateWithFetchSearchTargets();
+    const islandScout = {
+      ...def('island_scout_fetch', 'Island Scout', 'Creature - Merfolk', ''),
+      cmc: 2,
+    };
+    state.cardDefinitions.set(islandScout.id, islandScout);
+    state.cards.set('island_scout_fetch_1', cardInstance('island_scout_fetch_1', islandScout.id, 'p1', 'library'));
     const filter: CardFilter = { types: ['land'], subtypes: ['Mountain', 'Plains'] };
     const request = createSearchLibraryPromptRequest(state, 'p1', filter, 'battlefield', {
       id: 'prompt-arid-mesa-fetch',
@@ -979,6 +985,11 @@ describe('authority action boundary', () => {
         cardInstanceId: 'arid_mesa_fetch_1',
         cardName: 'Arid Mesa',
         reason: 'Missing subtype Mountain or Plains',
+      }),
+      expect.objectContaining({
+        cardInstanceId: 'island_scout_fetch_1',
+        cardName: 'Island Scout',
+        reason: 'Not a land card',
       }),
     ]));
 
