@@ -19,7 +19,7 @@ import { declareAttackers, declareBlockers, hasPlayerDeclaredBlockers } from './
 import { LoopDetector, checkWinConditions } from './win-conditions';
 import { findCastZoneRestriction, getCommanderTaxForCast } from './casting-restrictions';
 import { populateParsedCache } from './cards/card-parser-cache';
-import { getCostReduction } from './effects/continuous';
+import { getCostReduction, getIntrinsicCostReduction } from './effects/continuous';
 import { executeEffects } from './effects/executor';
 import type { Effect } from './effects/ast';
 
@@ -190,7 +190,7 @@ function reduceGenericCost(
   cost: ManaCost,
   def: ReturnType<typeof getCardDefinition>,
 ): ManaCost {
-  const reduction = Math.min(cost.generic, getCostReduction(state, playerId, def));
+  const reduction = Math.min(cost.generic, getCostReduction(state, playerId, def) + getIntrinsicCostReduction(state, playerId, def));
   return reduction > 0 ? { ...cost, generic: cost.generic - reduction } : cost;
 }
 

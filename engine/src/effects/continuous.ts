@@ -347,6 +347,88 @@ export function getCostReduction(
   return reduction;
 }
 
+type CostReductionController = 'you' | 'opponents' | 'any';
+
+function subjectMatchesCostReduction(def: CardDefinition, subject: string): boolean {
+  const normalized = subject.toLowerCase().replace(/\s+/g, ' ').trim();
+  const typeLine = def.type_line.toLowerCase();
+  const hasType = (type: string) => (
+    def.card_types.includes(type as CardDefinition['card_types'][number])
+    || typeLine.includes(type)
+  );
+
+  if (/\bnonland permanent/.test(normalized)) return !hasType('land') && ['artifact', 'battle', 'creature', 'enchantment', 'land', 'planeswalker'].some(hasType);
+  if (/\bpermanent/.test(normalized)) return ['artifact', 'battle', 'creature', 'enchantment', 'land', 'planeswalker'].some(hasType);
+  if (/\bartifact/.test(normalized)) return hasType('artifact');
+  if (/\bcreature/.test(normalized)) return hasType('creature');
+  if (/\benchantment/.test(normalized)) return hasType('enchantment');
+  if (/\bland/.test(normalized)) return hasType('land');
+  if (/\bplaneswalker/.test(normalized)) return hasType('planeswalker');
+  if (/\bbattle/.test(normalized)) return hasType('battle');
+  return false;
+}
+
+function battlefieldCardsForCostReduction(
+  state: GameState,
+  casterId: string,
+  subject: string,
+  controller: CostReductionController,
+): CardDefinition[] {
+  const defs: CardDefinition[] = [];
+  for (const [, card] of state.cards) {
+    if (card.zone !== 'battlefield') continue;
+    if (controller === 'you' && card.ownerId !== casterId) continue;
+    if (controller === 'opponents' && card.ownerId === casterId) continue;
+    const def = getCardDefinition(state, card);
+    if (subjectMatchesCostReduction(def, subject)) defs.push(def);
+  }
+  return defs;
+}
+
+function controllerFromCostReductionClause(clause: string): CostReductionController {
+  if (/\byou control\b/i.test(clause)) return 'you';
+  if (/\byour opponents? control\b/i.test(clause)) return 'opponents';
+  return 'any';
+}
+
+/**
+ * Cost reducers printed on the spell itself apply before payment even while the
+ * card is still in hand/command. This covers common Commander cards such as
+ * Blasphemous Act and Cavern-Hoard Dragon.
+ */
+export function getIntrinsicCostReduction(
+  state: GameState,
+  casterId: string,
+  spellDef: CardDefinition,
+): number {
+  const text = spellDef.oracle_text || '';
+  let reduction = 0;
+
+  const flatMatch = text.match(/\bthis spell costs \{(\d+)\} less to cast\b(?!\s+for each)/i);
+  if (flatMatch) {
+    reduction += parseInt(flatMatch[1], 10);
+  }
+
+  const eachMatch = text.match(/\bthis spell costs \{(\d+)\} less to cast for each ([^.]+?)(?: you control| your opponents? control| on the battlefield)\b/i);
+  if (eachMatch) {
+    const amount = parseInt(eachMatch[1], 10);
+    const clause = eachMatch[0];
+    const controller = controllerFromCostReductionClause(clause);
+    const count = battlefieldCardsForCostReduction(state, casterId, eachMatch[2], controller).length;
+    reduction += amount * count;
+  }
+
+  const greatestMatch = text.match(/\bthis spell costs \{X\} less to cast,? where X is the greatest mana value among ([^.]+?)(?: you control| your opponents? control| on the battlefield)\b/i);
+  if (greatestMatch) {
+    const clause = greatestMatch[0];
+    const controller = controllerFromCostReductionClause(clause);
+    const candidates = battlefieldCardsForCostReduction(state, casterId, greatestMatch[1], controller);
+    reduction += Math.max(0, ...candidates.map(def => def.cmc || 0));
+  }
+
+  return Math.max(0, reduction);
+}
+
 // ============================================================================
 // Conditional Effect Evaluation
 // ============================================================================

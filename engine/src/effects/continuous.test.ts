@@ -10,6 +10,7 @@ import {
   getEffectiveToughness,
   getGrantedKeywords,
   getCostReduction,
+  getIntrinsicCostReduction,
   evaluateCondition,
   resetContinuousTimestamp,
 } from './continuous';
@@ -778,6 +779,89 @@ describe('Cost Reduction', () => {
 
     expect(canCastSpell(state, 'p1', 'bird_1')).toBe(true);
     expect(canCastSpell(state, 'p1', 'dragon_1')).toBe(false);
+  });
+
+  it('applies intrinsic per-creature spell cost reduction from the spell being cast', () => {
+    const cards = new Map<string, CardInstance>();
+    cards.set('act_1', makeCard('act_1', 'act_def', 'p1', 'hand'));
+
+    const defs = new Map<string, CardDefinition>();
+    defs.set('act_def', makeDef('act_def', {
+      name: 'Blasphemous Act',
+      type_line: 'Sorcery',
+      oracle_text: 'This spell costs {1} less to cast for each creature on the battlefield. Blasphemous Act deals 13 damage to each creature.',
+      mana_cost: '{8}{R}',
+      cmc: 9,
+      card_types: ['sorcery'],
+      colors: ['R'],
+      power: undefined,
+      toughness: undefined,
+    }));
+
+    for (let i = 0; i < 8; i += 1) {
+      const ownerId = i % 2 === 0 ? 'p1' : 'p2';
+      cards.set(`creature_${i}`, makeCard(`creature_${i}`, 'bear_def', ownerId, 'battlefield'));
+    }
+    defs.set('bear_def', makeDef('bear_def', {
+      name: 'Bear',
+      type_line: 'Creature - Bear',
+      card_types: ['creature'],
+    }));
+
+    const players = [makePlayer('p1'), makePlayer('p2')];
+    players[0] = { ...players[0], manaPool: { ...emptyManaPool(), R: 1 } };
+
+    let state = makeState({
+      players,
+      cards,
+      cardDefinitions: defs,
+    });
+    state = { ...state, phase: 'precombat_main' as any, step: 'main' as any };
+
+    expect(getIntrinsicCostReduction(state, 'p1', defs.get('act_def')!)).toBe(8);
+    expect(canCastSpell(state, 'p1', 'act_1')).toBe(true);
+  });
+
+  it('applies intrinsic greatest-mana-value spell cost reduction from opposing artifacts', () => {
+    const cards = new Map<string, CardInstance>();
+    cards.set('dragon_1', makeCard('dragon_1', 'dragon_def', 'p1', 'hand'));
+    cards.set('rock_1', makeCard('rock_1', 'rock_def', 'p2', 'battlefield'));
+
+    const defs = new Map<string, CardDefinition>();
+    defs.set('dragon_def', makeDef('dragon_def', {
+      name: 'Cavern-Hoard Dragon',
+      type_line: 'Creature - Dragon',
+      oracle_text: 'This spell costs {X} less to cast, where X is the greatest mana value among artifacts your opponents control.',
+      mana_cost: '{7}{R}',
+      cmc: 8,
+      card_types: ['creature'],
+      colors: ['R'],
+      power: 6,
+      toughness: 6,
+    }));
+    defs.set('rock_def', makeDef('rock_def', {
+      name: 'Expensive Rock',
+      type_line: 'Artifact',
+      oracle_text: '',
+      mana_cost: '{6}',
+      cmc: 6,
+      card_types: ['artifact'],
+      power: undefined,
+      toughness: undefined,
+    }));
+
+    const players = [makePlayer('p1'), makePlayer('p2')];
+    players[0] = { ...players[0], manaPool: { ...emptyManaPool(), R: 1, C: 1 } };
+
+    let state = makeState({
+      players,
+      cards,
+      cardDefinitions: defs,
+    });
+    state = { ...state, phase: 'precombat_main' as any, step: 'main' as any };
+
+    expect(getIntrinsicCostReduction(state, 'p1', defs.get('dragon_def')!)).toBe(6);
+    expect(canCastSpell(state, 'p1', 'dragon_1')).toBe(true);
   });
 });
 
