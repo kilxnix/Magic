@@ -29,6 +29,19 @@ function makeTargetSpec(type: TargetType, constraints?: TargetSpec['constraints'
   };
 }
 
+const COLOR_WORDS: Record<string, 'W' | 'U' | 'B' | 'R' | 'G'> = {
+  white: 'W',
+  blue: 'U',
+  black: 'B',
+  red: 'R',
+  green: 'G',
+};
+
+function colorConstraintFromWord(word: string | undefined): TargetSpec['constraints'] | undefined {
+  const color = word ? COLOR_WORDS[word] : undefined;
+  return color ? { colors: [color] } : undefined;
+}
+
 function makeChosenRef(spec: TargetSpec): TargetRef {
   return { kind: 'Chosen', targetId: spec.id };
 }
@@ -1833,7 +1846,8 @@ function matchFight(tokens: string[], startIndex: number): PatternResult {
 
   if (slice[0] !== 'target') return null;
   let idx = 1;
-  if (['white', 'blue', 'black', 'red', 'green'].includes(slice[idx])) idx++;
+  const yourConstraints = colorConstraintFromWord(slice[idx]);
+  if (yourConstraints) idx++;
   if (slice[idx] !== 'creature') return null;
   idx++;
   if (slice[idx] === 'you' && slice[idx + 1] === 'control') {
@@ -1843,7 +1857,8 @@ function matchFight(tokens: string[], startIndex: number): PatternResult {
   idx++;
   if (slice[idx] !== 'target') return null;
   idx++;
-  if (['white', 'blue', 'black', 'red', 'green'].includes(slice[idx])) idx++;
+  const opposingColorConstraints = colorConstraintFromWord(slice[idx]);
+  if (opposingColorConstraints) idx++;
   if (slice[idx] !== 'creature') return null;
   idx++;
   if (
@@ -1856,8 +1871,8 @@ function matchFight(tokens: string[], startIndex: number): PatternResult {
   let consumed = idx;
   if (tokens[startIndex + consumed] === '.') consumed++;
 
-  const yourCreature = makeTargetSpec('Creature');
-  const opposingCreature = makeTargetSpec('Creature', { opponentControls: true });
+  const yourCreature = makeTargetSpec('Creature', yourConstraints);
+  const opposingCreature = makeTargetSpec('Creature', { ...opposingColorConstraints, opponentControls: true });
   const effect: Effect = {
     kind: 'Fight',
     fighterA: makeChosenRef(yourCreature),
@@ -2118,23 +2133,35 @@ function matchModifyPT(tokens: string[], startIndex: number): PatternResult {
   }
 
   // "target creature gets +N/+N until end of turn"
+  // "target green creature you control gets +N/+N until end of turn"
   if (slice.length < 8) return null;
   if (slice[0] !== 'target') return null;
-  if (slice[1] !== 'creature') return null;
-  if (slice[2] !== 'gets') return null;
+  let idx = 1;
+  const colorConstraints = colorConstraintFromWord(slice[idx]);
+  if (colorConstraints) idx++;
+  if (slice[idx] !== 'creature') return null;
+  idx++;
+  const constraints: TargetSpec['constraints'] = { ...(colorConstraints || {}) };
+  if (slice[idx] === 'you' && slice[idx + 1] === 'control') {
+    idx += 2;
+  } else if (slice[idx] === 'an' && slice[idx + 1] === 'opponent' && slice[idx + 2] === 'controls') {
+    constraints.opponentControls = true;
+    idx += 3;
+  }
+  if (slice[idx] !== 'gets') return null;
+  idx++;
 
-  const ptMatch = slice[3]?.match(/^([+-]\d+)\/([+-]\d+)$/);
+  const ptMatch = slice[idx]?.match(/^([+-]\d+)\/([+-]\d+)$/);
   if (!ptMatch) return null;
+  idx++;
   const power = parseInt(ptMatch[1], 10);
   const toughness = parseInt(ptMatch[2], 10);
 
-  if (slice[4] !== 'until' || slice[5] !== 'end' || slice[6] !== 'of'
-    || (slice[7] !== 'turn' && slice[7] !== 'combat')) return null;
+  if (slice[idx] !== 'until' || slice[idx + 1] !== 'end' || slice[idx + 2] !== 'of'
+    || (slice[idx + 3] !== 'turn' && slice[idx + 3] !== 'combat')) return null;
+  idx += 4;
 
-  let consumed = 8;
-  if (tokens[startIndex + consumed] === '.') consumed++;
-
-  const spec = makeTargetSpec('Creature');
+  const spec = makeTargetSpec('Creature', Object.keys(constraints).length > 0 ? constraints : undefined);
   const effect: Effect = {
     kind: 'ModifyPT',
     target: makeChosenRef(spec),
@@ -2142,6 +2169,39 @@ function matchModifyPT(tokens: string[], startIndex: number): PatternResult {
     toughness,
     untilEndOfTurn: true,
   };
+
+  let consumed = idx;
+  const next = tokens.slice(startIndex + consumed);
+  if (next[0] === '.' && next[1] === 'it' && next[2] === 'fights' && next[3] === 'target') {
+    let fightIdx = 4;
+    const opposingColorConstraints = colorConstraintFromWord(next[fightIdx]);
+    if (opposingColorConstraints) fightIdx++;
+    if (next[fightIdx] === 'creature') {
+      fightIdx++;
+      const opposingConstraints: TargetSpec['constraints'] = { ...opposingColorConstraints };
+      if (
+        (next[fightIdx] === 'you' && (next[fightIdx + 1] === "don't" || next[fightIdx + 1] === 'dont') && next[fightIdx + 2] === 'control')
+        || (next[fightIdx] === 'an' && next[fightIdx + 1] === 'opponent' && next[fightIdx + 2] === 'controls')
+      ) {
+        opposingConstraints.opponentControls = true;
+        fightIdx += 3;
+      }
+      if (next[fightIdx] === '.') fightIdx++;
+      const opponentCreature = makeTargetSpec('Creature', Object.keys(opposingConstraints).length > 0 ? opposingConstraints : undefined);
+      const fightEffect: Effect = {
+        kind: 'Fight',
+        fighterA: makeChosenRef(spec),
+        fighterB: makeChosenRef(opponentCreature),
+      };
+      return {
+        effects: [effect, fightEffect],
+        targets: [spec, opponentCreature],
+        consumed: consumed + fightIdx,
+      };
+    }
+  }
+
+  if (tokens[startIndex + consumed] === '.') consumed++;
 
   return { effects: [effect], targets: [spec], consumed };
 }

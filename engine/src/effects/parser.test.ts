@@ -877,6 +877,17 @@ describe('parseOracleText', () => {
       expect(result.targets[0].type).toBe('Creature');
     });
 
+    it('parses colored controlled creature pump targets', () => {
+      const result = parseOracleText('Target green creature you control gets +2/+2 until end of turn.');
+      expect(result.kind).toBe('Spell');
+      if (result.kind !== 'Spell') return;
+      expect(result.effects[0].kind).toBe('ModifyPT');
+      expect(result.targets[0]).toMatchObject({
+        type: 'Creature',
+        constraints: { colors: ['G'] },
+      });
+    });
+
     it('parses "Target creature gets -3/-3 until end of turn."', () => {
       const result = parseOracleText('Target creature gets -3/-3 until end of turn.');
       expect(result.kind).toBe('Spell');
@@ -885,6 +896,17 @@ describe('parseOracleText', () => {
       if (result.effects[0].kind !== 'ModifyPT') return;
       expect(result.effects[0].power).toBe(-3);
       expect(result.effects[0].toughness).toBe(-3);
+    });
+
+    it('parses green pump into fight sequences with constrained fight targets', () => {
+      const result = parseOracleText('Target green creature you control gets +2/+2 until end of turn. It fights target green creature an opponent controls.');
+      expect(result.kind).toBe('Spell');
+      if (result.kind !== 'Spell') return;
+      expect(result.effects).toHaveLength(2);
+      expect(result.effects[0].kind).toBe('ModifyPT');
+      expect(result.effects[1].kind).toBe('Fight');
+      expect(result.targets[0]).toMatchObject({ type: 'Creature', constraints: { colors: ['G'] } });
+      expect(result.targets[1]).toMatchObject({ type: 'Creature', constraints: { colors: ['G'], opponentControls: true } });
     });
 
     it('parses temporary power loss plus keyword loss on an attacking trigger', () => {

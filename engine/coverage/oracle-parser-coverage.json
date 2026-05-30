@@ -1,35 +1,35 @@
 {
-  "generatedAt": "2026-05-30T13:09:39.171Z",
+  "generatedAt": "2026-05-30T13:14:39.495Z",
   "source": "mtg_data/cards_min.jsonl",
   "commanderLegalOnly": true,
   "includedCards": 30969,
   "totalOracleFaces": 31420,
-  "parsedFaces": 16516,
-  "unparsedFaces": 14904,
-  "parsedPercent": 52.57,
+  "parsedFaces": 16610,
+  "unparsedFaces": 14810,
+  "parsedPercent": 52.86,
   "parsedKindCounts": {
-    "Unparsed": 14904,
-    "Spell": 10455,
-    "ETB": 2532,
-    "Triggered": 1307,
+    "Unparsed": 14810,
+    "Spell": 10509,
+    "ETB": 2560,
+    "Triggered": 1319,
     "KeywordOnly": 876,
     "StaticAbility": 752,
-    "EntryCounters": 338,
-    "Modal": 241,
+    "EntryCounters": 337,
+    "Modal": 242,
     "Dies": 15
   },
   "unparsedReasons": [
     {
       "reason": "No recognized pattern",
-      "count": 12487
+      "count": 12429
     },
     {
       "reason": "Could not parse ETB effect clause",
-      "count": 1354
+      "count": 1330
     },
     {
       "reason": "Could not parse trigger effect clause",
-      "count": 1032
+      "count": 1020
     },
     {
       "reason": "Could not parse dies effect clause",
@@ -40,7 +40,7 @@
     {
       "id": "trigger-timing",
       "reason": "Triggered or delayed triggered abilities need event registration and APNAP ordering.",
-      "count": 6330,
+      "count": 6271,
       "samples": [
         {
           "name": "Mindlink Mech",
@@ -150,7 +150,7 @@
     {
       "id": "continuous-layers",
       "reason": "Continuous effects need layer/timestamp/dependency handling.",
-      "count": 3163,
+      "count": 3070,
       "samples": [
         {
           "name": "Sensory Deprivation",
@@ -183,12 +183,6 @@
           "text": "Flying Whenever this Vehicle becomes crewed for the first time each turn, until end of turn, this Vehicle becomes a copy of target nonlegendary creature that crewed it this turn, except it's 4/3, it's a Vehicle artifact in addition to its other types, and it has flying. Crew 1"
         },
         {
-          "name": "Hunt the Hunter",
-          "set": "ths",
-          "reason": "No recognized pattern",
-          "text": "Target green creature you control gets +2/+2 until end of turn. It fights target green creature an opponent controls."
-        },
-        {
           "name": "Hot Pursuit",
           "set": "mkc",
           "reason": "Could not parse ETB effect clause",
@@ -199,13 +193,19 @@
           "set": "zen",
           "reason": "No recognized pattern",
           "text": "As long as an opponent has 10 or less life, this creature gets +2/+1 and has intimidate. (It can't be blocked except by artifact creatures and/or creatures that share a color with it.)"
+        },
+        {
+          "name": "Bond of Discipline",
+          "set": "war",
+          "reason": "No recognized pattern",
+          "text": "Tap all creatures your opponents control. Creatures you control gain lifelink until end of turn."
         }
       ]
     },
     {
       "id": "combat-multiplayer",
       "reason": "Combat or multiplayer-defender text needs combat/defender-aware execution.",
-      "count": 2234,
+      "count": 2227,
       "samples": [
         {
           "name": "Labyrinth Adversary",
@@ -260,7 +260,7 @@
     {
       "id": "tokens-counters",
       "reason": "Token/counter wording needs typed objects, counters, and downstream interactions.",
-      "count": 1764,
+      "count": 1755,
       "samples": [
         {
           "name": "Sagu Pummeler",
@@ -315,7 +315,7 @@
     {
       "id": "replacement-prevention",
       "reason": "Replacement/prevention effects require replacement-layer handling.",
-      "count": 1579,
+      "count": 1572,
       "samples": [
         {
           "name": "Sodden Verdure",
@@ -370,7 +370,7 @@
     {
       "id": "non-hand-zones",
       "reason": "Non-hand zone casting/movement needs zone permission and visibility checks.",
-      "count": 1469,
+      "count": 1462,
       "samples": [
         {
           "name": "Road of Return",
@@ -425,7 +425,7 @@
     {
       "id": "cost-system",
       "reason": "Alternative/additional/reduced costs need prompt-backed payment and legality.",
-      "count": 1205,
+      "count": 1196,
       "samples": [
         {
           "name": "Pteramander",
@@ -480,7 +480,7 @@
     {
       "id": "choice-modal",
       "reason": "Choice/modal/naming text should be prompt-backed instead of deterministic.",
-      "count": 805,
+      "count": 803,
       "samples": [
         {
           "name": "Road of Return",
@@ -535,7 +535,7 @@
     {
       "id": "library-selection",
       "reason": "Library search/look/reveal effects need legal choices, destinations, reveal policy, and ordering.",
-      "count": 765,
+      "count": 763,
       "samples": [
         {
           "name": "Safewright Quest",
@@ -590,7 +590,7 @@
     {
       "id": "copy-stack",
       "reason": "Copy/stack mechanics need stack-object identity and trigger multiplication.",
-      "count": 593,
+      "count": 591,
       "samples": [
         {
           "name": "Mindlink Mech",

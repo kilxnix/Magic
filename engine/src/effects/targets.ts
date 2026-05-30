@@ -13,6 +13,7 @@ export interface TargetSpec {
   count: number;
   constraints?: {
     opponentControls?: boolean;
+    colors?: Array<'W' | 'U' | 'B' | 'R' | 'G'>;
     notColors?: Array<'W' | 'U' | 'B' | 'R' | 'G'>;
   };
 }
@@ -214,6 +215,17 @@ export function validateTargetChoices(
         const def = getCardDefinition(state, card);
         if (spec.constraints.notColors.some(color => def.colors.includes(color))) {
           throw new Error(`Invalid target for ${spec.id}: target has an excluded color`);
+        }
+      }
+
+      if (spec.constraints?.colors?.length) {
+        const card = state.cards.get(chosenId);
+        if (!card) {
+          throw new Error(`Invalid target for ${spec.id}: color restriction requires a card, got ${chosenId}`);
+        }
+        const def = getCardDefinition(state, card);
+        if (!spec.constraints.colors.some(color => def.colors.includes(color))) {
+          throw new Error(`Invalid target for ${spec.id}: target is missing a required color`);
         }
       }
 

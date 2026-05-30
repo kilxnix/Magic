@@ -74,6 +74,34 @@ function createStateWithCreature(keywords: string[] = [], ownerId: string = 'pla
 }
 
 describe('Target Validation with Keywords', () => {
+  describe('Color constraints', () => {
+    it('requires selected creature to match required color constraints', () => {
+      const state = createStateWithCreature([], 'player-2');
+      state.cardDefinitions.set('def-creature', {
+        ...state.cardDefinitions.get('def-creature')!,
+        colors: ['R'],
+      });
+      const specs = [{ id: 'target_1', type: 'Creature' as const, count: 1, constraints: { colors: ['G' as const] } }];
+
+      expect(() => {
+        validateTargetChoices(state, 'player-1', specs, ['creature-1']);
+      }).toThrow('missing a required color');
+    });
+
+    it('accepts selected creature with a required color', () => {
+      const state = createStateWithCreature([], 'player-2');
+      state.cardDefinitions.set('def-creature', {
+        ...state.cardDefinitions.get('def-creature')!,
+        colors: ['G'],
+      });
+      const specs = [{ id: 'target_1', type: 'Creature' as const, count: 1, constraints: { colors: ['G' as const] } }];
+
+      expect(() => {
+        validateTargetChoices(state, 'player-1', specs, ['creature-1']);
+      }).not.toThrow();
+    });
+  });
+
   describe('Hexproof', () => {
     it('prevents opponent from targeting', () => {
       const state = createStateWithCreature(['Hexproof'], 'player-2');
