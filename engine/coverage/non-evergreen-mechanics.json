@@ -1,0 +1,84 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-05-30T11:15:00.000Z",
+  "purpose": "Mechanic-by-mechanic coverage tracker for non-evergreen Commander-relevant mechanics. This is not a completion claim; it is the explicit backlog that prevents unsupported mechanics from being treated as invisible.",
+  "statuses": {
+    "certified": "Engine implementation, regression tests, and UI path exist.",
+    "partial": "Some engine or tracker support exists, but important variants are still missing.",
+    "unsupported": "The mechanic is intentionally surfaced as unsupported or must fall back to manual tracker mode."
+  },
+  "mechanics": [
+    {
+      "mechanic": "Prowess",
+      "status": "partial",
+      "evidence": ["engine/src/__tests__/vivi-tournament-playtest.test.ts"],
+      "next": "Broaden triggered keyword registration to magecraft-like variants and copied-spell trigger multiplication."
+    },
+    {
+      "mechanic": "D20 / dice rolling",
+      "status": "partial",
+      "evidence": ["engine/src/effects/parser.test.ts", "engine/src/actions-public.test.ts", "frontend/src/components/GameBoard.tsx"],
+      "next": "Add choice prompts for cards whose dice results create follow-up choices."
+    },
+    {
+      "mechanic": "Monarch",
+      "status": "partial",
+      "evidence": ["backend/multiplayer.py", "frontend/src/pages/MultiplayerPage.tsx"],
+      "next": "Move from manual shared-tracker counters into engine state with combat-damage transfer."
+    },
+    {
+      "mechanic": "Initiative / dungeons",
+      "status": "partial",
+      "evidence": ["backend/multiplayer.py", "frontend/src/pages/MultiplayerPage.tsx"],
+      "next": "Implement dungeon progress state and venture/take-the-initiative triggers in the engine."
+    },
+    {
+      "mechanic": "Energy",
+      "status": "partial",
+      "evidence": ["backend/multiplayer.py", "frontend/src/components/GameBoard.tsx"],
+      "next": "Add engine-native energy counters and payment prompts."
+    },
+    {
+      "mechanic": "Poison",
+      "status": "partial",
+      "evidence": ["backend/multiplayer.py", "engine/src/state-based.test.ts"],
+      "next": "Tie poison counters to infect/toxic damage assignment and multiplayer loss checks."
+    },
+    {
+      "mechanic": "Adventure",
+      "status": "unsupported",
+      "evidence": ["engine/coverage/oracle-parser-coverage.json"],
+      "next": "Add split card spell/permanent identity, exile adventure permission, and cast-from-exile permission."
+    },
+    {
+      "mechanic": "Mutate",
+      "status": "unsupported",
+      "evidence": ["engine/coverage/oracle-parser-coverage.json"],
+      "next": "Add merged permanent identity, characteristics, and zone-change handling."
+    },
+    {
+      "mechanic": "Foretell",
+      "status": "unsupported",
+      "evidence": ["engine/coverage/oracle-parser-coverage.json"],
+      "next": "Add hidden exile tracking, foretell action, and alternate-cost casting permission."
+    },
+    {
+      "mechanic": "Disturb / escape / flashback",
+      "status": "partial",
+      "evidence": ["engine/src/stack.test.ts", "engine/coverage/oracle-parser-coverage.json"],
+      "next": "Unify graveyard casting permissions and replacement exile destinations."
+    },
+    {
+      "mechanic": "Cascade / discover",
+      "status": "unsupported",
+      "evidence": ["engine/coverage/oracle-parser-coverage.json"],
+      "next": "Add exile-until predicate prompts, free cast permission, and bottom-random-order placement."
+    },
+    {
+      "mechanic": "Storm",
+      "status": "partial",
+      "evidence": ["engine/src/__tests__/vivi-tournament-playtest.test.ts"],
+      "next": "Make storm count and copied-spell triggers first-class stack objects."
+    }
+  ]
+}

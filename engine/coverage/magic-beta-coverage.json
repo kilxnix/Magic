@@ -1,0 +1,394 @@
+{
+  "schema_version": 1,
+  "program": "DeckReps Comprehensive Magic Beta Certification",
+  "rules_source": {
+    "name": "Magic: The Gathering Comprehensive Rules",
+    "url": "https://magic.wizards.com/rules",
+    "retrieved": "2026-05-27"
+  },
+  "status_meanings": {
+    "certified": "Covered by engine tests and at least one runtime or browser path where applicable.",
+    "partial": "Core behavior exists, but important variants or UI paths are not fully covered.",
+    "gap": "Known missing behavior or insufficiently implemented.",
+    "blocked": "Needs a new engine subsystem or upstream data before meaningful certification."
+  },
+  "areas": [
+    {
+      "id": "turn-structure-priority",
+      "area": "Core Rules",
+      "promise": "Turns, phases, steps, priority passing, and empty-window skipping behave correctly in 1v1 and multiplayer.",
+      "status": "partial",
+      "priority": "P0",
+      "evidence": [
+        "engine/src/turn-manager.test.ts",
+        "engine/src/__tests__/full-game-loop.test.ts",
+        "engine/src/__tests__/starter-decks-card-qa.test.ts"
+      ],
+      "next": "Add multiplayer APNAP priority fixtures and browser proof for skip rest of turn after stack/combat windows."
+    },
+    {
+      "id": "state-based-actions",
+      "area": "Core Rules",
+      "promise": "State-based actions run at the right times for lethal damage, zero toughness, legend rule, commander damage, empty library, and player loss.",
+      "status": "partial",
+      "priority": "P0",
+      "evidence": [
+        "engine/src/state-based.ts",
+        "engine/src/state-based.test.ts",
+        "engine/src/combat.test.ts",
+        "engine/src/__tests__/rules-maturity-1v1.test.ts"
+      ],
+      "next": "Add simultaneous win/loss ordering tests and expand SBA coverage for layer/removal dependencies."
+    },
+    {
+      "id": "high-power-chaos-regression",
+      "area": "Core Rules",
+      "promise": "High-power 1v1 and 4-player games are repeatedly stress-tested through legal public actions for crashes and illegal state drift.",
+      "status": "partial",
+      "priority": "P0",
+      "evidence": [
+        "engine/src/__tests__/chaos-suite.test.ts",
+        "engine/src/__tests__/rules-maturity-1v1.test.ts",
+        "engine/package.json"
+      ],
+      "next": "Run long-mode chaos regularly and promote every found failure into a targeted regression."
+    },
+    {
+      "id": "casting-costs",
+      "area": "Casting",
+      "promise": "Spell casting validates timing, costs, commander tax, alternative/additional costs, X, cost reducers, and restricted mana.",
+      "status": "partial",
+      "priority": "P0",
+      "evidence": [
+        "engine/src/actions-public.test.ts",
+        "engine/src/stack.test.ts",
+        "engine/src/high-power-interactions.test.ts"
+      ],
+      "next": "Expand alternative costs, additional costs, cost increasers/reducers, X choices, and free-spell casting prompts."
+    },
+    {
+      "id": "mana-system",
+      "area": "Mana",
+      "promise": "Lands, rocks, creature mana, restricted mana, treasure-like mana, and summoning sickness restrictions work.",
+      "status": "partial",
+      "priority": "P0",
+      "evidence": [
+        "engine/src/actions.test.ts",
+        "engine/src/__tests__/mana-colors-comprehensive.test.ts",
+        "engine/src/cards/card-parser-cache.test.ts",
+        "engine/src/__tests__/rules-maturity-1v1.test.ts"
+      ],
+      "next": "Add complete coverage for conditional lands, color choice UI, delayed/restricted mana, and mana replacement/multipliers."
+    },
+    {
+      "id": "combat",
+      "area": "Combat",
+      "promise": "Attacks, blocks, combat damage, commander damage, evasion, trample, first/double strike, lifelink, deathtouch, and multiplayer defenders work.",
+      "status": "partial",
+      "priority": "P0",
+      "evidence": [
+        "engine/src/combat.test.ts",
+        "engine/src/combat-integration.test.ts",
+        "engine/src/__tests__/starter-decks-card-qa.test.ts",
+        "engine/src/__tests__/multiplayer-maturity.test.ts"
+      ],
+      "next": "Expand multiplayer combat matrix with more mixed evasion, planeswalker/battle defenders, and UI combat certification."
+    },
+    {
+      "id": "stack-responses",
+      "area": "Stack",
+      "promise": "Spells, activated abilities, triggered abilities, counterspells, target inspection, priority, and stack resolution are correct.",
+      "status": "partial",
+      "priority": "P0",
+      "evidence": [
+        "engine/src/stack.test.ts",
+        "engine/src/stack-integration.test.ts",
+        "engine/src/high-power-interactions.test.ts",
+        "engine/src/__tests__/multiplayer-maturity.test.ts"
+      ],
+      "next": "Certify responding to stack items in UI and broaden APNAP fixtures with replacement/choice prompts."
+    },
+    {
+      "id": "targeting",
+      "area": "Targeting",
+      "promise": "Legal targets, target changes, target loss, any target, nonland permanent, spells on stack, players, and multiplayer targeting work.",
+      "status": "partial",
+      "priority": "P0",
+      "evidence": [
+        "engine/src/effects/targets.ts",
+        "engine/src/ai/targeting.test.ts",
+        "engine/src/ai/legal-actions.test.ts",
+        "engine/src/__tests__/starter-decks-card-qa.test.ts"
+      ],
+      "next": "Add target revalidation on resolution, illegal target fizzles, target-changing effects, and multiplayer target selection UI."
+    },
+    {
+      "id": "tokens",
+      "area": "Objects",
+      "promise": "Creature, artifact, treasure, clue, food, blood, map, copy, and named tokens have correct types, colors, P/T, abilities, and ownership.",
+      "status": "partial",
+      "priority": "P0",
+      "evidence": [
+        "engine/src/effects/executor.test.ts",
+        "engine/src/__tests__/trigger-pipeline.test.ts",
+        "engine/src/__tests__/starter-decks-card-qa.test.ts"
+      ],
+      "next": "Add a token factory certification table and browser proof for Krenko, Talrand, Goblin Spymaster, Dockside-style counting, and token sacrifice."
+    },
+    {
+      "id": "triggers-etb",
+      "area": "Triggers",
+      "promise": "ETB, death, attack, damage, cast, draw, upkeep, beginning combat, end step, and delayed triggers fire once and at correct times.",
+      "status": "partial",
+      "priority": "P0",
+      "evidence": [
+        "engine/src/__tests__/trigger-pipeline.test.ts",
+        "engine/src/dies-triggers.test.ts",
+        "engine/src/playtesting-report-regressions.test.ts"
+      ],
+      "next": "Create a trigger matrix by event kind and add missing beginning/end step token triggers."
+    },
+    {
+      "id": "replacement-prevention",
+      "area": "Replacement and Prevention",
+      "promise": "Instead, prevention, enters-as, enters-tapped, replacement draws, commander zone replacement, and can't-lose effects apply without using the stack.",
+      "status": "partial",
+      "priority": "P0",
+      "evidence": [
+        "engine/src/effects/replacement.ts",
+        "engine/src/effects/replacement.test.ts",
+        "engine/src/__tests__/rules-maturity-1v1.test.ts",
+        "engine/src/actions.test.ts",
+        "engine/src/playtesting-report-regressions.test.ts"
+      ],
+      "next": "Add affected-player ordering choices when multiple replacements apply and expand cannot-lose/win replacement fixtures."
+    },
+    {
+      "id": "continuous-effects-layers",
+      "area": "Continuous Effects",
+      "promise": "Type-changing, P/T changes, ability grants/removes, control effects, devotion, timestamps, dependency, and layers are correct.",
+      "status": "partial",
+      "priority": "P0",
+      "evidence": [
+        "engine/src/effects/continuous.ts",
+        "engine/src/effects/continuous.test.ts",
+        "engine/src/__tests__/rules-maturity-1v1.test.ts"
+      ],
+      "next": "Expand layer engine to full CR-style dependency/timestamp model beyond current practical layer 6/7 and devotion coverage."
+    },
+    {
+      "id": "keywords-evergreen",
+      "area": "Keywords",
+      "promise": "Evergreen combat and static keywords work in rules and UI.",
+      "status": "partial",
+      "priority": "P1",
+      "evidence": [
+        "engine/src/keywords.test.ts",
+        "engine/src/combat.test.ts"
+      ],
+      "next": "Audit every evergreen keyword and bind each to at least one fixture card."
+    },
+    {
+      "id": "keywords-non-evergreen",
+      "area": "Keywords",
+      "promise": "Set mechanics such as mutate, adventure, foretell, disturb, day/night, dungeons, initiative, monarch, energy, poison, and similar mechanics work or are explicitly unsupported.",
+      "status": "partial",
+      "priority": "P1",
+      "evidence": [
+        "engine/coverage/non-evergreen-mechanics.json",
+        "engine/coverage/oracle-parser-coverage.json"
+      ],
+      "next": "Keep promoting unsupported mechanics from the tracker into engine-native implementation, starting with Adventure, Mutate, Foretell, Cascade/Discover, and dungeon progress."
+    },
+    {
+      "id": "modal-choice-ui",
+      "area": "Choices",
+      "promise": "Choose one/more, optional effects, may-pay prompts, named-card choices, choose color/type/player, and dice/coin/random choices are represented.",
+      "status": "partial",
+      "priority": "P0",
+      "evidence": [
+        "engine/src/authority.ts",
+        "engine/src/effects/parser.test.ts",
+        "engine/src/ai/legal-actions.test.ts",
+        "engine/src/playtesting-report-regressions.test.ts"
+      ],
+      "next": "Continue replacing deterministic shortcuts with the existing typed prompt lifecycle until modal, optional, naming, color/type, and random-choice flows all round-trip through request validation."
+    },
+    {
+      "id": "library-search-tutors",
+      "area": "Library",
+      "promise": "Search, reveal, shuffle, top/bottom placement, exile-from-library, ordering, and tutor choices are interactive and rules-correct.",
+      "status": "partial",
+      "priority": "P0",
+      "evidence": [
+        "engine/src/cards/card-parser-cache.test.ts",
+        "engine/src/playtesting-report-regressions.test.ts"
+      ],
+      "next": "Replace deterministic tutor shortcuts with choice UI that supports named card, top-library, graveyard, exile, and battlefield destinations."
+    },
+    {
+      "id": "graveyard-exile",
+      "area": "Zones",
+      "promise": "Graveyard/exile actions, inspectability, flashback/escape/disturb/reanimate, and replacement zone moves work.",
+      "status": "partial",
+      "priority": "P1",
+      "evidence": [
+        "engine/src/game-state.test.ts",
+        "frontend/src/components/GameBoard.tsx"
+      ],
+      "next": "Add zone permission engine for casting/activating from non-hand zones."
+    },
+    {
+      "id": "equipment-auras",
+      "area": "Attachments",
+      "promise": "Equip, Auras, reattach, unattached state, illegal attachment cleanup, and granted stats/keywords work.",
+      "status": "partial",
+      "priority": "P0",
+      "evidence": [
+        "engine/src/effects/continuous.test.ts",
+        "engine/src/__tests__/starter-decks-card-qa.test.ts"
+      ],
+      "next": "Add UI certification for equip and illegal attachment SBAs."
+    },
+    {
+      "id": "commander-rules",
+      "area": "Commander",
+      "promise": "Command zone, tax, commander damage, color identity, partners, backgrounds, doctor companion, and cast restrictions work.",
+      "status": "partial",
+      "priority": "P0",
+      "evidence": [
+        "engine/src/commander.test.ts",
+        "engine/src/cards/deck-loader.test.ts",
+        "backend/tests/test_deck_generator_commander_resolution.py"
+      ],
+      "next": "Add partner/background/doctor companion import and cast certification plus Drannith-style restrictions."
+    },
+    {
+      "id": "multiplayer",
+      "area": "Multiplayer",
+      "promise": "1v1v1v1 games handle turn order, priority, attackers, life totals, eliminated players, and shared room state.",
+      "status": "partial",
+      "priority": "P1",
+      "evidence": [
+        "backend/tests/test_multiplayer.py",
+        "engine/src/room-game.test.ts",
+        "engine/src/__tests__/multiplayer-maturity.test.ts",
+        "engine/src/__tests__/chaos-suite.test.ts",
+        "scripts/room_ui_playtest.js"
+      ],
+      "next": "Keep running long four-player chaos and hosted room UI proof while adding more high-power pod archetypes."
+    },
+    {
+      "id": "deck-import",
+      "area": "Importers",
+      "promise": "Pasted lists, Moxfield, Archidekt, TappedOut, MTGGoldfish, partners, DFCs, duplicates, basics, snow basics, and malformed lists are safe.",
+      "status": "partial",
+      "priority": "P0",
+      "evidence": [
+        "backend/agent/tests/test_deck_import.py",
+        "frontend/tests/deckUrlImport.test.ts",
+        "frontend/tests/standardDeckImport.test.ts"
+      ],
+      "next": "Add importer golden corpus for real exported lists and bad-data cases."
+    },
+    {
+      "id": "oracle-parser-coverage",
+      "area": "Parser",
+      "promise": "Oracle text parser maps common card text into typed effects without card-specific hardcoding.",
+      "status": "partial",
+      "priority": "P0",
+      "evidence": [
+        "engine/src/effects/parser.test.ts",
+        "engine/src/cards/card-parser-cache.test.ts",
+        "scripts/generate_high_power_edge_cases.py",
+        "engine/coverage/high-power-edge-case-candidates.json",
+        "engine/scripts/audit-parser-coverage.cjs",
+        "engine/coverage/oracle-parser-coverage.json"
+      ],
+      "next": "Use the generated syntax clusters to pick the next parser/executor fixtures and rerun npm run coverage:parser after every card-data refresh."
+    },
+    {
+      "id": "manual-overrides",
+      "area": "Parser",
+      "promise": "Complex cards that cannot be safely parsed generically use audited overrides with tests.",
+      "status": "partial",
+      "priority": "P1",
+      "evidence": [
+        "engine/src/effects/overrides.ts",
+        "engine/src/effects/overrides.test.ts",
+        "engine/coverage/oracle-parser-coverage.json"
+      ],
+      "next": "Fill specific owner/reason metadata for every legacy override and link each override to a regression fixture or parser-coverage cluster."
+    },
+    {
+      "id": "ui-gameplay",
+      "area": "Browser UI",
+      "promise": "Every public action has a reachable, understandable, inspectable UI path on desktop and mobile.",
+      "status": "partial",
+      "priority": "P0",
+      "evidence": [
+        "frontend/src/components/GameBoard.tsx",
+        "frontend/tests/gameBoardLayout.test.ts",
+        "frontend/tests/newPlayerSuggestions.test.ts"
+      ],
+      "next": "Add browser automation certification for each starter deck and all action categories."
+    },
+    {
+      "id": "manual-correction-tools",
+      "area": "Browser UI",
+      "promise": "Players can make controlled repair adjustments for visible battlefield state when an alpha/beta engine miss happens.",
+      "status": "partial",
+      "priority": "P1",
+      "evidence": [
+        "engine/src/actions-public.ts",
+        "engine/src/actions-public.test.ts",
+        "frontend/src/components/GameBoard.tsx",
+        "frontend/src/hooks/useShelectorGame.ts"
+      ],
+      "next": "Add replay-audited correction summaries and deeper correction review UX on top of the existing counter, token, zone, attachment, damage, mana, commander damage, and phase repair actions."
+    },
+    {
+      "id": "post-game-review",
+      "area": "Training",
+      "promise": "Post-game play-by-play and grading reflect legal choices, board state, and missed alternatives.",
+      "status": "partial",
+      "priority": "P1",
+      "evidence": [
+        "frontend/src/components/GameReview.tsx",
+        "frontend/tests/turnReview.test.ts",
+        "frontend/src/lib/turnReview.ts",
+        "engine/src/authority.ts"
+      ],
+      "next": "Broaden authoritative review records into full line comparison, replay stepping, and rules-confidence versus strategy-confidence presentation."
+    },
+    {
+      "id": "ai-shelector",
+      "area": "AI",
+      "promise": "AI plays legal, timely actions quickly, avoids premature phase skips, and evaluates interaction reasonably.",
+      "status": "partial",
+      "priority": "P1",
+      "evidence": [
+        "engine/src/ai/speed.test.ts",
+        "engine/src/ai/agent.ts",
+        "engine/src/ai/evaluate.test.ts",
+        "engine/src/ai/threat.test.ts",
+        "engine/src/__tests__/multiplayer-maturity.test.ts"
+      ],
+      "next": "Add politics/threat benchmarks across more board archetypes and stack-heavy high-power states."
+    },
+    {
+      "id": "rules-update-process",
+      "area": "Operations",
+      "promise": "Rules/card data updates are versioned, re-audited, and do not silently regress certified mechanics.",
+      "status": "partial",
+      "priority": "P1",
+      "evidence": [
+        "scripts/generate_high_power_edge_cases.py",
+        "docs/high-power-edge-case-candidates.md",
+        "engine/coverage/high-power-edge-case-candidates.json",
+        "docs/comprehensive-magic-coverage-audit.md"
+      ],
+      "next": "Wire edge-case generation and coverage audit into a scheduled certification run after every card-data refresh."
+    }
+  ]
+}

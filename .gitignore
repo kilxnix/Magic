@@ -27,7 +27,12 @@ build/
 *.db-wal
 artifacts/
 playtest-artifacts/
-engine/coverage/
+engine/coverage/*
+!engine/coverage/
+!engine/coverage/high-power-edge-case-candidates.json
+!engine/coverage/magic-beta-coverage.json
+!engine/coverage/non-evergreen-mechanics.json
+!engine/coverage/oracle-parser-coverage.json
 tmp-*.png
 data/price_cache.json
 data/scryfall_price_cache.json

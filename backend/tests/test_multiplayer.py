@@ -880,6 +880,13 @@ def test_engine_beta_blocks_known_unsupported_cards(monkeypatch):
         json={"player_id": guest_id, "ready": True, "deck_name": "Guest", "commander": guest_deck["commander"], "deck": guest_deck},
     )
 
+    preflight = client.get(f"/api/multiplayer/rooms/{room_id}/engine-preflight", params={"player_id": host_id})
+    assert preflight.status_code == 200
+    preflight_body = preflight.json()
+    assert preflight_body["ok"] is False
+    assert preflight_body["seats"][0]["unsupported_cards"][0]["name"] == "Chaos Orb"
+    assert "physical-card" in preflight_body["seats"][0]["unsupported_cards"][0]["reason"]
+
     blocked = client.post(f"/api/multiplayer/rooms/{room_id}/start-real-game", json={"player_id": host_id})
     assert blocked.status_code == 400
     assert "Chaos Orb" in blocked.json()["detail"]

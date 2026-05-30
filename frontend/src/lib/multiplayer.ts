@@ -182,6 +182,27 @@ export interface RealGameViewResponse {
   log: GameLogEntry[];
 }
 
+export interface EnginePreflightUnsupportedCard {
+  name: string;
+  reason: string;
+}
+
+export interface EnginePreflightSeat {
+  seat: number;
+  player_name: string;
+  commander?: string | null;
+  deck_locked: boolean;
+  ready: boolean;
+  unsupported_cards: EnginePreflightUnsupportedCard[];
+  issues: string[];
+}
+
+export interface EnginePreflightResponse {
+  ok: boolean;
+  message: string;
+  seats: EnginePreflightSeat[];
+}
+
 export interface RoomSettings {
   spectators_allowed: boolean;
   spectator_delay_seconds: number;
@@ -696,6 +717,11 @@ export function startRealGame(roomId: string, playerId: string) {
     method: 'POST',
     body: JSON.stringify({ player_id: playerId }),
   });
+}
+
+export function getEnginePreflight(roomId: string, playerId: string) {
+  const params = new URLSearchParams({ player_id: playerId });
+  return apiRequest<EnginePreflightResponse>(`/rooms/${encodeURIComponent(roomId)}/engine-preflight?${params}`);
 }
 
 export function rematchRoom(roomId: string, playerId: string) {

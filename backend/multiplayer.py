@@ -82,11 +82,12 @@ ROOM_EXPIRY = timedelta(hours=12)
 REAL_AUTHORITY_STALE_AFTER = timedelta(seconds=REAL_AUTHORITY_STALE_SECONDS)
 ROOM_STORE_PATH = Path(os.getenv("MULTIPLAYER_ROOM_STORE", "/app/runtime/multiplayer_rooms.json"))
 EVENT_STORE_PATH = Path(os.getenv("MULTIPLAYER_EVENT_STORE", "/app/runtime/multiplayer_events.json"))
-ENGINE_UNSUPPORTED_CARD_NAMES = {
-    "Chaos Orb",
-    "Falling Star",
-    "Shahrazad",
+ENGINE_UNSUPPORTED_CARD_REASONS = {
+    "Chaos Orb": "Manual dexterity / physical-card resolution is not automated.",
+    "Falling Star": "Manual dexterity / physical-card resolution is not automated.",
+    "Shahrazad": "Subgame creation is not automated.",
 }
+ENGINE_UNSUPPORTED_CARD_NAMES = set(ENGINE_UNSUPPORTED_CARD_REASONS)
 ROOM_LINK_RE = re.compile(
     r"(?i)(?:"
     r"https?://|"
@@ -799,14 +800,21 @@ def _locked_deck_from_seat(seat: dict) -> dict:
     }
 
 
-def _engine_unsupported_cards(deck: dict) -> list[str]:
+def _engine_unsupported_card_reports(deck: dict) -> list[dict[str, str]]:
     names = [deck.get("commander") or "", *(deck.get("list") or [])]
-    found = []
+    found: list[dict[str, str]] = []
+    seen: set[str] = set()
     for name in names:
         clean = str(name).strip()
-        if clean in ENGINE_UNSUPPORTED_CARD_NAMES and clean not in found:
-            found.append(clean)
+        reason = ENGINE_UNSUPPORTED_CARD_REASONS.get(clean)
+        if reason and clean not in seen:
+            found.append({"name": clean, "reason": reason})
+            seen.add(clean)
     return found
+
+
+def _engine_unsupported_cards(deck: dict) -> list[str]:
+    return [item["name"] for item in _engine_unsupported_card_reports(deck)]
 
 
 def _safe_json_size(value: Any, *, max_bytes: int, field_name: str) -> None:
@@ -1147,6 +1155,27 @@ class RealGameViewResponse(BaseModel):
     view: Optional[dict[str, Any]] = None
     pending_action_count: int
     log: list[RealGameLogEntry]
+
+
+class EnginePreflightUnsupportedCard(BaseModel):
+    name: str
+    reason: str
+
+
+class EnginePreflightSeat(BaseModel):
+    seat: int
+    player_name: str
+    commander: Optional[str] = None
+    deck_locked: bool
+    ready: bool
+    unsupported_cards: list[EnginePreflightUnsupportedCard]
+    issues: list[str]
+
+
+class EnginePreflightResponse(BaseModel):
+    ok: bool
+    message: str
+    seats: list[EnginePreflightSeat]
 
 
 class RoomSettings(BaseModel):
@@ -2264,6 +2293,55 @@ def _room_detail(room: dict) -> RoomDetail:
     )
 
 
+def _engine_preflight(room: dict) -> EnginePreflightResponse:
+    seats: list[EnginePreflightSeat] = []
+    for seat in _occupied_seats(room):
+        issues: list[str] = []
+        unsupported_cards: list[EnginePreflightUnsupportedCard] = []
+        if not seat.get("ready"):
+            issues.append("Player is not ready.")
+        if not seat.get("deck"):
+            issues.append("Deck is not locked.")
+        else:
+            try:
+                deck = _locked_deck_from_seat(seat)
+                unsupported_cards = [
+                    EnginePreflightUnsupportedCard(**item)
+                    for item in _engine_unsupported_card_reports(deck)
+                ]
+            except HTTPException as exc:
+                issues.append(str(exc.detail))
+
+        if unsupported_cards:
+            issues.append("Engine Beta cannot automate every locked card in this deck yet.")
+
+        seats.append(EnginePreflightSeat(
+            seat=seat["seat"],
+            player_name=seat["name"],
+            commander=seat.get("commander"),
+            deck_locked=bool(seat.get("deck")),
+            ready=bool(seat.get("ready")),
+            unsupported_cards=unsupported_cards,
+            issues=issues,
+        ))
+
+    if len(seats) < 2:
+        return EnginePreflightResponse(ok=False, message="At least 2 seated players are needed.", seats=seats)
+
+    if any(seat.issues for seat in seats):
+        return EnginePreflightResponse(
+            ok=False,
+            message="Engine Beta is not ready for this room. Use Shared Table or fix the listed deck issues.",
+            seats=seats,
+        )
+
+    return EnginePreflightResponse(
+        ok=True,
+        message="Engine Beta preflight passed for the locked decks in this room.",
+        seats=seats,
+    )
+
+
 _load_rooms_from_disk()
 _load_events_from_disk()
 
@@ -2576,6 +2654,14 @@ async def get_room(room_id: str):
         return _room_detail(room)
 
 
+@router.get("/rooms/{room_id}/engine-preflight", response_model=EnginePreflightResponse)
+async def get_engine_preflight(room_id: str, player_id: str = Query(...)):
+    with _lock:
+        room = _find_room(room_id)
+        _find_authorized_player(room, player_id)
+        return _engine_preflight(room)
+
+
 @router.get("/replays", response_model=list[ReplaySummary])
 async def list_public_replays(q: str = Query("", max_length=80), limit: int = Query(20, ge=1, le=50)):
     query = (q or "").strip().lower()
@@ -2841,19 +2927,22 @@ async def start_real_game(room_id: str, req: PlayerActionRequest):
             raise HTTPException(status_code=400, detail="At least 2 players are needed to start")
         if any(not seat.get("ready") for seat in occupied):
             raise HTTPException(status_code=400, detail="Every seated player must be ready")
-        unsupported_by_seat = []
-        for seat in occupied:
-            deck = _locked_deck_from_seat(seat)
-            unsupported = _engine_unsupported_cards(deck)
-            if unsupported:
-                unsupported_by_seat.append(f"{seat['name']}: {', '.join(unsupported)}")
-        if unsupported_by_seat:
+        preflight = _engine_preflight(room)
+        if not preflight.ok:
+            unsupported_by_seat = []
+            for seat in preflight.seats:
+                if seat.unsupported_cards:
+                    unsupported_by_seat.append(
+                        f"{seat.player_name}: "
+                        + ", ".join(f"{card.name} ({card.reason})" for card in seat.unsupported_cards)
+                    )
+            details = "; ".join(unsupported_by_seat) if unsupported_by_seat else preflight.message
             raise HTTPException(
                 status_code=400,
                 detail=(
-                    "Engine Beta does not automate these unsupported cards yet: "
-                    + "; ".join(unsupported_by_seat)
-                    + ". Use Shared Table for this room."
+                    "Engine Beta preflight failed: "
+                    + details
+                    + " Use Shared Table for this room."
                 ),
             )
         room["status"] = "in_game"

@@ -1,0 +1,838 @@
+{
+  "categories": [
+    {
+      "candidates": [
+        {
+          "matched_patterns": [
+            "\\bin addition to (?:its|their) other types\\b"
+          ],
+          "name": "Opalescence",
+          "rarity": "rare",
+          "score": 694,
+          "set": "uds",
+          "type_line": "Enchantment"
+        },
+        {
+          "matched_patterns": [
+            "\\bin addition to (?:its|their) other types\\b"
+          ],
+          "name": "Sakashima the Impostor",
+          "rarity": "rare",
+          "score": 251,
+          "set": "sok",
+          "type_line": "Legendary Creature \u2014 Human Rogue"
+        },
+        {
+          "matched_patterns": [
+            "\\bin addition to (?:its|their) other types\\b"
+          ],
+          "name": "Mycosynth Lattice",
+          "rarity": "mythic",
+          "score": 149,
+          "set": "bbd",
+          "type_line": "Artifact"
+        },
+        {
+          "matched_patterns": [
+            "\\bin addition to (?:its|their) other types\\b"
+          ],
+          "name": "Roaming Throne",
+          "rarity": "rare",
+          "score": 149,
+          "set": "lci",
+          "type_line": "Artifact Creature \u2014 Golem"
+        },
+        {
+          "matched_patterns": [
+            "\\bbecomes? (?:a|an)? ?(?:artifact |enchantment |creature)"
+          ],
+          "name": "Tezzeret the Seeker",
+          "rarity": "mythic",
+          "score": 136,
+          "set": "mm2",
+          "type_line": "Legendary Planeswalker \u2014 Tezzeret"
+        },
+        {
+          "matched_patterns": [
+            "\\bas long as\\b[^.]+isn'?t a creature"
+          ],
+          "name": "Thassa, Deep-Dwelling",
+          "rarity": "mythic",
+          "score": 120,
+          "set": "thb",
+          "type_line": "Legendary Enchantment Creature \u2014 God"
+        },
+        {
+          "matched_patterns": [
+            "\\bin addition to (?:its|their) other types\\b"
+          ],
+          "name": "Enchanted Evening",
+          "rarity": "rare",
+          "score": 114,
+          "set": "shm",
+          "type_line": "Enchantment"
+        },
+        {
+          "matched_patterns": [
+            "\\bin addition to (?:its|their) other types\\b"
+          ],
+          "name": "Vaultborn Tyrant",
+          "rarity": "mythic",
+          "score": 112,
+          "set": "big",
+          "type_line": "Creature \u2014 Dinosaur"
+        },
+        {
+          "matched_patterns": [
+            "\\bas long as\\b[^.]+isn'?t a creature"
+          ],
+          "name": "Phenax, God of Deception",
+          "rarity": "mythic",
+          "score": 110,
+          "set": "bng",
+          "type_line": "Legendary Enchantment Creature \u2014 God"
+        },
+        {
+          "matched_patterns": [
+            "\\bin addition to (?:its|their) other types\\b"
+          ],
+          "name": "Portal to Phyrexia",
+          "rarity": "mythic",
+          "score": 110,
+          "set": "bro",
+          "type_line": "Artifact"
+        },
+        {
+          "matched_patterns": [
+            "\\bas long as\\b[^.]+isn'?t a creature"
+          ],
+          "name": "Purphoros, God of the Forge",
+          "rarity": "mythic",
+          "score": 108,
+          "set": "cmm",
+          "type_line": "Legendary Enchantment Creature \u2014 God"
+        },
+        {
+          "matched_patterns": [
+            "\\bas long as\\b[^.]+isn'?t a creature"
+          ],
+          "name": "Athreos, God of Passage",
+          "rarity": "mythic",
+          "score": 104,
+          "set": "jou",
+          "type_line": "Legendary Enchantment Creature \u2014 God"
+        }
+      ],
+      "id": "layers-type-changing",
+      "patterns": [
+        "\\bas long as\\b[^.]+isn'?t a creature",
+        "\\bbecomes? (?:a|an)? ?(?:artifact |enchantment |creature)",
+        "\\bloses? all abilities\\b",
+        "\\bare? still lands\\b",
+        "\\bin addition to (?:its|their) other types\\b"
+      ],
+      "suggested_test": "engine/src/__tests__/rules-maturity-1v1.test.ts",
+      "title": "Layers and Type-Changing",
+      "total_matches": 542,
+      "why": "These cards stress type-changing, devotion, ability grants/removes, and timestamp/dependency ordering."
+    },
+    {
+      "candidates": [
+        {
+          "matched_patterns": [
+            "\\binstead\\b"
+          ],
+          "name": "Pyramids",
+          "rarity": "rare",
+          "score": 260,
+          "set": "arn",
+          "type_line": "Artifact"
+        },
+        {
+          "matched_patterns": [
+            "\\binstead\\b"
+          ],
+          "name": "Gemstone Caverns",
+          "rarity": "mythic",
+          "score": 235,
+          "set": "tsr",
+          "type_line": "Legendary Land"
+        },
+        {
+          "matched_patterns": [
+            "\\binstead\\b",
+            "\\bif .* would\\b"
+          ],
+          "name": "Toshiro Umezawa",
+          "rarity": "rare",
+          "score": 209,
+          "set": "bok",
+          "type_line": "Legendary Creature \u2014 Human Samurai"
+        },
+        {
+          "matched_patterns": [
+            "\\binstead\\b"
+          ],
+          "name": "Quicksilver Elemental",
+          "rarity": "rare",
+          "score": 208,
+          "set": "mrd",
+          "type_line": "Creature \u2014 Elemental"
+        },
+        {
+          "matched_patterns": [
+            "\\binstead\\b"
+          ],
+          "name": "Ravenous Tyrannosaurus",
+          "rarity": "rare",
+          "score": 193,
+          "set": "rex",
+          "type_line": "Creature \u2014 Dinosaur"
+        },
+        {
+          "matched_patterns": [
+            "\\binstead\\b",
+            "\\bif .* would\\b"
+          ],
+          "name": "Anointed Procession",
+          "rarity": "rare",
+          "score": 191,
+          "set": "akh",
+          "type_line": "Enchantment"
+        },
+        {
+          "matched_patterns": [
+            "\\binstead\\b",
+            "\\bif .* would\\b"
+          ],
+          "name": "Vorinclex, Monstrous Raider",
+          "rarity": "mythic",
+          "score": 180,
+          "set": "khm",
+          "type_line": "Legendary Creature \u2014 Phyrexian Praetor"
+        },
+        {
+          "matched_patterns": [
+            "\\binstead\\b",
+            "\\bif .* would\\b"
+          ],
+          "name": "Serra the Benevolent",
+          "rarity": "mythic",
+          "score": 165,
+          "set": "mh1",
+          "type_line": "Legendary Planeswalker \u2014 Serra"
+        },
+        {
+          "matched_patterns": [
+            "\\binstead\\b",
+            "\\bif .* would\\b"
+          ],
+          "name": "Scorched Ruins",
+          "rarity": "rare",
+          "score": 161,
+          "set": "wth",
+          "type_line": "Land"
+        },
+        {
+          "matched_patterns": [
+            "\\binstead\\b",
+            "\\bif .* would\\b"
+          ],
+          "name": "Blightsteel Colossus",
+          "rarity": "mythic",
+          "score": 151,
+          "set": "2xm",
+          "type_line": "Artifact Creature \u2014 Phyrexian Golem"
+        },
+        {
+          "matched_patterns": [
+            "\\binstead\\b"
+          ],
+          "name": "Force of Negation",
+          "rarity": "rare",
+          "score": 150,
+          "set": "2x2",
+          "type_line": "Instant"
+        },
+        {
+          "matched_patterns": [
+            "\\binstead\\b",
+            "\\bif .* would\\b"
+          ],
+          "name": "Elspeth, Storm Slayer",
+          "rarity": "mythic",
+          "score": 149,
+          "set": "tdm",
+          "type_line": "Legendary Planeswalker \u2014 Elspeth"
+        }
+      ],
+      "id": "replacement-prevention",
+      "patterns": [
+        "\\binstead\\b",
+        "\\bprevent (?:all |the next |\\d+ )?damage\\b",
+        "\\bif .* would\\b",
+        "\\bcan'?t lose the game\\b",
+        "\\bwould draw a card\\b"
+      ],
+      "suggested_test": "engine/src/__tests__/rules-maturity-1v1.test.ts",
+      "title": "Replacement and Prevention",
+      "total_matches": 1374,
+      "why": "Replacement effects are non-stack effects and are easy to order incorrectly with SBAs, damage, draw, and zone changes."
+    },
+    {
+      "candidates": [
+        {
+          "matched_patterns": [
+            "\\byou may pay\\b"
+          ],
+          "name": "Mindbreak Trap",
+          "rarity": "mythic",
+          "score": 510,
+          "set": "zen",
+          "type_line": "Instant \u2014 Trap"
+        },
+        {
+          "matched_patterns": [
+            "\\byou may pay\\b"
+          ],
+          "name": "Mana Vault",
+          "rarity": "mythic",
+          "score": 304,
+          "set": "2x2",
+          "type_line": "Artifact"
+        },
+        {
+          "matched_patterns": [
+            "\\bcounter target\\b"
+          ],
+          "name": "Mental Misstep",
+          "rarity": "uncommon",
+          "score": 262,
+          "set": "nph",
+          "type_line": "Instant"
+        },
+        {
+          "matched_patterns": [
+            "\\byou may pay\\b"
+          ],
+          "name": "Dromar, the Banisher",
+          "rarity": "rare",
+          "score": 246,
+          "set": "inv",
+          "type_line": "Legendary Creature \u2014 Dragon"
+        },
+        {
+          "matched_patterns": [
+            "\\bwhenever an opponent casts\\b"
+          ],
+          "name": "Counterbalance",
+          "rarity": "uncommon",
+          "score": 203,
+          "set": "csp",
+          "type_line": "Enchantment"
+        },
+        {
+          "matched_patterns": [
+            "\\bcounter target\\b",
+            "\\byou may pay\\b"
+          ],
+          "name": "Force of Will",
+          "rarity": "mythic",
+          "score": 203,
+          "set": "dmr",
+          "type_line": "Instant"
+        },
+        {
+          "matched_patterns": [
+            "\\bwithout paying (?:its|their) mana cost\\b"
+          ],
+          "name": "Submerge",
+          "rarity": "uncommon",
+          "score": 200,
+          "set": "nem",
+          "type_line": "Instant"
+        },
+        {
+          "matched_patterns": [
+            "\\bcounter target\\b",
+            "\\bwhenever an opponent casts\\b"
+          ],
+          "name": "Decree of Silence",
+          "rarity": "rare",
+          "score": 194,
+          "set": "scg",
+          "type_line": "Enchantment"
+        },
+        {
+          "matched_patterns": [
+            "\\bunless (?:that player|its controller|they) pays?\\b",
+            "\\bwhenever an opponent casts\\b"
+          ],
+          "name": "Esper Sentinel",
+          "rarity": "rare",
+          "score": 192,
+          "set": "mh2",
+          "type_line": "Artifact Creature \u2014 Human Soldier"
+        },
+        {
+          "matched_patterns": [
+            "\\bwithout paying (?:its|their) mana cost\\b"
+          ],
+          "name": "Deflecting Swat",
+          "rarity": "rare",
+          "score": 183,
+          "set": "cmm",
+          "type_line": "Instant"
+        },
+        {
+          "matched_patterns": [
+            "\\bwithout paying (?:its|their) mana cost\\b"
+          ],
+          "name": "The First Sliver",
+          "rarity": "mythic",
+          "score": 183,
+          "set": "mh1",
+          "type_line": "Legendary Creature \u2014 Sliver"
+        },
+        {
+          "matched_patterns": [
+            "\\bunless (?:that player|its controller|they) pays?\\b",
+            "\\bwhenever an opponent casts\\b"
+          ],
+          "name": "Rhystic Study",
+          "rarity": "rare",
+          "score": 177,
+          "set": "j22",
+          "type_line": "Enchantment"
+        }
+      ],
+      "id": "stack-priority-tax",
+      "patterns": [
+        "\\bcounter target\\b",
+        "\\bunless (?:that player|its controller|they) pays?\\b",
+        "\\bwhenever an opponent casts\\b",
+        "\\byou may pay\\b",
+        "\\bwithout paying (?:its|their) mana cost\\b"
+      ],
+      "suggested_test": "engine/src/high-power-interactions.test.ts",
+      "title": "Stack, Priority, and Tax Triggers",
+      "total_matches": 2027,
+      "why": "High-power games frequently stack free spells, counterspells, Rhystic-style triggers, and multiple may-pay choices."
+    },
+    {
+      "candidates": [
+        {
+          "matched_patterns": [
+            "\\bsearch your library\\b"
+          ],
+          "name": "Academy Rector",
+          "rarity": "rare",
+          "score": 1107,
+          "set": "uds",
+          "type_line": "Creature \u2014 Human Cleric"
+        },
+        {
+          "matched_patterns": [
+            "\\bsearch your library\\b"
+          ],
+          "name": "Sliver Overlord",
+          "rarity": "rare",
+          "score": 496,
+          "set": "scg",
+          "type_line": "Legendary Creature \u2014 Sliver Mutant"
+        },
+        {
+          "matched_patterns": [
+            "\\bsearch your library\\b"
+          ],
+          "name": "Captain Sisay",
+          "rarity": "rare",
+          "score": 366,
+          "set": "inv",
+          "type_line": "Legendary Creature \u2014 Human Soldier"
+        },
+        {
+          "matched_patterns": [
+            "\\bsearch your library\\b"
+          ],
+          "name": "Imperial Seal",
+          "rarity": "mythic",
+          "score": 363,
+          "set": "2x2",
+          "type_line": "Sorcery"
+        },
+        {
+          "matched_patterns": [
+            "\\bsearch your library\\b"
+          ],
+          "name": "Defense of the Heart",
+          "rarity": "rare",
+          "score": 329,
+          "set": "ulg",
+          "type_line": "Enchantment"
+        },
+        {
+          "matched_patterns": [
+            "\\bsearch your library\\b"
+          ],
+          "name": "Moggcatcher",
+          "rarity": "rare",
+          "score": 231,
+          "set": "nem",
+          "type_line": "Creature \u2014 Human Mercenary"
+        },
+        {
+          "matched_patterns": [
+            "\\bsearch your library\\b"
+          ],
+          "name": "Wargate",
+          "rarity": "rare",
+          "score": 201,
+          "set": "arb",
+          "type_line": "Sorcery"
+        },
+        {
+          "matched_patterns": [
+            "\\bput .* on top of (?:your|its owner'?s) library\\b"
+          ],
+          "name": "Submerge",
+          "rarity": "uncommon",
+          "score": 200,
+          "set": "nem",
+          "type_line": "Instant"
+        },
+        {
+          "matched_patterns": [
+            "\\blook at the top\\b"
+          ],
+          "name": "Natural Selection",
+          "rarity": "rare",
+          "score": 196,
+          "set": "2ed",
+          "type_line": "Instant"
+        },
+        {
+          "matched_patterns": [
+            "\\bsearch your library\\b"
+          ],
+          "name": "Scapeshift",
+          "rarity": "mythic",
+          "score": 196,
+          "set": "m19",
+          "type_line": "Sorcery"
+        },
+        {
+          "matched_patterns": [
+            "\\bsearch your library\\b"
+          ],
+          "name": "Demonic Tutor",
+          "rarity": "mythic",
+          "score": 190,
+          "set": "cmm",
+          "type_line": "Sorcery"
+        },
+        {
+          "matched_patterns": [
+            "\\bsearch your library\\b"
+          ],
+          "name": "Vampiric Tutor",
+          "rarity": "mythic",
+          "score": 187,
+          "set": "dmr",
+          "type_line": "Instant"
+        }
+      ],
+      "id": "hidden-info-search",
+      "patterns": [
+        "\\bsearch your library\\b",
+        "\\blook at the top\\b",
+        "\\breveal cards? from the top\\b",
+        "\\bname a card\\b",
+        "\\bput .* on top of (?:your|its owner'?s) library\\b"
+      ],
+      "suggested_test": "engine/src/playtesting-report-regressions.test.ts",
+      "title": "Hidden Information and Library Search",
+      "total_matches": 2026,
+      "why": "Tutors, naming, look effects, and top-library placement need scoped UI choices and deterministic engine state."
+    },
+    {
+      "candidates": [
+        {
+          "matched_patterns": [
+            "\\bfor each (?:artifact|creature|enchantment|token|opponent)\\b"
+          ],
+          "name": "Gaea's Cradle",
+          "rarity": "rare",
+          "score": 2780,
+          "set": "usg",
+          "type_line": "Legendary Land"
+        },
+        {
+          "matched_patterns": [
+            "\\bfor each (?:artifact|creature|enchantment|token|opponent)\\b"
+          ],
+          "name": "Serra's Sanctum",
+          "rarity": "rare",
+          "score": 864,
+          "set": "usg",
+          "type_line": "Legendary Land"
+        },
+        {
+          "matched_patterns": [
+            "\\b(?:put|gets?) .* counters?\\b"
+          ],
+          "name": "Powder Keg",
+          "rarity": "rare",
+          "score": 730,
+          "set": "uds",
+          "type_line": "Artifact"
+        },
+        {
+          "matched_patterns": [
+            "\\bcreate .* token",
+            "\\btreasure\\b|\\bclue\\b|\\bfood\\b|\\bblood\\b|\\bmap\\b"
+          ],
+          "name": "Jaws, Relentless Predator",
+          "rarity": "mythic",
+          "score": 321,
+          "set": "sld",
+          "type_line": "Legendary Creature \u2014 Shark"
+        },
+        {
+          "matched_patterns": [
+            "\\b(?:put|gets?) .* counters?\\b"
+          ],
+          "name": "Umezawa's Jitte",
+          "rarity": "rare",
+          "score": 319,
+          "set": "bok",
+          "type_line": "Legendary Artifact \u2014 Equipment"
+        },
+        {
+          "matched_patterns": [
+            "\\b(?:put|gets?) .* counters?\\b"
+          ],
+          "name": "The One Ring",
+          "rarity": "mythic",
+          "score": 318,
+          "set": "ltr",
+          "type_line": "Legendary Artifact"
+        },
+        {
+          "matched_patterns": [
+            "\\bfor each (?:artifact|creature|enchantment|token|opponent)\\b"
+          ],
+          "name": "Mycosynth Golem",
+          "rarity": "rare",
+          "score": 297,
+          "set": "5dn",
+          "type_line": "Artifact Creature \u2014 Golem"
+        },
+        {
+          "matched_patterns": [
+            "\\bcreate .* token",
+            "\\broll a d20\\b",
+            "\\btreasure\\b|\\bclue\\b|\\bfood\\b|\\bblood\\b|\\bmap\\b"
+          ],
+          "name": "Ancient Copper Dragon",
+          "rarity": "mythic",
+          "score": 278,
+          "set": "clb",
+          "type_line": "Creature \u2014 Elder Dragon"
+        },
+        {
+          "matched_patterns": [
+            "\\bfor each (?:artifact|creature|enchantment|token|opponent)\\b"
+          ],
+          "name": "Collective Restraint",
+          "rarity": "rare",
+          "score": 235,
+          "set": "inv",
+          "type_line": "Enchantment"
+        },
+        {
+          "matched_patterns": [
+            "\\b(?:put|gets?) .* counters?\\b",
+            "\\bfor each (?:artifact|creature|enchantment|token|opponent)\\b"
+          ],
+          "name": "Tombstone Stairwell",
+          "rarity": "rare",
+          "score": 190,
+          "set": "mir",
+          "type_line": "World Enchantment"
+        },
+        {
+          "matched_patterns": [
+            "\\b(?:put|gets?) .* counters?\\b"
+          ],
+          "name": "The Great Henge",
+          "rarity": "mythic",
+          "score": 185,
+          "set": "cmm",
+          "type_line": "Legendary Artifact"
+        },
+        {
+          "matched_patterns": [
+            "\\b(?:put|gets?) .* counters?\\b"
+          ],
+          "name": "Decree of Silence",
+          "rarity": "rare",
+          "score": 184,
+          "set": "scg",
+          "type_line": "Enchantment"
+        }
+      ],
+      "id": "tokens-counters-dice",
+      "patterns": [
+        "\\bcreate .* token",
+        "\\b(?:put|gets?) .* counters?\\b",
+        "\\broll a d20\\b",
+        "\\btreasure\\b|\\bclue\\b|\\bfood\\b|\\bblood\\b|\\bmap\\b",
+        "\\bfor each (?:artifact|creature|enchantment|token|opponent)\\b"
+      ],
+      "suggested_test": "engine/src/__tests__/starter-decks-card-qa.test.ts",
+      "title": "Tokens, Counters, and Randomization",
+      "total_matches": 7191,
+      "why": "Commander board states often hinge on token typing, counter replacement, dice rolls, and future token counting."
+    },
+    {
+      "candidates": [
+        {
+          "matched_patterns": [
+            "\\bd20\\b|\\bcoin\\b"
+          ],
+          "name": "Ancient Copper Dragon",
+          "rarity": "mythic",
+          "score": 258,
+          "set": "clb",
+          "type_line": "Creature \u2014 Elder Dragon"
+        },
+        {
+          "matched_patterns": [
+            "\\bd20\\b|\\bcoin\\b"
+          ],
+          "name": "Ancient Silver Dragon",
+          "rarity": "mythic",
+          "score": 170,
+          "set": "clb",
+          "type_line": "Creature \u2014 Elder Dragon"
+        },
+        {
+          "matched_patterns": [
+            "\\boutside the game\\b"
+          ],
+          "name": "Cunning Wish",
+          "rarity": "rare",
+          "score": 162,
+          "set": "jud",
+          "type_line": "Instant"
+        },
+        {
+          "matched_patterns": [
+            "\\bd20\\b|\\bcoin\\b"
+          ],
+          "name": "Crooked Scales",
+          "rarity": "rare",
+          "score": 148,
+          "set": "mmq",
+          "type_line": "Artifact"
+        },
+        {
+          "matched_patterns": [
+            "\\bd20\\b|\\bcoin\\b"
+          ],
+          "name": "Ancient Brass Dragon",
+          "rarity": "mythic",
+          "score": 134,
+          "set": "clb",
+          "type_line": "Creature \u2014 Elder Dragon"
+        },
+        {
+          "matched_patterns": [
+            "\\bd20\\b|\\bcoin\\b"
+          ],
+          "name": "Ancient Gold Dragon",
+          "rarity": "mythic",
+          "score": 131,
+          "set": "clb",
+          "type_line": "Creature \u2014 Elder Dragon"
+        },
+        {
+          "matched_patterns": [
+            "\\boutside the game\\b"
+          ],
+          "name": "Spawnsire of Ulamog",
+          "rarity": "rare",
+          "score": 112,
+          "set": "roe",
+          "type_line": "Creature \u2014 Eldrazi"
+        },
+        {
+          "matched_patterns": [
+            "\\bd20\\b|\\bcoin\\b"
+          ],
+          "name": "Ancient Bronze Dragon",
+          "rarity": "mythic",
+          "score": 86,
+          "set": "clb",
+          "type_line": "Creature \u2014 Elder Dragon"
+        },
+        {
+          "matched_patterns": [
+            "\\bd20\\b|\\bcoin\\b"
+          ],
+          "name": "Ral, Monsoon Mage // Ral, Leyline Prodigy",
+          "rarity": "mythic",
+          "score": 85,
+          "set": "mh3",
+          "type_line": "Legendary Creature \u2014 Human Wizard // Legendary Planeswalker \u2014 Ral"
+        },
+        {
+          "matched_patterns": [
+            "\\bd20\\b|\\bcoin\\b"
+          ],
+          "name": "Krark's Thumb",
+          "rarity": "rare",
+          "score": 82,
+          "set": "mrd",
+          "type_line": "Legendary Artifact"
+        },
+        {
+          "matched_patterns": [
+            "\\bd20\\b|\\bcoin\\b"
+          ],
+          "name": "Goblin Bomb",
+          "rarity": "rare",
+          "score": 69,
+          "set": "wth",
+          "type_line": "Enchantment"
+        },
+        {
+          "matched_patterns": [
+            "\\bd20\\b|\\bcoin\\b"
+          ],
+          "name": "Vexing Puzzlebox",
+          "rarity": "mythic",
+          "score": 69,
+          "set": "clb",
+          "type_line": "Artifact"
+        }
+      ],
+      "id": "silver-unusual",
+      "patterns": [
+        "\\btear\\b",
+        "\\boutside the game\\b",
+        "\\bfrom the game\\b",
+        "\\bperson outside\\b",
+        "\\bd20\\b|\\bcoin\\b"
+      ],
+      "suggested_test": "engine/src/__tests__/rules-maturity-1v1.test.ts",
+      "title": "Silver-Bordered and Unusual Text",
+      "total_matches": 176,
+      "why": "Un-cards and unusual physical/random instructions must either work generically or degrade without crashing."
+    }
+  ],
+  "note": "Regenerate after refreshing local Scryfall/MTGJSON data.",
+  "schema_version": 1,
+  "source": "mtg_data\\cards_min.jsonl"
+}

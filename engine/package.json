@@ -18,6 +18,7 @@
     "test:chaos:long": "node -e \"process.env.CHAOS_SUITE_LONG='1'; const {spawnSync}=require('child_process'); const r=spawnSync('vitest',['run','src/__tests__/chaos-suite.test.ts'],{stdio:'inherit',shell:true,env:process.env}); process.exit(r.status ?? 1);\"",
     "test:chaos:full": "node -e \"process.env.ENGINE_CHAOS_1V1_RUNS='2000'; process.env.ENGINE_CHAOS_4P_RUNS='500'; process.env.ENGINE_CHAOS_ACTION_BUDGET='260'; process.env.ENGINE_CHAOS_4P_ACTION_BUDGET='340'; const {spawnSync}=require('child_process'); const r=spawnSync('vitest',['run','src/__tests__/chaos-suite.test.ts'],{stdio:'inherit',shell:true,env:process.env}); process.exit(r.status ?? 1);\"",
     "coverage:magic": "python ../scripts/audit_magic_coverage.py --out docs/comprehensive-magic-coverage-audit.md",
+    "coverage:parser": "node scripts/audit-parser-coverage.cjs",
     "coverage:magic:strict": "python ../scripts/audit_magic_coverage.py --strict"
   },
   "devDependencies": {

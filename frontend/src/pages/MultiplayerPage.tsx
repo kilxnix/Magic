@@ -36,6 +36,7 @@ import {
   getRealGameStartPayload,
   getRealGameSpectatorView,
   getRealGameView,
+  getEnginePreflight,
   spectateRoom,
   startRoom,
   startRealGame,
@@ -44,6 +45,7 @@ import {
   updateRoomSettings,
   updateSeat,
   type GameAction,
+  type EnginePreflightResponse,
   type GamePhase,
   type PublicZone,
   type RealGameAction,
@@ -474,6 +476,7 @@ export function MultiplayerPage() {
   const [selectedSpellTargetId, setSelectedSpellTargetId] = useState('');
   const [realGameView, setRealGameView] = useState<RealGameViewResponse | null>(null);
   const [spectatorRealGameView, setSpectatorRealGameView] = useState<RealGameViewResponse | null>(null);
+  const [enginePreflight, setEnginePreflight] = useState<EnginePreflightResponse | null>(null);
   const [spectatorsAllowed, setSpectatorsAllowed] = useState(true);
   const [spectatorDelaySeconds, setSpectatorDelaySeconds] = useState(0);
   const [tableNote, setTableNote] = useState('');
@@ -490,6 +493,12 @@ export function MultiplayerPage() {
   const allReady = occupiedSeats.length > 1 && occupiedSeats.every((seat) => seat.ready);
   const allDecksLocked = occupiedSeats.length > 1 && occupiedSeats.every((seat) => seat.deck_locked);
   const canStart = Boolean(activeSession?.isHost && room?.status === 'waiting' && allReady && allDecksLocked);
+  const canStartEngineBeta = Boolean(canStart && enginePreflight?.ok);
+  const enginePreflightIssues = enginePreflight?.seats
+    .flatMap((seat) => [
+      ...seat.unsupported_cards.map((card) => `${seat.player_name}: ${card.name} - ${card.reason}`),
+      ...seat.issues.filter((issue) => !/unsupported/i.test(issue)).map((issue) => `${seat.player_name}: ${issue}`),
+    ]) || [];
   const inviteUrl = room ? `${window.location.origin}/multiplayer/${room.id}` : '';
   const replayShareUrl = replayReport ? `${window.location.origin}${replayReport.share_url_path}` : room ? `${window.location.origin}/multiplayer/${room.id}?review=1` : '';
   const selectedReplayEvent = replayReport?.events.find((event) => event.id === selectedReplayEventId) || replayReport?.events[0] || null;
@@ -719,6 +728,26 @@ export function MultiplayerPage() {
       setSelectedPhase(room.game.phase);
     }
   }, [room?.game?.phase]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!room?.id || !activeSession || room.status !== 'waiting' || !allDecksLocked) {
+      setEnginePreflight(null);
+      return () => {
+        cancelled = true;
+      };
+    }
+    getEnginePreflight(room.id, activeSession.playerId)
+      .then((preflight) => {
+        if (!cancelled) setEnginePreflight(preflight);
+      })
+      .catch(() => {
+        if (!cancelled) setEnginePreflight(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [room?.id, room?.updated_at, room?.status, activeSession?.playerId, allDecksLocked]);
 
   useEffect(() => {
     if (!room?.settings) return;
@@ -1030,6 +1059,11 @@ export function MultiplayerPage() {
   async function onStartEngineBeta() {
     if (!room || !activeSession) return;
     await runAction(async () => {
+      const preflight = await getEnginePreflight(room.id, activeSession.playerId);
+      setEnginePreflight(preflight);
+      if (!preflight.ok) {
+        throw new Error(preflight.message);
+      }
       const nextRoom = await startRealGame(room.id, activeSession.playerId);
       setRoom(nextRoom);
       setNotice('Experimental engine beta starting. The host browser is authority for this slice.');
@@ -1874,15 +1908,31 @@ export function MultiplayerPage() {
                             <button
                               type="button"
                               onClick={onStartEngineBeta}
-                              disabled={!canStart || loading}
+                              disabled={!canStartEngineBeta || loading}
                               className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-lg border border-sky-300/30 bg-sky-300/10 px-4 text-sm font-black text-sky-100 transition hover:bg-sky-300/20 disabled:cursor-not-allowed disabled:opacity-40"
                             >
                               <Shield className="h-4 w-4" />
                               Start Engine Beta
                             </button>
                             <div className="text-xs font-semibold text-stone-500 sm:basis-full sm:text-right">
-                              Shared Table is the soft-launch path. Engine Beta is experimental.
+                              Shared Table is the soft-launch path. Engine Beta requires a clean deck preflight.
                             </div>
+                            {enginePreflight && (
+                              <div className={`rounded-lg border px-3 py-2 text-xs font-bold sm:basis-full ${
+                                enginePreflight.ok
+                                  ? 'border-sky-300/20 bg-sky-300/10 text-sky-100'
+                                  : 'border-amber-300/25 bg-amber-300/10 text-amber-50'
+                              }`}>
+                                <div>{enginePreflight.message}</div>
+                                {enginePreflightIssues.length > 0 && (
+                                  <ul className="mt-2 space-y-1">
+                                    {enginePreflightIssues.slice(0, 5).map((issue) => (
+                                      <li key={issue}>{issue}</li>
+                                    ))}
+                                  </ul>
+                                )}
+                              </div>
+                            )}
                           </>
                         )}
                       </div>
