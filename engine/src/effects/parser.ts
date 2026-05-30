@@ -1104,13 +1104,18 @@ function matchCreateToken(tokens: string[], startIndex: number): PatternResult {
     idx = 2;
   }
 
-  const artifactTokenNames = new Set(['blood', 'clue', 'food', 'map', 'treasure']);
+  const artifactTokenNames = new Set(['blood', 'clue', 'food', 'gold', 'lander', 'map', 'powerstone', 'treasure']);
   const artifactName = slice[idx];
   if (artifactTokenNames.has(artifactName) && (slice[idx + 1] === 'token' || slice[idx + 1] === 'tokens')) {
     idx += 2;
     if (slice[idx] === '.') idx++;
 
     const subtype = artifactName.charAt(0).toUpperCase() + artifactName.slice(1);
+    const abilities = artifactName === 'lander'
+      ? ['{2}, {T}, Sacrifice this token: Search your library for a basic land card, put it onto the battlefield tapped, then shuffle.']
+      : artifactName === 'powerstone'
+        ? ['{T}: Add {C}. This mana can\'t be spent to cast a nonartifact spell.']
+        : undefined;
     const token: TokenDefinition = {
       name: subtype,
       colors: [],
@@ -1118,6 +1123,7 @@ function matchCreateToken(tokens: string[], startIndex: number): PatternResult {
       subtypes: [subtype],
       power: 0,
       toughness: 0,
+      ...(abilities ? { abilities } : {}),
     };
 
     const effect: Effect = {
@@ -3812,6 +3818,31 @@ function matchAttacksPrefix(tokens: string[]): number {
   return idx;
 }
 
+function matchSelfBecomesTappedPrefix(tokens: string[]): number {
+  if (tokens.length < 5) return -1;
+
+  const first = tokens[0];
+  if (first !== 'when' && first !== 'whenever') return -1;
+
+  let idx = 1;
+  if (tokens[idx] === '~') {
+    idx++;
+  } else if (tokens[idx] === 'this') {
+    idx++;
+    if (SELF_ETB_SUBJECT_TYPES.has(tokens[idx])) idx++;
+  } else {
+    return -1;
+  }
+
+  if (tokens[idx] !== 'becomes') return -1;
+  if (tokens[idx + 1] !== 'tapped') return -1;
+
+  idx += 2;
+  if (tokens[idx] === ',') idx++;
+
+  return idx;
+}
+
 function matchCreatureYouControlAttacksPrefix(tokens: string[]): number {
   if (tokens.length < 7) return -1;
   if (tokens[0] !== 'whenever') return -1;
@@ -4317,6 +4348,9 @@ function matchTriggerPrefix(tokens: string[]): { trigger: Trigger; effectStart: 
 
   idx = matchAttacksPrefix(tokens);
   if (idx > 0) return { trigger: { kind: 'Attacks', who: 'self' }, effectStart: idx };
+
+  idx = matchSelfBecomesTappedPrefix(tokens);
+  if (idx > 0) return { trigger: { kind: 'BecomesTapped', who: 'self' }, effectStart: idx };
 
   idx = matchCreatureYouControlAttacksPrefix(tokens);
   if (idx > 0) return { trigger: { kind: 'CreatureYouControlAttacks' }, effectStart: idx };

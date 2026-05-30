@@ -200,6 +200,14 @@ describe('Trigger Parsing', () => {
     expect(result.ability.trigger.kind).toBe('Attacks');
   });
 
+  it('parses self becomes-tapped triggers', () => {
+    const result = parseOracleText('Whenever this creature becomes tapped, create a 1/1 red Goblin creature token.');
+    expect(result.kind).toBe('Triggered');
+    if (result.kind !== 'Triggered') return;
+    expect(result.ability.trigger).toEqual({ kind: 'BecomesTapped', who: 'self' });
+    expect(result.ability.effects[0].kind).toBe('CreateToken');
+  });
+
   it('parses "Whenever you cast a spell, gain 1 life." as Triggered/YouCastSpell', () => {
     const result = parseOracleText('Whenever you cast a spell, gain 1 life.');
     expect(result.kind).toBe('Triggered');
@@ -848,6 +856,53 @@ describe('Attack Trigger Pipeline', () => {
     // Should have drawn a card
     const handAfter = countCardsInZone(state, 'p1', 'hand');
     expect(handAfter).toBe(handBefore + 1);
+  });
+});
+
+// ============================================================================
+// BECOMES TAPPED TRIGGER PIPELINE
+// ============================================================================
+
+describe('Becomes Tapped Trigger Pipeline', () => {
+  it('fires when a creature taps for mana', () => {
+    const tappedPayoff: CardDefinition = {
+      id: 'seedship-test',
+      name: 'Seedship Test',
+      type_line: 'Creature - Plant',
+      oracle_text: 'Whenever this creature becomes tapped, create a Lander token. (It\'s an artifact with "{2}, {T}, Sacrifice this token: Search your library for a basic land card, put it onto the battlefield tapped, then shuffle.")\n{T}: Add {G}.',
+      mana_cost: '{G}',
+      cmc: 1,
+      colors: ['G'],
+      color_identity: ['G'],
+      keywords: [],
+      power: 1,
+      toughness: 1,
+      card_types: ['creature'],
+    };
+    const island = makeLand('island-tapped-trigger', 'Island');
+
+    let state = createTestGame([tappedPayoff, island], [island]);
+    const payoffInst = findCard(state, 'seedship-test')!;
+    state = moveToZone(state, payoffInst.instanceId, 'battlefield');
+    state = registerBattlefieldAbilities(state, payoffInst.instanceId);
+
+    state = tapLandForMana(state, 'p1', payoffInst.instanceId, 'G');
+
+    expect(state.players[0].manaPool.G).toBe(1);
+    expect(state.pendingTriggers).toHaveLength(1);
+    expect(state.pendingTriggers[0].ability.trigger).toEqual({ kind: 'BecomesTapped', who: 'self' });
+
+    state = putTriggersOnStack(state);
+    state = resolveTopOfStack(state);
+
+    const landers = Array.from(state.cards.values()).filter(card => {
+      const def = state.cardDefinitions.get(card.definitionId);
+      return card.ownerId === 'p1' && card.zone === 'battlefield' && card.isToken && def?.name === 'Lander';
+    });
+    expect(landers).toHaveLength(1);
+    const landerDef = state.cardDefinitions.get(landers[0].definitionId);
+    expect(landerDef?.card_types).toContain('artifact');
+    expect(landerDef?.oracle_text).toContain('Search your library for a basic land card');
   });
 });
 

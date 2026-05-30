@@ -45,10 +45,12 @@ export function declareAttackers(state: GameState, playerId: string, attacks: At
 
   // Tap attackers (unless they have vigilance)
   const newCards = new Map(state.cards);
+  const tappedAttackerIds: string[] = [];
   for (const attack of attacks) {
     const card = newCards.get(attack.cardInstanceId)!;
     if (shouldTapWhenAttacking(state, attack.cardInstanceId)) {
       newCards.set(attack.cardInstanceId, { ...card, tapped: true });
+      if (!card.tapped) tappedAttackerIds.push(attack.cardInstanceId);
     }
   }
 
@@ -73,6 +75,14 @@ export function declareAttackers(state: GameState, playerId: string, attacks: At
     resultState = checkTriggersForEvent(resultState, {
       kind: 'Attacks',
       attackerInstanceId: attack.cardInstanceId,
+      controllerId: playerId,
+    });
+  }
+
+  for (const attackerId of tappedAttackerIds) {
+    resultState = checkTriggersForEvent(resultState, {
+      kind: 'PermanentTapped',
+      instanceId: attackerId,
       controllerId: playerId,
     });
   }

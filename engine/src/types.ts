@@ -115,7 +115,8 @@ export interface TriggeredAbilityRef {
     | { kind: 'CombatDamageToPlayer'; who: 'self' | 'creatureYouControl' }
     | { kind: 'CastInstantOrSorcery' }
     | { kind: 'CastOrCopyInstantOrSorcery' }
-    | { kind: 'Landfall' };
+    | { kind: 'Landfall' }
+    | { kind: 'BecomesTapped'; who: 'self' };
   effects: unknown[]; // Effect[] from ast.ts
   targets?: unknown[]; // TargetSpec[] from targets.ts
   optional?: boolean;

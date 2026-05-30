@@ -791,6 +791,29 @@ describe('parseOracleText', () => {
       expect(result.ability.effects[0].kind).toBe('Draw');
     });
 
+    it('parses "Whenever this creature becomes tapped" as a self tapped trigger', () => {
+      const result = parseOracleText('Whenever this creature becomes tapped, create a 1/1 red Goblin creature token.');
+      expect(result.kind).toBe('Triggered');
+      if (result.kind !== 'Triggered') return;
+      expect(result.ability.trigger).toEqual({ kind: 'BecomesTapped', who: 'self' });
+      expect(result.ability.effects[0].kind).toBe('CreateToken');
+    });
+
+    it('parses named artifact-token creation from becomes-tapped trigger text', () => {
+      const result = parseOracleText('Whenever this creature becomes tapped, create a Lander token. (It\'s an artifact with "{2}, {T}, Sacrifice this token: Search your library for a basic land card, put it onto the battlefield tapped, then shuffle.")');
+      expect(result.kind).toBe('Triggered');
+      if (result.kind !== 'Triggered') return;
+      expect(result.ability.trigger).toEqual({ kind: 'BecomesTapped', who: 'self' });
+      expect(result.ability.effects[0]).toMatchObject({
+        kind: 'CreateToken',
+        token: {
+          name: 'Lander',
+          types: ['artifact'],
+          subtypes: ['Lander'],
+        },
+      });
+    });
+
     it('parses "At the beginning of your upkeep, draw a card."', () => {
       const result = parseOracleText('At the beginning of your upkeep, draw a card.');
       expect(result.kind).toBe('Triggered');

@@ -434,7 +434,8 @@ export type Trigger =
   | { kind: 'CombatDamageToPlayer'; who: 'self' | 'creatureYouControl' }
   | { kind: 'CastInstantOrSorcery' }
   | { kind: 'CastOrCopyInstantOrSorcery' }
-  | { kind: 'Landfall' };
+  | { kind: 'Landfall' }
+  | { kind: 'BecomesTapped'; who: 'self' };
 
 export type TargetRef =
   | { kind: 'Chosen'; targetId: string }

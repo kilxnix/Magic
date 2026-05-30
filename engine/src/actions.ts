@@ -385,7 +385,22 @@ export function tapLandForMana(state: GameState, playerId: string, cardInstanceI
     return withRestriction;
   });
 
-  return { ...state, cards: newCards, players: newPlayers };
+  let resultState: GameState = { ...state, cards: newCards, players: newPlayers };
+  const sourceTappedForMana = !handExileAbility
+    && def.manaProduction?.isTapAbility === true
+    && card.zone === 'battlefield'
+    && !card.tapped
+    && resultState.cards.get(cardInstanceId)?.tapped === true;
+
+  if (sourceTappedForMana) {
+    resultState = checkTriggersForEvent(resultState, {
+      kind: 'PermanentTapped',
+      instanceId: cardInstanceId,
+      controllerId: playerId,
+    });
+  }
+
+  return resultState;
 }
 
 export function drawCards(state: GameState, playerId: string, count: number): GameState {
@@ -520,6 +535,11 @@ export function activateAbility(
     const card = newCards.get(cardInstanceId)!;
     newCards.set(cardInstanceId, { ...card, tapped: true });
     newState = { ...newState, cards: newCards };
+    newState = checkTriggersForEvent(newState, {
+      kind: 'PermanentTapped',
+      instanceId: cardInstanceId,
+      controllerId: playerId,
+    });
   }
 
   // Pay sacrifice cost
