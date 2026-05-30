@@ -708,12 +708,6 @@ function isMoxDiamondLikeDefinition(def: CardDefinition): boolean {
     || /if .* would enter .* discard a land card/i.test(def.oracle_text);
 }
 
-function isPermanentTypeLine(typeLine: string): boolean {
-  const normalized = typeLine.toLowerCase();
-  return ['artifact', 'battle', 'creature', 'enchantment', 'land', 'planeswalker']
-    .some(type => normalized.includes(type));
-}
-
 function publicTurnNumber(engineTurnNumber: number, playerCount: number): number {
   return Math.ceil(engineTurnNumber / Math.max(1, playerCount));
 }
@@ -828,55 +822,6 @@ function humanizeSearchFilter(filter?: SearchFilterSpec, fallback?: string): str
   }
 
   return parts.length > 0 ? parts.join(' ') : undefined;
-}
-
-function cardMatchesSearch(
-  card: TutorCardOption,
-  filterSpec?: SearchFilterSpec,
-  fallbackFilter?: string,
-): boolean {
-  const typeLine = card.typeLine.toLowerCase();
-
-  if (filterSpec) {
-    if (filterSpec.types?.length) {
-      const matchesType = filterSpec.types.some(type => typeLine.includes(type.toLowerCase()));
-      if (!matchesType) return false;
-    }
-    if (filterSpec.subtypes?.length) {
-      const matchesSubtype = filterSpec.subtypes.some(subtype => typeLine.includes(subtype.toLowerCase()));
-      if (!matchesSubtype) return false;
-    }
-    if (filterSpec.supertypes?.length) {
-      const matchesSupertype = filterSpec.supertypes.some(supertype => typeLine.includes(supertype.toLowerCase()));
-      if (!matchesSupertype) return false;
-    }
-    if (filterSpec.colors?.length) {
-      const colors = card.colors || [];
-      const matchesColor = filterSpec.colors.some(color => colors.includes(color));
-      if (!matchesColor) return false;
-    }
-    if (filterSpec.cmc && typeof card.cmc === 'number') {
-      if (filterSpec.cmc.op === 'eq' && card.cmc !== filterSpec.cmc.value) return false;
-      if (filterSpec.cmc.op === 'lte' && card.cmc > filterSpec.cmc.value) return false;
-      if (filterSpec.cmc.op === 'gte' && card.cmc < filterSpec.cmc.value) return false;
-    }
-    if (filterSpec.permanent && !isPermanentTypeLine(card.typeLine)) return false;
-    if (filterSpec.manaValueLessThanSourcePower) {
-      if (typeof filterSpec.sourcePowerLimit !== 'number' || typeof card.cmc !== 'number') return false;
-      if (card.cmc >= filterSpec.sourcePowerLimit) return false;
-    }
-    return true;
-  }
-
-  if (!fallbackFilter) return true;
-  const needle = fallbackFilter.toLowerCase();
-  const haystack = [
-    card.name,
-    card.typeLine,
-    card.manaCost,
-    card.oracleText || '',
-  ].join(' ').toLowerCase();
-  return haystack.includes(needle);
 }
 
 function searchPickerMetadata(search: StackSearchInfo): Pick<TutorCardOption, 'legal' | 'reason' | 'destination' | 'entersTapped' | 'mustReveal'> {
@@ -4497,19 +4442,14 @@ export function useShelectorGame() {
 
     // Determine destination from the tutor's oracle text
     const dest = tutorDestinationRef.current;
-    const filterSpec = tutorFilterSpecRef.current;
     const filter = tutorFilterRef.current;
     const promptRequest = tutorPromptRequestRef.current;
-    const option = toTutorCardOption(engine, card);
-    const isLegalLibraryChoice = promptRequest
-      ? promptRequest.legalChoices.some(choice => choice.cardInstanceId === selectedCardInstanceId)
-      : Boolean(
-        option
-        && card.ownerId === humanIdRef.current
-        && card.zone === 'library'
-        && cardMatchesSearch(option, filterSpec, filter)
-        && (dest !== 'battlefield' || isPermanentTypeLine(option.typeLine))
-      );
+    if (!promptRequest) {
+      addMessage('system', 'That search no longer has an active engine prompt. Resolve the stack again to continue.');
+      syncState();
+      return;
+    }
+    const isLegalLibraryChoice = promptRequest.legalChoices.some(choice => choice.cardInstanceId === selectedCardInstanceId);
     if (!isLegalLibraryChoice) {
       const sourceName = tutorSourceNameRef.current || 'this search';
       addMessage('system', `${cardName} is not a legal choice for ${sourceName}. Choose a legal card.`);
@@ -4565,25 +4505,7 @@ export function useShelectorGame() {
       }
     }
 
-    const activePrompt = promptRequest || createSearchLibraryPromptRequest(
-      engine,
-      humanIdRef.current,
-      cardFilterFromSearchInfo({
-        filter,
-        filterSpec,
-        destination: dest,
-        tapped: tutorTappedRef.current,
-        shuffle: tutorShuffleRef.current,
-      }),
-      dest,
-      {
-        sourceInstanceId: tutorSourceInstanceIdRef.current,
-        tapped: tutorTappedRef.current,
-        shuffle: tutorShuffleRef.current,
-        minSelections: 0,
-        maxSelections: 1,
-      },
-    );
+    const activePrompt = promptRequest;
     const promptResponse = applySearchLibraryPromptResponse(engine, activePrompt, {
       requestId: activePrompt.id,
       kind: 'SearchLibrary',
