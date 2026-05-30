@@ -11,7 +11,7 @@
 import { describe, it, expect } from 'vitest';
 import { parseOracleText } from '../effects/parser';
 import { initGameState, getCardsInZone, getCardDefinition } from '../game-state';
-import { castSpell, canCastSpell, resolveTopOfStack, putTriggersOnStack, checkTriggersForEvent, registerBattlefieldAbilities } from '../stack';
+import { castSpell, canCastSpell, resolveTopOfStack, putTriggersOnStack, checkTriggersForEvent, registerBattlefieldAbilities, createETBTriggers } from '../stack';
 import { checkStateBasedActions, cleanupDamage } from '../state-based';
 import { activateAbility, getActivatedAbilities, playLand, tapLandForMana, drawCards } from '../actions';
 import { declareAttackers, declareBlockers } from '../combat';
@@ -559,6 +559,42 @@ describe('ETB Trigger Pipeline', () => {
     expect(state.pendingTriggers[0].requiredTargets).toMatchObject([
       { type: 'Creature', count: 1 },
     ]);
+  });
+
+  it("Puppeteer-style ETB reanimates an opponent's graveyard creature under your control with haste", () => {
+    const puppeteer = makeCreatureWithETB(
+      'puppeteer-clique',
+      'Puppeteer Clique',
+      "Flying When this creature enters, put target creature card from an opponent's graveyard onto the battlefield under your control. It gains haste.",
+    );
+    const targetCreature = makeVanillaCreature('opponent-bear', 'Opponent Bear', '{1}{G}');
+    const island = makeLand('island', 'Island');
+
+    let state = createTestGame(
+      [puppeteer, island],
+      [targetCreature, island],
+    );
+
+    const puppeteerInst = findCard(state, 'puppeteer-clique')!;
+    const targetInst = findCard(state, 'opponent-bear')!;
+    state = moveToZone(state, puppeteerInst.instanceId, 'battlefield');
+    state = moveToZone(state, targetInst.instanceId, 'graveyard');
+    state = registerBattlefieldAbilities(state, puppeteerInst.instanceId);
+    state = createETBTriggers(state, puppeteerInst.instanceId);
+
+    expect(state.pendingTriggers).toHaveLength(1);
+    expect(state.pendingTriggers[0].requiredTargets).toMatchObject([
+      { type: 'CreatureCardInGraveyard', constraints: { opponentControls: true } },
+    ]);
+
+    const triggerId = state.pendingTriggers[0].id;
+    state = putTriggersOnStack(state, { [triggerId]: [targetInst.instanceId] });
+    state = resolveTopOfStack(state);
+
+    const returned = state.cards.get(targetInst.instanceId)!;
+    expect(returned.zone).toBe('battlefield');
+    expect(returned.ownerId).toBe('p1');
+    expect(instanceHasKeyword(state, targetInst.instanceId, 'Haste')).toBe(true);
   });
 
   it('Krenko tap ability creates one token for each Goblin you control', () => {

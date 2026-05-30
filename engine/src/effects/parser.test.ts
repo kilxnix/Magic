@@ -203,6 +203,24 @@ describe('parseOracleText', () => {
       });
     });
 
+    it('parses opponent-graveyard reanimation ETB with haste grant', () => {
+      const result = parseOracleText("Flying When this creature enters, put target creature card from an opponent's graveyard onto the battlefield under your control. It gains haste.");
+      expect(result.kind).toBe('ETB');
+      if (result.kind !== 'ETB') return;
+      expect(result.ability.effects).toHaveLength(3);
+      expect(result.ability.effects[0]).toMatchObject({
+        kind: 'ReturnFromGraveyard',
+        destination: 'battlefield',
+      });
+      expect(result.ability.effects[1]).toMatchObject({ kind: 'GainControl' });
+      expect(result.ability.effects[2]).toMatchObject({
+        kind: 'GrantKeyword',
+        keyword: 'Haste',
+      });
+      expect(result.targets[0].type).toBe('CreatureCardInGraveyard');
+      expect(result.targets[0].constraints).toEqual({ opponentControls: true });
+    });
+
     it('parses enchanted-creature dies triggers after enchant preamble text', () => {
       const result = parseOracleText("Enchant creature Enchanted creature gets +1/+1. When enchanted creature dies, return that card to its owner's hand.");
       expect(result.kind).toBe('Dies');

@@ -1839,6 +1839,58 @@ function matchReturnThatCardToHand(tokens: string[], startIndex: number): Patter
 }
 
 /**
+ * Match: "put target creature card from an opponent's graveyard onto the battlefield under your control. It gains haste."
+ */
+function matchPutCreatureCardFromOpponentGraveyardOntoBattlefield(tokens: string[], startIndex: number): PatternResult {
+  const slice = tokens.slice(startIndex);
+  if (slice.length < 12) return null;
+  if (slice[0] !== 'put' || slice[1] !== 'target' || slice[2] !== 'creature' || slice[3] !== 'card') return null;
+  let idx = 4;
+  if (slice[idx] !== 'from') return null;
+  idx++;
+  if (slice[idx] !== 'an' || slice[idx + 1] !== "opponent's" || slice[idx + 2] !== 'graveyard') return null;
+  idx += 3;
+  if (slice[idx] !== 'onto' || slice[idx + 1] !== 'the' || slice[idx + 2] !== 'battlefield') return null;
+  idx += 3;
+
+  if (slice[idx] === 'under' && slice[idx + 1] === 'your' && slice[idx + 2] === 'control') {
+    idx += 3;
+  }
+  if (slice[idx] === '.') idx++;
+
+  let grantsHaste = false;
+  if (slice[idx] === 'it' && slice[idx + 1] === 'gains' && slice[idx + 2] === 'haste') {
+    grantsHaste = true;
+    idx += 3;
+    if (slice[idx] === '.') idx++;
+  }
+
+  const spec = makeTargetSpec('CreatureCardInGraveyard', { opponentControls: true });
+  const target = makeChosenRef(spec);
+  const effects: Effect[] = [
+    {
+      kind: 'ReturnFromGraveyard',
+      target,
+      destination: 'battlefield',
+    },
+    {
+      kind: 'GainControl',
+      target,
+    },
+  ];
+  if (grantsHaste) {
+    effects.push({
+      kind: 'GrantKeyword',
+      target,
+      keyword: 'Haste',
+      untilEndOfTurn: true,
+    });
+  }
+
+  return { effects, targets: [spec], consumed: idx };
+}
+
+/**
  * Match: "target creature gets +N/+N until end of turn"
  * Match: "target creature gets -N/-N until end of turn"
  * Match: "creatures you control get +N/+N until end of turn"
@@ -3886,7 +3938,7 @@ function parseEffectClauseInternal(tokens: string[], startIndex: number): Patter
     matchDealXDamage, matchDrawX, matchEachOpponentLosesLife,
     matchEachOpponentDiscardsCard, matchDestroyAll, matchDealDamage, matchDestroy,
     matchLookAtTargetPlayerHand, matchLookAtTopPutOneIntoHand, matchPutLandFromHandOntoBattlefield, matchThatPlayerDraw, matchTargetPlayerDraw, matchDraw,
-    matchGainLife, matchLoseLife, matchExile, matchReturnFromGraveyard, matchReturnThatCardToHand,
+    matchGainLife, matchLoseLife, matchExile, matchPutCreatureCardFromOpponentGraveyardOntoBattlefield, matchReturnFromGraveyard, matchReturnThatCardToHand,
     matchReturnToHand, matchMill, matchGainEnergy, matchAddCounters, matchModifyPT, matchTap,
     matchUntap, matchRollD20, matchThatPlayerCreatesToken, matchCreateToken, matchDiscard, matchDiscardSelf, matchScry,
     matchSurveil, matchCounterSpell,
@@ -3971,6 +4023,7 @@ function parseEffectClause(tokens: string[], startIndex: number): PatternResult 
     matchGainLife,
     matchLoseLife,
     matchExile,
+    matchPutCreatureCardFromOpponentGraveyardOntoBattlefield,
     matchReturnFromGraveyard, // before ReturnToHand — "return target creature card from..."
     matchReturnThatCardToHand,
     matchReturnToHand,

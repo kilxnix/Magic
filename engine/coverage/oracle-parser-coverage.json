@@ -1,16 +1,16 @@
 {
-  "generatedAt": "2026-05-30T12:34:22.664Z",
+  "generatedAt": "2026-05-30T12:39:19.021Z",
   "source": "mtg_data/cards_min.jsonl",
   "commanderLegalOnly": true,
   "includedCards": 30969,
   "totalOracleFaces": 31420,
-  "parsedFaces": 16063,
-  "unparsedFaces": 15357,
-  "parsedPercent": 51.12,
+  "parsedFaces": 16069,
+  "unparsedFaces": 15351,
+  "parsedPercent": 51.14,
   "parsedKindCounts": {
-    "Unparsed": 15357,
-    "Spell": 10851,
-    "ETB": 2090,
+    "Unparsed": 15351,
+    "Spell": 10856,
+    "ETB": 2091,
     "Triggered": 1317,
     "KeywordOnly": 876,
     "StaticAbility": 340,
@@ -21,11 +21,11 @@
   "unparsedReasons": [
     {
       "reason": "No recognized pattern",
-      "count": 12929
+      "count": 12924
     },
     {
       "reason": "Could not parse ETB effect clause",
-      "count": 1363
+      "count": 1362
     },
     {
       "reason": "Could not parse trigger effect clause",
@@ -40,7 +40,7 @@
     {
       "id": "trigger-timing",
       "reason": "Triggered or delayed triggered abilities need event registration and APNAP ordering.",
-      "count": 6420,
+      "count": 6417,
       "samples": [
         {
           "name": "Mindlink Mech",
@@ -79,23 +79,23 @@
           "text": "Enchant Forest As this Aura enters, choose a color. Whenever enchanted Forest is tapped for mana, its controller adds an additional one mana of the chosen color."
         },
         {
-          "name": "Puppeteer Clique",
-          "set": "ecc",
-          "reason": "Could not parse ETB effect clause",
-          "text": "Flying When this creature enters, put target creature card from an opponent's graveyard onto the battlefield under your control. It gains haste. At the beginning of your next end step, exile it. Persist (When this creature dies, if it had no -1/-1 counters on it, return it to the battlefield under its owner's control with a -1/-1 counter on it.)"
-        },
-        {
           "name": "Dazzling Sphinx",
           "set": "otc",
           "reason": "No recognized pattern",
           "text": "Flying Whenever this creature deals combat damage to a player, that player exiles cards from the top of their library until they exile an instant or sorcery card. You may cast that card without paying its mana cost. Then that player puts the exiled cards that weren't cast this way on the bottom of their library in a random order."
+        },
+        {
+          "name": "Selesnya Sanctuary",
+          "set": "clu",
+          "reason": "No recognized pattern",
+          "text": "This land enters tapped. When this land enters, return a land you control to its owner's hand. {T}: Add {G}{W}."
         }
       ]
     },
     {
       "id": "unclassified",
       "reason": "Unparsed text did not match a known syntax cluster; inspect manually.",
-      "count": 3471,
+      "count": 3468,
       "samples": [
         {
           "name": "Static Orb",
@@ -150,7 +150,7 @@
     {
       "id": "continuous-layers",
       "reason": "Continuous effects need layer/timestamp/dependency handling.",
-      "count": 3261,
+      "count": 3258,
       "samples": [
         {
           "name": "Sensory Deprivation",
@@ -260,14 +260,8 @@
     {
       "id": "tokens-counters",
       "reason": "Token/counter wording needs typed objects, counters, and downstream interactions.",
-      "count": 1804,
+      "count": 1803,
       "samples": [
-        {
-          "name": "Puppeteer Clique",
-          "set": "ecc",
-          "reason": "Could not parse ETB effect clause",
-          "text": "Flying When this creature enters, put target creature card from an opponent's graveyard onto the battlefield under your control. It gains haste. At the beginning of your next end step, exile it. Persist (When this creature dies, if it had no -1/-1 counters on it, return it to the battlefield under its owner's control with a -1/-1 counter on it.)"
-        },
         {
           "name": "Sagu Pummeler",
           "set": "tdm",
@@ -309,13 +303,19 @@
           "set": "bro",
           "reason": "No recognized pattern",
           "text": "Target opponent reveals their hand. You choose a nonland card from it. That player discards that card. Create a tapped Powerstone token. (It's an artifact with \"{T}: Add {C}. This mana can't be spent to cast a nonartifact spell.\")"
+        },
+        {
+          "name": "Halsin, Emerald Archdruid",
+          "set": "clb",
+          "reason": "No recognized pattern",
+          "text": "{1}: Until end of turn, target token you control becomes a green Bear creature with base power and toughness 4/4 in addition to its other colors and types. Choose a Background (You can have a Background as a second commander.)"
         }
       ]
     },
     {
       "id": "replacement-prevention",
       "reason": "Replacement/prevention effects require replacement-layer handling.",
-      "count": 1600,
+      "count": 1599,
       "samples": [
         {
           "name": "Sodden Verdure",
