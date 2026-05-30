@@ -208,6 +208,23 @@ describe('serializeGameState / deserializeGameState', () => {
     expect(deserialized.combat!.damageAssignment.get('attacker1')).toBe(2);
   });
 
+  it('round-trips turn-scoped damage prevention shields correctly', () => {
+    const state = createTestState();
+    state.damagePreventionEffects = [{
+      id: 'fog-shield',
+      sourceInstanceId: 'fog1',
+      controllerId: 'p1',
+      amount: 'all',
+      combatOnly: true,
+      expiresAtTurnNumber: state.turnNumber,
+    }];
+
+    const serialized = serializeGameState(state);
+    const deserialized = deserializeGameState(serialized);
+
+    expect(deserialized.damagePreventionEffects).toEqual(state.damagePreventionEffects);
+  });
+
   it('round-trips grudge data correctly', () => {
     let state = initGrudgeTracking(createTestState());
     state = recordDamage(state, 'p2', 'p1', 10);

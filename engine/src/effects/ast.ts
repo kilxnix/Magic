@@ -10,6 +10,7 @@ export type Effect =
   | DestroyEffect
   | DealDamageEffect
   | DealDamageForExiledCardsEffect
+  | PreventDamageEffect
   | GainLifeEffect
   | LoseLifeEffect
   | ExileEffect
@@ -95,6 +96,14 @@ export interface DealDamageForExiledCardsEffect {
   target: TargetRef;
   exiledCardIds: string[];
   amountPerCard: number;
+}
+
+export interface PreventDamageEffect {
+  kind: 'PreventDamage';
+  target?: TargetRef;
+  amount: AmountRef | 'all';
+  combatOnly: boolean;
+  duration: 'turn';
 }
 
 export interface GainLifeEffect {

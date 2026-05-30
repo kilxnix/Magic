@@ -288,6 +288,16 @@ export interface ContinuousEffectRef {
   timestamp: number;
 }
 
+export interface DamagePreventionEffectRef {
+  id: string;
+  sourceInstanceId?: string;
+  controllerId: string;
+  protectedTargetId?: string;
+  amount: number | 'all';
+  combatOnly: boolean;
+  expiresAtTurnNumber: number;
+}
+
 export interface GameState {
   players: Player[];
   cards: Map<string, CardInstance>;
@@ -313,6 +323,9 @@ export interface GameState {
 
   // Phase 15: Continuous effects from static abilities
   continuousEffects?: ContinuousEffectRef[];
+
+  // Turn-scoped damage prevention such as Fog.
+  damagePreventionEffects?: DamagePreventionEffectRef[];
 }
 
 export function emptyManaPool(): ManaPool {

@@ -1,5 +1,6 @@
 import { GameState, Phase, Step } from './types';
 import { checkTriggersForEvent } from './stack';
+import { pruneDamagePreventionEffects } from './effects/replacement';
 
 export const STEP_ORDER: Step[] = [
   'untap', 'upkeep', 'draw',
@@ -33,6 +34,7 @@ function derivePhase(currentStep: Step, nextStep: Step): Phase {
 }
 
 export function advanceStep(state: GameState): GameState {
+  state = pruneDamagePreventionEffects(state);
   const currentIndex = STEP_ORDER.indexOf(state.step);
 
   if (currentIndex === STEP_ORDER.length - 1) {
@@ -73,6 +75,7 @@ export function advanceStep(state: GameState): GameState {
 }
 
 export function advanceToNextTurn(state: GameState): GameState {
+  state = pruneDamagePreventionEffects(state);
   const playerCount = state.players.length;
   let nextIndex = (state.activePlayerIndex + 1) % playerCount;
 
@@ -100,6 +103,7 @@ export function advanceToNextTurn(state: GameState): GameState {
     spellsCastThisTurn: 0,
     hasPriorityPassed: new Array(playerCount).fill(false),
     combat: null,
+    damagePreventionEffects: [],
   };
 }
 

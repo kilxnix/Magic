@@ -364,6 +364,9 @@ export function serializeGameState(state: GameState): SerializedGameStateV1 {
           defs.map(serializeCardDefinition),
         ])
       : undefined,
+    damagePreventionEffects: state.damagePreventionEffects
+      ? state.damagePreventionEffects.map(effect => ({ ...effect }))
+      : undefined,
   };
 
   // Include grudge data if present
@@ -402,6 +405,9 @@ export function deserializeGameState(data: SerializedGameStateV1): GameState {
       playerId,
       defs.map(deserializeCardDefinition),
     ])),
+    damagePreventionEffects: data.damagePreventionEffects
+      ? data.damagePreventionEffects.map(effect => ({ ...effect }))
+      : undefined,
   };
 
   // Restore grudge data if present

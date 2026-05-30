@@ -192,6 +192,16 @@ export interface SerializedDamageRecordV1 {
   turnNumber: number;
 }
 
+export interface SerializedDamagePreventionEffectV1 {
+  id: string;
+  sourceInstanceId?: string;
+  controllerId: string;
+  protectedTargetId?: string;
+  amount: number | 'all';
+  combatOnly: boolean;
+  expiresAtTurnNumber: number;
+}
+
 /**
  * Full serialized game state for V1 schema.
  */
@@ -212,6 +222,7 @@ export interface SerializedGameStateV1 {
   pendingTriggers: unknown[];
   sideboards?: Array<[string, SerializedCardDefinitionV1[]]>;
   damageHistory?: SerializedDamageRecordV1[];
+  damagePreventionEffects?: SerializedDamagePreventionEffectV1[];
 }
 
 /**

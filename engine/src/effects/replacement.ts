@@ -10,7 +10,7 @@
  * - "If you would draw a card, draw two cards instead" (card draw doubling)
  */
 
-import type { GameState, CardInstance, Zone } from '../types';
+import type { GameState, CardInstance, DamagePreventionEffectRef, Zone } from '../types';
 
 // Types of events that can be replaced
 export type ReplacementEventType =
@@ -41,6 +41,7 @@ export interface ReplacementEvent {
   targetId?: string;      // Player or permanent affected
   sourceId?: string;      // Source of the event
   amount?: number;        // For damage, life, counters
+  isCombatDamage?: boolean;
   cardInstanceId?: string; // For draw, dies, ETB
   destinationZone?: Zone; // For zone-change replacements such as dies -> exile
 }
@@ -173,6 +174,80 @@ export function createExileInsteadOfDieEffect(
       return true;
     },
     replace: (_state, event) => ({ ...event, destinationZone: 'exile' }),
+  };
+}
+
+function clearExpiredPreventionEffects(
+  effects: DamagePreventionEffectRef[] | undefined,
+  turnNumber: number,
+): DamagePreventionEffectRef[] {
+  return (effects || []).filter(effect => effect.expiresAtTurnNumber >= turnNumber);
+}
+
+/**
+ * Add a state-scoped damage prevention effect. Unlike the legacy test registry,
+ * these effects are serialized with the game and expire with the turn.
+ */
+export function registerDamagePrevention(
+  state: GameState,
+  effect: DamagePreventionEffectRef,
+): GameState {
+  const active = clearExpiredPreventionEffects(state.damagePreventionEffects, state.turnNumber);
+  return { ...state, damagePreventionEffects: [...active, effect] };
+}
+
+/**
+ * Drop turn-scoped prevention effects that have expired.
+ */
+export function pruneDamagePreventionEffects(state: GameState): GameState {
+  const active = clearExpiredPreventionEffects(state.damagePreventionEffects, state.turnNumber);
+  if (active.length === (state.damagePreventionEffects || []).length) return state;
+  return { ...state, damagePreventionEffects: active };
+}
+
+/**
+ * Apply both the legacy replacement registry and state-scoped damage prevention.
+ * Returns the possibly updated state because finite prevention shields consume
+ * their remaining amount.
+ */
+export function applyDamageReplacementEffects(
+  state: GameState,
+  event: ReplacementEvent & { type: 'DamageDealt'; amount: number },
+): { state: GameState; event: ReplacementEvent | null; appliedReplacements: string[] } {
+  const globalResult = applyReplacements(state, event);
+  if (!globalResult.event) {
+    return { state, event: null, appliedReplacements: globalResult.appliedReplacements };
+  }
+
+  let currentEvent: ReplacementEvent | null = globalResult.event;
+  let effects = clearExpiredPreventionEffects(state.damagePreventionEffects, state.turnNumber);
+  const appliedReplacements = [...globalResult.appliedReplacements];
+
+  for (const prevention of effects) {
+    if (!currentEvent) break;
+    if (prevention.protectedTargetId && prevention.protectedTargetId !== currentEvent.targetId) continue;
+    if (prevention.combatOnly && !currentEvent.isCombatDamage) continue;
+
+    appliedReplacements.push(prevention.id);
+    if (prevention.amount === 'all') {
+      currentEvent = null;
+      continue;
+    }
+
+    const currentAmount: number = currentEvent.amount ?? 0;
+    const prevented: number = Math.min(prevention.amount, currentAmount);
+    const remainingDamage: number = currentAmount - prevented;
+    const remainingShield: number = prevention.amount - prevented;
+    effects = remainingShield > 0
+      ? effects.map(effect => effect.id === prevention.id ? { ...effect, amount: remainingShield } : effect)
+      : effects.filter(effect => effect.id !== prevention.id);
+    currentEvent = remainingDamage > 0 ? { ...currentEvent, amount: remainingDamage } : null;
+  }
+
+  return {
+    state: { ...state, damagePreventionEffects: effects },
+    event: currentEvent,
+    appliedReplacements,
   };
 }
 

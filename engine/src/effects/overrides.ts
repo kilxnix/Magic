@@ -314,9 +314,9 @@ registerOverrideByName('Enlightened Tutor', {
 // Commander Staples — Interaction / Protection
 // =============================================================================
 
-// Teferi's Protection — "Your life total can't change. Prevent all damage.
-// Your permanents phase out." → Simplified: gain 99 life as damage buffer proxy
-// (no 'PreventDamage' effect type exists, so we approximate with life gain)
+// Teferi's Protection — partial engine support: prevent damage to you for the
+// turn. Full "life total can't change" and "protection from everything" still
+// require broader replacement/protection coverage.
 // cEDH library naming effects. The chosen card comes from the spell action's
 // namedCardChoices.namedCard value so Tainted Pact / Consultation are not
 // hard-coded to a single win line.
@@ -351,9 +351,11 @@ registerOverrideByName("Teferi's Protection", {
   kind: 'Spell',
   effects: [
     {
-      kind: 'GainLife',
-      player: { kind: 'Controller' },
-      amount: 99,
+      kind: 'PreventDamage',
+      target: { kind: 'Controller' },
+      amount: 'all',
+      combatOnly: false,
+      duration: 'turn',
     },
   ],
   targets: [],

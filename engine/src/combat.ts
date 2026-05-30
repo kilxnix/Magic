@@ -1,4 +1,4 @@
-import { AttackerDeclaration, BlockerDeclaration, CombatState, GameState, Player } from './types';
+import { AttackerDeclaration, BlockerDeclaration, CardInstance, CombatState, GameState, Player } from './types';
 import { getPlayer } from './game-state';
 import {
   canAttackThisTurn,
@@ -12,6 +12,7 @@ import { getEffectivePower, getEffectiveToughness } from './effects/continuous';
 import { isEffectiveCreature } from './effective-types';
 import { checkTriggersForEvent } from './stack';
 import { checkStateBasedActions } from './state-based';
+import { applyDamageReplacementEffects } from './effects/replacement';
 
 export function canDeclareAttacker(state: GameState, playerId: string, cardInstanceId: string): boolean {
   const playerIndex = state.players.findIndex(p => p.id === playerId);
@@ -287,6 +288,33 @@ function creatureDealsInStep(state: GameState, instanceId: string, step: 'first'
   }
 }
 
+function applyCombatDamagePrevention(
+  state: GameState,
+  cards: Map<string, CardInstance>,
+  players: Player[],
+  sourceId: string,
+  targetId: string,
+  amount: number,
+): { state: GameState; amount: number } {
+  if (amount <= 0) return { state, amount: 0 };
+
+  const { state: replacedState, event } = applyDamageReplacementEffects(
+    { ...state, cards, players },
+    {
+      type: 'DamageDealt',
+      sourceId,
+      targetId,
+      amount,
+      isCombatDamage: true,
+    },
+  );
+
+  return {
+    state: replacedState,
+    amount: event?.amount ?? 0,
+  };
+}
+
 function orderBlockersForAttacker(
   state: GameState,
   attackerId: string,
@@ -315,6 +343,7 @@ function resolveDamageStep(state: GameState, step: 'first' | 'normal'): GameStat
 
   const newCards = new Map(state.cards);
   const newPlayers = state.players.map(p => ({ ...p }));
+  let replacementState: GameState = state;
   const combatDamageEvents: Array<{
     sourceInstanceId: string;
     controllerId: string;
@@ -343,15 +372,25 @@ function resolveDamageStep(state: GameState, step: 'first' | 'normal'): GameStat
       if (attackerDeals) {
         const defenderIndex = newPlayers.findIndex(p => p.id === attacker.defendingPlayerId);
         if (defenderIndex !== -1) {
-          newPlayers[defenderIndex].life -= attackerPower;
-          applyLifelink(state, newPlayers, attacker.cardInstanceId, attackerPower);
-          trackCommanderDamage(state, newPlayers, attacker.cardInstanceId, attacker.defendingPlayerId, attackerPower);
-          if (attackerPower > 0) {
+          const prevented = applyCombatDamagePrevention(
+            replacementState,
+            newCards,
+            newPlayers,
+            attacker.cardInstanceId,
+            attacker.defendingPlayerId,
+            attackerPower,
+          );
+          replacementState = prevented.state;
+          const damageDealt = prevented.amount;
+          newPlayers[defenderIndex].life -= damageDealt;
+          applyLifelink(state, newPlayers, attacker.cardInstanceId, damageDealt);
+          trackCommanderDamage(state, newPlayers, attacker.cardInstanceId, attacker.defendingPlayerId, damageDealt);
+          if (damageDealt > 0) {
             combatDamageEvents.push({
               sourceInstanceId: attacker.cardInstanceId,
               controllerId: attackerCard.ownerId,
               damagedPlayerId: attacker.defendingPlayerId,
-              damage: attackerPower,
+              damage: damageDealt,
             });
           }
         }
@@ -379,13 +418,23 @@ function resolveDamageStep(state: GameState, step: 'first' | 'normal'): GameStat
             : remainingDamage; // Normal: all damage to first blocker
 
           if (damageToBlocker > 0) {
+            const prevented = applyCombatDamagePrevention(
+              replacementState,
+              newCards,
+              newPlayers,
+              attacker.cardInstanceId,
+              blocker.cardInstanceId,
+              damageToBlocker,
+            );
+            replacementState = prevented.state;
+            const damageDealt = prevented.amount;
             newCards.set(blockerCard.instanceId, {
               ...blockerCard,
-              damage: blockerCard.damage + damageToBlocker,
-              deathtouchDamage: blockerCard.deathtouchDamage || attackerHasDeathtouch,
+              damage: blockerCard.damage + damageDealt,
+              deathtouchDamage: blockerCard.deathtouchDamage || (damageDealt > 0 && attackerHasDeathtouch),
             });
             remainingDamage -= damageToBlocker;
-            applyLifelink(state, newPlayers, attacker.cardInstanceId, damageToBlocker);
+            applyLifelink(state, newPlayers, attacker.cardInstanceId, damageDealt);
           }
 
           if (!hasTrample) break; // Without trample, all damage goes to first blocker
@@ -395,15 +444,27 @@ function resolveDamageStep(state: GameState, step: 'first' | 'normal'): GameStat
         if (hasTrample && remainingDamage > 0) {
           const defenderIndex = newPlayers.findIndex(p => p.id === attacker.defendingPlayerId);
           if (defenderIndex !== -1) {
-            newPlayers[defenderIndex].life -= remainingDamage;
-            applyLifelink(state, newPlayers, attacker.cardInstanceId, remainingDamage);
-            trackCommanderDamage(state, newPlayers, attacker.cardInstanceId, attacker.defendingPlayerId, remainingDamage);
-            combatDamageEvents.push({
-              sourceInstanceId: attacker.cardInstanceId,
-              controllerId: attackerCard.ownerId,
-              damagedPlayerId: attacker.defendingPlayerId,
-              damage: remainingDamage,
-            });
+            const prevented = applyCombatDamagePrevention(
+              replacementState,
+              newCards,
+              newPlayers,
+              attacker.cardInstanceId,
+              attacker.defendingPlayerId,
+              remainingDamage,
+            );
+            replacementState = prevented.state;
+            const damageDealt = prevented.amount;
+            newPlayers[defenderIndex].life -= damageDealt;
+            applyLifelink(state, newPlayers, attacker.cardInstanceId, damageDealt);
+            trackCommanderDamage(state, newPlayers, attacker.cardInstanceId, attacker.defendingPlayerId, damageDealt);
+            if (damageDealt > 0) {
+              combatDamageEvents.push({
+                sourceInstanceId: attacker.cardInstanceId,
+                controllerId: attackerCard.ownerId,
+                damagedPlayerId: attacker.defendingPlayerId,
+                damage: damageDealt,
+              });
+            }
           }
         }
       }
@@ -421,13 +482,23 @@ function resolveDamageStep(state: GameState, step: 'first' | 'normal'): GameStat
         const currentAttacker = newCards.get(attacker.cardInstanceId);
         if (!currentAttacker || currentAttacker.zone !== 'battlefield') continue;
         const blockerHasDeathtouch = blockerPower > 0 && instanceHasKeyword(state, blocker.cardInstanceId, 'Deathtouch');
+        const prevented = applyCombatDamagePrevention(
+          replacementState,
+          newCards,
+          newPlayers,
+          blocker.cardInstanceId,
+          attacker.cardInstanceId,
+          blockerPower,
+        );
+        replacementState = prevented.state;
+        const damageDealt = prevented.amount;
 
         newCards.set(attacker.cardInstanceId, {
           ...currentAttacker,
-          damage: currentAttacker.damage + blockerPower,
-          deathtouchDamage: currentAttacker.deathtouchDamage || blockerHasDeathtouch,
+          damage: currentAttacker.damage + damageDealt,
+          deathtouchDamage: currentAttacker.deathtouchDamage || (damageDealt > 0 && blockerHasDeathtouch),
         });
-        applyLifelink(state, newPlayers, blocker.cardInstanceId, blockerPower);
+        applyLifelink(state, newPlayers, blocker.cardInstanceId, damageDealt);
       }
     }
   }
@@ -440,6 +511,7 @@ function resolveDamageStep(state: GameState, step: 'first' | 'normal'): GameStat
     cards: newCards,
     players: newPlayers,
     combat: newCombat,
+    damagePreventionEffects: replacementState.damagePreventionEffects,
   };
 
   for (const event of combatDamageEvents) {

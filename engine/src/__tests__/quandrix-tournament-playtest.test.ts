@@ -11,7 +11,8 @@ import {
 import { initGameFromDecks, resetInstanceCounter } from '../game-init';
 import { getCardsInZone } from '../game-state';
 import { putTriggersOnStack, registerBattlefieldAbilities, resolveTopOfStack } from '../stack';
-import { tryCastSpell } from '../actions-public';
+import { tryCastSpell, tryDeclareAttackers } from '../actions-public';
+import { resolveCombatDamage } from '../combat';
 import { createPlayer, emptyManaPool, type CardDefinition, type CardInstance, type GameState, type ManaCost, type Zone } from '../types';
 
 const RAW_QUANDRIX_DECK = `
@@ -355,6 +356,44 @@ describe('submitted Quandrix tournament playtest', () => {
     expect(cardNamesOnStack(cast.state)).toEqual(['Growth Spiral', 'Fog']);
     expect(cast.state.cards.get(ids.fog)?.zone).toBe('stack');
     expect(cast.state.cards.get(ids['forest-one'])?.zone).toBe('library');
+  });
+
+  it('resolves Fog as a turn-scoped shield that prevents combat damage only', () => {
+    let { state, ids } = makeState();
+    state.cards.set(ids.fog, { ...state.cards.get(ids.fog)!, zone: 'hand' });
+    state.cards.set(ids['opponent-elf'], {
+      ...state.cards.get(ids['opponent-elf'])!,
+      zone: 'battlefield',
+      summoningSick: false,
+    });
+    state = {
+      ...giveMana(state, 'p1'),
+      activePlayerIndex: 1,
+      priorityPlayerIndex: 0,
+      phase: 'combat',
+      step: 'declare_attackers',
+      hasPriorityPassed: [false, false, false, false],
+    };
+
+    const cast = tryCastSpell(state, 'p1', ids.fog, [], NO_PAYMENT);
+    expect(cast.ok, cast.ok ? undefined : cast.message).toBe(true);
+    state = resolveAll(cast.state);
+    expect(state.damagePreventionEffects?.some(effect => effect.combatOnly && effect.amount === 'all')).toBe(true);
+
+    state = {
+      ...state,
+      priorityPlayerIndex: 1,
+      hasPriorityPassed: [false, false, false, false],
+    };
+    const attack = tryDeclareAttackers(state, 'p2', [{
+      cardInstanceId: ids['opponent-elf'],
+      defendingPlayerId: 'p1',
+    }]);
+    expect(attack.ok, attack.ok ? undefined : attack.message).toBe(true);
+    const afterCombat = resolveCombatDamage(attack.state);
+
+    expect(afterCombat.players.find(player => player.id === 'p1')?.life).toBe(40);
+    expect(afterCombat.damagePreventionEffects?.length).toBeGreaterThan(0);
   });
 
   it('builds correctly sized spell-value tokens from Shark Typhoon and Deekah', () => {

@@ -184,6 +184,86 @@ function matchDealDamage(tokens: string[], startIndex: number): PatternResult {
 }
 
 /**
+ * Match: "prevent all combat damage that would be dealt this turn"
+ * Match: "prevent all damage that would be dealt to you this turn"
+ * Match: "prevent the next N damage that would be dealt to target creature/player this turn"
+ */
+function matchPreventDamage(tokens: string[], startIndex: number): PatternResult {
+  const slice = tokens.slice(startIndex);
+  if (slice[0] !== 'prevent') return null;
+
+  let idx = 1;
+  let amount: AmountRef | 'all';
+  if (slice[idx] === 'all') {
+    amount = 'all';
+    idx++;
+  } else if (slice[idx] === 'the' && slice[idx + 1] === 'next') {
+    const parsed = parseSmallNumberToken(slice[idx + 2]);
+    if (Number.isNaN(parsed)) return null;
+    amount = parsed;
+    idx += 3;
+  } else {
+    const parsed = parseSmallNumberToken(slice[idx]);
+    if (Number.isNaN(parsed)) return null;
+    amount = parsed;
+    idx++;
+  }
+
+  let combatOnly = false;
+  if (slice[idx] === 'combat' && slice[idx + 1] === 'damage') {
+    combatOnly = true;
+    idx += 2;
+  } else if (slice[idx] === 'damage') {
+    idx++;
+  } else {
+    return null;
+  }
+
+  if (slice[idx] === 'that' && slice[idx + 1] === 'would' && slice[idx + 2] === 'be' && slice[idx + 3] === 'dealt') {
+    idx += 4;
+  }
+
+  let target: TargetRef | undefined;
+  const targets: TargetSpec[] = [];
+  if (slice[idx] === 'to') {
+    idx++;
+    if (slice[idx] === 'you') {
+      target = { kind: 'Controller' };
+      idx++;
+    } else if (slice[idx] === 'target') {
+      let targetType: TargetType | null = null;
+      if (slice[idx + 1] === 'creature') targetType = 'Creature';
+      if (slice[idx + 1] === 'player') targetType = 'Player';
+      if (!targetType) return null;
+      const spec = makeTargetSpec(targetType);
+      targets.push(spec);
+      target = makeChosenRef(spec);
+      idx += 2;
+    } else if (slice[idx] === 'any' && slice[idx + 1] === 'target') {
+      const spec = makeTargetSpec('Any');
+      targets.push(spec);
+      target = makeChosenRef(spec);
+      idx += 2;
+    }
+  }
+
+  if (slice[idx] === 'this' && slice[idx + 1] === 'turn') idx += 2;
+  if (tokens[startIndex + idx] === '.') idx++;
+
+  return {
+    effects: [{
+      kind: 'PreventDamage',
+      target,
+      amount,
+      combatOnly,
+      duration: 'turn',
+    }],
+    targets,
+    consumed: idx,
+  };
+}
+
+/**
  * Match: "destroy target creature"
  * Match: "destroy target creature an opponent controls"
  * Match: "destroy target permanent"
@@ -3353,7 +3433,7 @@ function parseEffectClauseInternal(tokens: string[], startIndex: number): Patter
   const patterns = [
     matchWinGame, matchLoseGame,
     matchBlink, matchCopyThatSpell, matchCopySpell, matchCopyCreature, matchGrantKeywordAndDynamicPT, matchGrantKeyword, matchPhaseOut,
-    matchDealDamageForEach, matchForEachDraw, matchCreateTokenForEach,
+    matchPreventDamage, matchDealDamageForEach, matchForEachDraw, matchCreateTokenForEach,
     matchExileFromLibraryTop, matchSearchLibraryGeneric, matchSacrificeSelfUnlessTargetOpponentSacrifices, matchEachOpponentSacrifice,
     matchEachPlayerEffect, matchTargetPlayerSacrifice, matchSacrificeAsEffect,
     matchGainControl, matchReturnAllToHand, matchExileAll, matchDestroyAllExpanded,
@@ -3406,6 +3486,7 @@ function parseEffectClause(tokens: string[], startIndex: number): PatternResult 
     matchPhaseOut,                // "target permanent phases out"
 
     // Phase 14: New complex patterns (must come before simpler versions)
+    matchPreventDamage,           // "prevent all combat damage that would be dealt this turn"
     matchDealDamageForEach,       // "~ deals damage equal to the number of..."
     matchForEachDraw,             // "draw a card for each creature you control"
     matchCreateTokenForEach,      // "create a 1/1 ... token for each ..."

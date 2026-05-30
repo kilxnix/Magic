@@ -10,7 +10,7 @@ import { pruneDetachedEffects } from '../game-state';
 import { checkStateBasedActions, markPlayerLostFromEmptyLibrary } from '../state-based';
 import { instanceHasKeyword, isIndestructible } from '../keywords';
 import { getCommanderDestinationZone } from '../commander';
-import { applyReplacements } from './replacement';
+import { applyDamageReplacementEffects, applyReplacements, registerDamagePrevention } from './replacement';
 import type { ReplacementEvent } from './replacement';
 import { getEffectivePower } from './continuous';
 import { isEffectiveCreature } from '../effective-types';
@@ -345,42 +345,73 @@ function getDeathDestination(state: GameState, cardInstanceId: string, card: Car
  */
 function executeDealDamage(state: GameState, targetId: string, amount: number, sourceInstanceId?: string): GameState {
   // Check for replacement effects (e.g., damage prevention)
-  const event: ReplacementEvent = { type: 'DamageDealt', targetId, amount };
-  const { event: replaced } = applyReplacements(state, event);
+  const event: ReplacementEvent & { type: 'DamageDealt'; amount: number } = {
+    type: 'DamageDealt',
+    targetId,
+    sourceId: sourceInstanceId,
+    amount,
+  };
+  const { state: replacedState, event: replaced } = applyDamageReplacementEffects(state, event);
   if (!replaced) return state; // fully prevented
   const finalAmount = replaced.amount ?? amount;
   if (finalAmount <= 0) return state;
 
   // Check if target is a player
-  const playerIndex = state.players.findIndex(p => p.id === targetId);
+  const playerIndex = replacedState.players.findIndex(p => p.id === targetId);
   if (playerIndex !== -1) {
-    const newPlayers = state.players.map((p, i) =>
+    const newPlayers = replacedState.players.map((p, i) =>
       i === playerIndex ? { ...p, life: p.life - finalAmount } : p
     );
-    return { ...state, players: newPlayers };
+    return { ...replacedState, players: newPlayers };
   }
 
   // Target is a card (creature)
-  const card = state.cards.get(targetId);
+  const card = replacedState.cards.get(targetId);
   if (!card) {
     // Target no longer exists (fizzle)
-    return state;
+    return replacedState;
   }
 
   if (card.zone !== 'battlefield') {
     // Can only damage things on battlefield
-    return state;
+    return replacedState;
   }
 
-  const newCards = new Map(state.cards);
-  const sourceHasDeathtouch = sourceInstanceId ? instanceHasKeyword(state, sourceInstanceId, 'Deathtouch') : false;
+  const newCards = new Map(replacedState.cards);
+  const sourceHasDeathtouch = sourceInstanceId ? instanceHasKeyword(replacedState, sourceInstanceId, 'Deathtouch') : false;
   newCards.set(targetId, {
     ...card,
     damage: card.damage + finalAmount,
     deathtouchDamage: card.deathtouchDamage || sourceHasDeathtouch,
   });
 
-  return pruneDetachedEffects({ ...state, cards: newCards });
+  return pruneDetachedEffects({ ...replacedState, cards: newCards });
+}
+
+function executePreventDamage(
+  state: GameState,
+  effect: Extract<Effect, { kind: 'PreventDamage' }>,
+  casterId: string,
+  sourceInstanceId?: string,
+  xValue = 0,
+  chosenTargets: Map<string, string> = new Map(),
+): GameState {
+  const protectedTargetId = effect.target
+    ? resolveTargetRef(effect.target, casterId, chosenTargets, state)
+    : undefined;
+  const amount = effect.amount === 'all'
+    ? 'all'
+    : resolveAmount(effect.amount, xValue, state, casterId, chosenTargets);
+
+  return registerDamagePrevention(state, {
+    id: `damage_prevention_${sourceInstanceId || casterId}_${state.turnNumber}_${(state.damagePreventionEffects || []).length + 1}`,
+    sourceInstanceId,
+    controllerId: casterId,
+    protectedTargetId,
+    amount,
+    combatOnly: effect.combatOnly,
+    expiresAtTurnNumber: state.turnNumber,
+  });
 }
 
 function hasEmptyLibraryDrawWinReplacement(state: GameState, playerId: string): boolean {
@@ -1846,6 +1877,9 @@ function executeEffect(
       }
       const targetId = resolveTargetRef(effect.target, casterId, chosenTargets);
       return executeDealDamage(state, targetId, amount, sourceInstanceId);
+    }
+    case 'PreventDamage': {
+      return executePreventDamage(state, effect, casterId, sourceInstanceId, xValue, chosenTargets);
     }
     case 'GainLife': {
       if (effect.player.kind === 'EachPlayer') {
