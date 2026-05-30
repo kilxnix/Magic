@@ -652,7 +652,7 @@ function CardHoverPreview({
   const counters = getCounterBadges(card.counters);
 
   return (
-    <div className="pointer-events-none fixed right-4 top-20 z-[65] hidden max-h-[calc(100vh-7rem)] w-[min(24rem,32vw)] overflow-hidden rounded-lg border border-amber-500/35 bg-neutral-950 shadow-2xl shadow-black/45 lg:block">
+    <div className="pointer-events-none fixed left-1/2 top-1/2 z-[65] hidden max-h-[min(82vh,44rem)] w-[min(26rem,86vw)] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-lg border border-amber-500/35 bg-neutral-950 shadow-2xl shadow-black/45 md:block">
       <div className="grid grid-cols-[7.5rem_1fr] gap-3 p-3">
         <CardImage
           cardName={card.name}
