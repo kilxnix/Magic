@@ -161,11 +161,20 @@ export function getLegalTargets(
 
       targets.push(card.instanceId);
     }
-  } else if (spec.type === 'CreatureCardInGraveyard') {
+  } else if (
+    spec.type === 'CardInGraveyard'
+    || spec.type === 'CreatureCardInGraveyard'
+    || spec.type === 'CreatureOrEnchantmentCardInGraveyard'
+  ) {
     for (const card of state.cards.values()) {
       if (card.zone !== 'graveyard') continue;
       const def = getCardDefinition(state, card);
-      if (!def.card_types.includes('creature')) continue;
+      if (spec.type === 'CreatureCardInGraveyard' && !def.card_types.includes('creature')) continue;
+      if (
+        spec.type === 'CreatureOrEnchantmentCardInGraveyard'
+        && !def.card_types.includes('creature')
+        && !def.card_types.includes('enchantment')
+      ) continue;
       if (spec.constraints?.opponentControls && card.ownerId === casterId) continue;
       targets.push(card.instanceId);
     }

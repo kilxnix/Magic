@@ -646,6 +646,24 @@ describe('parseOracleText', () => {
   });
 
   describe('graveyard recursion patterns', () => {
+    it('parses ETB graveyard exile triggers like Disposal Mummy', () => {
+      const result = parseOracleText("When this creature enters, exile target card from an opponent's graveyard.");
+      expect(result.kind).toBe('ETB');
+      if (result.kind !== 'ETB') return;
+      expect(result.ability.effects[0].kind).toBe('Exile');
+      expect(result.targets[0].type).toBe('CardInGraveyard');
+      expect(result.targets[0].constraints?.opponentControls).toBe(true);
+    });
+
+    it("parses \"Exile target card from an opponent's graveyard.\"", () => {
+      const result = parseOracleText("Exile target card from an opponent's graveyard.");
+      expect(result.kind).toBe('Spell');
+      if (result.kind !== 'Spell') return;
+      expect(result.effects[0].kind).toBe('Exile');
+      expect(result.targets[0].type).toBe('CardInGraveyard');
+      expect(result.targets[0].constraints?.opponentControls).toBe(true);
+    });
+
     it('parses "Return target creature card from your graveyard to your hand."', () => {
       const result = parseOracleText('Return target creature card from your graveyard to your hand.');
       expect(result.kind).toBe('Spell');
@@ -664,6 +682,16 @@ describe('parseOracleText', () => {
       if (result.effects[0].kind !== 'ReturnFromGraveyard') return;
       expect(result.effects[0].destination).toBe('battlefield');
       expect(result.targets[0].type).toBe('CreatureCardInGraveyard');
+    });
+
+    it('parses "Return target creature or enchantment card from your graveyard to your hand."', () => {
+      const result = parseOracleText('Return target creature or enchantment card from your graveyard to your hand.');
+      expect(result.kind).toBe('Spell');
+      if (result.kind !== 'Spell') return;
+      expect(result.effects[0].kind).toBe('ReturnFromGraveyard');
+      if (result.effects[0].kind !== 'ReturnFromGraveyard') return;
+      expect(result.effects[0].destination).toBe('hand');
+      expect(result.targets[0].type).toBe('CreatureOrEnchantmentCardInGraveyard');
     });
   });
 

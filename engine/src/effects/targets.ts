@@ -3,7 +3,7 @@ import { canBeTargetedByOpponent, canBeTargetedByController } from '../keywords'
 import { isEffectiveCreature } from '../effective-types';
 import { getCardDefinition } from '../game-state';
 
-export type TargetType = 'Creature' | 'Player' | 'Any' | 'Permanent' | 'Artifact' | 'Enchantment' | 'ArtifactOrEnchantment' | 'ArtifactEnchantmentOrLand' | 'NonlandPermanent' | 'Spell' | 'NoncreatureSpell' | 'CreatureSpell' | 'InstantOrSorcerySpell' | 'CreatureCardInGraveyard';
+export type TargetType = 'Creature' | 'Player' | 'Any' | 'Permanent' | 'Artifact' | 'Enchantment' | 'ArtifactOrEnchantment' | 'ArtifactEnchantmentOrLand' | 'NonlandPermanent' | 'Spell' | 'NoncreatureSpell' | 'CreatureSpell' | 'InstantOrSorcerySpell' | 'CardInGraveyard' | 'CreatureCardInGraveyard' | 'CreatureOrEnchantmentCardInGraveyard';
 
 export interface TargetSpec {
   /** Stable id for mapping spec -> StackItem.targets position */
@@ -157,6 +157,20 @@ export function validateTargetChoices(
         const def = getCardDefinition(state, card);
         if (!def.card_types.includes('creature')) {
           throw new Error(`Invalid target for ${spec.id}: expected creature card in graveyard, got ${chosenId}`);
+        }
+      } else if (spec.type === 'CreatureOrEnchantmentCardInGraveyard') {
+        const card = state.cards.get(chosenId);
+        if (!card || card.zone !== 'graveyard') {
+          throw new Error(`Invalid target for ${spec.id}: expected card in graveyard, got ${chosenId}`);
+        }
+        const def = getCardDefinition(state, card);
+        if (!def.card_types.includes('creature') && !def.card_types.includes('enchantment')) {
+          throw new Error(`Invalid target for ${spec.id}: expected creature or enchantment card in graveyard, got ${chosenId}`);
+        }
+      } else if (spec.type === 'CardInGraveyard') {
+        const card = state.cards.get(chosenId);
+        if (!card || card.zone !== 'graveyard') {
+          throw new Error(`Invalid target for ${spec.id}: expected card in graveyard, got ${chosenId}`);
         }
       }
 

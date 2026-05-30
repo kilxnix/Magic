@@ -2198,7 +2198,7 @@ function possibleTargetIds(state: GameState): string[] {
     if (!player.hasLost) ids.add(player.id);
   }
   for (const card of state.cards.values()) {
-    if (card.zone === 'battlefield') ids.add(card.instanceId);
+    if (card.zone === 'battlefield' || card.zone === 'graveyard') ids.add(card.instanceId);
   }
   for (const item of state.stack) {
     ids.add(item.id);
@@ -2213,6 +2213,21 @@ function targetFailureReason(state: GameState, spec: TargetSpec, targetId: strin
     ? 'Does not match this target restriction'
     : 'Not a player';
   if (!card) return 'Not a targetable object for this effect';
+  if (
+    spec.type === 'CardInGraveyard'
+    || spec.type === 'CreatureCardInGraveyard'
+    || spec.type === 'CreatureOrEnchantmentCardInGraveyard'
+  ) {
+    if (card.zone !== 'graveyard') return 'Not in a graveyard';
+    const def = getCardDefinition(state, card);
+    if (spec.type === 'CreatureCardInGraveyard') return def.card_types.includes('creature') ? 'Does not match this graveyard target restriction' : 'Not a creature card in a graveyard';
+    if (spec.type === 'CreatureOrEnchantmentCardInGraveyard') {
+      return def.card_types.includes('creature') || def.card_types.includes('enchantment')
+        ? 'Does not match this graveyard target restriction'
+        : 'Not a creature or enchantment card in a graveyard';
+    }
+    return 'Does not match this graveyard target restriction';
+  }
   if (card.zone !== 'battlefield') return 'Not on the battlefield';
   const def = getCardDefinition(state, card);
   switch (spec.type) {
@@ -2235,8 +2250,6 @@ function targetFailureReason(state: GameState, spec: TargetSpec, targetId: strin
     case 'CreatureSpell':
     case 'InstantOrSorcerySpell':
       return 'Not a matching spell on the stack';
-    case 'CreatureCardInGraveyard':
-      return 'Not a creature card in a graveyard';
     case 'Any':
       return 'Not a legal any-target object';
     default: {

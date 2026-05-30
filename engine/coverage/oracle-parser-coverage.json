@@ -1,28 +1,28 @@
 {
-  "generatedAt": "2026-05-30T11:12:45.268Z",
+  "generatedAt": "2026-05-30T11:23:40.479Z",
   "source": "mtg_data/cards_min.jsonl",
   "commanderLegalOnly": true,
   "includedCards": 30969,
   "totalOracleFaces": 31420,
-  "parsedFaces": 13070,
-  "unparsedFaces": 18350,
-  "parsedPercent": 41.6,
+  "parsedFaces": 13105,
+  "unparsedFaces": 18315,
+  "parsedPercent": 41.71,
   "parsedKindCounts": {
-    "Unparsed": 18350,
-    "Spell": 10820,
-    "ETB": 1196,
+    "Unparsed": 18315,
+    "Spell": 10851,
+    "ETB": 1199,
     "Triggered": 486,
     "StaticAbility": 339,
-    "Modal": 229
+    "Modal": 230
   },
   "unparsedReasons": [
     {
       "reason": "No recognized pattern",
-      "count": 17016
+      "count": 16984
     },
     {
       "reason": "Could not parse ETB effect clause",
-      "count": 807
+      "count": 804
     },
     {
       "reason": "Could not parse trigger effect clause",
@@ -33,7 +33,7 @@
     {
       "id": "trigger-timing",
       "reason": "Triggered or delayed triggered abilities need event registration and APNAP ordering.",
-      "count": 7808,
+      "count": 7792,
       "samples": [
         {
           "name": "Nissa, Worldsoul Speaker",
@@ -54,12 +54,6 @@
           "text": "Flying When this creature enters, untap up to seven lands. {2}{U}{U}: Return this creature to its owner's hand."
         },
         {
-          "name": "Disposal Mummy",
-          "set": "hou",
-          "reason": "Could not parse ETB effect clause",
-          "text": "When this creature enters, exile target card from an opponent's graveyard."
-        },
-        {
           "name": "Murk Dwellers",
           "set": "5ed",
           "reason": "No recognized pattern",
@@ -78,17 +72,23 @@
           "text": "Reach (This creature can block creatures with flying.) Whenever this creature blocks a creature with flying, this creature gets +2/+0 until end of turn."
         },
         {
-          "name": "Pharika's Mender",
-          "set": "cn2",
-          "reason": "Could not parse ETB effect clause",
-          "text": "When this creature enters, you may return target creature or enchantment card from your graveyard to your hand."
+          "name": "Steadfast Cathar",
+          "set": "emn",
+          "reason": "No recognized pattern",
+          "text": "Whenever this creature attacks, it gets +0/+2 until end of turn."
+        },
+        {
+          "name": "Harald, King of Skemfar",
+          "set": "khm",
+          "reason": "No recognized pattern",
+          "text": "Menace (This creature can't be blocked except by two or more creatures.) When Harald enters, look at the top five cards of your library. You may reveal an Elf, Warrior, or Tyvar card from among them and put it into your hand. Put the rest on the bottom of your library in a random order."
         }
       ]
     },
     {
       "id": "continuous-layers",
       "reason": "Continuous effects need layer/timestamp/dependency handling.",
-      "count": 4244,
+      "count": 4239,
       "samples": [
         {
           "name": "Sensory Deprivation",
@@ -143,7 +143,7 @@
     {
       "id": "unclassified",
       "reason": "Unparsed text did not match a known syntax cluster; inspect manually.",
-      "count": 4134,
+      "count": 4125,
       "samples": [
         {
           "name": "Static Orb",
@@ -198,7 +198,7 @@
     {
       "id": "combat-multiplayer",
       "reason": "Combat or multiplayer-defender text needs combat/defender-aware execution.",
-      "count": 2787,
+      "count": 2784,
       "samples": [
         {
           "name": "Marang River Prowler",
@@ -253,7 +253,7 @@
     {
       "id": "tokens-counters",
       "reason": "Token/counter wording needs typed objects, counters, and downstream interactions.",
-      "count": 2773,
+      "count": 2767,
       "samples": [
         {
           "name": "Seedship Agrarian",
@@ -308,7 +308,7 @@
     {
       "id": "replacement-prevention",
       "reason": "Replacement/prevention effects require replacement-layer handling.",
-      "count": 1707,
+      "count": 1705,
       "samples": [
         {
           "name": "Sodden Verdure",
@@ -363,7 +363,7 @@
     {
       "id": "non-hand-zones",
       "reason": "Non-hand zone casting/movement needs zone permission and visibility checks.",
-      "count": 1616,
+      "count": 1610,
       "samples": [
         {
           "name": "Road of Return",
@@ -382,12 +382,6 @@
           "set": "znc",
           "reason": "No recognized pattern",
           "text": "This creature can't block and can't be blocked. You may cast this card from your graveyard as long as you control a black or green permanent."
-        },
-        {
-          "name": "Pharika's Mender",
-          "set": "cn2",
-          "reason": "Could not parse ETB effect clause",
-          "text": "When this creature enters, you may return target creature or enchantment card from your graveyard to your hand."
         },
         {
           "name": "Ogre Battlecaster",
@@ -412,13 +406,19 @@
           "set": "fdn",
           "reason": "No recognized pattern",
           "text": "This spell costs {3} less to cast if you've gained 3 or more life this turn. Return up to two target creature cards from your graveyard to your hand."
+        },
+        {
+          "name": "Greasefang, Okiba Boss",
+          "set": "neo",
+          "reason": "Could not parse trigger effect clause",
+          "text": "At the beginning of combat on your turn, return target Vehicle card from your graveyard to the battlefield. It gains haste. Return it to its owner's hand at the beginning of your next end step."
         }
       ]
     },
     {
       "id": "cost-system",
       "reason": "Alternative/additional/reduced costs need prompt-backed payment and legality.",
-      "count": 1358,
+      "count": 1356,
       "samples": [
         {
           "name": "Nissa, Worldsoul Speaker",
@@ -528,7 +528,7 @@
     {
       "id": "choice-modal",
       "reason": "Choice/modal/naming text should be prompt-backed instead of deterministic.",
-      "count": 848,
+      "count": 847,
       "samples": [
         {
           "name": "Road of Return",
@@ -638,7 +638,7 @@
     {
       "id": "special-mechanics",
       "reason": "Special mechanics need dedicated state and UI presentation.",
-      "count": 313,
+      "count": 312,
       "samples": [
         {
           "name": "Sword-Swallowing Seraph",
@@ -806,6 +806,11 @@
       "text": "Draw a card if an opponent has cast a blue or black spell this turn. Spells you control can't be countered this turn. You and permanents you control gain hexproof from blue and from black until end of turn. (You and they can't be the target"
     },
     {
+      "name": "Disposal Mummy",
+      "kind": "ETB",
+      "text": "When this creature enters, exile target card from an opponent's graveyard."
+    },
+    {
       "name": "Lattice Library",
       "kind": "Spell",
       "text": "This enchantment enters with X study counters on it. When this enchantment enters and whenever you cast your first spell with {X} in its mana cost each turn, create a 0/0 green and blue Fractal creature token. Put a number of +1/+1 counters"
@@ -814,11 +819,6 @@
       "name": "Saheeli's Artistry",
       "kind": "Modal",
       "text": "Choose one or both — • Create a token that's a copy of target artifact. • Create a token that's a copy of target creature, except it's an artifact in addition to its other types."
-    },
-    {
-      "name": "Kalitas, Bloodchief of Ghet",
-      "kind": "Spell",
-      "text": "{B}{B}{B}, {T}: Destroy target creature. If that creature dies this way, create a black Vampire creature token. Its power is equal to that creature's power and its toughness is equal to that creature's toughness."
     }
   ],
   "unparsedSamples": [

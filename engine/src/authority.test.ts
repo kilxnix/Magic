@@ -1034,6 +1034,28 @@ describe('authority action boundary', () => {
     }]);
   });
 
+  it('includes graveyard cards in typed target prompts when an effect targets a graveyard card', () => {
+    const state = stateWithTargetChoices();
+    const relic = def('dead_relic', 'Dead Relic', 'Artifact');
+    state.cardDefinitions.set(relic.id, relic);
+    state.cards.set('dead_relic_1', cardInstance('dead_relic_1', relic.id, 'p2', 'graveyard'));
+
+    const request = createSelectTargetPromptRequest(state, 'p1', {
+      id: 'target-graveyard-card',
+      type: 'CardInGraveyard',
+      count: 1,
+      constraints: { opponentControls: true },
+    }, {
+      id: 'prompt-graveyard-card',
+      createdAt: 19,
+    });
+
+    expect(request.legalChoices.map(choice => choice.targetId)).toEqual(['dead_relic_1']);
+    expect(request.invalidChoices).toEqual(expect.arrayContaining([
+      expect.objectContaining({ targetId: 'forest_1', legal: false, reason: 'Not in a graveyard' }),
+    ]));
+  });
+
   it('audits typed target prompt responses by replaying legality without mutation', () => {
     const state = stateWithTargetChoices();
     const spec: TargetSpec = { id: 'target-permanent', type: 'Permanent', count: 1 };

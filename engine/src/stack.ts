@@ -1513,6 +1513,23 @@ function defaultTargetForSpec(
       return def?.card_types.includes('creature') ?? false;
     })?.instanceId ?? null;
   }
+  if (
+    spec.type === 'CardInGraveyard'
+    || spec.type === 'CreatureCardInGraveyard'
+    || spec.type === 'CreatureOrEnchantmentCardInGraveyard'
+  ) {
+    return [...state.cards.values()].find(card => {
+      if (card.zone !== 'graveyard') return false;
+      if (existingTargets.includes(card.instanceId)) return false;
+      if (spec.constraints?.opponentControls && card.ownerId === controllerId) return false;
+      const def = getCardDefinition(state, card);
+      if (spec.type === 'CreatureCardInGraveyard') return def.card_types.includes('creature');
+      if (spec.type === 'CreatureOrEnchantmentCardInGraveyard') {
+        return def.card_types.includes('creature') || def.card_types.includes('enchantment');
+      }
+      return true;
+    })?.instanceId ?? null;
+  }
   return null;
 }
 

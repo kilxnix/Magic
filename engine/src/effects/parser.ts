@@ -692,6 +692,8 @@ function matchDestroyAll(tokens: string[], startIndex: number): PatternResult {
  * Match: "exile target creature"
  * Match: "exile target permanent"
  * Match: "exile target nonland permanent"
+ * Match: "exile target card from a graveyard"
+ * Match: "exile target card from an opponent's graveyard"
  */
 function matchExile(tokens: string[], startIndex: number): PatternResult {
   const slice = tokens.slice(startIndex);
@@ -702,10 +704,31 @@ function matchExile(tokens: string[], startIndex: number): PatternResult {
 
   let targetType: TargetType;
   let consumed: number;
+  let constraints: { opponentControls?: boolean } | undefined;
 
   if (slice[2] === 'creature') {
     targetType = 'Creature';
     consumed = 3;
+  } else if (
+    slice[2] === 'card'
+    && slice[3] === 'from'
+    && (
+      (slice[4] === 'a' && slice[5] === 'graveyard')
+      || (slice[4] === 'any' && slice[5] === 'graveyard')
+    )
+  ) {
+    targetType = 'CardInGraveyard';
+    consumed = 6;
+  } else if (
+    slice[2] === 'card'
+    && slice[3] === 'from'
+    && slice[4] === 'an'
+    && (slice[5] === "opponent's" || slice[5] === 'opponent')
+    && slice[6] === 'graveyard'
+  ) {
+    targetType = 'CardInGraveyard';
+    constraints = { opponentControls: true };
+    consumed = 7;
   } else if (slice[2] === 'nonland' && slice[3] === 'permanent') {
     targetType = 'NonlandPermanent';
     consumed = 4;
@@ -721,7 +744,7 @@ function matchExile(tokens: string[], startIndex: number): PatternResult {
     consumed++;
   }
 
-  const spec = makeTargetSpec(targetType);
+  const spec = makeTargetSpec(targetType, constraints);
   const effect: Effect = {
     kind: 'Exile',
     target: makeChosenRef(spec),
@@ -1562,6 +1585,7 @@ function matchCounterSpell(tokens: string[], startIndex: number): PatternResult 
 /**
  * Match: "return target creature card from your graveyard to your hand"
  * Match: "return target creature card from your graveyard to the battlefield"
+ * Match: "return target creature or enchantment card from your graveyard to your hand"
  */
 function matchReturnFromGraveyard(tokens: string[], startIndex: number): PatternResult {
   const slice = tokens.slice(startIndex);
@@ -1569,32 +1593,49 @@ function matchReturnFromGraveyard(tokens: string[], startIndex: number): Pattern
   if (slice.length < 9) return null;
   if (slice[0] !== 'return') return null;
   if (slice[1] !== 'target') return null;
-  if (slice[2] !== 'creature') return null;
-  if (slice[3] !== 'card') return null;
-  if (slice[4] !== 'from') return null;
-  if (slice[5] !== 'your') return null;
-  if (slice[6] !== 'graveyard') return null;
-  if (slice[7] !== 'to') return null;
+  let idx = 2;
+  let targetType: TargetType = 'CreatureCardInGraveyard';
+  if (slice[idx] === 'creature' && slice[idx + 1] === 'card') {
+    idx += 2;
+  } else if (
+    slice[idx] === 'creature'
+    && slice[idx + 1] === 'or'
+    && slice[idx + 2] === 'enchantment'
+    && slice[idx + 3] === 'card'
+  ) {
+    targetType = 'CreatureOrEnchantmentCardInGraveyard';
+    idx += 4;
+  } else {
+    return null;
+  }
+  if (slice[idx] !== 'from') return null;
+  idx++;
+  if (slice[idx] !== 'your') return null;
+  idx++;
+  if (slice[idx] !== 'graveyard') return null;
+  idx++;
+  if (slice[idx] !== 'to') return null;
+  idx++;
 
   let destination: 'hand' | 'battlefield';
   let consumed: number;
 
   // "to your hand"
-  if (slice[8] === 'your' && slice[9] === 'hand') {
+  if (slice[idx] === 'your' && slice[idx + 1] === 'hand') {
     destination = 'hand';
-    consumed = 10;
+    consumed = idx + 2;
   }
   // "to the battlefield"
-  else if (slice[8] === 'the' && slice[9] === 'battlefield') {
+  else if (slice[idx] === 'the' && slice[idx + 1] === 'battlefield') {
     destination = 'battlefield';
-    consumed = 10;
+    consumed = idx + 2;
   } else {
     return null;
   }
 
   if (tokens[startIndex + consumed] === '.') consumed++;
 
-  const spec = makeTargetSpec('CreatureCardInGraveyard');
+  const spec = makeTargetSpec(targetType);
   const effect: Effect = {
     kind: 'ReturnFromGraveyard',
     target: makeChosenRef(spec),

@@ -715,6 +715,58 @@ describe('getLegalTargets', () => {
     expect(targets).not.toContain('creature2');
   });
 
+  it('returns any card from an opponent graveyard for graveyard-card target type', () => {
+    const state = createTestState();
+
+    addCard(state, 'own-dead', 'p1', 'graveyard', {
+      name: 'Own Dead Bear',
+      card_types: ['creature'],
+    });
+    addCard(state, 'opponent-dead-artifact', 'p2', 'graveyard', {
+      name: 'Dead Relic',
+      type_line: 'Artifact',
+      card_types: ['artifact'],
+    });
+
+    const targets = getLegalTargets(state, 'p1', {
+      id: 'target1',
+      type: 'CardInGraveyard',
+      count: 1,
+      constraints: { opponentControls: true },
+    });
+
+    expect(targets).toEqual(['opponent-dead-artifact']);
+  });
+
+  it('returns creature or enchantment cards from graveyards for recursion target type', () => {
+    const state = createTestState();
+
+    addCard(state, 'dead-creature', 'p1', 'graveyard', {
+      name: 'Dead Bear',
+      card_types: ['creature'],
+    });
+    addCard(state, 'dead-enchantment', 'p1', 'graveyard', {
+      name: 'Dead Aura',
+      type_line: 'Enchantment',
+      card_types: ['enchantment'],
+    });
+    addCard(state, 'dead-artifact', 'p1', 'graveyard', {
+      name: 'Dead Relic',
+      type_line: 'Artifact',
+      card_types: ['artifact'],
+    });
+
+    const targets = getLegalTargets(state, 'p1', {
+      id: 'target1',
+      type: 'CreatureOrEnchantmentCardInGraveyard',
+      count: 1,
+    });
+
+    expect(targets).toContain('dead-creature');
+    expect(targets).toContain('dead-enchantment');
+    expect(targets).not.toContain('dead-artifact');
+  });
+
   it('returns spells on the stack for Spell target type', () => {
     const state = createTestState();
 
