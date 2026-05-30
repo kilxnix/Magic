@@ -256,6 +256,48 @@ describe('Blink/Flicker', () => {
       expect(blinked.grantedKeywords).toBeUndefined();
     });
 
+    it('blink applies battlefield entry replacement text on return', () => {
+      const state = createTestState();
+      const cards = new Map(state.cards);
+      const cardDefinitions = new Map(state.cardDefinitions);
+      cardDefinitions.set('def-tapped-entry', {
+        id: 'def-tapped-entry',
+        name: 'Tapped Entry Beast',
+        type_line: 'Creature - Beast',
+        oracle_text: 'This creature enters tapped.',
+        mana_cost: '{2}{G}',
+        cmc: 3,
+        colors: ['G'],
+        color_identity: ['G'],
+        keywords: [],
+        power: 3,
+        toughness: 3,
+        card_types: ['creature'],
+      });
+      cards.set('tapped-entry', {
+        instanceId: 'tapped-entry',
+        definitionId: 'def-tapped-entry',
+        ownerId: 'player-1',
+        zone: 'battlefield',
+        tapped: false,
+        summoningSick: false,
+        counters: { '+1/+1': 1 },
+        damage: 2,
+        isCommander: false,
+      });
+      const modifiedState = { ...state, cards, cardDefinitions };
+      const effects: Effect[] = [
+        { kind: 'Blink', target: { kind: 'Chosen', targetId: 'target_1' } },
+      ];
+
+      const newState = executeEffects(modifiedState, effects, 'player-1', ['tapped-entry'], [{ id: 'target_1' }]);
+      const blinked = newState.cards.get('tapped-entry')!;
+      expect(blinked.zone).toBe('battlefield');
+      expect(blinked.tapped).toBe(true);
+      expect(blinked.counters).toEqual({});
+      expect(blinked.damage).toBe(0);
+    });
+
     it('blink does nothing if target is not on battlefield', () => {
       const state = createTestState();
       const cards = new Map(state.cards);
@@ -330,6 +372,51 @@ describe('Copy Effects', () => {
         }
       }
       expect(copyFound).toBe(true);
+    });
+
+    it('copy tokens apply copied card battlefield entry replacement text', () => {
+      const state = createTestState();
+      const cards = new Map(state.cards);
+      const cardDefinitions = new Map(state.cardDefinitions);
+      cardDefinitions.set('def-copy-tapped', {
+        id: 'def-copy-tapped',
+        name: 'Copy Tapped Beast',
+        type_line: 'Creature - Beast',
+        oracle_text: 'This creature enters tapped.',
+        mana_cost: '{3}{G}',
+        cmc: 4,
+        colors: ['G'],
+        color_identity: ['G'],
+        keywords: [],
+        power: 4,
+        toughness: 4,
+        card_types: ['creature'],
+      });
+      cards.set('copy-source', {
+        instanceId: 'copy-source',
+        definitionId: 'def-copy-tapped',
+        ownerId: 'player-2',
+        zone: 'battlefield',
+        tapped: false,
+        summoningSick: false,
+        counters: {},
+        damage: 0,
+        isCommander: false,
+      });
+      const modifiedState = { ...state, cards, cardDefinitions };
+      const effects: Effect[] = [
+        { kind: 'Copy', target: { kind: 'Chosen', targetId: 'target_1' } },
+      ];
+
+      const newState = executeEffects(modifiedState, effects, 'player-1', ['copy-source'], [{ id: 'target_1' }]);
+      const copy = [...newState.cards.values()].find(card =>
+        card.instanceId.startsWith('copy_') && card.definitionId === 'def-copy-tapped',
+      );
+      expect(copy).toBeDefined();
+      expect(copy?.ownerId).toBe('player-1');
+      expect(copy?.zone).toBe('battlefield');
+      expect(copy?.tapped).toBe(true);
+      expect(copy?.isToken).toBe(true);
     });
 
     it('copy of a card that does not exist returns unchanged state', () => {

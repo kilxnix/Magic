@@ -1946,21 +1946,26 @@ function executeBlink(state: GameState, targetId: string): GameState {
   const card = state.cards.get(targetId);
   if (!card || card.zone !== 'battlefield') return state;
 
+  const def = getCardDefinition(state, card);
+  const entry = buildBattlefieldEntryPlan(
+    state,
+    card.ownerId,
+    {
+      ...card,
+      counters: {},
+      damage: 0,
+      grantedKeywords: undefined,
+      lostKeywords: undefined,
+      phasedOut: undefined,
+      attachedTo: undefined,
+    },
+    def,
+    { summoningSick: true },
+  );
   const newCards = new Map(state.cards);
-  // Return to battlefield fresh (untapped, no damage, no counters, summoning sick, no granted keywords)
-  newCards.set(targetId, {
-    ...card,
-    zone: 'battlefield',
-    tapped: false,
-    damage: 0,
-    counters: {},
-    summoningSick: true,
-    grantedKeywords: undefined,
-    lostKeywords: undefined,
-    phasedOut: undefined,
-  });
+  newCards.set(targetId, entry.card);
 
-  return { ...state, cards: newCards };
+  return { ...state, cards: newCards, players: entry.players };
 }
 
 /**
@@ -1974,22 +1979,30 @@ function executeCopy(state: GameState, targetId: string, controllerId: string): 
 
   // Create a token copy with a fresh instance ID
   const copyId = `copy_${++tokenInstanceCounter}`;
+  const def = getCardDefinition(state, card);
+  const entry = buildBattlefieldEntryPlan(
+    state,
+    controllerId,
+    {
+      instanceId: copyId,
+      definitionId: card.definitionId,
+      ownerId: controllerId,
+      zone: 'battlefield',
+      tapped: false,
+      summoningSick: true,
+      counters: {},
+      damage: 0,
+      isCommander: false,
+      isToken: true,
+      copiedFromDefinitionId: card.definitionId,
+    },
+    def,
+    { summoningSick: true },
+  );
   const newCards = new Map(state.cards);
-  newCards.set(copyId, {
-    instanceId: copyId,
-    definitionId: card.definitionId,
-    ownerId: controllerId,
-    zone: 'battlefield',
-    tapped: false,
-    summoningSick: true,
-    counters: {},
-    damage: 0,
-    isCommander: false,
-    isToken: true,
-    copiedFromDefinitionId: card.definitionId,
-  });
+  newCards.set(copyId, entry.card);
 
-  return { ...state, cards: newCards };
+  return { ...state, cards: newCards, players: entry.players };
 }
 
 /**
