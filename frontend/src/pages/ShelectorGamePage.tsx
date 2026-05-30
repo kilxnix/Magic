@@ -78,6 +78,10 @@ export function ShelectorGamePage() {
     tutorCards,
     tutorTitle,
     libraryChoice,
+    optionalTriggerChoice,
+    taxPaymentChoice,
+    damageAssignmentChoice,
+    triggerOrderChoice,
     gameLog,
     authorityUpdates,
     lastStateUpdate,
@@ -94,6 +98,10 @@ export function ShelectorGamePage() {
     resolveTutor,
     cancelTutor,
     resolveLibraryChoice,
+    resolveOptionalTriggerChoice,
+    resolveTaxPaymentChoice,
+    resolveDamageAssignmentChoice,
+    resolveTriggerOrderChoice,
     undosRemaining,
     undoAction,
     coachMode,
@@ -765,6 +773,14 @@ export function ShelectorGamePage() {
           onTutorCancel={cancelTutor}
           libraryChoice={libraryChoice}
           onResolveLibraryChoice={resolveLibraryChoice}
+          optionalTriggerChoice={optionalTriggerChoice}
+          onResolveOptionalTrigger={resolveOptionalTriggerChoice}
+          taxPaymentChoice={taxPaymentChoice}
+          onResolveTaxPayment={resolveTaxPaymentChoice}
+          damageAssignmentChoice={damageAssignmentChoice}
+          onResolveDamageAssignment={resolveDamageAssignmentChoice}
+          triggerOrderChoice={triggerOrderChoice}
+          onResolveTriggerOrder={resolveTriggerOrderChoice}
           undosRemaining={undosRemaining}
           onUndo={undoAction}
           coachMode={coachMode}

@@ -27,6 +27,7 @@ import {
   checkStateBasedActions,
   putTriggersOnStack,
   parseOracleText,
+  executeEffects,
   parseManaString,
   canPayCost,
   isEffectiveCreature,
@@ -406,6 +407,7 @@ export interface ShelectorGameSaveSnapshot {
   libraryChoice?: LibraryManipulationChoice | null;
   libraryManipulationPromptRequest?: LibraryManipulationPromptRequest | null;
   optionalTriggerChoice?: OptionalTriggerChoice | null;
+  taxPaymentChoice?: TaxPaymentChoice | null;
   damageAssignmentChoice?: DamageAssignmentChoice | null;
   triggerOrderChoice?: TriggerOrderChoiceState | null;
   undosRemaining: number;
@@ -680,6 +682,20 @@ export interface OptionalTriggerChoice {
   sourceName: string;
   triggerKind: string;
   title: string;
+}
+
+export interface TaxPaymentChoice {
+  id: string;
+  stackItemId: string;
+  sourceName: string;
+  controllerId: string;
+  controllerName: string;
+  casterId: string;
+  casterName: string;
+  taxAmount: number;
+  effect: 'draw' | 'treasure' | 'other';
+  effectCount: number;
+  canPay: boolean;
 }
 
 export interface DamageAssignmentChoice {
@@ -1936,6 +1952,7 @@ export function useShelectorGame() {
   const libraryManipulationPromptRequestRef = useRef<LibraryManipulationPromptRequest | null>(null);
   const [optionalTriggerChoice, setOptionalTriggerChoice] = useState<OptionalTriggerChoice | null>(null);
   const optionalTriggerPromptRequestRef = useRef<OptionalTriggerPromptRequest | null>(null);
+  const [taxPaymentChoice, setTaxPaymentChoice] = useState<TaxPaymentChoice | null>(null);
   const [damageAssignmentChoice, setDamageAssignmentChoice] = useState<DamageAssignmentChoice | null>(null);
   const damageAssignmentPromptRequestRef = useRef<DamageAssignmentPromptRequest | null>(null);
   const [triggerOrderChoice, setTriggerOrderChoice] = useState<TriggerOrderChoiceState | null>(null);
@@ -2103,6 +2120,110 @@ export function useShelectorGame() {
   const resolveCombatDamageWithAuthority = useCallback((state: GameState): GameState =>
     recordSystemStateTransition(state, resolveCombatDamage(state)),
   [recordSystemStateTransition]);
+
+  const spendGenericTaxMana = useCallback((state: GameState, playerId: string, amount: number): { state: GameState; ok: boolean } => {
+    if (amount <= 0) return { state, ok: true };
+    const playerIndex = state.players.findIndex(player => player.id === playerId);
+    const player = state.players[playerIndex];
+    if (!player) return { state, ok: false };
+    const totalMana = Object.values(player.manaPool).reduce((sum, value) => sum + value, 0);
+    if (totalMana < amount) return { state, ok: false };
+
+    let remaining = amount;
+    const nextPool: ManaPool = { ...player.manaPool };
+    for (const color of ['C', 'W', 'U', 'B', 'R', 'G'] as const) {
+      const used = Math.min(nextPool[color], remaining);
+      nextPool[color] -= used;
+      remaining -= used;
+      if (remaining <= 0) break;
+    }
+
+    return {
+      ok: true,
+      state: {
+        ...state,
+        players: state.players.map((candidate, index) =>
+          index === playerIndex ? { ...candidate, manaPool: nextPool } : candidate,
+        ),
+      },
+    };
+  }, []);
+
+  const applyTaxTriggerDecision = useCallback((
+    state: GameState,
+    stackItemId: string,
+    sourceName: string,
+    casterId: string,
+    controllerId: string,
+    taxAmount: number,
+    effect: TaxPaymentChoice['effect'],
+    effectCount: number,
+    pay: boolean,
+  ): { state: GameState; ok: boolean; message: string } => {
+    const top = state.stack[state.stack.length - 1];
+    if (!top || top.id !== stackItemId) {
+      return { state, ok: false, message: 'That tax trigger is no longer on top of the stack.' };
+    }
+
+    let nextState: GameState = {
+      ...state,
+      stack: state.stack.slice(0, -1),
+      hasPriorityPassed: new Array(state.players.length).fill(false),
+      priorityPlayerIndex: state.activePlayerIndex,
+    };
+
+    const casterName = casterId === humanIdRef.current ? 'You' : aiCommanderNamesRef.current[casterId] || casterId;
+    const controllerName = controllerId === humanIdRef.current ? 'you' : aiCommanderNamesRef.current[controllerId] || controllerId;
+
+    if (pay) {
+      const spent = spendGenericTaxMana(nextState, casterId, taxAmount);
+      if (!spent.ok) {
+        return { state, ok: false, message: `${casterName} cannot pay {${taxAmount}} for ${sourceName}.` };
+      }
+      nextState = spent.state;
+      return {
+        state: recordSystemStateTransition(state, nextState),
+        ok: true,
+        message: `${sourceName}: ${casterName} paid {${taxAmount}} - no effect.`,
+      };
+    }
+
+    if (effect === 'draw') {
+      nextState = drawCards(nextState, controllerId, Math.max(1, effectCount));
+      return {
+        state: recordSystemStateTransition(state, nextState),
+        ok: true,
+        message: `${sourceName}: ${casterName} did not pay {${taxAmount}} - ${controllerName} draw${effectCount === 1 ? 's' : ''} ${Math.max(1, effectCount)}.`,
+      };
+    }
+
+    if (effect === 'treasure') {
+      nextState = executeEffects(nextState, [{
+        kind: 'CreateToken',
+        controller: { kind: 'Controller' },
+        token: {
+          name: 'Treasure',
+          colors: [],
+          types: ['artifact'],
+          subtypes: ['Treasure'],
+          power: 0,
+          toughness: 0,
+        },
+        count: Math.max(1, effectCount),
+      } as Effect], controllerId, [], []);
+      return {
+        state: recordSystemStateTransition(state, nextState),
+        ok: true,
+        message: `${sourceName}: ${casterName} did not pay {${taxAmount}} - ${controllerName} create${effectCount === 1 ? 's' : ''} ${Math.max(1, effectCount)} Treasure.`,
+      };
+    }
+
+    return {
+      state: recordSystemStateTransition(state, nextState),
+      ok: true,
+      message: `${sourceName}: ${casterName} did not pay {${taxAmount}}.`,
+    };
+  }, [recordSystemStateTransition, spendGenericTaxMana]);
 
   const rememberLastPlayedCard = useCallback((
     state: GameState,
@@ -2638,7 +2759,7 @@ export function useShelectorGame() {
     (
       state: GameState,
       messages: { role: ChatMessage['role']; text: string }[],
-    ): { state: GameState; handled: boolean } => {
+    ): { state: GameState; handled: boolean; pause?: boolean } => {
       if (state.stack.length === 0) return { state, handled: false };
 
       const top = state.stack[state.stack.length - 1];
@@ -2673,6 +2794,27 @@ export function useShelectorGame() {
 
       // Determine if the caster pays
       const totalMana = Object.values(caster.manaPool).reduce((a, b) => a + b, 0);
+      if (casterId === humanIdRef.current) {
+        engineRef.current = state as GameStateWithAI;
+        setTaxPaymentChoice({
+          id: `${top.id}:tax`,
+          stackItemId: top.id,
+          sourceName: sourceDef.name,
+          controllerId,
+          controllerName,
+          casterId,
+          casterName,
+          taxAmount: taxInfo.taxAmount,
+          effect: taxInfo.effect,
+          effectCount: taxInfo.effectCount ?? 1,
+          canPay: totalMana >= taxInfo.taxAmount,
+        });
+        messages.push({
+          role: 'system',
+          text: `${sourceDef.name}: choose whether to pay {${taxInfo.taxAmount}}.`,
+        });
+        return { state, handled: true, pause: true };
+      }
       let pays = false;
 
       if (aiIdsRef.current.includes(casterId)) {
@@ -2724,8 +2866,19 @@ export function useShelectorGame() {
             text: `${sourceDef.name}: ${casterName} didn't pay {${taxInfo.taxAmount}} — ${controllerName === 'You' ? 'you draw' : controllerName + ' draws'} ${drawCount}.`,
           });
         } else if (taxInfo.effect === 'treasure') {
-          // Simplified: create Treasure token(s)
-          // Full implementation would create actual Treasure tokens
+          newState = executeEffects(newState, [{
+            kind: 'CreateToken',
+            controller: { kind: 'Controller' },
+            token: {
+              name: 'Treasure',
+              colors: [],
+              types: ['artifact'],
+              subtypes: ['Treasure'],
+              power: 0,
+              toughness: 0,
+            },
+            count: Math.max(1, taxInfo.effectCount ?? 1),
+          } as Effect], controllerId, [], []);
           messages.push({
             role: controllerId === humanIdRef.current ? 'system' : 'shelector',
             text: `${sourceDef.name}: ${casterName} didn't pay {${taxInfo.taxAmount}} — Treasure token created.`,
@@ -3018,7 +3171,7 @@ export function useShelectorGame() {
               console.log(`  -> all passed, resolving stack (${state.stack.length} items)`);
               if (tryPauseForLibraryChoice()) break;
               if (tryResolveTutor()) break;
-              { const taxResult = resolveTaxTrigger(state, messages); if (taxResult.handled) { state = taxResult.state; } else { state = resolveTopOfStackWithAuthority(state); } }
+              { const taxResult = resolveTaxTrigger(state, messages); if (taxResult.pause) break; if (taxResult.handled) { state = taxResult.state; } else { state = resolveTopOfStackWithAuthority(state); } }
               state = runSBAAndTriggers(state);
               if (checkGameOver(state)) break;
               continue;
@@ -3047,7 +3200,7 @@ export function useShelectorGame() {
                   console.log(`  -> all passed, resolving stack (${state.stack.length} items)`);
                   if (tryPauseForLibraryChoice()) break;
                   if (tryResolveTutor()) break;
-                  { const taxResult = resolveTaxTrigger(state, messages); if (taxResult.handled) { state = taxResult.state; } else { state = resolveTopOfStackWithAuthority(state); } }
+                  { const taxResult = resolveTaxTrigger(state, messages); if (taxResult.pause) break; if (taxResult.handled) { state = taxResult.state; } else { state = resolveTopOfStackWithAuthority(state); } }
                   state = runSBAAndTriggers(state);
                   if (checkGameOver(state)) break;
                 }
@@ -3080,7 +3233,7 @@ export function useShelectorGame() {
           console.log(`  -> resolving stack (${state.stack.length} items)`);
           if (tryPauseForLibraryChoice()) break;
           if (tryResolveTutor()) break;
-          state = resolveTopOfStackWithAuthority(state);
+          { const taxResult = resolveTaxTrigger(state, messages); if (taxResult.pause) break; if (taxResult.handled) { state = taxResult.state; } else { state = resolveTopOfStackWithAuthority(state); } }
           state = runSBAAndTriggers(state);
           if (checkGameOver(state)) break;
           continue;
@@ -3614,6 +3767,48 @@ export function useShelectorGame() {
     syncState();
   }, [addMessage, advanceGameLoop, recordAuthorityUpdate, runSBAAndTriggers, syncState]);
 
+  const resolveTaxPaymentChoice = useCallback((pay: boolean) => {
+    const engine = engineRef.current;
+    const choice = taxPaymentChoice;
+    if (!engine || !choice) {
+      setTaxPaymentChoice(null);
+      syncState();
+      return;
+    }
+
+    const applied = applyTaxTriggerDecision(
+      engine,
+      choice.stackItemId,
+      choice.sourceName,
+      choice.casterId,
+      choice.controllerId,
+      choice.taxAmount,
+      choice.effect,
+      choice.effectCount,
+      pay,
+    );
+    if (!applied.ok) {
+      addMessage('system', applied.message);
+      syncState();
+      return;
+    }
+
+    setTaxPaymentChoice(null);
+    let state = applied.state as GameStateWithAI;
+    state = runSBAAndTriggers(state) as GameStateWithAI;
+
+    const loopMessages: { role: ChatMessage['role']; text: string }[] = [];
+    const loopLogEntries: GameLogEntry[] = [];
+    state = advanceGameLoop(state, loopMessages, loopLogEntries) as GameStateWithAI;
+
+    engineRef.current = state;
+    addMessage('player', pay ? `Paid {${choice.taxAmount}} for ${choice.sourceName}.` : `Declined to pay for ${choice.sourceName}.`);
+    addMessage(choice.controllerId === humanIdRef.current ? 'system' : 'shelector', applied.message);
+    for (const msg of loopMessages) addMessage(msg.role, msg.text);
+    if (loopLogEntries.length > 0) setGameLog(prev => [...prev, ...loopLogEntries]);
+    syncState();
+  }, [addMessage, advanceGameLoop, applyTaxTriggerDecision, runSBAAndTriggers, syncState, taxPaymentChoice]);
+
   const resolveDamageAssignmentChoice = useCallback((orders: DamageAssignmentOrder[]) => {
     const engine = engineRef.current;
     const promptRequest = damageAssignmentPromptRequestRef.current;
@@ -3809,6 +4004,7 @@ export function useShelectorGame() {
       setTutorTitle('');
       setLibraryChoice(null);
       setOptionalTriggerChoice(null);
+      setTaxPaymentChoice(null);
       setDamageAssignmentChoice(null);
       setTriggerOrderChoice(null);
       pendingLibraryChoiceRef.current = null;
@@ -4771,6 +4967,7 @@ export function useShelectorGame() {
     damageAssignmentPromptRequestRef.current = null;
     triggerOrderPromptRequestRef.current = null;
     setOptionalTriggerChoice(null);
+    setTaxPaymentChoice(null);
     setDamageAssignmentChoice(null);
     setTriggerOrderChoice(null);
     setDiscardPhase(false);
@@ -4873,7 +5070,7 @@ export function useShelectorGame() {
 
   const skipEmptyPhases = useCallback(() => {
     let state = engineRef.current as GameState | null;
-    if (!state || gameState?.gameOver || mulliganPhase || discardPhase || tutorPhase || libraryChoice || optionalTriggerChoice || damageAssignmentChoice || triggerOrderChoice) return;
+    if (!state || gameState?.gameOver || mulliganPhase || discardPhase || tutorPhase || libraryChoice || optionalTriggerChoice || taxPaymentChoice || damageAssignmentChoice || triggerOrderChoice) return;
 
     const humanId = humanIdRef.current;
     const loopMessages: { role: ChatMessage['role']; text: string }[] = [];
@@ -4967,6 +5164,7 @@ export function useShelectorGame() {
     libraryChoice,
     mulliganPhase,
     optionalTriggerChoice,
+    taxPaymentChoice,
     triggerOrderChoice,
     syncState,
     tutorPhase,
@@ -4975,7 +5173,7 @@ export function useShelectorGame() {
 
   const skipRestOfTurn = useCallback(() => {
     let state = engineRef.current as GameState | null;
-    if (!state || gameState?.gameOver || mulliganPhase || discardPhase || tutorPhase || libraryChoice || optionalTriggerChoice || damageAssignmentChoice || triggerOrderChoice) return;
+    if (!state || gameState?.gameOver || mulliganPhase || discardPhase || tutorPhase || libraryChoice || optionalTriggerChoice || taxPaymentChoice || damageAssignmentChoice || triggerOrderChoice) return;
 
     const humanId = humanIdRef.current;
     if (state.players[state.activePlayerIndex]?.id !== humanId) {
@@ -5130,6 +5328,7 @@ export function useShelectorGame() {
     libraryChoice,
     mulliganPhase,
     optionalTriggerChoice,
+    taxPaymentChoice,
     triggerOrderChoice,
     queueHumanDamageAssignmentChoice,
     resolveCombatDamageWithAuthority,
@@ -5147,6 +5346,10 @@ export function useShelectorGame() {
       if (!engine || gameState?.gameOver) return;
       if (optionalTriggerChoice) {
         addMessage('system', 'Choose whether to use the pending optional trigger first.');
+        return;
+      }
+      if (taxPaymentChoice) {
+        addMessage('system', 'Choose whether to pay the pending tax trigger first.');
         return;
       }
       if (damageAssignmentChoice) {
@@ -6117,7 +6320,7 @@ export function useShelectorGame() {
         syncState();
       }
     },
-    [gameState, addMessage, appendLog, syncState, advanceGameLoop, advanceStepWithAuthority, applyActionThroughAuthority, applyEvents, damageAssignmentChoice, lastPlayedCard, optionalTriggerChoice, rememberLastPlayedCard, recordAuthorityUpdate, recordStateUpdate, skipEmptyPhases, skipRestOfTurn, triggerOrderChoice],
+    [gameState, addMessage, appendLog, syncState, advanceGameLoop, advanceStepWithAuthority, applyActionThroughAuthority, applyEvents, damageAssignmentChoice, lastPlayedCard, optionalTriggerChoice, rememberLastPlayedCard, recordAuthorityUpdate, recordStateUpdate, skipEmptyPhases, skipRestOfTurn, taxPaymentChoice, triggerOrderChoice],
   );
   submitActionRef.current = submitAction;
 
@@ -6164,6 +6367,7 @@ export function useShelectorGame() {
       libraryChoice,
       libraryManipulationPromptRequest: libraryManipulationPromptRequestRef.current,
       optionalTriggerChoice,
+      taxPaymentChoice,
       damageAssignmentChoice,
       triggerOrderChoice,
       undosRemaining,
@@ -6193,6 +6397,7 @@ export function useShelectorGame() {
     tutorTitle,
     libraryChoice,
     optionalTriggerChoice,
+    taxPaymentChoice,
     damageAssignmentChoice,
     triggerOrderChoice,
     undosRemaining,
@@ -6294,6 +6499,7 @@ export function useShelectorGame() {
           })
         : null;
       setOptionalTriggerChoice(restoredOptionalTriggerChoice);
+      setTaxPaymentChoice(snapshot.taxPaymentChoice || null);
       const restoredDamageAssignmentChoice = snapshot.damageAssignmentChoice || null;
       damageAssignmentPromptRequestRef.current = restoredDamageAssignmentChoice
         ? createDamageAssignmentPromptRequest(restored, humanIdRef.current, {
@@ -6354,6 +6560,7 @@ export function useShelectorGame() {
     tutorTitle,
       libraryChoice,
       optionalTriggerChoice,
+      taxPaymentChoice,
       damageAssignmentChoice,
       triggerOrderChoice,
       gameLog,
@@ -6401,6 +6608,7 @@ export function useShelectorGame() {
     cancelTutor,
     resolveLibraryChoice,
     resolveOptionalTriggerChoice,
+    resolveTaxPaymentChoice,
     resolveDamageAssignmentChoice,
     resolveTriggerOrderChoice,
     undoAction,

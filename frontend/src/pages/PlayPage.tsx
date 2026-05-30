@@ -99,6 +99,7 @@ export function PlayPage() {
     tutorTitle,
     libraryChoice,
     optionalTriggerChoice,
+    taxPaymentChoice,
     damageAssignmentChoice,
     triggerOrderChoice,
     gameLog,
@@ -119,6 +120,7 @@ export function PlayPage() {
     cancelTutor,
     resolveLibraryChoice,
     resolveOptionalTriggerChoice,
+    resolveTaxPaymentChoice,
     resolveDamageAssignmentChoice,
     resolveTriggerOrderChoice,
     undosRemaining,
@@ -758,6 +760,8 @@ export function PlayPage() {
             onResolveLibraryChoice={resolveLibraryChoice}
             optionalTriggerChoice={optionalTriggerChoice}
             onResolveOptionalTrigger={resolveOptionalTriggerChoice}
+            taxPaymentChoice={taxPaymentChoice}
+            onResolveTaxPayment={resolveTaxPaymentChoice}
             damageAssignmentChoice={damageAssignmentChoice}
             onResolveDamageAssignment={resolveDamageAssignmentChoice}
             triggerOrderChoice={triggerOrderChoice}
