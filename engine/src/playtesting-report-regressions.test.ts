@@ -663,4 +663,63 @@ describe('playtesting report regressions', () => {
     expect(instanceHasKeyword(state, bearInstance.instanceId, 'Trample')).toBe(false);
     expect(state.cards.get(bearInstance.instanceId)?.counters['_powerMod']).toBeUndefined();
   });
+
+  it('casts Toxic Deluge with paid X life and applies -X/-X instead of destroying everything', () => {
+    const toxic = card(
+      'toxic-deluge',
+      'Toxic Deluge',
+      'Sorcery',
+      '{2}{B}',
+      ['sorcery'],
+      'As an additional cost to cast this spell, pay X life.\nAll creatures get -X/-X until end of turn.',
+    );
+    const small = creature('small-creature', 'Small Creature', '', 2, 2);
+    const large = creature('large-creature', 'Large Creature', '', 5, 5);
+    const opponentSmall = creature('opponent-small', 'Opponent Small', '', 3, 3);
+
+    let state = initGameState([
+      { playerId: 'p1', name: 'Alice', commanderId: 'none', cards: [toxic, small, large] },
+      { playerId: 'p2', name: 'Bob', commanderId: 'none', cards: [opponentSmall] },
+    ]);
+    state = moveFirstNamed(state, 'Toxic Deluge', 'hand');
+    state = moveFirstNamed(state, 'Small Creature', 'battlefield');
+    state = moveFirstNamed(state, 'Large Creature', 'battlefield');
+    state = moveFirstNamed(state, 'Opponent Small', 'battlefield');
+    state = {
+      ...state,
+      phase: 'precombat_main',
+      step: 'main',
+      activePlayerIndex: 0,
+      priorityPlayerIndex: 0,
+      players: state.players.map((player, index) =>
+        index === 0
+          ? { ...player, manaPool: { W: 0, U: 0, B: 1, R: 0, G: 0, C: 2 } }
+          : player
+      ),
+    };
+
+    const toxicInstance = getCardsInZone(state, 'p1', 'hand').find(instance =>
+      state.cardDefinitions.get(instance.definitionId)?.name === 'Toxic Deluge'
+    )!;
+    state = castSpell(state, 'p1', toxicInstance.instanceId, [], { xValue: 3 });
+
+    expect(state.players[0].life).toBe(37);
+    expect(state.stack[state.stack.length - 1]).toMatchObject({ xValue: 3 });
+
+    state = resolveTopOfStack(state);
+
+    expect(getCardsInZone(state, 'p1', 'graveyard').some(instance =>
+      state.cardDefinitions.get(instance.definitionId)?.name === 'Small Creature'
+    )).toBe(true);
+    expect(getCardsInZone(state, 'p2', 'graveyard').some(instance =>
+      state.cardDefinitions.get(instance.definitionId)?.name === 'Opponent Small'
+    )).toBe(true);
+    const survivingLarge = getCardsInZone(state, 'p1', 'battlefield').find(instance =>
+      state.cardDefinitions.get(instance.definitionId)?.name === 'Large Creature'
+    )!;
+    expect(getEffectivePower(state, survivingLarge.instanceId)).toBe(2);
+
+    state = cleanupDamage({ ...state, step: 'cleanup' });
+    expect(getEffectivePower(state, survivingLarge.instanceId)).toBe(5);
+  });
 });

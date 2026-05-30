@@ -2632,6 +2632,17 @@ function executeEffect(
       return executeReturnFromGraveyard(state, rfgTargetId, effect.destination, effect.counters);
     }
     case 'ModifyPT': {
+      if (effect.target.kind === 'AllCreatures') {
+        let s = state;
+        for (const [, card] of state.cards) {
+          if (card.zone !== 'battlefield') continue;
+          if (!isEffectiveCreature(s, card.instanceId)) continue;
+          const power = resolveAmount(effect.power, xValue, s, casterId, chosenTargets, card.instanceId);
+          const toughness = resolveAmount(effect.toughness, xValue, s, casterId, chosenTargets, card.instanceId);
+          s = executeModifyPT(s, card.instanceId, power, toughness);
+        }
+        return s;
+      }
       if (effect.target.kind === 'AllCreaturesYouControl') {
         let s = state;
         for (const [, card] of state.cards) {

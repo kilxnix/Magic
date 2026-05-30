@@ -476,13 +476,16 @@ registerOverrideByName('Anguished Unmaking', {
   targets: [{ id: 'target_1', type: 'NonlandPermanent', count: 1 }],
 });
 
-// Toxic Deluge — Destroy all creatures (simplified from -X/-X)
+// Toxic Deluge — pay X life; all creatures get -X/-X until end of turn.
 registerOverrideByName('Toxic Deluge', {
   kind: 'Spell',
   effects: [
     {
-      kind: 'Destroy',
+      kind: 'ModifyPT',
       target: { kind: 'AllCreatures' },
+      power: { kind: 'XMultiplied', multiplier: -1 },
+      toughness: { kind: 'XMultiplied', multiplier: -1 },
+      untilEndOfTurn: true,
     },
   ],
   targets: [],

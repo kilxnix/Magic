@@ -6,7 +6,7 @@
 
 import { GameState, CardInstance, AttackerDeclaration, BlockerDeclaration, isSpellStackItem } from '../types';
 import { getCardsInZone, getCardDefinition } from '../game-state';
-import { canCastSpell, getCastSpellDefinition, getEffectiveCastCost, type CastSpellOptions } from '../stack';
+import { canCastSpell, getAdditionalLifeCostForCast, getCastSpellDefinition, getEffectiveCastCost, type CastSpellOptions } from '../stack';
 import { canPlayLand, getActivatedAbilities, canActivateAbility, isBlockedBySummoningSicknessForTap, getAvailableManaColors } from '../actions';
 import { canDeclareAttacker, canDeclareBlocker, hasPlayerDeclaredBlockers } from '../combat';
 import { canPaySpellCost, canPayUnrestrictedCost } from '../mana';
@@ -352,7 +352,8 @@ function generateTargetCombinations(
 }
 
 function hasXCost(def: ReturnType<typeof getCardDefinition>): boolean {
-  return /\{X\}/i.test(def.mana_cost);
+  return /\{X\}/i.test(def.mana_cost)
+    || /\bas an additional cost to cast this spell,\s*pay x life\b/i.test(def.oracle_text);
 }
 
 function legalXValuesForSpell(
@@ -368,7 +369,13 @@ function legalXValuesForSpell(
   const values: number[] = [];
   for (let xValue = 0; xValue <= 20; xValue++) {
     const cost = getEffectiveCastCost(state, playerId, card.instanceId, { ...baseOptions, xValue });
-    if (cost && canPaySpellCost(player, cost, def, card)) values.push(xValue);
+    if (
+      cost
+      && canPaySpellCost(player, cost, def, card)
+      && player.life >= getAdditionalLifeCostForCast(def, { ...baseOptions, xValue })
+    ) {
+      values.push(xValue);
+    }
   }
   return values;
 }

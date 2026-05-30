@@ -11,7 +11,7 @@ import {
   getAvailableManaColors,
   type PlayLandOptions,
 } from './actions';
-import { castSpell, canCastSpell, getCastSpellDefinition, getEffectiveCastCost, type CastSpellOptions } from './stack';
+import { castSpell, canCastSpell, getAdditionalLifeCostForCast, getCastSpellDefinition, getEffectiveCastCost, type CastSpellOptions } from './stack';
 import { canPaySpellCost, canPayUnrestrictedCost, parseManaString } from './mana';
 import { getCardDefinition } from './game-state';
 import { passPriority } from './priority';
@@ -377,6 +377,8 @@ export function tryCastSpell(
   if (!canPaySpellCost(player, totalCost, def, card)) {
     return fail('insufficient_mana', 'Insufficient mana in pool');
   }
+  const additionalLifeCost = getAdditionalLifeCostForCast(def, options);
+  if (player.life < additionalLifeCost) return fail('insufficient_life', 'Cannot pay life cost');
 
   try {
     const next = castSpell(state, playerId, cardInstanceId, targets, options);

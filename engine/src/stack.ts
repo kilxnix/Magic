@@ -40,6 +40,14 @@ function normalizedXValue(options: CastSpellOptions): number {
   return Math.max(0, Math.floor(options.xValue ?? 0));
 }
 
+function hasAdditionalXLifeCost(def: CardDefinition): boolean {
+  return /\bas an additional cost to cast this spell,\s*pay x life\b/i.test(def.oracle_text);
+}
+
+export function getAdditionalLifeCostForCast(def: CardDefinition, options: CastSpellOptions = {}): number {
+  return hasAdditionalXLifeCost(def) ? normalizedXValue(options) : 0;
+}
+
 function applyFaceToDefinition(def: CardDefinition, faceName?: string): CardDefinition {
   return applyFaceToCardDefinition(def, faceName);
 }
@@ -1017,6 +1025,7 @@ export function canCastSpell(
   if (!totalCost) return false;
 
   if (!canPaySpellCost(player!, totalCost, def, card)) return false;
+  if ((player?.life ?? 0) < getAdditionalLifeCostForCast(def, options)) return false;
 
   return true;
 }
@@ -1048,6 +1057,7 @@ export function castSpell(
   const isFromCommandZone = card.zone === 'command';
   const taxAmount = isFromCommandZone ? getCommanderTaxForCast(state, playerId, cardInstanceId) : 0;
   const xCost = /\{X\}/i.test(def.mana_cost) ? normalizedXValue(castOptions) : 0;
+  const additionalLifeCost = getAdditionalLifeCostForCast(def, castOptions);
   const reducedCost = reduceGenericCost(state, playerId, { ...cost, generic: cost.generic + taxAmount + xCost }, def);
   const mechanicPlan = buildCostMechanicPlan(state, playerId, card, def, reducedCost, castOptions);
   const totalCost = mechanicPlan.cost;
@@ -1061,7 +1071,7 @@ export function castSpell(
     i === playerIndex
       ? {
           ...p,
-          life: paidPlayer.life,
+          life: paidPlayer.life - additionalLifeCost,
           manaPool: paidPlayer.manaPool,
           snowManaPool: paidPlayer.snowManaPool,
           restrictedMana: paidPlayer.restrictedMana,
@@ -1106,7 +1116,7 @@ export function castSpell(
     ...(castOptions.chosenModes ? { chosenModes: castOptions.chosenModes } : {}),
     ...(castOptions.namedCardChoices ? { namedCardChoices: castOptions.namedCardChoices } : {}),
     ...(castOptions.cardChoices ? { cardChoices: copyCardChoices(castOptions.cardChoices) } : {}),
-    ...(/\{X\}/i.test(def.mana_cost) ? { xValue: normalizedXValue(castOptions) } : {}),
+    ...(/\{X\}/i.test(def.mana_cost) || normalizedXValue(castOptions) > 0 ? { xValue: normalizedXValue(castOptions) } : {}),
     ...(castOptions.faceName ? { faceName: castOptions.faceName } : {}),
     ...(paymentMakesSpellUncounterable(state, usedRestrictedMana) || hasCantBeCounteredText(def.oracle_text)
       ? { cantBeCountered: true }
