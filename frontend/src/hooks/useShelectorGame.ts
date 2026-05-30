@@ -4176,9 +4176,30 @@ export function useShelectorGame() {
       if (newMulliganCount >= 3) {
         const handCards = getCardsInZone(newEngine, humanIdRef.current, 'hand');
         const cardsToBottom = Math.min(newMulliganCount, handCards.length);
-        for (let i = 0; i < cardsToBottom; i++) {
-          const card = handCards[handCards.length - 1 - i];
-          if (card) card.zone = 'library';
+        const selectedBottomIds = handCards
+          .slice(Math.max(0, handCards.length - cardsToBottom))
+          .map(card => card.instanceId);
+        if (cardsToBottom > 0) {
+          const bottomRequest = createSelectCardsPromptRequest(newEngine, humanIdRef.current, {
+            subject: 'OpeningMulliganBottom',
+            zone: 'hand',
+            destination: 'library',
+            minSelections: cardsToBottom,
+            maxSelections: cardsToBottom,
+          });
+          const bottomResponse = applySelectCardsPromptResponse(newEngine, bottomRequest, {
+            requestId: bottomRequest.id,
+            kind: 'SelectCards',
+            playerId: humanIdRef.current,
+            selectedCardInstanceIds: selectedBottomIds,
+          });
+          recordAuthorityUpdate(bottomResponse.update);
+          if (!bottomResponse.ok || !bottomResponse.state) {
+            addMessage('system', bottomResponse.message || 'Auto-keep mulligan bottom choices were rejected.');
+            syncState();
+            return;
+          }
+          newEngine = bottomResponse.state as GameStateWithAI;
         }
 
         setMulliganPhase(false);
@@ -4222,7 +4243,7 @@ export function useShelectorGame() {
       setError(msg);
       console.error('Mulligan error:', err);
     }
-  }, [mulliganCount, addMessage, initEngine, syncState, advanceToPrecombatMain]);
+  }, [mulliganCount, addMessage, initEngine, recordAuthorityUpdate, syncState, advanceToPrecombatMain]);
 
   const toggleMulliganCard = useCallback((cardInstanceId: string) => {
     setSelectedMulliganCardIds(prev =>
