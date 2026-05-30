@@ -12,6 +12,8 @@ export function parseManaString(manaString: string): ManaCost {
     const inner = sym.slice(1, -1).toUpperCase();
     if (COLOR_SYMBOLS.includes(inner as ManaColor)) {
       cost[inner as ManaColor]++;
+    } else if (/^[WUBRG]\/P$/.test(inner)) {
+      cost.phyrexian = [...(cost.phyrexian || []), inner[0] as ManaColor];
     } else if (inner.includes('/')) {
       const options = inner
         .split('/')
@@ -51,6 +53,11 @@ export function canPayCost(pool: ManaPool, cost: ManaCost): boolean {
     remainingPool[color]--;
   }
 
+  for (const color of cost.phyrexian || []) {
+    if (remainingPool[color] <= 0) return false;
+    remainingPool[color]--;
+  }
+
   const remaining = COLOR_SYMBOLS.reduce((sum, color) => sum + remainingPool[color], 0);
   return remaining >= cost.generic;
 }
@@ -73,6 +80,11 @@ export function payManaCost(pool: ManaPool, cost: ManaCost): ManaPool {
     const color = [...options].sort((a, b) => result[b] - result[a])
       .find(option => result[option] > 0);
     if (!color) throw new Error('Cannot pay mana cost');
+    result[color]--;
+  }
+
+  for (const color of cost.phyrexian || []) {
+    if (result[color] <= 0) throw new Error('Cannot pay mana cost');
     result[color]--;
   }
 
@@ -183,10 +195,13 @@ export function payUnrestrictedManaCost(player: Player, cost: ManaCost): Player 
   return { ...player, manaPool: restoredPool, restrictedMana, conditionalMana };
 }
 
+type SpellPaymentPlayer = Pick<Player, 'manaPool' | 'restrictedMana' | 'conditionalMana'> & Partial<Pick<Player, 'life'>>;
+
 interface ManaUnit {
   color: ManaColor;
   restrictedIndex?: number;
   conditionalIndex?: number;
+  payLifeForPhyrexianColor?: ManaColor;
 }
 
 export function getCreatureSubtypes(def: CardDefinition): string[] {
@@ -220,7 +235,7 @@ function restrictionAllows(
 }
 
 function buildSpendableUnits(
-  player: Pick<Player, 'manaPool' | 'restrictedMana' | 'conditionalMana'>,
+  player: SpellPaymentPlayer,
   spellDef: CardDefinition,
   spellCard?: CardInstance,
 ): ManaUnit[] {
@@ -248,7 +263,7 @@ function buildSpendableUnits(
 }
 
 function choosePaymentUnits(
-  player: Pick<Player, 'manaPool' | 'restrictedMana' | 'conditionalMana'>,
+  player: SpellPaymentPlayer,
   cost: ManaCost,
   spellDef: CardDefinition,
   spellCard?: CardInstance,
@@ -274,6 +289,15 @@ function choosePaymentUnits(
     if (!takeUnit(unit => options.includes(unit.color))) return null;
   }
 
+  let lifeToPay = 0;
+  for (const color of cost.phyrexian || []) {
+    const paidWithMana = takeUnit(unit => unit.color === color);
+    if (paidWithMana) continue;
+    lifeToPay += 2;
+    if ((player.life ?? 0) < lifeToPay) return null;
+    used.push({ color, payLifeForPhyrexianColor: color });
+  }
+
   for (let i = 0; i < cost.generic; i++) {
     if (!takeUnit(() => true)) return null;
   }
@@ -282,7 +306,7 @@ function choosePaymentUnits(
 }
 
 export function canPaySpellCost(
-  player: Pick<Player, 'manaPool' | 'restrictedMana' | 'conditionalMana'>,
+  player: SpellPaymentPlayer,
   cost: ManaCost,
   spellDef: CardDefinition,
   spellCard?: CardInstance,
@@ -291,7 +315,7 @@ export function canPaySpellCost(
 }
 
 export function getSpellPaymentRestrictedMana(
-  player: Pick<Player, 'manaPool' | 'restrictedMana' | 'conditionalMana'>,
+  player: SpellPaymentPlayer,
   cost: ManaCost,
   spellDef: CardDefinition,
   spellCard?: CardInstance,
@@ -311,7 +335,7 @@ export function getSpellPaymentRestrictedMana(
 }
 
 export function getSpellPaymentConditionalMana(
-  player: Pick<Player, 'manaPool' | 'restrictedMana' | 'conditionalMana'>,
+  player: SpellPaymentPlayer,
   cost: ManaCost,
   spellDef: CardDefinition,
   spellCard?: CardInstance,
@@ -344,6 +368,7 @@ export function paySpellCost(
   const conditionalMana = cloneConditionalMana(player.conditionalMana);
 
   for (const unit of used) {
+    if (unit.payLifeForPhyrexianColor) continue;
     manaPool[unit.color] -= 1;
     if (unit.restrictedIndex !== undefined) {
       restrictedMana[unit.restrictedIndex].amount -= 1;
@@ -355,6 +380,7 @@ export function paySpellCost(
 
   return {
     ...player,
+    life: player.life - used.filter(unit => unit.payLifeForPhyrexianColor).length * 2,
     manaPool,
     restrictedMana: restrictedMana.filter(m => m.amount > 0),
     conditionalMana: conditionalMana.filter(m => m.amount > 0),

@@ -23,6 +23,8 @@ export interface ManaCost {
   C: number;
   generic: number;
   hybrid?: ManaColor[][];
+  /** Colored Phyrexian symbols such as {G/P}; each may be paid with that color or 2 life. */
+  phyrexian?: ManaColor[];
 }
 
 export interface CardDefinition {

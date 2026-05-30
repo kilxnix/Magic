@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { parseManaString, addMana, canPayCost, payManaCost, totalMana } from './mana';
-import { emptyManaPool, ManaPool, ManaCost } from './types';
+import { parseManaString, addMana, canPayCost, payManaCost, totalMana, canPaySpellCost, paySpellCost } from './mana';
+import { emptyManaPool, ManaPool, ManaCost, createPlayer, CardDefinition } from './types';
 
 describe('Mana System', () => {
   describe('parseManaString', () => {
@@ -45,6 +45,20 @@ describe('Mana System', () => {
         C: 0,
         generic: 0,
         hybrid: [['R', 'G']],
+      });
+    });
+
+    it('parses colored Phyrexian mana symbols', () => {
+      const cost = parseManaString('{2}{G/P}{U/P}');
+      expect(cost).toEqual({
+        W: 0,
+        U: 0,
+        B: 0,
+        R: 0,
+        G: 0,
+        C: 0,
+        generic: 2,
+        phyrexian: ['G', 'U'],
       });
     });
   });
@@ -108,6 +122,13 @@ describe('Mana System', () => {
       expect(canPayCost({ W: 1, U: 1, B: 0, R: 0, G: 1, C: 0 }, cost)).toBe(true);
       expect(canPayCost({ W: 1, U: 1, B: 1, R: 0, G: 0, C: 1 }, cost)).toBe(false);
     });
+
+    it('requires colored mana for Phyrexian symbols in pool-only checks', () => {
+      const cost = parseManaString('{G/P}');
+
+      expect(canPayCost({ W: 0, U: 0, B: 0, R: 0, G: 1, C: 0 }, cost)).toBe(true);
+      expect(canPayCost(emptyManaPool(), cost)).toBe(false);
+    });
   });
 
   describe('payManaCost', () => {
@@ -129,6 +150,58 @@ describe('Mana System', () => {
       const cost = parseManaString('{R/G}{W}{U}');
       const result = payManaCost({ W: 1, U: 1, B: 0, R: 0, G: 1, C: 0 }, cost);
       expect(result).toEqual({ W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 });
+    });
+
+    it('spends colored mana for Phyrexian symbols when using pool-only payment', () => {
+      const cost = parseManaString('{G/P}{1}');
+      const result = payManaCost({ W: 0, U: 0, B: 0, R: 1, G: 1, C: 0 }, cost);
+      expect(result).toEqual({ W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 });
+    });
+  });
+
+  describe('paySpellCost', () => {
+    const spellDef: CardDefinition = {
+      id: 'test_phyrexian_spell',
+      name: 'Test Phyrexian Spell',
+      type_line: 'Sorcery',
+      oracle_text: '',
+      mana_cost: '{G/P}',
+      cmc: 1,
+      colors: ['G'],
+      color_identity: ['G'],
+      keywords: [],
+      card_types: ['sorcery'],
+    };
+
+    it('allows Phyrexian spell costs to be paid with life when the color is unavailable', () => {
+      const player = createPlayer('p1', 'Alice');
+      const cost = parseManaString('{G/P}');
+
+      expect(canPaySpellCost(player, cost, spellDef)).toBe(true);
+
+      const paid = paySpellCost(player, cost, spellDef);
+      expect(paid.life).toBe(38);
+      expect(paid.manaPool).toEqual(emptyManaPool());
+    });
+
+    it('prefers matching colored mana over life for Phyrexian spell costs', () => {
+      const player = {
+        ...createPlayer('p1', 'Alice'),
+        manaPool: { W: 0, U: 0, B: 0, R: 0, G: 1, C: 0 },
+      };
+      const cost = parseManaString('{G/P}');
+
+      const paid = paySpellCost(player, cost, spellDef);
+      expect(paid.life).toBe(40);
+      expect(paid.manaPool.G).toBe(0);
+    });
+
+    it('rejects Phyrexian life payment when the player does not have enough life', () => {
+      const player = { ...createPlayer('p1', 'Alice'), life: 1 };
+      const cost = parseManaString('{G/P}');
+
+      expect(canPaySpellCost(player, cost, spellDef)).toBe(false);
+      expect(() => paySpellCost(player, cost, spellDef)).toThrow('Cannot pay mana cost');
     });
   });
 
