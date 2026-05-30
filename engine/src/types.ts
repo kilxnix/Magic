@@ -99,6 +99,7 @@ export interface TriggeredAbilityRef {
   kind: 'TriggeredAbility';
   trigger: { kind: 'ETB'; who: 'self' | 'any' | 'controller' }
     | { kind: 'Dies'; who: 'self' | 'any' }
+    | { kind: 'AttachedCreatureDies' }
     | { kind: 'Attacks'; who: 'self' }
     | { kind: 'Unblocked'; who: 'self' }
     | { kind: 'Upkeep'; whose: 'yours' | 'each' }

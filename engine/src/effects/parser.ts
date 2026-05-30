@@ -1813,6 +1813,32 @@ function matchReturnFromGraveyard(tokens: string[], startIndex: number): Pattern
 }
 
 /**
+ * Match: "return that card to its owner's hand"
+ * Used by attachment death triggers such as Demonic Vigor. The triggering
+ * event supplies the card that died through the effect execution context.
+ */
+function matchReturnThatCardToHand(tokens: string[], startIndex: number): PatternResult {
+  const slice = tokens.slice(startIndex);
+
+  if (slice.length < 6) return null;
+  if (slice[0] !== 'return' || slice[1] !== 'that' || slice[2] !== 'card') return null;
+  if (slice[3] !== 'to') return null;
+  if (slice[4] !== 'its' && slice[4] !== "its'") return null;
+
+  const handIndex = slice.findIndex((token, index) => index >= 4 && token === 'hand');
+  if (handIndex === -1) return null;
+  let consumed = handIndex + 1;
+  if (tokens[startIndex + consumed] === '.') consumed++;
+
+  const effect: Effect = {
+    kind: 'ReturnToHand',
+    target: { kind: 'EventSpell' },
+  };
+
+  return { effects: [effect], targets: [], consumed };
+}
+
+/**
  * Match: "target creature gets +N/+N until end of turn"
  * Match: "target creature gets -N/-N until end of turn"
  * Match: "creatures you control get +N/+N until end of turn"
@@ -3782,7 +3808,7 @@ function parseEffectClauseInternal(tokens: string[], startIndex: number): Patter
     matchDealXDamage, matchDrawX, matchEachOpponentLosesLife,
     matchEachOpponentDiscardsCard, matchDestroyAll, matchDealDamage, matchDestroy,
     matchLookAtTargetPlayerHand, matchLookAtTopPutOneIntoHand, matchPutLandFromHandOntoBattlefield, matchThatPlayerDraw, matchTargetPlayerDraw, matchDraw,
-    matchGainLife, matchLoseLife, matchExile, matchReturnFromGraveyard,
+    matchGainLife, matchLoseLife, matchExile, matchReturnFromGraveyard, matchReturnThatCardToHand,
     matchReturnToHand, matchMill, matchGainEnergy, matchAddCounters, matchModifyPT, matchTap,
     matchUntap, matchRollD20, matchThatPlayerCreatesToken, matchCreateToken, matchDiscard, matchDiscardSelf, matchScry,
     matchSurveil, matchCounterSpell,
@@ -3867,6 +3893,7 @@ function parseEffectClause(tokens: string[], startIndex: number): PatternResult 
     matchLoseLife,
     matchExile,
     matchReturnFromGraveyard, // before ReturnToHand — "return target creature card from..."
+    matchReturnThatCardToHand,
     matchReturnToHand,
     matchMill,
     matchGainEnergy,
@@ -3935,11 +3962,17 @@ function matchETBPrefix(tokens: string[]): number {
 function matchDiesPrefix(tokens: string[]): number {
   // "when ~ dies ,"
   // "whenever ~ dies ,"
+  // "when enchanted creature dies ,"
 
   if (tokens.length < 4) return -1;
 
   const first = tokens[0];
   if (first !== 'when' && first !== 'whenever') return -1;
+  if (tokens[1] === 'enchanted' && tokens[2] === 'creature' && tokens[3] === 'dies') {
+    let idx = 4;
+    if (tokens[idx] === ',') idx++;
+    return idx;
+  }
   if (tokens[1] !== '~') return -1;
   if (tokens[2] !== 'dies') return -1;
 
@@ -4851,9 +4884,12 @@ export function parseOracleText(oracleText: string, manaCost?: string): ParsedOr
     const optional = isOptionalEffectClause(tokens, diesIndex);
     const effectResult = parseMultipleEffects(tokens, diesIndex);
     if (effectResult) {
+      const trigger: Trigger = tokens[1] === 'enchanted' && tokens[2] === 'creature'
+        ? { kind: 'AttachedCreatureDies' }
+        : { kind: 'Dies', who: 'self' };
       const ability: TriggeredAbility = {
         kind: 'TriggeredAbility',
-        trigger: { kind: 'Dies', who: 'self' },
+        trigger,
         effects: effectResult.effects,
         ...(optional ? { optional: true } : {}),
       };

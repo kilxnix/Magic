@@ -681,6 +681,52 @@ describe('ETB Trigger Pipeline', () => {
     expect(state.cards.get(skirkInst.instanceId)!.tapped).toBe(true);
     expect(state.cards.get(goblinInst.instanceId)!.zone).toBe('graveyard');
   });
+
+  it('returns an enchanted creature when the attached aura has a dies trigger', () => {
+    const demonicVigor: CardDefinition = {
+      id: 'demonic-vigor',
+      name: 'Demonic Vigor',
+      type_line: 'Enchantment - Aura',
+      oracle_text: "Enchant creature\nEnchanted creature gets +1/+1.\nWhen enchanted creature dies, return that card to its owner's hand.",
+      mana_cost: '{B}',
+      cmc: 1,
+      colors: ['B'],
+      color_identity: ['B'],
+      keywords: [],
+      card_types: ['enchantment'],
+    };
+    const bear = makeVanillaCreature('enchanted-bear', 'Enchanted Bear', '{1}{G}');
+    const swamp = makeLand('swamp', 'Swamp');
+
+    let state = createTestGame([demonicVigor, bear, swamp], [swamp]);
+    const auraInst = findCard(state, 'demonic-vigor')!;
+    const bearInst = findCard(state, 'enchanted-bear')!;
+
+    state = moveToZone(state, auraInst.instanceId, 'battlefield');
+    state = moveToZone(state, bearInst.instanceId, 'battlefield');
+    const attachedCards = new Map(state.cards);
+    attachedCards.set(auraInst.instanceId, {
+      ...attachedCards.get(auraInst.instanceId)!,
+      attachedTo: bearInst.instanceId,
+    });
+    attachedCards.set(bearInst.instanceId, {
+      ...attachedCards.get(bearInst.instanceId)!,
+      damage: 3,
+    });
+    state = { ...state, cards: attachedCards };
+
+    state = registerBattlefieldAbilities(state, auraInst.instanceId);
+    state = checkStateBasedActions(state);
+
+    expect(state.cards.get(bearInst.instanceId)!.zone).toBe('graveyard');
+    expect(state.cards.get(auraInst.instanceId)!.zone).toBe('graveyard');
+    expect(state.pendingTriggers).toHaveLength(1);
+
+    state = putTriggersOnStack(state);
+    state = resolveTopOfStack(state);
+
+    expect(state.cards.get(bearInst.instanceId)!.zone).toBe('hand');
+  });
 });
 
 // ============================================================================

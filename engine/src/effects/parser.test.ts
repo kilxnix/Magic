@@ -202,6 +202,17 @@ describe('parseOracleText', () => {
         topCount: 5,
       });
     });
+
+    it('parses enchanted-creature dies triggers after enchant preamble text', () => {
+      const result = parseOracleText("Enchant creature Enchanted creature gets +1/+1. When enchanted creature dies, return that card to its owner's hand.");
+      expect(result.kind).toBe('Dies');
+      if (result.kind !== 'Dies') return;
+      expect(result.ability.trigger).toEqual({ kind: 'AttachedCreatureDies' });
+      expect(result.ability.effects[0]).toMatchObject({
+        kind: 'ReturnToHand',
+        target: { kind: 'EventSpell' },
+      });
+    });
   });
 
   describe('unparsed cases', () => {

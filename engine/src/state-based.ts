@@ -222,6 +222,36 @@ export function checkStateBasedActions(state: GameState): GameState {
     }
   }
 
+  for (const died of creaturesDied) {
+    for (const [sourceInstanceId, abilities] of state.battlefieldAbilities || new Map()) {
+      const source = state.cards.get(sourceInstanceId);
+      if (!source) continue;
+
+      for (const ability of abilities) {
+        if (ability.trigger.kind === 'CreatureYouControlDies' && died.ownerId === source.ownerId) {
+          newPendingTriggers.push({
+            id: `trigger_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+            sourceInstanceId,
+            controllerId: source.ownerId,
+            ability,
+            requiredTargets: [],
+            eventContext: { cardInstanceId: died.instanceId },
+          });
+        }
+        if (ability.trigger.kind === 'AttachedCreatureDies' && source.attachedTo === died.instanceId) {
+          newPendingTriggers.push({
+            id: `trigger_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+            sourceInstanceId,
+            controllerId: source.ownerId,
+            ability,
+            requiredTargets: [],
+            eventContext: { cardInstanceId: died.instanceId },
+          });
+        }
+      }
+    }
+  }
+
   // Clean up battlefieldAbilities for creatures that died
   let newBattlefieldAbilities = state.battlefieldAbilities || new Map();
   if (creaturesDied.length > 0) {
@@ -232,12 +262,28 @@ export function checkStateBasedActions(state: GameState): GameState {
   }
 
   // Unattach equipment from creatures that left the battlefield
+  const attachmentsMovedToGraveyard: string[] = [];
   for (const [id, card] of newCards) {
     if (card.attachedTo) {
       const attachedToCard = newCards.get(card.attachedTo);
       if (!attachedToCard || attachedToCard.zone !== 'battlefield') {
-        newCards.set(id, { ...card, attachedTo: undefined });
+        const def = getCardDefinition(state, card);
+        const isAura = def.type_line.toLowerCase().includes('aura');
+        if (isAura) attachmentsMovedToGraveyard.push(id);
+        newCards.set(id, {
+          ...card,
+          attachedTo: undefined,
+          ...(isAura ? { zone: getCommanderDestinationZone(state, id, 'graveyard') as Zone } : {}),
+        });
       }
+    }
+  }
+  if (attachmentsMovedToGraveyard.length > 0) {
+    if (newBattlefieldAbilities === state.battlefieldAbilities) {
+      newBattlefieldAbilities = new Map(state.battlefieldAbilities || new Map());
+    }
+    for (const id of attachmentsMovedToGraveyard) {
+      newBattlefieldAbilities.delete(id);
     }
   }
 

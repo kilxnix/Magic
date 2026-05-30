@@ -2051,7 +2051,7 @@ function executeEffect(
         }
         return s;
       }
-      const bounceTargetId = resolveTargetRef(effect.target, casterId, chosenTargets);
+      const bounceTargetId = resolveTargetRef(effect.target, casterId, chosenTargets, state, eventContext);
       return executeReturnToHand(state, bounceTargetId);
     }
     case 'Sacrifice': {

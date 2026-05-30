@@ -1,41 +1,46 @@
 {
-  "generatedAt": "2026-05-30T12:15:51.146Z",
+  "generatedAt": "2026-05-30T12:25:35.062Z",
   "source": "mtg_data/cards_min.jsonl",
   "commanderLegalOnly": true,
   "includedCards": 30969,
   "totalOracleFaces": 31420,
-  "parsedFaces": 15536,
-  "unparsedFaces": 15884,
-  "parsedPercent": 49.45,
+  "parsedFaces": 15551,
+  "unparsedFaces": 15869,
+  "parsedPercent": 49.49,
   "parsedKindCounts": {
-    "Unparsed": 15884,
-    "Spell": 10489,
-    "ETB": 2044,
+    "Unparsed": 15869,
+    "Spell": 10488,
+    "ETB": 2045,
     "Triggered": 1178,
     "KeywordOnly": 887,
     "EntryCounters": 362,
     "StaticAbility": 340,
-    "Modal": 236
+    "Modal": 236,
+    "Dies": 15
   },
   "unparsedReasons": [
     {
       "reason": "No recognized pattern",
-      "count": 13314
+      "count": 13269
     },
     {
       "reason": "Could not parse ETB effect clause",
-      "count": 1409
+      "count": 1408
     },
     {
       "reason": "Could not parse trigger effect clause",
       "count": 1161
+    },
+    {
+      "reason": "Could not parse dies effect clause",
+      "count": 31
     }
   ],
   "syntaxClusters": [
     {
       "id": "trigger-timing",
       "reason": "Triggered or delayed triggered abilities need event registration and APNAP ordering.",
-      "count": 6849,
+      "count": 6835,
       "samples": [
         {
           "name": "Coalition Relic",
@@ -74,16 +79,16 @@
           "text": "When this enchantment enters, suspect target creature an opponent controls. As long as this enchantment remains on the battlefield, that creature is also goaded. At the beginning of combat on your turn, if two or more players have lost the game, gain control of all goaded and/or suspected creatures until end of turn. Untap them. They gain haste until end of "
         },
         {
-          "name": "Demonic Vigor",
-          "set": "dom",
-          "reason": "No recognized pattern",
-          "text": "Enchant creature Enchanted creature gets +1/+1. When enchanted creature dies, return that card to its owner's hand."
-        },
-        {
           "name": "End-Blaze Epiphany",
           "set": "ecl",
           "reason": "No recognized pattern",
           "text": "End-Blaze Epiphany deals X damage to target creature. When that creature dies this turn, exile a number of cards from the top of your library equal to its power, then choose a card exiled this way. Until the end of your next turn, you may play that card."
+        },
+        {
+          "name": "Utopia Sprawl",
+          "set": "rvr",
+          "reason": "No recognized pattern",
+          "text": "Enchant Forest As this Aura enters, choose a color. Whenever enchanted Forest is tapped for mana, its controller adds an additional one mana of the chosen color."
         }
       ]
     },
@@ -145,7 +150,7 @@
     {
       "id": "continuous-layers",
       "reason": "Continuous effects need layer/timestamp/dependency handling.",
-      "count": 3294,
+      "count": 3291,
       "samples": [
         {
           "name": "Sensory Deprivation",
@@ -255,7 +260,7 @@
     {
       "id": "tokens-counters",
       "reason": "Token/counter wording needs typed objects, counters, and downstream interactions.",
-      "count": 2316,
+      "count": 2315,
       "samples": [
         {
           "name": "Coalition Relic",
@@ -310,7 +315,7 @@
     {
       "id": "replacement-prevention",
       "reason": "Replacement/prevention effects require replacement-layer handling.",
-      "count": 1625,
+      "count": 1623,
       "samples": [
         {
           "name": "Sodden Verdure",
@@ -475,7 +480,7 @@
     {
       "id": "choice-modal",
       "reason": "Choice/modal/naming text should be prompt-backed instead of deterministic.",
-      "count": 820,
+      "count": 819,
       "samples": [
         {
           "name": "Road of Return",
@@ -640,7 +645,7 @@
     {
       "id": "special-mechanics",
       "reason": "Special mechanics need dedicated state and UI presentation.",
-      "count": 295,
+      "count": 294,
       "samples": [
         {
           "name": "Sword-Swallowing Seraph",

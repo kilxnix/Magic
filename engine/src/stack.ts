@@ -1635,6 +1635,7 @@ export type GameEvent =
   | { kind: 'SpellCast'; casterId: string; cardInstanceId: string }
   | { kind: 'SpellCopied'; controllerId: string; cardInstanceId: string }
   | { kind: 'CardDrawn'; playerId: string; count: number; cardInstanceIds?: string[] }
+  | { kind: 'CreatureDied'; instanceId: string; ownerId: string }
   | { kind: 'CreatureETB'; instanceId: string; controllerId: string }
   | { kind: 'Attacks'; attackerInstanceId: string; controllerId: string }
   | { kind: 'Unblocked'; attackerInstanceId: string; controllerId: string }
@@ -1847,6 +1848,19 @@ export function checkTriggersForEvent(state: GameState, event: GameEvent): GameS
           break;
         }
 
+        case 'CreatureDied': {
+          if (trigger.kind === 'CreatureYouControlDies' && event.ownerId === controllerId) {
+            shouldFire = true;
+          }
+          if (trigger.kind === 'AttachedCreatureDies') {
+            const source = state.cards.get(instanceId);
+            if (source?.attachedTo === event.instanceId) {
+              shouldFire = true;
+            }
+          }
+          break;
+        }
+
         case 'Attacks': {
           // "Whenever ~ attacks"
           if (trigger.kind === 'Attacks' && (trigger as { kind: 'Attacks'; who: string }).who === 'self'
@@ -1960,6 +1974,8 @@ export function checkTriggersForEvent(state: GameState, event: GameEvent): GameS
           ? { casterId: event.casterId, cardInstanceId: event.cardInstanceId }
           : event.kind === 'SpellCopied'
             ? { casterId: event.controllerId, cardInstanceId: event.cardInstanceId }
+          : event.kind === 'CreatureDied'
+            ? { cardInstanceId: event.instanceId }
           : event.kind === 'Attacks' || event.kind === 'Unblocked'
             ? { cardInstanceId: event.attackerInstanceId }
             : event.kind === 'CombatDamageToPlayer'
