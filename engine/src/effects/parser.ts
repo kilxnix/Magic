@@ -4302,6 +4302,17 @@ export function hasXInCost(manaCost: string): boolean {
  * Parse modal spell text.
  * "Choose one —" or "Choose two —"
  */
+function formatModalChoiceLabel(tokens: string[], fallback: string): string {
+  const text = tokens
+    .filter(token => token !== '.' && token !== ',' && token !== ';')
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!text) return fallback;
+  const normalized = text.length > 80 ? `${text.slice(0, 77)}...` : text;
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+}
+
 function parseModalSpell(tokens: string[]): ModalSpell | null {
   if (tokens.length < 3) return null;
   if (tokens[0] !== 'choose') return null;
@@ -4342,7 +4353,7 @@ function parseModalSpell(tokens: string[]): ModalSpell | null {
         const result = parseEffectClause(currentChoice.tokens, 0);
         if (result) {
           choices.push({
-            label: currentChoice.label,
+            label: formatModalChoiceLabel(currentChoice.tokens, currentChoice.label),
             effects: result.effects,
             targets: result.targets.map(t => ({ id: t.id, type: t.type })),
           });
@@ -4359,7 +4370,7 @@ function parseModalSpell(tokens: string[]): ModalSpell | null {
     const result = parseEffectClause(currentChoice.tokens, 0);
     if (result) {
       choices.push({
-        label: currentChoice.label,
+        label: formatModalChoiceLabel(currentChoice.tokens, currentChoice.label),
         effects: result.effects,
         targets: result.targets.map(t => ({ id: t.id, type: t.type })),
       });

@@ -1059,6 +1059,19 @@ function targetSuffix(state: GameState, targets?: string[]): string {
   return ` targeting ${names.join(', ')}`;
 }
 
+function modalModeSuffix(state: GameState, action: Extract<AIAction, { kind: 'CastSpell' }>): string {
+  if (!action.chosenModes?.length) return '';
+  const card = state.cards.get(action.cardInstanceId);
+  const def = card ? getCardDefinition(state, card) : undefined;
+  if (!def) return '';
+  const parsed = parseOracleText(def.oracle_text);
+  if (parsed.kind !== 'Modal') return '';
+  const labels = action.chosenModes
+    .map(modeIndex => parsed.modal.choices[modeIndex]?.label)
+    .filter((label): label is string => Boolean(label));
+  return labels.length ? ` choosing ${labels.join(' + ')}` : '';
+}
+
 function stateSignature(state: GameState): unknown {
   const cards = [...state.cards.values()]
     .sort((a, b) => a.instanceId.localeCompare(b.instanceId))
@@ -1243,7 +1256,7 @@ export function labelForAction(state: GameState, action: AIAction): string {
     case 'PlayLand':
       return `Play ${cardName(state, state.cards.get(action.cardInstanceId)) || 'land'}`;
     case 'CastSpell':
-      return `Cast ${cardName(state, state.cards.get(action.cardInstanceId)) || 'spell'}${targetSuffix(state, action.targets)}`;
+      return `Cast ${cardName(state, state.cards.get(action.cardInstanceId)) || 'spell'}${modalModeSuffix(state, action)}${targetSuffix(state, action.targets)}`;
     case 'ActivateManaAbility':
       return `Tap ${cardName(state, state.cards.get(action.cardInstanceId)) || 'source'} for ${action.color}`;
     case 'ManualUntapManaSource':

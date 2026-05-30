@@ -1658,6 +1658,13 @@ describe('authority action boundary', () => {
 
     expect(request.kind).toBe('ChooseMode');
     expect(request.legalChoices.map(choice => choice.modeIndex)).toEqual([0, 1]);
+    expect(request.legalChoices.map(choice => choice.label)).toEqual(['Draw a card', 'Gain 3 life']);
+    expect(labelForAction(state, {
+      kind: 'CastSpell',
+      cardInstanceId: 'charm_in_hand',
+      targets: [],
+      chosenModes: [1],
+    })).toBe('Cast Test Charm choosing Gain 3 life');
 
     const accepted = applyChooseModePromptResponse(state, request, {
       requestId: request.id,

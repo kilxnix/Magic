@@ -458,6 +458,8 @@ describe('parseOracleText', () => {
 
       expect(result.modal.chooseCount).toBe(1);
       expect(result.modal.choices).toHaveLength(2);
+      expect(result.modal.choices[0].label).toBe('Draw a card');
+      expect(result.modal.choices[1].label).toBe('Gain 3 life');
       expect(result.modal.choices[0].effects[0].kind).toBe('Draw');
       expect(result.modal.choices[1].effects[0].kind).toBe('GainLife');
     });

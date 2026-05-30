@@ -278,6 +278,20 @@ function targetLabelSuffix(engineState: GameState, targets?: string[]): string {
   return ` targeting ${targets.map(targetId => displayNameForTarget(engineState, targetId)).join(', ')}`;
 }
 
+function modalSelectedModeSuffix(engineState: GameState, action: Extract<AIAction, { kind: 'CastSpell' }>): string {
+  if (!action.chosenModes?.length) return '';
+  const inst = engineState.cards.get(action.cardInstanceId);
+  const def = getCastSpellDefinition(engineState, action.cardInstanceId, { faceName: action.faceName })
+    || (inst ? getCardDefinition(engineState, inst) : undefined);
+  if (!def) return '';
+  const parsed = parseOracleText(normalizeOracleForFrontendParser(def.oracle_text, def.name), def.mana_cost);
+  if (parsed.kind !== 'Modal') return '';
+  const labels = action.chosenModes
+    .map(modeIndex => parsed.modal.choices[modeIndex]?.label)
+    .filter((label): label is string => Boolean(label));
+  return labels.length ? ` choosing ${labels.join(' + ')}` : '';
+}
+
 function simpleChoiceId(action: SimpleLegalAction, index: number): string {
   const cardPart = action.cardInstanceId || action.cardName || 'table';
   return `${action.kind}:${cardPart}:${actionKey(action._engineAction)}:${index}`;
@@ -1746,7 +1760,7 @@ function toSimpleLegalAction(action: AIAction, engineState: GameState): SimpleLe
         kind: 'CastSpell',
         cardInstanceId: action.cardInstanceId,
         cardName: def?.name,
-        label: `Cast ${def?.name || 'spell'}${xSuffix}${targetLabelSuffix(engineState, action.targets)}`,
+        label: `Cast ${def?.name || 'spell'}${xSuffix}${modalSelectedModeSuffix(engineState, action)}${targetLabelSuffix(engineState, action.targets)}`,
         _engineAction: action,
       };
     }

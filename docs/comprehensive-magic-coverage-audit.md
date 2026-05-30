@@ -4,8 +4,8 @@ Total areas: 28
 
 By status:
 - certified: 0
-- partial: 27
-- gap: 1
+- partial: 28
+- gap: 0
 - blocked: 0
 
 By priority:
@@ -13,7 +13,7 @@ By priority:
 - P1: 9
 
 Open P0/P1 gaps:
-- [P0] modal-choice-ui: Add generic choice request/resolution layer instead of deterministic shortcuts.
+- none currently tracked as a full gap; all remaining areas are partial coverage work.
 
 Missing evidence references:
 - none
@@ -21,7 +21,7 @@ Missing evidence references:
 Area table:
 | Priority | Status | Area | Next |
 | --- | --- | --- | --- |
-| P0 | gap | modal-choice-ui | Add generic choice request/resolution layer instead of deterministic shortcuts. |
+| P0 | partial | modal-choice-ui | Typed ChooseMode prompts validate mode responses, modal action labels expose selected mode text, and scry/surveil/search prompts use engine request validation; continue replacing deterministic card-specific shortcuts with prompt-backed choices. |
 | P0 | partial | casting-costs | Expand alternative costs, additional costs, cost increasers/reducers, X choices, and free-spell casting prompts. |
 | P0 | partial | combat | Add browser combat certification for all starter decks plus multiplayer attack/block assignment. |
 | P0 | partial | commander-rules | Add partner/background/doctor companion import and cast certification plus Drannith-style restrictions. |
