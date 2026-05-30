@@ -108,7 +108,7 @@ Minimum acceptance bar from that file:
 | 3.1 Priority Is Visible But Not Central | partial |
 | 3.2 Stack Is Evented But Not Visually Dominant | partial |
 | 3.3 Pass Priority Flow Is Compressed | partial |
-| 3.4 Stop Settings Are Incomplete Or Not Exposed Enough | not done |
+| 3.4 Stop Settings Are Incomplete Or Not Exposed Enough | partial | Hold priority and individual priority stops exist, and the game menu now has a Full control shortcut that enables hold priority plus all stops. This is still not a full Arena-equivalent stop system. |
 | 4.1 Internal Step Labels Mismatch Visible UI | partial; Main 2 display handles the existing postcombat-main/end representation, and manual phase correction offers explicit user-facing step names |
 | 4.2 Main Phase And Begin Combat Confusion | partial; manual phase correction can recover a stuck/incorrect step, but the underlying turn-manager model still needs a cleaner main-step representation |
 | 4.3 AI Turn Compression | partial |

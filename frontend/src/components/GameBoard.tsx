@@ -2964,6 +2964,18 @@ export function GameBoard({
                     </div>
                     {onSetAllPriorityStops && (
                       <div className="flex gap-1">
+                        {onToggleHoldPriority && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              onSetAllPriorityStops(true);
+                              onToggleHoldPriority(true);
+                            }}
+                            className="rounded border border-sky-500/50 px-2 py-1 text-[10px] font-black uppercase text-sky-100 hover:border-sky-300"
+                          >
+                            Full
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={() => onSetAllPriorityStops(true)}
