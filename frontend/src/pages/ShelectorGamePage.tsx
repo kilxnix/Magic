@@ -883,6 +883,7 @@ export function ShelectorGamePage() {
           gameLog={gameLog}
           finalState={gameState}
           winner={winner}
+          authorityUpdates={authorityUpdates}
           onClose={() => setShowReview(false)}
         />
       )}

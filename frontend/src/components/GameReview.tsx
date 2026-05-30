@@ -9,6 +9,7 @@ import { useState, useMemo } from 'react';
 import { X, ChevronRight } from 'lucide-react';
 import type { GameLogEntry, SimpleGameState } from '../hooks/useShelectorGame';
 import { ratingFromDecisionDelta } from '../lib/turnReview';
+import type { EngineStateUpdate } from 'commander-engine';
 
 // ========== Rating Types ==========
 
@@ -18,6 +19,64 @@ interface RatedEntry extends GameLogEntry {
   rating: MoveRating;
   reasoning: string;
   counterAnalysis?: string;
+}
+
+function emptyReviewStats(finalState: SimpleGameState) {
+  const human = finalState.humanPlayer;
+  const ai = finalState.aiPlayer;
+  return {
+    manaAvailable: Object.values(finalState.manaPool).reduce((sum, value) => sum + value, 0),
+    boardCreatureCount: {
+      human: finalState.humanBattlefield.filter(card => card.cardTypes.includes('creature')).length,
+      ai: finalState.aiBattlefield.filter(card => card.cardTypes.includes('creature')).length,
+    },
+    lifeTotals: { human: human.life, ai: ai.life },
+    cardsInHand: { human: human.handCount, ai: ai.handCount },
+  };
+}
+
+function authorityReviewEntries(
+  authorityUpdates: EngineStateUpdate[],
+  finalState: SimpleGameState,
+): GameLogEntry[] {
+  const stats = emptyReviewStats(finalState);
+  const entries: GameLogEntry[] = [];
+
+  authorityUpdates.forEach((update, updateIndex) => {
+    update.rulesEvents.forEach((event, eventIndex) => {
+      if (event.kind !== 'ActionRejected' && event.kind !== 'PromptResponseRejected' && event.kind !== 'PromptResponseAccepted') {
+        return;
+      }
+
+      const isRejected = event.kind === 'ActionRejected' || event.kind === 'PromptResponseRejected';
+      const action = event.kind === 'ActionRejected'
+        ? `Rejected ${event.actionKind}`
+        : event.kind === 'PromptResponseRejected'
+          ? `Rejected ${event.promptKind} response`
+          : `${event.promptKind} response accepted`;
+      const reason = event.kind === 'PromptResponseAccepted'
+        ? `${event.promptKind} response was accepted by the engine authority.`
+        : event.message;
+
+      entries.push({
+        turnNumber: update.turnNumber,
+        player: event.playerId === 'human' ? 'human' : 'ai',
+        playerId: event.playerId,
+        action,
+        phase: update.phase,
+        manaSpent: 0,
+        timestamp: updateIndex * 1000 + eventIndex,
+        playByPlay: reason,
+        rulesAudit: {
+          severity: isRejected ? 'error' : 'info',
+          reason,
+        },
+        ...stats,
+      });
+    });
+  });
+
+  return entries;
 }
 
 // ========== Rating Config ==========
@@ -274,22 +333,28 @@ export interface GameReviewProps {
   winner: string | null;
   onClose: () => void;
   embedded?: boolean;
+  authorityUpdates?: EngineStateUpdate[];
 }
 
 // ========== Component ==========
 
-export function GameReview({ gameLog, finalState, winner, onClose, embedded = false }: GameReviewProps) {
+export function GameReview({ gameLog, finalState, winner, onClose, embedded = false, authorityUpdates = [] }: GameReviewProps) {
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [filterPlayer, setFilterPlayer] = useState<'all' | 'human' | 'ai'>('human');
 
+  const reviewLog = useMemo(() => {
+    const authorityEntries = authorityReviewEntries(authorityUpdates, finalState);
+    return [...gameLog, ...authorityEntries];
+  }, [authorityUpdates, finalState, gameLog]);
+
   // Rate all entries
   const ratedEntries = useMemo(() => {
-    return gameLog.map((entry, i) => {
-      const { rating, reasoning } = rateMove(entry, gameLog, i);
-      const counterAnalysis = analyzeCounterPlay(entry, gameLog, i);
+    return reviewLog.map((entry, i) => {
+      const { rating, reasoning } = rateMove(entry, reviewLog, i);
+      const counterAnalysis = analyzeCounterPlay(entry, reviewLog, i);
       return { ...entry, rating, reasoning, counterAnalysis } as RatedEntry;
     });
-  }, [gameLog]);
+  }, [reviewLog]);
 
   // Calculate summary
   const { grade, accuracy, counts } = useMemo(() => calculateGrade(ratedEntries), [ratedEntries]);
