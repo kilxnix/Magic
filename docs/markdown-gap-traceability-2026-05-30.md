@@ -126,7 +126,7 @@ Minimum acceptance bar from that file:
 | 8.2 No Observed Blocker Assignment UI | partial/not fully browser-proven |
 | 8.3 Attack Requirements And Restrictions | partial |
 | 9.1 Zone-Change Identity | partial; manual zone moves clear stale attachments, and manual attach/detach now preserves explicit attachment identity |
-| 9.2 Command Zone Rules | partial; manual commander-damage correction validates commander sources and feeds commander-damage loss checks, and manual move correction now applies the default commander replacement so commander graveyard/exile/hand moves resolve to command zone. |
+| 9.2 Command Zone Rules | partial; manual commander-damage correction validates commander sources and feeds commander-damage loss checks, manual move correction now applies the default commander replacement so commander graveyard/exile/hand moves resolve to command zone, and the `/play` correction message reports the final resolved zone. |
 | 9.3 Graveyard/Exile/Library UX | partial |
 | 10.1 State Changes Need Presentation Events | partial; d20 rolls now have persisted presentation records and authoritative DiceRolled events, and manual attachment plus turn/phase changes emit action events |
 | 10.2 Cause And Effect Need Better Timing | partial |
@@ -191,7 +191,7 @@ Additional picker-wording verification added after this audit: card/search picke
 
 Additional search-rule verification added after this audit: unrestricted tutor prompts now default to one required selection when the library contains a findable card, and a paired authority test confirms restricted hidden-library searches can still fail to find.
 
-Additional commander-zone verification added after this audit: manual move corrections now call commander replacement before mutation, so a commander moved toward graveyard/exile/hand by correction lands in command zone and the manual event reports the final command-zone destination.
+Additional commander-zone verification added after this audit: manual move corrections now call commander replacement before mutation, so a commander moved toward graveyard/exile/hand by correction lands in command zone and the manual event reports the final command-zone destination. The `/play` manual correction message now reads from the resulting state so it says command zone instead of the requested graveyard/exile destination.
 
 ## Direct Answer
 

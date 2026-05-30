@@ -6264,7 +6264,10 @@ export function useShelectorGame() {
     engineRef.current = response.state as GameStateWithAI;
     applyEvents(response.events || [], response.state);
 
-    addMessage('system', `Manual correction: moved ${def?.name || 'card'} to ${zone}.`);
+    const finalCard = response.state.cards.get(cardInstanceId);
+    const finalZone = finalCard?.zone;
+    const zoneText = finalZone ? targetZoneLabel(finalZone).toLowerCase() : targetZoneLabel(zone).toLowerCase();
+    addMessage('system', `Manual correction: moved ${def?.name || 'card'} to ${zoneText}.`);
     syncState();
   }, [addMessage, applyActionThroughAuthority, applyEvents, syncState]);
 
