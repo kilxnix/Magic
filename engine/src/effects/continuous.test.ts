@@ -515,6 +515,7 @@ describe('Continuous P/T Modifications', () => {
     cards.set('legend_wu', makeCard('legend_wu', 'legend_wu_def', 'p1'));
     cards.set('legend_r', makeCard('legend_r', 'legend_r_def', 'p1'));
     cards.set('nonlegend_g', makeCard('nonlegend_g', 'nonlegend_g_def', 'p1'));
+    cards.set('fake_legend_g', makeCard('fake_legend_g', 'fake_legend_g_def', 'p1'));
     cards.set('opp_legend_b', makeCard('opp_legend_b', 'opp_legend_b_def', 'p2'));
 
     const defs = new Map<string, CardDefinition>();
@@ -538,6 +539,11 @@ describe('Continuous P/T Modifications', () => {
     defs.set('nonlegend_g_def', makeDef('nonlegend_g_def', {
       name: 'Green Nonlegend',
       type_line: 'Creature - Elf',
+      colors: ['G'],
+    }));
+    defs.set('fake_legend_g_def', makeDef('fake_legend_g_def', {
+      name: 'Subtype Legend',
+      type_line: 'Creature - Legendary Elf',
       colors: ['G'],
     }));
     defs.set('opp_legend_b_def', makeDef('opp_legend_b_def', {

@@ -12,6 +12,7 @@ import {
   canBeTargetedByOpponent,
   canBeTargetedByController,
   isIndestructible,
+  isProtectedFromSource,
 } from './keywords';
 import type { CardDefinition, CardInstance, GameState } from './types';
 
@@ -423,6 +424,37 @@ describe('keywords', () => {
     it('returns false for shroud creatures', () => {
       const state = makeTestState(['Shroud']);
       expect(canBeTargetedByOpponent(state, 'creature-1')).toBe(false);
+    });
+  });
+
+  describe('isProtectedFromSource', () => {
+    it('matches protection source types exactly instead of subtype fragments', () => {
+      const state = makeTestState([]);
+      state.cardDefinitions.set('test-creature', {
+        ...makeCreatureDef([]),
+        oracle_text: 'Protection from lands',
+        keywords: ['Protection from lands'],
+      });
+      state.cardDefinitions.set('island-scout', {
+        ...makeCreatureDef([]),
+        id: 'island-scout',
+        name: 'Island Scout',
+        type_line: 'Creature - Island Scout',
+        card_types: ['creature'],
+      });
+      state.cards.set('source', {
+        instanceId: 'source',
+        definitionId: 'island-scout',
+        ownerId: 'player-1',
+        zone: 'battlefield',
+        tapped: false,
+        summoningSick: false,
+        counters: {},
+        damage: 0,
+        isCommander: false,
+      });
+
+      expect(isProtectedFromSource(state, 'creature-1', 'source')).toBe(false);
     });
   });
 

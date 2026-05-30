@@ -5,6 +5,7 @@ import type { GameState, CardDefinition, CardInstance } from './types';
 import { isEffectiveCreature } from './effective-types';
 import { getCardDefinition } from './game-state';
 import type { ManaColor } from './types';
+import { typeLineHasSubtype, typeLineHasType } from './type-line';
 
 export type Keyword =
   | 'Flying'
@@ -118,8 +119,7 @@ export function getProtectionColors(state: GameState, instanceId: string): Set<M
 
 function sourceMatchesProtectionClause(def: CardDefinition, clause: string): boolean {
   const sourceTypes = new Set(def.card_types.map(type => type.toLowerCase()));
-  const typeLine = def.type_line.toLowerCase();
-  const hasType = (type: string) => sourceTypes.has(type) || typeLine.includes(type);
+  const hasType = (type: string) => sourceTypes.has(type) || typeLineHasType(def.type_line, type);
 
   if (/\bartifacts?\b/.test(clause) && hasType('artifact')) return true;
   if (/\bcreatures?\b/.test(clause) && hasType('creature')) return true;
@@ -273,18 +273,16 @@ export function getKeywordsForInstance(state: GameState, instanceId: string): Se
         let matches = true;
         if (filter.types) {
           const hasType = filter.types.some((t: string) =>
-            def.card_types.includes(t as any) || def.type_line.toLowerCase().includes(t.toLowerCase())
+            def.card_types.includes(t as any) || typeLineHasType(def.type_line, t)
           );
           if (!hasType) matches = false;
         }
         if (matches && filter.subtypes) {
-          const typeLine = def.type_line.toLowerCase();
-          const hasSub = filter.subtypes.some((st: string) => typeLine.includes(st.toLowerCase()));
+          const hasSub = filter.subtypes.some((st: string) => typeLineHasSubtype(def.type_line, st));
           if (!hasSub) matches = false;
         }
         if (matches && filter.excludeSubtypes) {
-          const typeLine = def.type_line.toLowerCase();
-          const hasExcludedSub = filter.excludeSubtypes.some((st: string) => typeLine.includes(st.toLowerCase()));
+          const hasExcludedSub = filter.excludeSubtypes.some((st: string) => typeLineHasSubtype(def.type_line, st));
           if (hasExcludedSub) matches = false;
         }
         if (matches && filter.power) {

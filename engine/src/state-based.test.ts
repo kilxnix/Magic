@@ -133,6 +133,36 @@ describe('State-Based Actions', () => {
     expect(next.cards.get(cards[1].instanceId)!.zone).toBe('graveyard');
   });
 
+  it('does not apply the legend rule from subtype text fragments', () => {
+    const pseudoLegend: CardDefinition = {
+      id: 'pseudo_legend',
+      name: 'Mistitled Bear',
+      type_line: 'Creature - Legendary Bear',
+      oracle_text: '',
+      mana_cost: '{1}{G}',
+      cmc: 2,
+      colors: ['G'],
+      color_identity: ['G'],
+      keywords: [],
+      card_types: ['creature'],
+      power: 2,
+      toughness: 2,
+    };
+    const decks = [
+      { playerId: 'p1', name: 'Alice', cards: [pseudoLegend, pseudoLegend], commanderId: 'cmd1' },
+      { playerId: 'p2', name: 'Bob', cards: [], commanderId: 'cmd2' },
+    ];
+    const state = initGameState(decks);
+    const cards = getCardsInZone(state, 'p1', 'library').filter(card => card.definitionId === pseudoLegend.id);
+    state.cards.set(cards[0].instanceId, { ...cards[0], zone: 'battlefield' });
+    state.cards.set(cards[1].instanceId, { ...cards[1], zone: 'battlefield' });
+
+    const next = checkStateBasedActions(state);
+
+    expect(next.cards.get(cards[0].instanceId)?.zone).toBe('battlefield');
+    expect(next.cards.get(cards[1].instanceId)?.zone).toBe('battlefield');
+  });
+
   it('moves illegal creature Auras to graveyard and detaches illegal Equipment', () => {
     const aura: CardDefinition = {
       id: 'creature_aura',

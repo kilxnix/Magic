@@ -6,6 +6,7 @@ import { isEffectiveCreature } from './effective-types';
 import { applyReplacements } from './effects/replacement';
 import { getEffectiveToughness as getLayeredEffectiveToughness } from './effects/continuous';
 import { validateTargetChoices, type TargetSpec } from './effects/targets';
+import { typeLineHasSubtype, typeLineHasSupertype } from './type-line';
 
 /**
  * Cancel +1/+1 and -1/-1 counters on a creature.
@@ -130,8 +131,7 @@ export function checkStateBasedActions(state: GameState): GameState {
 
       const def = getCardDefinition(tempState, card);
 
-      // Check if legendary (type_line contains "Legendary")
-      if (!def.type_line.toLowerCase().includes('legendary')) continue;
+      if (!typeLineHasSupertype(def.type_line, 'legendary')) continue;
 
       const ownerMap = legendaryByOwner.get(card.ownerId) ?? new Map();
       const sameNameCards = ownerMap.get(def.name) ?? [];
@@ -271,7 +271,7 @@ export function checkStateBasedActions(state: GameState): GameState {
       const attachedToCard = newCards.get(card.attachedTo);
       const attachmentState = { ...state, cards: newCards, players: newPlayers };
       const def = getCardDefinition(attachmentState, card);
-      const isAura = def.type_line.toLowerCase().includes('aura');
+      const isAura = typeLineHasSubtype(def.type_line, 'aura');
       const illegalAttachment =
         !attachedToCard
         || attachedToCard.zone !== 'battlefield'
@@ -304,7 +304,7 @@ function attachmentTargetSpec(def: CardDefinition): TargetSpec | null {
   const oracle = def.oracle_text.toLowerCase();
   const text = `${lowerType}\n${oracle}`;
 
-  if (lowerType.includes('aura')) {
+  if (typeLineHasSubtype(def.type_line, 'aura')) {
     let targetType: TargetSpec['type'] | null = null;
     if (/\benchant\s+(?:target\s+)?creature\b/.test(text)) {
       targetType = 'Creature';
@@ -337,11 +337,11 @@ function attachmentTargetSpec(def: CardDefinition): TargetSpec | null {
     };
   }
 
-  if (lowerType.includes('equipment')) {
+  if (typeLineHasSubtype(def.type_line, 'equipment')) {
     return { id: 'equipped-to', type: 'Creature', count: 1 };
   }
 
-  if (lowerType.includes('fortification')) {
+  if (typeLineHasSubtype(def.type_line, 'fortification')) {
     return { id: 'fortified-to', type: 'Land', count: 1 };
   }
 

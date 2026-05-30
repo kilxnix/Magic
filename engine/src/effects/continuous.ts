@@ -25,6 +25,7 @@ import type { GameState, CardInstance, CardDefinition } from '../types';
 import type { StaticAbilityEffect, CardFilter } from './ast';
 import { matchesCardFilter } from './executor';
 import { getCardDefinition } from '../game-state';
+import { typeLineHasSupertype, typeLineHasType } from '../type-line';
 
 // ============================================================================
 // Continuous Effect Registration
@@ -141,10 +142,9 @@ function isAffectedBy(
 }
 
 function isLegendaryPermanentDefinition(def: CardDefinition): boolean {
-  const typeLine = def.type_line.toLowerCase();
   const isPermanent = ['artifact', 'battle', 'creature', 'enchantment', 'land', 'planeswalker']
-    .some(type => def.card_types.includes(type as CardDefinition['card_types'][number]) || typeLine.includes(type));
-  return isPermanent && typeLine.includes('legendary');
+    .some(type => def.card_types.includes(type as CardDefinition['card_types'][number]) || typeLineHasType(def.type_line, type));
+  return isPermanent && typeLineHasSupertype(def.type_line, 'legendary');
 }
 
 function uniqueColorsAmongOtherLegendaryPermanentsYouControl(
@@ -390,10 +390,9 @@ type CostReductionController = 'you' | 'opponents' | 'any';
 
 function subjectMatchesCostReduction(def: CardDefinition, subject: string): boolean {
   const normalized = subject.toLowerCase().replace(/\s+/g, ' ').trim();
-  const typeLine = def.type_line.toLowerCase();
   const hasType = (type: string) => (
     def.card_types.includes(type as CardDefinition['card_types'][number])
-    || typeLine.includes(type)
+    || typeLineHasType(def.type_line, type)
   );
 
   if (/\bnonland permanent/.test(normalized)) return !hasType('land') && ['artifact', 'battle', 'creature', 'enchantment', 'land', 'planeswalker'].some(hasType);
