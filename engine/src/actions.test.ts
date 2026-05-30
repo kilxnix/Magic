@@ -653,6 +653,106 @@ describe('Land Actions', () => {
       expect(next.cards.get('skirk-1')?.zone).toBe('battlefield');
       expect(next.cards.get('goblin-1')?.zone).toBe('graveyard');
     });
+
+    it('uses expendable Goblin tokens before valuable Goblins for sacrifice mana', () => {
+      const skirkDef: CardDefinition = {
+        id: 'skirk-prospector',
+        name: 'Skirk Prospector',
+        type_line: 'Creature - Goblin',
+        oracle_text: 'Sacrifice a Goblin: Add {R}.',
+        mana_cost: '{R}',
+        cmc: 1,
+        colors: ['R'],
+        color_identity: ['R'],
+        keywords: [],
+        card_types: ['creature'],
+        power: 1,
+        toughness: 1,
+        manaProduction: {
+          colors: ['R'],
+          amounts: { R: 1 },
+          isTapAbility: false,
+          requiresSacrifice: false,
+          sacrificeFilter: { subtypes: ['Goblin'] },
+        },
+      };
+      const krenkoDef: CardDefinition = {
+        id: 'krenko',
+        name: 'Krenko, Mob Boss',
+        type_line: 'Legendary Creature - Goblin Warrior',
+        oracle_text: '{T}: Create X 1/1 red Goblin creature tokens, where X is the number of Goblins you control.',
+        mana_cost: '{2}{R}{R}',
+        cmc: 4,
+        colors: ['R'],
+        color_identity: ['R'],
+        keywords: [],
+        card_types: ['creature'],
+        power: 3,
+        toughness: 3,
+      };
+      const goblinTokenDef: CardDefinition = {
+        id: 'goblin-token',
+        name: 'Goblin Token',
+        type_line: 'Token Creature - Goblin',
+        oracle_text: '',
+        mana_cost: '',
+        cmc: 0,
+        colors: ['R'],
+        color_identity: ['R'],
+        keywords: [],
+        card_types: ['creature'],
+        power: 1,
+        toughness: 1,
+      };
+      let state = initGameState([
+        { playerId: 'p1', name: 'Alice', cards: [], commanderId: 'cmd1' },
+        { playerId: 'p2', name: 'Bob', cards: [], commanderId: 'cmd2' },
+      ]);
+      state.cardDefinitions.set(skirkDef.id, skirkDef);
+      state.cardDefinitions.set(krenkoDef.id, krenkoDef);
+      state.cardDefinitions.set(goblinTokenDef.id, goblinTokenDef);
+      state.cards.set('skirk-1', {
+        instanceId: 'skirk-1',
+        definitionId: skirkDef.id,
+        ownerId: 'p1',
+        zone: 'battlefield',
+        tapped: false,
+        summoningSick: false,
+        counters: {},
+        damage: 0,
+        isCommander: false,
+      });
+      state.cards.set('krenko-1', {
+        instanceId: 'krenko-1',
+        definitionId: krenkoDef.id,
+        ownerId: 'p1',
+        zone: 'battlefield',
+        tapped: false,
+        summoningSick: false,
+        counters: {},
+        damage: 0,
+        isCommander: false,
+      });
+      state.cards.set('token-1', {
+        instanceId: 'token-1',
+        definitionId: goblinTokenDef.id,
+        ownerId: 'p1',
+        zone: 'battlefield',
+        tapped: false,
+        summoningSick: false,
+        counters: {},
+        damage: 0,
+        isCommander: false,
+        isToken: true,
+      });
+
+      const next = tapLandForMana(state, 'p1', 'skirk-1', 'R');
+
+      expect(next.players[0].manaPool.R).toBe(1);
+      expect(next.cards.get('skirk-1')?.zone).toBe('battlefield');
+      expect(next.cards.get('krenko-1')?.zone).toBe('battlefield');
+      expect(next.cards.get('token-1')?.zone).toBe('graveyard');
+    });
   });
 
   describe('drawCards', () => {

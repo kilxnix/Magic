@@ -333,6 +333,110 @@ describe('runAITurn', () => {
     expect(finalState.cards.get('bear1')!.zone).toBe('stack');
   });
 
+  it('does not cash in Skirk Prospector mana when no spell needs it', () => {
+    const state = createTestState({
+      activePlayerIndex: 0,
+      priorityPlayerIndex: 0,
+      phase: 'precombat_main',
+    });
+
+    addCard(state, 'skirk1', 'p1', 'battlefield', {
+      name: 'Skirk Prospector',
+      type_line: 'Creature - Goblin',
+      oracle_text: 'Sacrifice a Goblin: Add {R}.',
+      mana_cost: '{R}',
+      cmc: 1,
+      colors: ['R'],
+      color_identity: ['R'],
+      card_types: ['creature'],
+      power: 1,
+      toughness: 1,
+    }, { summoningSick: false });
+    addCard(state, 'token1', 'p1', 'battlefield', {
+      name: 'Goblin Token',
+      type_line: 'Creature - Goblin',
+      mana_cost: '',
+      cmc: 0,
+      colors: ['R'],
+      color_identity: ['R'],
+      card_types: ['creature'],
+      power: 1,
+      toughness: 1,
+    }, { summoningSick: false });
+    state.cards.set('token1', { ...state.cards.get('token1')!, isToken: true });
+
+    const { finalState, decisions } = runAITurn(state, createAIConfig('p1', 5));
+
+    expect(decisions.some(d =>
+      d.action.kind === 'ActivateManaAbility' && d.action.cardInstanceId === 'skirk1'
+    )).toBe(false);
+    expect(finalState.cards.get('skirk1')!.zone).toBe('battlefield');
+    expect(finalState.cards.get('token1')!.zone).toBe('battlefield');
+  });
+
+  it('uses lands before Skirk Prospector when lands can pay the hand spell', () => {
+    const state = createTestState({
+      activePlayerIndex: 0,
+      priorityPlayerIndex: 0,
+      phase: 'precombat_main',
+    });
+
+    addCard(state, 'skirk1', 'p1', 'battlefield', {
+      name: 'Skirk Prospector',
+      type_line: 'Creature - Goblin',
+      oracle_text: 'Sacrifice a Goblin: Add {R}.',
+      mana_cost: '{R}',
+      cmc: 1,
+      colors: ['R'],
+      color_identity: ['R'],
+      card_types: ['creature'],
+      power: 1,
+      toughness: 1,
+    }, { summoningSick: false });
+    addCard(state, 'token1', 'p1', 'battlefield', {
+      name: 'Goblin Token',
+      type_line: 'Creature - Goblin',
+      mana_cost: '',
+      cmc: 0,
+      colors: ['R'],
+      color_identity: ['R'],
+      card_types: ['creature'],
+      power: 1,
+      toughness: 1,
+    }, { summoningSick: false });
+    state.cards.set('token1', { ...state.cards.get('token1')!, isToken: true });
+    addCard(state, 'mountain1', 'p1', 'battlefield', {
+      name: 'Mountain',
+      type_line: 'Basic Land - Mountain',
+      card_types: ['land'],
+    });
+    addCard(state, 'mountain2', 'p1', 'battlefield', {
+      name: 'Mountain',
+      type_line: 'Basic Land - Mountain',
+      card_types: ['land'],
+    });
+    addCard(state, 'bear1', 'p1', 'hand', {
+      name: 'Goblin Piker',
+      mana_cost: '{1}{R}',
+      cmc: 2,
+      colors: ['R'],
+      color_identity: ['R'],
+      card_types: ['creature'],
+      power: 2,
+      toughness: 1,
+    });
+
+    const { finalState, decisions } = runAITurn(state, createAIConfig('p1', 5));
+    const manaActions = decisions.filter(d => d.action.kind === 'ActivateManaAbility');
+
+    expect(manaActions.map(d => d.action.kind === 'ActivateManaAbility' ? d.action.cardInstanceId : '')).toEqual([
+      'mountain1',
+      'mountain2',
+    ]);
+    expect(decisions.some(d => d.action.kind === 'CastSpell' && d.action.cardInstanceId === 'bear1')).toBe(true);
+    expect(finalState.cards.get('token1')!.zone).toBe('battlefield');
+  });
+
   it('stops after max iterations', () => {
     const state = createTestState({
       activePlayerIndex: 0,

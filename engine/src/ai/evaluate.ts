@@ -5,11 +5,13 @@
  * Higher scores are better for the AI.
  */
 
-import { GameState, CardInstance, CardDefinition, Player } from '../types';
+import { GameState, CardInstance, CardDefinition, Player, ManaCost, ManaColor, ManaPool, emptyManaPool } from '../types';
 import { getCardsInZone, getCardDefinition } from '../game-state';
 import { getEffectivePower, getEffectiveToughness } from '../effects/continuous';
 import { getNormalizedThreat } from './threat';
 import type { AIAction, ActionEvaluation } from './types';
+import { canCastSpell, getEffectiveCastCost } from '../stack';
+import { addMana } from '../mana';
 
 // Scoring constants
 const LIFE_VALUE = 1;
@@ -21,6 +23,7 @@ const MANA_AVAILABLE_VALUE = 0.5;
 const MANA_SPENT_VALUE = 1.5;
 const THREAT_REMOVED_VALUE = 5;
 const COMMANDER_VALUE = 10;
+const MANA_COLORS: ManaColor[] = ['W', 'U', 'B', 'R', 'G', 'C'];
 
 /**
  * Evaluate the value of a single creature.
@@ -182,16 +185,233 @@ function evaluateCastSpell(
   return score;
 }
 
+function manaActionKey(action: Extract<AIAction, { kind: 'ActivateManaAbility' }>): string {
+  return `${action.cardInstanceId}:${action.color}`;
+}
+
+function producedManaForAction(
+  state: GameState,
+  playerId: string,
+  action: Extract<AIAction, { kind: 'ActivateManaAbility' }>,
+): ManaPool {
+  const card = state.cards.get(action.cardInstanceId);
+  const def = card ? getCardDefinition(state, card) : undefined;
+  const pool = emptyManaPool();
+  if (!def?.manaProduction) {
+    return addMana(pool, action.color, 1);
+  }
+
+  let amount = def.manaProduction.amounts[action.color] ?? 1;
+  if (def.manaProduction.amountScale === 'creaturesYouControl') {
+    const creatureCount = [...state.cards.values()].filter(instance => {
+      if (instance.ownerId !== playerId || instance.zone !== 'battlefield') return false;
+      const cardDef = getCardDefinition(state, instance);
+      return cardDef.card_types.includes('creature');
+    }).length;
+    amount *= creatureCount;
+  }
+
+  if (def.manaProduction.producesAllColors) {
+    return def.manaProduction.colors.reduce(
+      (nextPool, color) => addMana(nextPool, color, def.manaProduction!.amounts[color] ?? amount),
+      pool,
+    );
+  }
+
+  return addMana(pool, action.color, Math.max(0, amount));
+}
+
+function manaActionTotalAmount(
+  state: GameState,
+  playerId: string,
+  action: Extract<AIAction, { kind: 'ActivateManaAbility' }>,
+): number {
+  const produced = producedManaForAction(state, playerId, action);
+  return MANA_COLORS.reduce((total, color) => total + produced[color], 0);
+}
+
+function manaSourceRank(
+  state: GameState,
+  action: Extract<AIAction, { kind: 'ActivateManaAbility' }>,
+): number {
+  const card = state.cards.get(action.cardInstanceId);
+  const def = card ? getCardDefinition(state, card) : undefined;
+  if (!def) return 6;
+  if (
+    def.manaProduction?.requiresSacrifice
+    || def.manaProduction?.sacrificeFilter
+    || def.manaProduction?.activationZone === 'hand'
+  ) return 5;
+  if (def.card_types.includes('land')) return 0;
+  if (def.card_types.includes('artifact')) return 1;
+  if (def.card_types.includes('creature')) return 3;
+  return 2;
+}
+
+function applyPoolPaymentToCost(pool: ManaPool, manaCost: ManaCost): ManaCost {
+  const needed: ManaCost = {
+    ...manaCost,
+    hybrid: manaCost.hybrid?.map(options => [...options]),
+  };
+  const available = { ...pool };
+
+  for (const color of MANA_COLORS) {
+    const pay = Math.min(available[color], needed[color]);
+    needed[color] -= pay;
+    available[color] -= pay;
+  }
+
+  const hybridNeeded: ManaColor[][] = [];
+  for (const options of needed.hybrid || []) {
+    const poolColor = [...options]
+      .sort((a, b) => available[b] - available[a])
+      .find(color => available[color] > 0);
+    if (poolColor) {
+      available[poolColor] -= 1;
+    } else {
+      hybridNeeded.push(options);
+    }
+  }
+  needed.hybrid = hybridNeeded;
+
+  for (const color of MANA_COLORS) {
+    const pay = Math.min(available[color], needed.generic);
+    needed.generic -= pay;
+    available[color] -= pay;
+  }
+
+  return needed;
+}
+
+function findManaPlanForCost(
+  state: GameState,
+  playerId: string,
+  manaCost: ManaCost,
+  actions: Extract<AIAction, { kind: 'ActivateManaAbility' }>[],
+): Extract<AIAction, { kind: 'ActivateManaAbility' }>[] | null {
+  const player = state.players.find(p => p.id === playerId);
+  if (!player) return null;
+
+  const actionsByCard = new Map<string, Extract<AIAction, { kind: 'ActivateManaAbility' }>[]>();
+  for (const action of actions) {
+    const list = actionsByCard.get(action.cardInstanceId) || [];
+    list.push(action);
+    actionsByCard.set(action.cardInstanceId, list);
+  }
+
+  const result: Extract<AIAction, { kind: 'ActivateManaAbility' }>[] = [];
+  const usedCards = new Set<string>();
+  const needed = applyPoolPaymentToCost(player.manaPool, manaCost);
+  const sortActions = (
+    a: [string, Extract<AIAction, { kind: 'ActivateManaAbility' }>[]],
+    b: [string, Extract<AIAction, { kind: 'ActivateManaAbility' }>[]],
+  ): number =>
+    manaSourceRank(state, a[1][0]) - manaSourceRank(state, b[1][0])
+    || a[1].length - b[1].length;
+
+  for (const color of MANA_COLORS) {
+    while (needed[color] > 0) {
+      const candidates = [...actionsByCard.entries()]
+        .filter(([id]) => !usedCards.has(id))
+        .filter(([, cardActions]) => cardActions.some(action => action.color === color))
+        .sort(sortActions);
+      if (candidates.length === 0) return null;
+
+      const [cardId, cardActions] = candidates[0];
+      const action = cardActions.find(candidate => candidate.color === color)!;
+      result.push(action);
+      usedCards.add(cardId);
+      needed[color] = Math.max(0, needed[color] - (producedManaForAction(state, playerId, action)[color] || 1));
+    }
+  }
+
+  for (const options of needed.hybrid || []) {
+    const candidates = [...actionsByCard.entries()]
+      .filter(([id]) => !usedCards.has(id))
+      .filter(([, cardActions]) => cardActions.some(action => options.includes(action.color)))
+      .sort(sortActions);
+    if (candidates.length === 0) return null;
+
+    const [cardId, cardActions] = candidates[0];
+    const action = cardActions.find(candidate => options.includes(candidate.color))!;
+    result.push(action);
+    usedCards.add(cardId);
+  }
+
+  while (needed.generic > 0) {
+    const candidates = [...actionsByCard.entries()]
+      .filter(([id]) => !usedCards.has(id))
+      .sort(sortActions);
+    if (candidates.length === 0) return null;
+
+    const [cardId, cardActions] = candidates[0];
+    const action = cardActions[0];
+    result.push(action);
+    usedCards.add(cardId);
+    needed.generic = Math.max(0, needed.generic - Math.max(1, manaActionTotalAmount(state, playerId, action)));
+  }
+
+  return result;
+}
+
+function canAttemptCastIgnoringMana(state: GameState, playerId: string, cardInstanceId: string): boolean {
+  const richPlayers = state.players.map(player => player.id === playerId
+    ? { ...player, manaPool: { W: 50, U: 50, B: 50, R: 50, G: 50, C: 50 } }
+    : player);
+  return canCastSpell({ ...state, players: richPlayers }, playerId, cardInstanceId);
+}
+
+function preferredManaActionKeys(
+  state: GameState,
+  playerId: string,
+  actions: AIAction[],
+): Set<string> {
+  const manaActions = actions.filter((action): action is Extract<AIAction, { kind: 'ActivateManaAbility' }> =>
+    action.kind === 'ActivateManaAbility',
+  );
+  if (manaActions.length === 0) return new Set();
+
+  const playableZones = getCardsInZone(state, playerId, 'hand').concat(
+    getCardsInZone(state, playerId, 'command').filter(card => card.isCommander),
+  );
+  const alreadyCastable = actions.some(action => action.kind === 'CastSpell');
+  if (alreadyCastable) return new Set();
+
+  let bestPlan: Extract<AIAction, { kind: 'ActivateManaAbility' }>[] | null = null;
+  let bestScore = -Infinity;
+
+  for (const card of playableZones) {
+    if (!canAttemptCastIgnoringMana(state, playerId, card.instanceId)) continue;
+    const cost = getEffectiveCastCost(state, playerId, card.instanceId);
+    if (!cost) continue;
+    const def = getCardDefinition(state, card);
+    const plan = findManaPlanForCost(state, playerId, cost, manaActions);
+    if (!plan) continue;
+
+    const planCost = plan.reduce((total, action) => total + manaSourceRank(state, action), 0);
+    const score = evaluateCastSpell(state, playerId, card.instanceId, []) - planCost * 0.35 - plan.length * 0.25;
+    if (score > bestScore) {
+      bestScore = score;
+      bestPlan = plan;
+    }
+  }
+
+  return new Set((bestPlan || []).map(manaActionKey));
+}
+
 /**
  * Evaluate an ActivateManaAbility action.
  */
 function evaluateActivateMana(
   state: GameState,
   playerId: string,
+  action: Extract<AIAction, { kind: 'ActivateManaAbility' }>,
+  preferredManaKeys: Set<string>,
 ): number {
-  // Tapping for mana is neutral unless there's something to cast
-  // We'll give it a small positive score to prefer having mana
-  return 0.1;
+  if (preferredManaKeys.has(manaActionKey(action))) {
+    return manaSourceRank(state, action) >= 5 ? 1.4 : 2.7;
+  }
+  return manaSourceRank(state, action) >= 5 ? -8 : -0.2;
 }
 
 /**
@@ -333,6 +553,7 @@ export function evaluateAction(
   state: GameState,
   playerId: string,
   action: AIAction,
+  preferredManaKeys: Set<string> = new Set(),
 ): ActionEvaluation {
   let score: number;
   let reasoning: string | undefined;
@@ -349,7 +570,7 @@ export function evaluateAction(
       break;
 
     case 'ActivateManaAbility':
-      score = evaluateActivateMana(state, playerId);
+      score = evaluateActivateMana(state, playerId, action, preferredManaKeys);
       reasoning = 'Mana generation';
       break;
 
@@ -383,7 +604,8 @@ export function evaluateActions(
   playerId: string,
   actions: AIAction[],
 ): ActionEvaluation[] {
-  const evaluations = actions.map(action => evaluateAction(state, playerId, action));
+  const preferredManaKeys = preferredManaActionKeys(state, playerId, actions);
+  const evaluations = actions.map(action => evaluateAction(state, playerId, action, preferredManaKeys));
   return evaluations.sort((a, b) => b.score - a.score);
 }
 

@@ -137,6 +137,20 @@ function manaProductionMultiplier(state: GameState, playerId: string, sourceInst
   return multiplier;
 }
 
+function sacrificeManaCandidateRank(state: GameState, candidateInstanceId: string): number {
+  const candidate = state.cards.get(candidateInstanceId);
+  if (!candidate) return 999;
+  const def = getCardDefinition(state, candidate);
+  let rank = 0;
+  if (!candidate.isToken) rank += 20;
+  if (candidate.isCommander) rank += 100;
+  if (/\blegendary\b/i.test(def.type_line)) rank += 15;
+  rank += Math.max(0, def.cmc);
+  rank += Math.max(0, def.power ?? 0) * 0.5;
+  rank += Math.max(0, def.toughness ?? 0) * 0.25;
+  return rank;
+}
+
 /**
  * Number of lands the player may play this turn.
  * Defaults to 1, plus one extra per battlefield permanent the player controls
@@ -335,7 +349,10 @@ export function tapLandForMana(state: GameState, playerId: string, cardInstanceI
         if (candidate.ownerId !== playerId || candidate.zone !== 'battlefield') return false;
         const candidateDef = getCardDefinition(state, candidate);
         return matchesCardFilter(candidateDef, sacrificeFilter);
-      });
+      })
+      .sort((a, b) =>
+        sacrificeManaCandidateRank(state, a.instanceId) - sacrificeManaCandidateRank(state, b.instanceId),
+      );
     const sacrificed = candidates[0];
     if (!sacrificed) throw new Error('No sacrifice candidate');
     const destination = getCommanderDestinationZone(state, sacrificed.instanceId, 'graveyard');
