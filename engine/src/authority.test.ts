@@ -1735,6 +1735,25 @@ describe('authority action boundary', () => {
     expect((accepted.state?.stack[0] as StackItem & { namedCardChoices?: Record<string, string> }).namedCardChoices)
       .toEqual(accepted.libraryManipulationChoices);
 
+    const allMoved = applyLibraryManipulationPromptResponse(state, request, {
+      requestId: request.id,
+      kind: 'LibraryManipulation',
+      playerId: 'p1',
+      topCardInstanceIds: [],
+      movedCardInstanceIds: revealedIds,
+    });
+    expect(allMoved.ok).toBe(true);
+    expect(allMoved.libraryManipulationChoices).toEqual({
+      surveilTopIds: '',
+      surveilGraveyardIds: revealedIds.join(','),
+    });
+    expect(
+      Object.prototype.hasOwnProperty.call(
+        (allMoved.state?.stack[0] as StackItem & { namedCardChoices?: Record<string, string> }).namedCardChoices || {},
+        'surveilTopIds',
+      ),
+    ).toBe(true);
+
     const illegal = applyLibraryManipulationPromptResponse(state, request, {
       requestId: request.id,
       kind: 'LibraryManipulation',

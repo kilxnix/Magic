@@ -3398,7 +3398,7 @@ export function useShelectorGame() {
         if (controllerId !== humanIdRef.current) return false;
         const info = libraryChoiceInfoFromEffects(effects);
         if (!info || info.count <= 0) return false;
-        if (top.namedCardChoices?.[`${info.mode}TopIds`]) return false;
+        if (Object.prototype.hasOwnProperty.call(top.namedCardChoices || {}, `${info.mode}TopIds`)) return false;
 
         const promptRequest = createLibraryManipulationPromptRequest(
           state,
