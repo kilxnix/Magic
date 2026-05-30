@@ -10,6 +10,7 @@ import type { Effect, StaticAbilityEffect } from './effects/ast';
 import { findCastZoneRestriction, getCommanderTaxForCast } from './casting-restrictions';
 import { getCostReduction, registerContinuousEffect } from './effects/continuous';
 import { getCommanderDestinationZone } from './commander';
+import { buildBattlefieldEntryPlan } from './permanent-entry';
 
 const MAIN_PHASES: Phase[] = ['precombat_main', 'postcombat_main'];
 const PERMANENT_TYPES = ['creature', 'artifact', 'enchantment', 'planeswalker', 'battle'];
@@ -515,11 +516,11 @@ function applyPermanentEntryChoices(
   }
 
   let enteringCard: CardInstance = {
-    ...card,
-    zone: 'battlefield',
-    tapped: entersTapped,
-    summoningSick,
-    choices: mergedChoices,
+    ...buildBattlefieldEntryPlan(state, spellItem.casterId, card, def, {
+      defaultTapped: entersTapped,
+      summoningSick,
+      choices: mergedChoices,
+    }).card,
     ...(auraTargetSpecs.length > 0 ? { attachedTo: spellItem.targets[0] } : {}),
   };
 

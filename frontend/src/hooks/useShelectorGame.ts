@@ -68,6 +68,7 @@ import {
   summarizeActionPromptChoices,
   serializeGameState,
   deserializeGameState,
+  executeSearchLibrary,
   type SerializedGameStateV1,
 } from 'commander-engine';
 import {
@@ -587,6 +588,11 @@ type PendingPlayLandChoice = {
   action: SimpleLegalAction;
 };
 
+type PendingSearchEntryChoice = {
+  cardInstanceId: string;
+  optionalLifeCost: number;
+};
+
 type PendingCastChoiceMode = 'discardLand' | 'sacrificeCreature';
 
 function toTutorCardOption(state: GameState, card: CardInstance): TutorCardOption | null {
@@ -616,6 +622,10 @@ function isPermanentTypeLine(typeLine: string): boolean {
   const normalized = typeLine.toLowerCase();
   return ['artifact', 'battle', 'creature', 'enchantment', 'land', 'planeswalker']
     .some(type => normalized.includes(type));
+}
+
+function publicTurnNumber(engineTurnNumber: number, playerCount: number): number {
+  return Math.ceil(engineTurnNumber / Math.max(1, playerCount));
 }
 
 function isCreatureTypeChoiceLand(def: CardDefinition): boolean {
@@ -1518,7 +1528,7 @@ function deriveSimpleState(
 
   // Convert raw turn number to round number (turn 1&2 in 2-player = round 1, etc.)
   const playerCount = engine.players.length;
-  const roundNumber = Math.ceil(engine.turnNumber / playerCount);
+  const roundNumber = publicTurnNumber(engine.turnNumber, playerCount);
 
   return {
     turnNumber: roundNumber,
@@ -1603,7 +1613,7 @@ function captureLogEntry(
   const aiTotalHand = aiIds.reduce((sum, id) => sum + getCardsInZone(engine, id, 'hand').length, 0);
 
   return {
-    turnNumber: Math.ceil(engine.turnNumber / engine.players.length),
+    turnNumber: publicTurnNumber(engine.turnNumber, engine.players.length),
     player,
     playerId: specificPlayerId || (player === 'human' ? humanId : aiIds[0]),
     action,
@@ -1788,6 +1798,7 @@ export function useShelectorGame() {
   const pendingCastChoiceActionRef = useRef<SimpleLegalAction | null>(null);
   const pendingCastChoiceModeRef = useRef<PendingCastChoiceMode | null>(null);
   const pendingPlayLandChoiceRef = useRef<PendingPlayLandChoice | null>(null);
+  const pendingSearchEntryChoiceRef = useRef<PendingSearchEntryChoice | null>(null);
   const pendingLibraryChoiceRef = useRef<{ stackItemId: string; mode: 'scry' | 'surveil' } | null>(null);
   const submitActionRef = useRef<((action: SimpleLegalAction) => void) | null>(null);
   const [undosRemaining, setUndosRemaining] = useState(10);
@@ -1858,8 +1869,20 @@ export function useShelectorGame() {
 
   const recordAuthorityUpdate = useCallback((update?: EngineStateUpdate) => {
     if (!update) return;
-    setLastStateUpdate(update);
-    setAuthorityUpdates(prev => [...prev.slice(-199), update]);
+    const playerCount = engineRef.current?.players.length || 1;
+    const displayUpdate: EngineStateUpdate = {
+      ...update,
+      turnNumber: publicTurnNumber(update.turnNumber, playerCount),
+      visibleDiffs: update.visibleDiffs.map(diff => diff.kind === 'PhaseChanged'
+        ? {
+            ...diff,
+            from: { ...diff.from, turnNumber: publicTurnNumber(diff.from.turnNumber, playerCount) },
+            to: { ...diff.to, turnNumber: publicTurnNumber(diff.to.turnNumber, playerCount) },
+          }
+        : diff),
+    };
+    setLastStateUpdate(displayUpdate);
+    setAuthorityUpdates(prev => [...prev.slice(-199), displayUpdate]);
   }, []);
 
   const recordStateUpdate = useCallback((
@@ -1907,7 +1930,7 @@ export function useShelectorGame() {
         ? 'You'
         : aiCommanderNamesRef.current[playerId] || 'AI',
       action,
-      turnNumber: Math.ceil(state.turnNumber / Math.max(1, state.players.length)),
+      turnNumber: publicTurnNumber(state.turnNumber, state.players.length),
     });
   }, []);
 
@@ -3037,7 +3060,7 @@ export function useShelectorGame() {
                 : `${aiCommanderNamesRef.current[newActive.id] || newActive.id}'s`;
               messages.push({
                 role: 'system',
-                text: `Turn ${Math.ceil(state.turnNumber / state.players.length)} \u2014 ${activeName} turn.`,
+                text: `Turn ${publicTurnNumber(state.turnNumber, state.players.length)} \u2014 ${activeName} turn.`,
               });
             }
             continue;
@@ -3217,6 +3240,7 @@ export function useShelectorGame() {
       pendingCastChoiceActionRef.current = null;
       pendingCastChoiceModeRef.current = null;
       pendingPlayLandChoiceRef.current = null;
+      pendingSearchEntryChoiceRef.current = null;
       setTutorPhase(false);
       setTutorCards([]);
       setTutorTitle('');
@@ -3600,7 +3624,7 @@ export function useShelectorGame() {
             : `${aiCommanderNamesRef.current[newActive.id] || newActive.id}'s`;
           loopMessages.push({
             role: 'system',
-            text: `Turn ${state.turnNumber} \u2014 ${activeName} turn.`,
+            text: `Turn ${publicTurnNumber(state.turnNumber, state.players.length)} \u2014 ${activeName} turn.`,
           });
         }
         // Continue the game loop for AI turns etc.
@@ -3682,10 +3706,22 @@ export function useShelectorGame() {
       return;
     }
 
+    const pendingSearchEntryChoice = pendingSearchEntryChoiceRef.current;
+    let selectedCardInstanceId = cardInstanceId;
+    let payLifeForSearchEntry: boolean | undefined;
+    if (pendingSearchEntryChoice) {
+      pendingSearchEntryChoiceRef.current = null;
+      selectedCardInstanceId = pendingSearchEntryChoice.cardInstanceId;
+      payLifeForSearchEntry = cardInstanceId === 'pay-life';
+      setTutorPhase(false);
+      setTutorCards([]);
+      setTutorTitle('');
+    }
+
     const engine = engineRef.current;
     if (!engine) return;
 
-    const card = engine.cards.get(cardInstanceId);
+    const card = engine.cards.get(selectedCardInstanceId);
     if (!card) return;
     const def = engine.cardDefinitions.get(card.definitionId);
     const cardName = def?.name || 'a card';
@@ -3725,105 +3761,92 @@ export function useShelectorGame() {
       return;
     }
 
-    const newCards = new Map(engine.cards);
+    if (dest === 'battlefield' && payLifeForSearchEntry === undefined && !tutorTappedRef.current) {
+      const optionalLifeCost = def ? getOptionalUntappedLifeCostFromText(def.oracle_text) : undefined;
+      if (optionalLifeCost !== undefined) {
+        pendingSearchEntryChoiceRef.current = { cardInstanceId: selectedCardInstanceId, optionalLifeCost };
+        setTutorTitle(`${cardName}: enter untapped?`);
+        setTutorCards([
+          {
+            instanceId: 'pay-life',
+            name: `Pay ${optionalLifeCost} life`,
+            typeLine: 'Enter untapped',
+            manaCost: '',
+            legal: true,
+            reason: 'Land enters untapped',
+            destination: 'choice' as const,
+          },
+          {
+            instanceId: 'enter-tapped',
+            name: 'Enter tapped',
+            typeLine: 'Do not pay life',
+            manaCost: '',
+            legal: true,
+            reason: 'Land enters tapped',
+            destination: 'choice' as const,
+          },
+        ]);
+        setTutorPhase(true);
+        addMessage('system', `Choose whether to pay ${optionalLifeCost} life for ${cardName}.`);
+        syncState();
+        return;
+      }
+    }
 
-    if (dest === 'top') {
-      // Put on top of library — move to front of library iteration order
-      // First collect all library cards except the chosen one
-      const libEntries: [string, CardInstance][] = [];
-      const otherEntries: [string, CardInstance][] = [];
-      for (const [id, c] of newCards) {
-        if (id === cardInstanceId) continue; // skip chosen card
-        if (c.ownerId === humanIdRef.current && c.zone === 'library') {
-          libEntries.push([id, c]);
-        } else {
-          otherEntries.push([id, c]);
-        }
-      }
-      // Put chosen card first in library order, then shuffle the rest
-      for (let i = libEntries.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [libEntries[i], libEntries[j]] = [libEntries[j], libEntries[i]];
-      }
-      const shuffledCards = new Map([...otherEntries, [cardInstanceId, card] as [string, CardInstance], ...libEntries]);
-      const newEngine = { ...engine, cards: shuffledCards } as GameStateWithAI;
-      engineRef.current = newEngine;
-      addMessage('player', `Found ${cardName} and put it on top of library. Library shuffled.`);
-    } else if (dest === 'battlefield') {
-      // Put onto battlefield
-      const entersTapped = tutorTappedRef.current;
-      newCards.set(cardInstanceId, { ...card, zone: 'battlefield' as Zone, tapped: entersTapped, summoningSick: true });
-      // Shuffle remaining library
-      const libEntries: [string, CardInstance][] = [];
-      const otherEntries: [string, CardInstance][] = [];
-      for (const [id, c] of newCards) {
-        if (c.ownerId === humanIdRef.current && c.zone === 'library') {
-          libEntries.push([id, c]);
-        } else {
-          otherEntries.push([id, c]);
-        }
-      }
-      for (let i = libEntries.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [libEntries[i], libEntries[j]] = [libEntries[j], libEntries[i]];
-      }
-      const shuffledCards = new Map([...otherEntries, ...libEntries]);
-      let newEngine = { ...engine, cards: shuffledCards } as GameStateWithAI;
-      newEngine = registerBattlefieldAbilities(newEngine, cardInstanceId) as GameStateWithAI;
+    let movedEngine: GameStateWithAI;
+    try {
+      movedEngine = executeSearchLibrary(
+        engine,
+        humanIdRef.current,
+        (filterSpec || {}) as never,
+        dest,
+        tutorTappedRef.current,
+        tutorShuffleRef.current,
+        {
+          selectedCardInstanceId,
+          payLifeToEnterUntapped: payLifeForSearchEntry,
+        },
+      ) as GameStateWithAI;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Could not resolve that search choice.';
+      addMessage('system', message);
+      syncState();
+      return;
+    }
+
+    let resolvedEngine = movedEngine;
+    if (dest === 'battlefield') {
+      resolvedEngine = registerBattlefieldAbilities(resolvedEngine, selectedCardInstanceId) as GameStateWithAI;
       if (def?.card_types.includes('land')) {
-        newEngine = checkTriggersForEvent(newEngine, {
+        resolvedEngine = checkTriggersForEvent(resolvedEngine, {
           kind: 'LandETB',
-          instanceId: cardInstanceId,
+          instanceId: selectedCardInstanceId,
           controllerId: humanIdRef.current,
         }) as GameStateWithAI;
       } else if (def?.card_types.includes('creature')) {
-        newEngine = checkTriggersForEvent(newEngine, {
+        resolvedEngine = checkTriggersForEvent(resolvedEngine, {
           kind: 'CreatureETB',
-          instanceId: cardInstanceId,
+          instanceId: selectedCardInstanceId,
           controllerId: humanIdRef.current,
         }) as GameStateWithAI;
       }
-      engineRef.current = newEngine;
-      addMessage('player', `Found ${cardName} and put it onto the battlefield${entersTapped ? ' tapped' : ''}.${tutorShuffleRef.current ? ' Library shuffled.' : ''}`);
+    }
+    engineRef.current = resolvedEngine;
+
+    const movedCard = resolvedEngine.cards.get(selectedCardInstanceId);
+    const playerBefore = engine.players.find(p => p.id === humanIdRef.current);
+    const playerAfter = resolvedEngine.players.find(p => p.id === humanIdRef.current);
+    const paidLife = Math.max(0, (playerBefore?.life ?? 0) - (playerAfter?.life ?? playerBefore?.life ?? 0));
+    if (dest === 'top') {
+      addMessage('player', `Found ${cardName} and put it on top of library.${tutorShuffleRef.current ? ' Library shuffled.' : ''}`);
+    } else if (dest === 'battlefield') {
+      const entryText = movedCard?.tapped ? ' tapped' : '';
+      const lifeText = paidLife > 0 ? ` Paid ${paidLife} life.` : '';
+      addMessage('player', `Found ${cardName} and put it onto the battlefield${entryText}.${lifeText}${tutorShuffleRef.current ? ' Library shuffled.' : ''}`);
     } else if (dest === 'graveyard') {
-      newCards.set(cardInstanceId, { ...card, zone: 'graveyard' as Zone });
-      const libEntries: [string, CardInstance][] = [];
-      const otherEntries: [string, CardInstance][] = [];
-      for (const [id, c] of newCards) {
-        if (c.ownerId === humanIdRef.current && c.zone === 'library') {
-          libEntries.push([id, c]);
-        } else {
-          otherEntries.push([id, c]);
-        }
-      }
-      for (let i = libEntries.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [libEntries[i], libEntries[j]] = [libEntries[j], libEntries[i]];
-      }
-      const shuffledCards = new Map([...otherEntries, ...libEntries]);
-      const newEngine = { ...engine, cards: shuffledCards } as GameStateWithAI;
-      engineRef.current = newEngine;
-      addMessage('player', `Found ${cardName} and put it into graveyard. Library shuffled.`);
+      addMessage('player', `Found ${cardName} and put it into graveyard.${tutorShuffleRef.current ? ' Library shuffled.' : ''}`);
     } else {
-      // Default: hand
-      newCards.set(cardInstanceId, { ...card, zone: 'hand' as Zone });
-      const libEntries: [string, CardInstance][] = [];
-      const otherEntries: [string, CardInstance][] = [];
-      for (const [id, c] of newCards) {
-        if (c.ownerId === humanIdRef.current && c.zone === 'library') {
-          libEntries.push([id, c]);
-        } else {
-          otherEntries.push([id, c]);
-        }
-      }
-      for (let i = libEntries.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [libEntries[i], libEntries[j]] = [libEntries[j], libEntries[i]];
-      }
-      const shuffledCards = new Map([...otherEntries, ...libEntries]);
-      const newEngine = { ...engine, cards: shuffledCards } as GameStateWithAI;
-      engineRef.current = newEngine;
-      addMessage('player', `Found ${cardName} and put it into hand. Library shuffled.`);
+      addMessage('player', `Found ${cardName} and put it into hand.${tutorShuffleRef.current ? ' Library shuffled.' : ''}`);
     }
 
     appendLog({
@@ -3845,21 +3868,20 @@ export function useShelectorGame() {
       },
     });
 
-    // For "up to N" searches: re-open the picker if more picks remain.
     if (tutorRemainingRef.current > 0) {
       tutorRemainingRef.current -= 1;
-      const remaining = tutorRemainingRef.current + 1; // +1 because we're about to pick again
-      const filter = tutorFilterRef.current;
-      const filterSpec = tutorFilterSpecRef.current;
+      const remaining = tutorRemainingRef.current + 1;
+      const activeFilter = tutorFilterRef.current;
+      const activeFilterSpec = tutorFilterSpecRef.current;
       const sourceName = tutorSourceNameRef.current;
       const updatedEngine = engineRef.current!;
       const libraryCards = getCardsInZone(updatedEngine, humanIdRef.current, 'library');
       const pickerMetadata: Pick<TutorCardOption, 'legal' | 'reason' | 'destination' | 'entersTapped' | 'mustReveal'> = {
         legal: true,
-        reason: filter ? `Matches ${filter}` : 'Legal library choice',
+        reason: activeFilter ? `Matches ${activeFilter}` : 'Legal library choice',
         destination: tutorDestinationRef.current,
         entersTapped: tutorDestinationRef.current === 'battlefield' ? tutorTappedRef.current : undefined,
-        mustReveal: Boolean(filter || filterSpec),
+        mustReveal: Boolean(activeFilter || activeFilterSpec),
       };
       const pickerCards = libraryCards.map(c => {
         const d = getCardDefinition(updatedEngine, c);
@@ -3873,15 +3895,12 @@ export function useShelectorGame() {
           cmc: d.cmc,
           ...pickerMetadata,
         };
-      }).filter(c => {
-        return cardMatchesSearch(c, filterSpec, filter);
-      }).sort((a, b) => a.name.localeCompare(b.name));
+      }).filter(c => cardMatchesSearch(c, activeFilterSpec, activeFilter)).sort((a, b) => a.name.localeCompare(b.name));
 
-      const filterDesc = filter ? ` for ${filter}` : '';
-      const countSuffix = ` (${remaining} more — Cancel to stop here)`;
+      const filterDesc = activeFilter ? ` for ${activeFilter}` : '';
+      const countSuffix = ` (${remaining} more - Cancel to stop here)`;
       setTutorTitle(`${sourceName}: Search your library${filterDesc}${countSuffix}`);
       setTutorCards(pickerCards);
-      // tutorPhase stays true; UI re-shows picker with new options
       syncState();
       return;
     }
@@ -3895,15 +3914,16 @@ export function useShelectorGame() {
     tutorTappedRef.current = false;
     tutorShuffleRef.current = true;
 
-    // Continue game loop
     const loopMessages: { role: ChatMessage['role']; text: string }[] = [];
     const loopLogEntries: GameLogEntry[] = [];
-    let state: GameState = advanceGameLoop(engineRef.current!, loopMessages, loopLogEntries);
+    const state: GameState = advanceGameLoop(engineRef.current!, loopMessages, loopLogEntries);
     engineRef.current = state as GameStateWithAI;
     for (const msg of loopMessages) addMessage(msg.role, msg.text);
     if (loopLogEntries.length > 0) setGameLog(prev => [...prev, ...loopLogEntries]);
 
     syncState();
+    return;
+
   }, [addMessage, appendLog, syncState, advanceGameLoop]);
 
   /** Cancel the active tutor — useful for "up to N" searches when the user wants
@@ -3942,6 +3962,13 @@ export function useShelectorGame() {
       return;
     }
 
+    if (pendingSearchEntryChoiceRef.current) {
+      pendingSearchEntryChoiceRef.current = null;
+      addMessage('player', 'Cancelled the entry choice.');
+      syncState();
+      return;
+    }
+
     addMessage('player', `Stopped searching${tutorSourceNameRef.current ? ` (${tutorSourceNameRef.current})` : ''}.`);
 
     // Resume game loop after the tutor ends
@@ -3969,6 +3996,7 @@ export function useShelectorGame() {
     pendingCastChoiceActionRef.current = null;
     pendingCastChoiceModeRef.current = null;
     pendingPlayLandChoiceRef.current = null;
+    pendingSearchEntryChoiceRef.current = null;
     setDiscardPhase(false);
     setTutorPhase(false);
     setTutorCards([]);
@@ -5084,6 +5112,7 @@ export function useShelectorGame() {
       stepEffectsDoneRef.current.clear();
       pendingCastChoiceActionRef.current = null;
       pendingPlayLandChoiceRef.current = null;
+      pendingSearchEntryChoiceRef.current = null;
       const restoredLibraryChoice = snapshot.libraryChoice || null;
       pendingLibraryChoiceRef.current = restoredLibraryChoice
         ? { stackItemId: restoredLibraryChoice.id.split(':')[0], mode: restoredLibraryChoice.mode }

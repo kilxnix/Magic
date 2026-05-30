@@ -11,6 +11,7 @@ import type {
 import { getLegalActions } from './ai/legal-actions';
 import { dispatchAIAction } from './ai/agent';
 import { canPlayLandDetailed } from './actions';
+import { validateStateInvariants } from './invariants';
 import type { AIAction } from './ai/types';
 import type { ActionFailure, GameEvent as ActionGameEvent } from './actions-public';
 
@@ -26,7 +27,7 @@ export interface ClientActionRequest {
   createdAt: number;
 }
 
-export type ClientActionFailure = ActionFailure | 'illegal_action' | 'stale_state';
+export type ClientActionFailure = ActionFailure | 'illegal_action' | 'stale_state' | 'invariant_violation';
 
 export interface ClientActionResponse {
   requestId: string;
@@ -36,6 +37,24 @@ export interface ClientActionResponse {
   state?: GameState;
   events?: ActionGameEvent[];
   update?: EngineStateUpdate;
+}
+
+export interface ActionReplayAuditStep {
+  index: number;
+  requestId: string;
+  playerId: string;
+  actionKind: AIAction['kind'];
+  stateBeforeId: string;
+  stateAfterId?: string;
+  ok: boolean;
+  reason?: ClientActionFailure | 'missing_state' | 'invariant_violation';
+  message?: string;
+}
+
+export interface ActionReplayAuditReport {
+  ok: boolean;
+  finalState?: GameState;
+  steps: ActionReplayAuditStep[];
 }
 
 export type PromptType =
@@ -1089,6 +1108,37 @@ export function applyClientActionRequest(
     };
   }
 
+  const invariantReport = validateStateInvariants(result.state);
+  if (!invariantReport.ok) {
+    const message = `Engine invariant failed: ${invariantReport.violations[0]?.message || 'invalid state'}`;
+    return {
+      requestId: request.id,
+      ok: false,
+      reason: 'invariant_violation',
+      message,
+      update: {
+        oldStateId: currentStateId,
+        newStateId: currentStateId,
+        activePlayerId: activePlayerId(state),
+        priorityPlayerId: priorityPlayerId(state),
+        phase: state.phase,
+        step: state.step,
+        turnNumber: state.turnNumber,
+        priority: prioritySnapshot(state),
+        visibleDiffs: [],
+        rulesEvents: [{
+          kind: 'ActionRejected',
+          requestId: request.id,
+          playerId: request.playerId,
+          actionKind: request.action.kind,
+          reason: 'invariant_violation',
+          message,
+        }],
+        prompt: buildActionPrompt(state),
+      },
+    };
+  }
+
   return {
     requestId: request.id,
     ok: true,
@@ -1105,5 +1155,60 @@ export function applyClientActionRequest(
       },
       result.events,
     ),
+  };
+}
+
+export function auditActionReplay(
+  initialState: GameState,
+  requests: ClientActionRequest[],
+): ActionReplayAuditReport {
+  let state = initialState;
+  const steps: ActionReplayAuditStep[] = [];
+
+  for (let index = 0; index < requests.length; index++) {
+    const request = requests[index];
+    const stateBeforeId = stateFingerprint(state);
+    const response = applyClientActionRequest(state, request);
+    const step: ActionReplayAuditStep = {
+      index,
+      requestId: request.id,
+      playerId: request.playerId,
+      actionKind: request.action.kind,
+      stateBeforeId,
+      ok: response.ok,
+      reason: response.reason,
+      message: response.message,
+      stateAfterId: response.update?.newStateId,
+    };
+    steps.push(step);
+
+    if (!response.ok || !response.state) {
+      return {
+        ok: false,
+        steps,
+      };
+    }
+
+    const invariantReport = validateStateInvariants(response.state);
+    if (!invariantReport.ok) {
+      steps[steps.length - 1] = {
+        ...step,
+        ok: false,
+        reason: 'invariant_violation',
+        message: invariantReport.violations[0]?.message || 'invalid state',
+      };
+      return {
+        ok: false,
+        steps,
+      };
+    }
+
+    state = response.state;
+  }
+
+  return {
+    ok: true,
+    finalState: state,
+    steps,
   };
 }

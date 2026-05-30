@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   applyClientActionRequest,
+  auditActionReplay,
   buildActionPrompt,
   createClientActionRequest,
   diffGameStates,
@@ -168,6 +169,55 @@ describe('authority action boundary', () => {
         reason: 'illegal_action',
         message: 'That action is not legal in the current game state.',
       },
+    ]);
+  });
+
+  it('audits committed action requests by replaying legality and state invariants', () => {
+    const state = stateWithForestInHand();
+    const prompt = buildActionPrompt(state, 'p1');
+    const playLand = prompt?.legalChoices.find(choice => choice.kind === 'PlayLand')?.action;
+    expect(playLand).toBeDefined();
+
+    const request = createClientActionRequest(state, 'p1', playLand as AIAction, {
+      id: 'req-audit-play-forest',
+      createdAt: 7,
+    });
+    const report = auditActionReplay(state, [request]);
+
+    expect(report.ok).toBe(true);
+    expect(report.steps).toEqual([
+      expect.objectContaining({
+        index: 0,
+        requestId: 'req-audit-play-forest',
+        actionKind: 'PlayLand',
+        ok: true,
+        stateBeforeId: stateFingerprint(state),
+      }),
+    ]);
+    expect(report.finalState?.cards.get((playLand as Extract<AIAction, { kind: 'PlayLand' }>).cardInstanceId)?.zone)
+      .toBe('battlefield');
+  });
+
+  it('fails replay audit when a committed request no longer matches the previous state', () => {
+    const state = stateWithForestInHand();
+    const prompt = buildActionPrompt(state, 'p1');
+    const pass = prompt?.legalChoices.find(choice => choice.kind === 'PassPriority')?.action;
+    expect(pass).toBeDefined();
+
+    const staleRequest = {
+      ...createClientActionRequest(state, 'p1', pass as AIAction, { id: 'req-audit-stale', createdAt: 8 }),
+      expectedStateId: 'not-this-state',
+    };
+    const report = auditActionReplay(state, [staleRequest]);
+
+    expect(report.ok).toBe(false);
+    expect(report.finalState).toBeUndefined();
+    expect(report.steps).toEqual([
+      expect.objectContaining({
+        requestId: 'req-audit-stale',
+        ok: false,
+        reason: 'stale_state',
+      }),
     ]);
   });
 

@@ -8,6 +8,8 @@ export * from './stack';
 export * from './combat';
 export * from './state-based';
 export * from './effective-types';
+export * from './permanent-entry';
+export * from './invariants';
 
 // Keywords (Phase 5)
 export * from './keywords';

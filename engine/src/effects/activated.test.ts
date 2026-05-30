@@ -601,6 +601,92 @@ describe('executeSearchLibrary', () => {
     expect(matchesCardFilter(stompingGround, filter)).toBe(true);
     expect(matchesCardFilter(hallowedFountain, filter)).toBe(true);
   });
+
+  it('applies shock-land entry choices when a land is searched from the library', () => {
+    const marshFlats = createTestDef({
+      id: 'marsh_flats',
+      name: 'Marsh Flats',
+      type_line: 'Land',
+      card_types: ['land'],
+    });
+    const templeGarden = createTestDef({
+      id: 'temple_garden',
+      name: 'Temple Garden',
+      type_line: 'Land - Forest Plains',
+      oracle_text: "As Temple Garden enters, you may pay 2 life. If you don't, it enters tapped.",
+      card_types: ['land'],
+      cmc: 0,
+    });
+    const state = createTestState([
+      { def: marshFlats, zone: 'battlefield', ownerId: 'p1' },
+      { def: templeGarden, zone: 'library', ownerId: 'p1' },
+    ]);
+    const filter = { types: ['Land'], subtypes: ['Forest', 'Plains'] };
+
+    const defaultEntry = executeSearchLibrary(
+      state,
+      'p1',
+      filter,
+      'battlefield',
+      false,
+      true,
+      { selectedCardInstanceId: 'inst_2' },
+    );
+
+    expect(defaultEntry.cards.get('inst_2')?.zone).toBe('battlefield');
+    expect(defaultEntry.cards.get('inst_2')?.tapped).toBe(true);
+    expect(defaultEntry.players[0].life).toBe(40);
+
+    const paidEntry = executeSearchLibrary(
+      state,
+      'p1',
+      filter,
+      'battlefield',
+      false,
+      true,
+      { selectedCardInstanceId: 'inst_2', payLifeToEnterUntapped: true },
+    );
+
+    expect(paidEntry.cards.get('inst_2')?.zone).toBe('battlefield');
+    expect(paidEntry.cards.get('inst_2')?.tapped).toBe(false);
+    expect(paidEntry.players[0].life).toBe(38);
+  });
+
+  it('keeps Farseek-style searched shock lands tapped when the effect says tapped', () => {
+    const farseek = createTestDef({
+      id: 'farseek',
+      name: 'Farseek',
+      type_line: 'Sorcery',
+      card_types: ['sorcery'],
+    });
+    const hallowedFountain = createTestDef({
+      id: 'hallowed_fountain_for_farseek',
+      name: 'Hallowed Fountain',
+      type_line: 'Land - Plains Island',
+      oracle_text: "As Hallowed Fountain enters, you may pay 2 life. If you don't, it enters tapped.",
+      card_types: ['land'],
+      cmc: 0,
+    });
+    const state = createTestState([
+      { def: farseek, zone: 'graveyard', ownerId: 'p1' },
+      { def: hallowedFountain, zone: 'library', ownerId: 'p1' },
+    ]);
+    const filter = { types: ['Land'], subtypes: ['Plains', 'Island', 'Swamp', 'Mountain'] };
+
+    const result = executeSearchLibrary(
+      state,
+      'p1',
+      filter,
+      'battlefield',
+      true,
+      true,
+      { selectedCardInstanceId: 'inst_2', payLifeToEnterUntapped: true },
+    );
+
+    expect(result.cards.get('inst_2')?.zone).toBe('battlefield');
+    expect(result.cards.get('inst_2')?.tapped).toBe(true);
+    expect(result.players[0].life).toBe(40);
+  });
 });
 
 describe('executeShuffleLibrary', () => {

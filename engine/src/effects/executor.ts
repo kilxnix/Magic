@@ -14,6 +14,7 @@ import { applyReplacements } from './replacement';
 import type { ReplacementEvent } from './replacement';
 import { getEffectivePower } from './continuous';
 import { isEffectiveCreature } from '../effective-types';
+import { buildBattlefieldEntryPlan } from '../permanent-entry';
 
 /**
  * Context for effect execution, includes X value from spell casting.
@@ -994,7 +995,12 @@ export function executeSearchLibrary(
   destination: 'battlefield' | 'hand' | 'top' | 'graveyard',
   tapped?: boolean,
   shuffleRest: boolean = false,
-  choices: { namedCard?: string; selectedCardInstanceId?: string; sourceInstanceId?: string } = {},
+  choices: {
+    namedCard?: string;
+    selectedCardInstanceId?: string;
+    sourceInstanceId?: string;
+    payLifeToEnterUntapped?: boolean;
+  } = {},
 ): GameState {
   const candidates: CardInstance[] = [];
 
@@ -1061,15 +1067,30 @@ export function executeSearchLibrary(
   }
 
   const newCards = new Map(state.cards);
-  newCards.set(matchedCard.instanceId, {
-    ...matchedCard,
-    zone: destination,
-    tapped: destination === 'battlefield' ? (tapped ?? false) : false,
-    summoningSick: destination === 'battlefield',
-    damage: 0,
-  });
+  let players = state.players;
+  if (destination === 'battlefield') {
+    const def = state.cardDefinitions.get(matchedCard.definitionId);
+    if (!def) return state;
+    const entry = buildBattlefieldEntryPlan(state, playerId, matchedCard, def, {
+      forceTapped: tapped === true,
+      defaultTapped: tapped === true,
+      payLifeToEnterUntapped: choices.payLifeToEnterUntapped,
+      summoningSick: true,
+    });
+    newCards.set(matchedCard.instanceId, entry.card);
+    players = entry.players;
+  } else {
+    newCards.set(matchedCard.instanceId, {
+      ...matchedCard,
+      zone: destination,
+      tapped: false,
+      summoningSick: false,
+      damage: 0,
+    });
+  }
 
-  return { ...state, cards: newCards };
+  const movedState = { ...state, cards: newCards, players };
+  return shuffleRest ? executeShuffleLibrary(movedState, playerId) : movedState;
 }
 
 /**
@@ -1125,13 +1146,15 @@ function executePutLandFromHandOntoBattlefield(
   if (!land) return state;
 
   const newCards = new Map(state.cards);
-  newCards.set(land.instanceId, {
-    ...land,
-    zone: 'battlefield',
-    tapped,
+  const landDef = state.cardDefinitions.get(land.definitionId);
+  if (!landDef) return state;
+  const entry = buildBattlefieldEntryPlan(state, playerId, land, landDef, {
+    forceTapped: tapped,
+    defaultTapped: tapped,
     summoningSick: false,
   });
-  return { ...state, cards: newCards };
+  newCards.set(land.instanceId, entry.card);
+  return { ...state, cards: newCards, players: entry.players };
 }
 
 // Token instance counter

@@ -16,6 +16,11 @@ import { instanceHasKeyword } from './keywords';
 import { populateParsedCache } from './cards/card-parser-cache';
 import { isEffectiveCreature } from './effective-types';
 import { getCommanderDestinationZone } from './commander';
+import {
+  buildBattlefieldEntryPlan,
+  entersTheBattlefieldTapped,
+  getOptionalUntappedLifeCost,
+} from './permanent-entry';
 import type { ActivatedAbility, Effect } from './effects/ast';
 import type { TargetSpec } from './effects/targets';
 
@@ -224,33 +229,21 @@ export function playLand(
   const newCards = new Map(state.cards);
   const card = newCards.get(cardInstanceId)!;
   const def = getCardDefinition(state, card);
-  const optionalLifeCost = getOptionalUntappedLifeCost(def.oracle_text);
-  let entersTapped = entersTheBattlefieldTapped(def.oracle_text);
-  let paidLife = 0;
-  if (optionalLifeCost !== undefined && options.payLifeToEnterUntapped) {
-    const player = state.players.find(p => p.id === playerId);
-    if (!player || player.life < optionalLifeCost) {
-      throw new Error('Cannot pay life for land entry');
-    }
-    entersTapped = false;
-    paidLife = optionalLifeCost;
-  }
   const entryChoices = {
     ...(card.choices || {}),
     ...(options.chosenCreatureType ? { chosenCreatureType: normalizeChoice(options.chosenCreatureType) } : {}),
   };
-  newCards.set(cardInstanceId, {
-    ...card,
-    zone: 'battlefield',
-    tapped: entersTapped,
+  const entry = buildBattlefieldEntryPlan(state, playerId, card, def, {
+    payLifeToEnterUntapped: options.payLifeToEnterUntapped,
     summoningSick: false,
     choices: Object.keys(entryChoices).length > 0 ? entryChoices : card.choices,
   });
+  newCards.set(cardInstanceId, entry.card);
 
   const playerIndex = state.players.findIndex(p => p.id === playerId);
-  const newPlayers = state.players.map((p, i) =>
+  const newPlayers = entry.players.map((p, i) =>
     i === playerIndex
-      ? { ...p, life: p.life - paidLife, hasPlayedLand: true, landsPlayedThisTurn: (p.landsPlayedThisTurn ?? 0) + 1 }
+      ? { ...p, hasPlayedLand: true, landsPlayedThisTurn: (p.landsPlayedThisTurn ?? 0) + 1 }
       : p,
   );
 
@@ -277,29 +270,8 @@ export function getOptionalUntappedLifeCostForTest(oracleText: string): number |
   return getOptionalUntappedLifeCost(oracleText);
 }
 
-/** Parses "you may pay N life. If you don't, it enters tapped" land entry choices. */
-function getOptionalUntappedLifeCost(oracleText: string): number | undefined {
-  if (!oracleText) return undefined;
-  const lower = oracleText.toLowerCase();
-  const match = lower.match(/\byou may pay\s+(\d+)\s+life\b[^.]*\.\s*if\s+you\s+don'?t\b[^.]*enters?\s+tapped/);
-  return match ? parseInt(match[1], 10) : undefined;
-}
-
 function normalizeChoice(choice: string): string {
   return choice.trim().replace(/\s+/g, ' ');
-}
-
-/** Check if a permanent's oracle text indicates it enters the battlefield tapped. */
-function entersTheBattlefieldTapped(oracleText: string): boolean {
-  if (!oracleText) return false;
-  const lower = oracleText.toLowerCase();
-  // If any clause says "doesn't enter" or "does not enter" tapped, treat as not-always-tapped.
-  if (/\bdo(?:es)?n'?t\s+enter\s+(?:the\s+battlefield\s+)?tapped\b/.test(lower)) return false;
-  if (/\bdoes\s+not\s+enter\s+(?:the\s+battlefield\s+)?tapped\b/.test(lower)) return false;
-  // Until the UI can prompt for optional life payments, default shock lands to tapped.
-  if (/\bif\s+you\s+don'?t\b[^.]*enters?\s+tapped/.test(lower)) return true;
-  // Otherwise, look for affirmative "enters tapped" / "enters the battlefield tapped".
-  return /\benters?(?:\s+the\s+battlefield)?\s+tapped\b/.test(lower);
 }
 
 export function tapLandForMana(state: GameState, playerId: string, cardInstanceId: string, color: ManaColor): GameState {
