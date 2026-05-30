@@ -73,6 +73,46 @@ function createStateWithCreature(keywords: string[] = [], ownerId: string = 'pla
   };
 }
 
+function addSource(
+  state: GameState,
+  id: string,
+  colors: Array<'W' | 'U' | 'B' | 'R' | 'G'>,
+  typeLine = 'Instant',
+  cardTypes: CardDefinition['card_types'] = ['instant'],
+): GameState {
+  state.cards.set(id, {
+    instanceId: id,
+    definitionId: `def-${id}`,
+    ownerId: 'player-1',
+    zone: 'stack',
+    tapped: false,
+    summoningSick: false,
+    counters: {},
+    damage: 0,
+    isCommander: false,
+  });
+  state.cardDefinitions.set(`def-${id}`, {
+    id: `def-${id}`,
+    name: `${colors.join('')} Source`,
+    type_line: typeLine,
+    oracle_text: 'Test source deals damage.',
+    mana_cost: '{R}',
+    cmc: 1,
+    colors,
+    color_identity: colors,
+    keywords: [],
+    card_types: cardTypes,
+  });
+  state.stack.push({
+    kind: 'Spell',
+    id: `stack-${id}`,
+    cardInstanceId: id,
+    casterId: 'player-1',
+    targets: ['creature-1'],
+  });
+  return state;
+}
+
 describe('Target Validation with Keywords', () => {
   describe('Color constraints', () => {
     it('requires selected creature to match required color constraints', () => {
@@ -99,6 +139,25 @@ describe('Target Validation with Keywords', () => {
       expect(() => {
         validateTargetChoices(state, 'player-1', specs, ['creature-1']);
       }).not.toThrow();
+    });
+
+    it('prevents targeting from a source of a protected card type', () => {
+      const state = addSource(
+        createStateWithCreature([], 'player-2'),
+        'artifact-source',
+        [],
+        'Artifact',
+        ['artifact'],
+      );
+      state.cardDefinitions.set('def-creature', {
+        ...state.cardDefinitions.get('def-creature')!,
+        oracle_text: 'Protection from artifacts',
+      });
+      const specs = [{ id: 'target_1', type: 'Creature' as const, count: 1 }];
+
+      expect(() => {
+        validateTargetChoices(state, 'player-1', specs, ['creature-1'], 'artifact-source');
+      }).toThrow('protection from the source');
     });
   });
 
@@ -141,6 +200,34 @@ describe('Target Validation with Keywords', () => {
       expect(() => {
         validateTargetChoices(state, 'player-1', specs, ['creature-1']);
       }).toThrow('shroud');
+    });
+  });
+
+  describe('Protection', () => {
+    it('prevents targeting from a source of the protected color', () => {
+      const state = addSource(createStateWithCreature([], 'player-2'), 'red-source', ['R']);
+      state.cardDefinitions.set('def-creature', {
+        ...state.cardDefinitions.get('def-creature')!,
+        oracle_text: 'Protection from red',
+      });
+      const specs = [{ id: 'target_1', type: 'Creature' as const, count: 1 }];
+
+      expect(() => {
+        validateTargetChoices(state, 'player-1', specs, ['creature-1'], 'red-source');
+      }).toThrow('protection from the source');
+    });
+
+    it('allows targeting from a source that does not match the protection color', () => {
+      const state = addSource(createStateWithCreature([], 'player-2'), 'blue-source', ['U']);
+      state.cardDefinitions.set('def-creature', {
+        ...state.cardDefinitions.get('def-creature')!,
+        oracle_text: 'Protection from red',
+      });
+      const specs = [{ id: 'target_1', type: 'Creature' as const, count: 1 }];
+
+      expect(() => {
+        validateTargetChoices(state, 'player-1', specs, ['creature-1'], 'blue-source');
+      }).not.toThrow();
     });
   });
 

@@ -273,6 +273,45 @@ describe('executeEffects', () => {
       expect(newState.cards.get('creature-1')?.damage).toBe(2);
     });
 
+    it('prevents damage to creatures with protection from the source color', () => {
+      const state = createTestState();
+      state.cardDefinitions.set('def-creature', {
+        ...state.cardDefinitions.get('def-creature')!,
+        oracle_text: 'Protection from green',
+      });
+      state.cards.set('green-source', {
+        instanceId: 'green-source',
+        definitionId: 'def-gold-permanent',
+        ownerId: 'player-1',
+        zone: 'battlefield',
+        tapped: false,
+        summoningSick: false,
+        counters: {},
+        damage: 0,
+        isCommander: false,
+      });
+      const effects: Effect[] = [
+        {
+          kind: 'DealDamage',
+          source: { kind: 'ThisSpell' },
+          target: { kind: 'Chosen', targetId: 'target_1' },
+          amount: 2,
+        },
+      ];
+
+      const newState = executeEffects(
+        state,
+        effects,
+        'player-1',
+        ['creature-1'],
+        [{ id: 'target_1' }],
+        0,
+        { sourceInstanceId: 'green-source' },
+      );
+
+      expect(newState.cards.get('creature-1')?.damage).toBe(0);
+    });
+
     it('deals damage equal to greatest mana value among permanents you control', () => {
       const state = createTestState();
       const cards = new Map(state.cards);

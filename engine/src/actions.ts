@@ -22,7 +22,7 @@ import {
   getOptionalUntappedLifeCost,
 } from './permanent-entry';
 import type { ActivatedAbility, Effect } from './effects/ast';
-import type { TargetSpec } from './effects/targets';
+import { validateTargetChoices, type TargetSpec } from './effects/targets';
 import { applyWardForStackItem } from './ward';
 
 const MAIN_PHASES: Phase[] = ['precombat_main', 'postcombat_main'];
@@ -561,6 +561,10 @@ export function activateAbility(
 
   const abilities = getActivatedAbilities(state, cardInstanceId);
   const ability = abilities[abilityIndex];
+  const abilityTargets = ability.targets as TargetSpec[];
+  if (abilityTargets.length > 0) {
+    validateTargetChoices(state, playerId, abilityTargets, targets, cardInstanceId);
+  }
   let newState = state;
 
   // === Pay costs (before putting on stack) ===
@@ -609,8 +613,7 @@ export function activateAbility(
   if (ability.isManaAbility) {
     // Mana abilities resolve immediately
     const effects = ability.effects as Effect[];
-    const targetSpecs = ability.targets as TargetSpec[];
-    newState = executeEffectsWithSBA(newState, effects, playerId, targets, targetSpecs);
+    newState = executeEffectsWithSBA(newState, effects, playerId, targets, abilityTargets);
   } else {
     // Non-mana abilities go on the stack
     const stackItem: ActivatedAbilityStackItem = {

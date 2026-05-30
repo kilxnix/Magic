@@ -1016,7 +1016,7 @@ describe('tryActivateAbility', () => {
   it('returns ok with AbilityActivated event on valid activation', () => {
     const state = makeTestState({ battlefieldCreatureWithAbility: true, manaPool: { C: 1 } });
     const creature = [...state.cards.values()].find(c => c.zone === 'battlefield')!;
-    const result = tryActivateAbility(state, 'human', creature.instanceId, 0, []);
+    const result = tryActivateAbility(state, 'human', creature.instanceId, 0, ['ai1']);
     expect(result.ok).toBe(true);
   });
 

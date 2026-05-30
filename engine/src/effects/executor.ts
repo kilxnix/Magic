@@ -8,7 +8,7 @@ import { isSpellStackItem } from '../types';
 import type { Effect, TargetRef, AmountRef, TokenDefinition, CardFilter, SurveilEffect, ForEachAmount, Condition, LoyaltyAbility } from './ast';
 import { getCardDefinition, pruneDetachedEffects } from '../game-state';
 import { checkStateBasedActions, markPlayerLostFromEmptyLibrary } from '../state-based';
-import { instanceHasKeyword, isIndestructible } from '../keywords';
+import { instanceHasKeyword, isIndestructible, isProtectedFromSource } from '../keywords';
 import { getCommanderDestinationZone } from '../commander';
 import { applyDamageReplacementEffects, applyReplacements, registerDamagePrevention } from './replacement';
 import type { ReplacementEvent } from './replacement';
@@ -368,6 +368,10 @@ function getDeathDestination(state: GameState, cardInstanceId: string, card: Car
  * Execute a DealDamage effect.
  */
 function executeDealDamage(state: GameState, targetId: string, amount: number, sourceInstanceId?: string): GameState {
+  if (state.cards.has(targetId) && isProtectedFromSource(state, targetId, sourceInstanceId)) {
+    return state;
+  }
+
   // Check for replacement effects (e.g., damage prevention)
   const event: ReplacementEvent & { type: 'DamageDealt'; amount: number } = {
     type: 'DamageDealt',

@@ -1,5 +1,9 @@
 import { isSpellStackItem, type GameState } from '../types';
-import { canBeTargetedByOpponent, canBeTargetedByController } from '../keywords';
+import {
+  canBeTargetedByOpponent,
+  canBeTargetedByController,
+  isProtectedFromSource,
+} from '../keywords';
 import { isEffectiveCreature } from '../effective-types';
 import { getCardDefinition } from '../game-state';
 
@@ -71,16 +75,18 @@ export function validateTargetChoices(
   casterId: string,
   specs: TargetSpec[],
   chosenIds: string[],
+  sourceInstanceId?: string,
 ): void {
-  const expectedTotal = specs.reduce((sum, s) => sum + s.count, 0);
+  const expectedTotal = specs.reduce((sum, s) => sum + (s.count ?? 1), 0);
   if (chosenIds.length !== expectedTotal) {
     throw new Error(`Expected ${expectedTotal} target choice(s), got ${chosenIds.length}`);
   }
 
   let offset = 0;
   for (const spec of specs) {
-    const slice = chosenIds.slice(offset, offset + spec.count);
-    offset += spec.count;
+    const targetCount = spec.count ?? 1;
+    const slice = chosenIds.slice(offset, offset + targetCount);
+    offset += targetCount;
 
     for (const chosenId of slice) {
       // Type check
@@ -194,14 +200,22 @@ export function validateTargetChoices(
       if (targetCard && targetCard.zone === 'battlefield') {
         const isOwnedByCaster = targetCard.ownerId === casterId;
         if (isOwnedByCaster) {
-          // Controller targeting their own permanent - only shroud blocks this
+          // Controller targeting their own permanent - shroud and protection from
+          // the source both block this.
           if (!canBeTargetedByController(state, chosenId)) {
             throw new Error(`Invalid target for ${spec.id}: target has shroud`);
           }
+          if (isProtectedFromSource(state, chosenId, sourceInstanceId)) {
+            throw new Error(`Invalid target for ${spec.id}: target has protection from the source`);
+          }
         } else {
-          // Opponent targeting - hexproof and shroud both block this
+          // Opponent targeting - hexproof, shroud, and protection from the
+          // source all block this.
           if (!canBeTargetedByOpponent(state, chosenId)) {
             throw new Error(`Invalid target for ${spec.id}: target has hexproof or shroud`);
+          }
+          if (isProtectedFromSource(state, chosenId, sourceInstanceId)) {
+            throw new Error(`Invalid target for ${spec.id}: target has protection from the source`);
           }
         }
       }

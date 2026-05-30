@@ -314,10 +314,11 @@ function targetRemainsLegalAtResolution(
   casterId: string,
   spec: TargetSpec,
   targetId: string | undefined,
+  sourceInstanceId?: string,
 ): boolean {
   if (!targetId) return false;
   try {
-    validateTargetChoices(state, casterId, [{ ...spec, count: 1 }], [targetId]);
+    validateTargetChoices(state, casterId, [{ ...spec, count: 1 }], [targetId], sourceInstanceId);
     return true;
   } catch {
     return false;
@@ -329,6 +330,7 @@ function sanitizeTargetsAtResolution(
   casterId: string,
   specs: TargetSpec[],
   targets: string[],
+  sourceInstanceId?: string,
 ): { hasLegalTarget: boolean; targets: string[] } {
   if (specs.length === 0) return { hasLegalTarget: true, targets };
 
@@ -338,7 +340,7 @@ function sanitizeTargetsAtResolution(
 
   for (let index = 0; index < expandedSpecs.length; index++) {
     const targetId = targets[index];
-    if (targetRemainsLegalAtResolution(state, casterId, expandedSpecs[index], targetId)) {
+    if (targetRemainsLegalAtResolution(state, casterId, expandedSpecs[index], targetId, sourceInstanceId)) {
       hasLegalTarget = true;
       continue;
     }
@@ -766,7 +768,7 @@ function applyPermanentEntryChoices(
 
   if (auraTargetSpecs.length > 0) {
     try {
-      validateTargetChoices(state, spellItem.casterId, auraTargetSpecs, spellItem.targets);
+      validateTargetChoices(state, spellItem.casterId, auraTargetSpecs, spellItem.targets, spellItem.cardInstanceId);
     } catch {
       cards.set(card.instanceId, {
         ...card,
@@ -1029,7 +1031,7 @@ export function castSpell(
   const castFromZone = card.zone;
   const castTargetSpecs = getCastTargetSpecs(def, castOptions);
   if (castTargetSpecs) {
-    validateTargetChoices(state, playerId, castTargetSpecs, targets);
+    validateTargetChoices(state, playerId, castTargetSpecs, targets, cardInstanceId);
   }
   const cost = parseManaString(def.mana_cost);
 
@@ -1335,7 +1337,7 @@ export function resolveTopOfStack(state: GameState): GameState {
     const effects = topItem.ability.effects as Effect[];
     const targetSpecs = normalizeStackTargetSpecs(topItem.targetSpecs);
 
-    const resolvedTargets = sanitizeTargetsAtResolution(resultState, topItem.controllerId, targetSpecs, topItem.targets);
+    const resolvedTargets = sanitizeTargetsAtResolution(resultState, topItem.controllerId, targetSpecs, topItem.targets, topItem.sourceInstanceId);
     if (targetSpecs.length > 0 && !resolvedTargets.hasLegalTarget) {
       return checkStateBasedActions(resultState);
     }
@@ -1366,7 +1368,7 @@ export function resolveTopOfStack(state: GameState): GameState {
     const effects = topItem.ability.effects as Effect[];
     const targetSpecs = normalizeStackTargetSpecs(topItem.ability.targets);
 
-    const resolvedTargets = sanitizeTargetsAtResolution(resultState, topItem.controllerId, targetSpecs, topItem.targets);
+    const resolvedTargets = sanitizeTargetsAtResolution(resultState, topItem.controllerId, targetSpecs, topItem.targets, topItem.sourceInstanceId);
     if (targetSpecs.length > 0 && !resolvedTargets.hasLegalTarget) {
       return checkStateBasedActions(resultState);
     }
@@ -1451,7 +1453,7 @@ export function resolveTopOfStack(state: GameState): GameState {
     // Try to find effect definition: override first, then parse
     const override = getOverride(def.id, def.name);
     if (override && override.kind === 'Spell') {
-      const resolvedTargets = sanitizeTargetsAtResolution(intermediateState, spellItem.casterId, override.targets, spellItem.targets);
+      const resolvedTargets = sanitizeTargetsAtResolution(intermediateState, spellItem.casterId, override.targets, spellItem.targets, spellItem.cardInstanceId);
       if (override.targets.length > 0 && !resolvedTargets.hasLegalTarget) {
         resultState = checkStateBasedActions(intermediateState);
       } else {
@@ -1471,7 +1473,7 @@ export function resolveTopOfStack(state: GameState): GameState {
       // Try to parse oracle text
       const parsed = parseOracleText(normalizeOracleText(def.oracle_text, def.name));
       if (parsed.kind === 'Spell') {
-        const resolvedTargets = sanitizeTargetsAtResolution(intermediateState, spellItem.casterId, parsed.targets, spellItem.targets);
+        const resolvedTargets = sanitizeTargetsAtResolution(intermediateState, spellItem.casterId, parsed.targets, spellItem.targets, spellItem.cardInstanceId);
         if (parsed.targets.length > 0 && !resolvedTargets.hasLegalTarget) {
           resultState = checkStateBasedActions(intermediateState);
         } else {
@@ -1509,7 +1511,7 @@ export function resolveTopOfStack(state: GameState): GameState {
           }
         }
 
-        const resolvedTargets = sanitizeTargetsAtResolution(intermediateState, spellItem.casterId, allTargetSpecs, spellItem.targets);
+        const resolvedTargets = sanitizeTargetsAtResolution(intermediateState, spellItem.casterId, allTargetSpecs, spellItem.targets, spellItem.cardInstanceId);
         if (allTargetSpecs.length > 0 && !resolvedTargets.hasLegalTarget) {
           resultState = checkStateBasedActions(intermediateState);
         } else {

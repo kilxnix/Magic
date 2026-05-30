@@ -7,6 +7,7 @@ import {
   satisfiesMenace,
   instanceHasKeyword,
   isLethalDamage,
+  isProtectedFromSource,
 } from './keywords';
 import { getEffectivePower, getEffectiveToughness } from './effects/continuous';
 import { isEffectiveCreature } from './effective-types';
@@ -327,6 +328,9 @@ function applyCombatDamagePrevention(
   amount: number,
 ): { state: GameState; amount: number } {
   if (amount <= 0) return { state, amount: 0 };
+  if (cards.has(targetId) && isProtectedFromSource({ ...state, cards, players }, targetId, sourceId)) {
+    return { state, amount: 0 };
+  }
 
   const { state: replacedState, event } = applyDamageReplacementEffects(
     { ...state, cards, players },

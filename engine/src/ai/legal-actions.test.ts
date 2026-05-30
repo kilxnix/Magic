@@ -1030,6 +1030,43 @@ describe('getLegalTargets', () => {
 
     expect(targets).toEqual(['green-creature']);
   });
+
+  it('excludes protection-matching targets when a source is provided', () => {
+    const state = createTestState();
+
+    addCard(state, 'red-spell', 'p1', 'hand', {
+      name: 'Red Removal',
+      type_line: 'Instant',
+      oracle_text: 'Destroy target creature.',
+      card_types: ['instant'],
+      colors: ['R'],
+    });
+    addCard(state, 'protected-creature', 'p2', 'battlefield', {
+      name: 'Silver Knight',
+      type_line: 'Creature - Human Knight',
+      oracle_text: 'Protection from red',
+      card_types: ['creature'],
+      colors: ['W'],
+      power: 2,
+      toughness: 2,
+    });
+    addCard(state, 'normal-creature', 'p2', 'battlefield', {
+      name: 'Bear',
+      type_line: 'Creature - Bear',
+      card_types: ['creature'],
+      colors: ['G'],
+      power: 2,
+      toughness: 2,
+    });
+
+    const targets = getLegalTargets(state, 'p1', {
+      id: 'target1',
+      type: 'Creature',
+      count: 1,
+    }, 'red-spell');
+
+    expect(targets).toEqual(['normal-creature']);
+  });
 });
 
 describe('Modal spell actions', () => {

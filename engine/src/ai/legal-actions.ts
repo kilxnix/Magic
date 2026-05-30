@@ -14,7 +14,7 @@ import { getOverride } from '../effects/overrides';
 import { parseOracleText } from '../effects/parser';
 import { matchesCardFilter } from '../effects/executor';
 import { isEffectiveCreature } from '../effective-types';
-import type { TargetSpec } from '../effects/targets';
+import { validateTargetChoices, type TargetSpec } from '../effects/targets';
 import type {
   AIAction,
   CastSpellAction,
@@ -102,14 +102,24 @@ export function getLegalTargets(
   state: GameState,
   casterId: string,
   spec: TargetSpec,
+  sourceInstanceId?: string,
 ): string[] {
   const targets: string[] = [];
+  const addIfValid = (targetId: string) => {
+    try {
+      validateTargetChoices(state, casterId, [{ ...spec, count: 1 }], [targetId], sourceInstanceId);
+      targets.push(targetId);
+    } catch {
+      // Candidate failed target legality (hexproof/shroud/protection, type,
+      // color, opponent-control, etc.).
+    }
+  };
 
   if (spec.type === 'Player') {
     for (const player of state.players) {
       if (!player.hasLost) {
         if (spec.constraints?.opponentControls && player.id === casterId) continue;
-        targets.push(player.id);
+        addIfValid(player.id);
       }
     }
   } else if (spec.type === 'Creature') {
@@ -123,20 +133,20 @@ export function getLegalTargets(
       // Check opponentControls constraint
       if (spec.constraints?.opponentControls && card.ownerId === casterId) continue;
 
-      targets.push(card.instanceId);
+      addIfValid(card.instanceId);
     }
   } else if (spec.type === 'Any') {
     // Players
     for (const player of state.players) {
       if (!player.hasLost) {
-        targets.push(player.id);
+        addIfValid(player.id);
       }
     }
     // Creatures
     for (const card of state.cards.values()) {
       if (card.zone !== 'battlefield') continue;
       if (!isEffectiveCreature(state, card.instanceId)) continue;
-      targets.push(card.instanceId);
+      addIfValid(card.instanceId);
     }
   } else if (
     spec.type === 'Spell'
@@ -156,7 +166,7 @@ export function getLegalTargets(
       if (spec.type === 'CreatureOrEnchantmentSpell' && !def.card_types.includes('creature') && !def.card_types.includes('enchantment')) continue;
       if (spec.type === 'ArtifactOrCreatureSpell' && !def.card_types.includes('artifact') && !def.card_types.includes('creature')) continue;
       if (spec.type === 'InstantOrSorcerySpell' && !def.card_types.includes('instant') && !def.card_types.includes('sorcery')) continue;
-      targets.push(card.instanceId);
+      addIfValid(card.instanceId);
     }
   } else if (
     spec.type === 'Permanent'
@@ -190,7 +200,7 @@ export function getLegalTargets(
       ) continue;
       if (spec.constraints?.opponentControls && card.ownerId === casterId) continue;
 
-      targets.push(card.instanceId);
+      addIfValid(card.instanceId);
     }
   } else if (
     spec.type === 'CardInGraveyard'
@@ -209,7 +219,7 @@ export function getLegalTargets(
         && !def.card_types.includes('enchantment')
       ) continue;
       if (spec.constraints?.opponentControls && card.ownerId === casterId) continue;
-      targets.push(card.instanceId);
+      addIfValid(card.instanceId);
     }
   }
 
@@ -251,7 +261,7 @@ function generateModalActions(
           type: t.type as any,
           count: 1,
         }));
-        for (const targets of generateTargetCombinations(state, playerId, specs)) {
+        for (const targets of generateTargetCombinations(state, playerId, specs, card.instanceId)) {
           actions.push({
             kind: 'CastSpell',
             cardInstanceId: card.instanceId,
@@ -273,7 +283,7 @@ function generateModalActions(
           type: t.type as any,
           count: 1,
         }));
-        for (const targets of generateTargetCombinations(state, playerId, specs)) {
+        for (const targets of generateTargetCombinations(state, playerId, specs, card.instanceId)) {
           actions.push({
             kind: 'CastSpell',
             cardInstanceId: card.instanceId,
@@ -293,13 +303,14 @@ function generateTargetCombinations(
   state: GameState,
   playerId: string,
   specs: TargetSpec[],
+  sourceInstanceId?: string,
 ): string[][] {
   if (specs.length === 0) return [[]];
   if (specs.some(spec => spec.count !== 1)) return [];
 
   let combinations: string[][] = [[]];
   for (const spec of specs) {
-    const legalTargets = getLegalTargets(state, playerId, spec);
+    const legalTargets = getLegalTargets(state, playerId, spec, sourceInstanceId);
     const next: string[][] = [];
     for (const existing of combinations) {
       for (const target of legalTargets) {
@@ -398,7 +409,7 @@ function generateCastSpellActions(state: GameState, playerId: string): CastSpell
             ...faceCast.options,
           }));
       } else {
-        for (const targets of generateTargetCombinations(state, playerId, specs)) {
+        for (const targets of generateTargetCombinations(state, playerId, specs, card.instanceId)) {
           actions.push(...withXValues(state, playerId, card, def, {
               kind: 'CastSpell',
               cardInstanceId: card.instanceId,
@@ -544,7 +555,7 @@ function generateActivateAbilityActions(state: GameState, playerId: string): Act
         type: target.type as TargetSpec['type'],
         count: 1,
       }));
-      for (const targets of generateTargetCombinations(state, playerId, specs)) {
+      for (const targets of generateTargetCombinations(state, playerId, specs, card.instanceId)) {
         actions.push({
           kind: 'ActivateAbility',
           cardInstanceId: card.instanceId,

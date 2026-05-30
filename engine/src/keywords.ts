@@ -4,6 +4,7 @@
 import type { GameState, CardDefinition, CardInstance } from './types';
 import { isEffectiveCreature } from './effective-types';
 import { getCardDefinition } from './game-state';
+import type { ManaColor } from './types';
 
 export type Keyword =
   | 'Flying'
@@ -64,6 +65,90 @@ const KEYWORD_COUNTER_NAMES = new Set([
   'reach', 'firststrike', 'doublestrike', 'haste', 'hexproof',
   'indestructible', 'unblockable', 'defender', 'shroud', 'ward', 'flash',
 ]);
+
+const COLOR_WORD_TO_MANA: Record<string, ManaColor> = {
+  white: 'W',
+  blue: 'U',
+  black: 'B',
+  red: 'R',
+  green: 'G',
+};
+
+function sourceDefinition(state: GameState, sourceId: string): CardDefinition | undefined {
+  const stackItem = state.stack.find(item => {
+    if (item.id === sourceId) return true;
+    return 'cardInstanceId' in item && item.cardInstanceId === sourceId;
+  });
+  const cardId = stackItem && 'cardInstanceId' in stackItem ? stackItem.cardInstanceId : sourceId;
+  const card = state.cards.get(cardId);
+  return card ? getCardDefinition(state, card) : undefined;
+}
+
+function sourceColors(state: GameState, sourceId: string): Set<ManaColor> {
+  const def = sourceDefinition(state, sourceId);
+  return new Set(def?.colors || []);
+}
+
+function protectionClausesFor(state: GameState, instanceId: string): string[] {
+  const card = state.cards.get(instanceId);
+  if (!card) return [];
+  const def = getCardDefinition(state, card);
+  const text = `${def.oracle_text || ''}\n${def.keywords.join('\n')}`.toLowerCase();
+  return text.match(/protection from [^.\n]+/g) || [];
+}
+
+/**
+ * Parse color-specific protection clauses from oracle text.
+ * This intentionally handles the common Commander/Arena-critical case:
+ * "protection from red", "protection from white and from black", etc.
+ */
+export function getProtectionColors(state: GameState, instanceId: string): Set<ManaColor> {
+  const colors = new Set<ManaColor>();
+
+  for (const clause of protectionClausesFor(state, instanceId)) {
+    for (const [word, color] of Object.entries(COLOR_WORD_TO_MANA)) {
+      if (new RegExp(`\\b${word}\\b`).test(clause)) {
+        colors.add(color);
+      }
+    }
+  }
+
+  return colors;
+}
+
+function sourceMatchesProtectionClause(def: CardDefinition, clause: string): boolean {
+  const sourceTypes = new Set(def.card_types.map(type => type.toLowerCase()));
+  const typeLine = def.type_line.toLowerCase();
+  const hasType = (type: string) => sourceTypes.has(type) || typeLine.includes(type);
+
+  if (/\bartifacts?\b/.test(clause) && hasType('artifact')) return true;
+  if (/\bcreatures?\b/.test(clause) && hasType('creature')) return true;
+  if (/\benchantments?\b/.test(clause) && hasType('enchantment')) return true;
+  if (/\bplaneswalkers?\b/.test(clause) && hasType('planeswalker')) return true;
+  if (/\binstants?\b/.test(clause) && hasType('instant')) return true;
+  if (/\bsorceries?\b/.test(clause) && hasType('sorcery')) return true;
+  if (/\bmonocolored\b/.test(clause) && def.colors.length === 1) return true;
+  if (/\bmulticolored\b/.test(clause) && def.colors.length > 1) return true;
+  if (/\bcolorless\b/.test(clause) && def.colors.length === 0) return true;
+
+  return false;
+}
+
+export function isProtectedFromSource(
+  state: GameState,
+  permanentId: string,
+  sourceId: string | undefined,
+): boolean {
+  if (!sourceId) return false;
+  const protectionColors = getProtectionColors(state, permanentId);
+  for (const color of sourceColors(state, sourceId)) {
+    if (protectionColors.has(color)) return true;
+  }
+  const def = sourceDefinition(state, sourceId);
+  if (!def) return false;
+  return protectionClausesFor(state, permanentId)
+    .some(clause => sourceMatchesProtectionClause(def, clause));
+}
 
 /**
  * Check if a card definition has a specific keyword.
@@ -314,6 +399,10 @@ export function canBlock(
     return false;
   }
 
+  if (isProtectedFromSource(state, attackerId, blockerId)) {
+    return false;
+  }
+
   // Flying creatures can only be blocked by creatures with flying or reach
   if (instanceHasKeyword(state, attackerId, 'Flying')) {
     if (!instanceHasKeyword(state, blockerId, 'Flying') &&
@@ -382,6 +471,15 @@ export function canBeTargetedByOpponent(state: GameState, permanentId: string): 
   return true;
 }
 
+export function canBeTargetedByOpponentSource(
+  state: GameState,
+  permanentId: string,
+  sourceId?: string,
+): boolean {
+  return canBeTargetedByOpponent(state, permanentId)
+    && !isProtectedFromSource(state, permanentId, sourceId);
+}
+
 /**
  * Check if a permanent is a valid target for its controller's spell/ability.
  * Returns false only if the permanent has shroud (hexproof allows self-targeting).
@@ -391,6 +489,15 @@ export function canBeTargetedByController(state: GameState, permanentId: string)
     return false;
   }
   return true;
+}
+
+export function canBeTargetedByControllerSource(
+  state: GameState,
+  permanentId: string,
+  sourceId?: string,
+): boolean {
+  return canBeTargetedByController(state, permanentId)
+    && !isProtectedFromSource(state, permanentId, sourceId);
 }
 
 /**

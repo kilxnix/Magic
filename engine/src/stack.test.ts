@@ -815,6 +815,30 @@ describe('Stack', () => {
       expect(next.cards.get(targetId)?.zone).toBe('battlefield');
     });
 
+    it('fizzles activated abilities when their target gains protection from the source color before resolution', () => {
+      const { state, sourceId, targetId } = setupTargetedAbilityState();
+      state.stack.push({
+        kind: 'ActivatedAbility',
+        id: 'activated_protected_ping',
+        sourceInstanceId: sourceId,
+        controllerId: 'p1',
+        ability: {
+          effects: [{ kind: 'DealDamage', target: { kind: 'Chosen', targetId: 'target' }, amount: 3 }],
+          targets: [{ id: 'target', type: 'Creature' }],
+        },
+        targets: [targetId],
+      });
+
+      const target = state.cards.get(targetId)!;
+      const targetDef = state.cardDefinitions.get(target.definitionId)!;
+      state.cardDefinitions.set(target.definitionId, { ...targetDef, oracle_text: 'Protection from red' });
+
+      const next = resolveTopOfStack(state);
+      expect(next.stack).toHaveLength(0);
+      expect(next.cards.get(targetId)?.damage).toBe(0);
+      expect(next.cards.get(targetId)?.zone).toBe('battlefield');
+    });
+
     it('fizzles triggered abilities when their target gains hexproof before resolution', () => {
       const { state, sourceId, targetId } = setupTargetedAbilityState();
       state.stack.push({

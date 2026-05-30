@@ -258,6 +258,19 @@ describe("Declare Blockers", () => {
       const p3Creature = getCardsInZone(state, "p3", "battlefield")[0];
       expect(canDeclareBlocker(state, "p3", p3Creature.instanceId, p1Creature.instanceId)).toBe(false);
     });
+
+    it("rejects blockers when the attacker has protection from that blocker color", () => {
+      const state = setupCombat();
+      const attackerId = state.combat!.attackers[0].cardInstanceId;
+      const attackerCard = state.cards.get(attackerId)!;
+      state.cardDefinitions.set(attackerCard.definitionId, {
+        ...state.cardDefinitions.get(attackerCard.definitionId)!,
+        oracle_text: 'Protection from green',
+      });
+      const p2Creatures = getCardsInZone(state, "p2", "battlefield");
+
+      expect(canDeclareBlocker(state, "p2", p2Creatures[0].instanceId, attackerId)).toBe(false);
+    });
   });
 
   describe("declareBlockers", () => {
@@ -348,6 +361,37 @@ describe("Combat Damage", () => {
     expect(state.players[1].life).toBe(40);
     // Combat cleared
     expect(state.combat).toBeNull();
+  });
+
+  it("prevents combat damage to a creature with protection from the source color", () => {
+    const decks = [
+      { playerId: "p1", name: "Alice", cards: [makeBear("bear-1")], commanderId: "cmd1" },
+      { playerId: "p2", name: "Bob", cards: [makeBear("bear-3")], commanderId: "cmd2" },
+    ];
+    let state = initGameState(decks);
+    for (const [id, card] of state.cards) {
+      state.cards.set(id, { ...card, zone: "battlefield", summoningSick: false });
+    }
+    state = { ...state, phase: "combat", step: "declare_attackers" };
+
+    const attacker = getCardsInZone(state, "p1", "battlefield")[0];
+    const blocker = getCardsInZone(state, "p2", "battlefield")[0];
+    state.cardDefinitions.set(blocker.definitionId, {
+      ...state.cardDefinitions.get(blocker.definitionId)!,
+      oracle_text: 'Protection from green',
+    });
+
+    state = declareAttackers(state, "p1", [
+      { cardInstanceId: attacker.instanceId, defendingPlayerId: "p2" },
+    ]);
+    state = declareBlockers(state, "p2", [
+      { cardInstanceId: blocker.instanceId, blockingAttackerId: attacker.instanceId },
+    ]);
+    state = resolveCombatDamage(state);
+
+    expect(state.cards.get(blocker.instanceId)!.damage).toBe(0);
+    expect(state.cards.get(attacker.instanceId)!.damage).toBe(2);
+    expect(state.players[1].life).toBe(40);
   });
 
   it("blocked attacker does not deal damage to player", () => {
