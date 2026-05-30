@@ -754,6 +754,45 @@ describe('getLegalActions', () => {
         action.attacks.some(attack => attack.cardInstanceId === 'required1')
       )).toBe(true);
     });
+
+    it('only offers attacks the player can pay through Propaganda-style taxes', () => {
+      const state = createTestState({
+        activePlayerIndex: 0,
+        priorityPlayerIndex: 0,
+        phase: 'combat',
+        step: 'declare_attackers',
+      });
+
+      addCard(state, 'creature1', 'p1', 'battlefield', {
+        name: 'Grizzly Bears',
+        type_line: 'Creature - Bear',
+        card_types: ['creature'],
+        power: 2,
+        toughness: 2,
+      });
+      addCard(state, 'creature2', 'p1', 'battlefield', {
+        name: 'Runeclaw Bear',
+        type_line: 'Creature - Bear',
+        card_types: ['creature'],
+        power: 2,
+        toughness: 2,
+      });
+      addCard(state, 'propaganda', 'p2', 'battlefield', {
+        name: 'Propaganda',
+        type_line: 'Enchantment',
+        oracle_text: "Creatures can't attack you unless their controller pays {2} for each creature they control that's attacking you.",
+        card_types: ['enchantment'],
+      });
+      state.cards.get('creature1')!.summoningSick = false;
+      state.cards.get('creature2')!.summoningSick = false;
+      state.players[0].manaPool = { ...emptyManaPool, C: 2 };
+
+      const attackActions = getLegalActions(state, 'p1').filter(a => a.kind === 'DeclareAttackers');
+
+      expect(attackActions.some(action => action.attacks.length === 0)).toBe(true);
+      expect(attackActions.some(action => action.attacks.length === 1)).toBe(true);
+      expect(attackActions.some(action => action.attacks.length === 2)).toBe(false);
+    });
   });
 
   describe('DeclareBlockers actions', () => {

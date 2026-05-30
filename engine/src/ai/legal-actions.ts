@@ -8,7 +8,7 @@ import { GameState, CardInstance, AttackerDeclaration, BlockerDeclaration, isSpe
 import { getCardsInZone, getCardDefinition } from '../game-state';
 import { canCastSpell, getAdditionalLifeCostForCast, getCastSpellDefinition, getEffectiveCastCost, type CastSpellOptions } from '../stack';
 import { canPlayLand, getActivatedAbilities, canActivateAbility, isBlockedBySummoningSicknessForTap, getAvailableManaColors } from '../actions';
-import { canDeclareAttacker, canDeclareBlocker, getRequiredAttackers, hasPlayerDeclaredBlockers } from '../combat';
+import { canDeclareAttacker, canDeclareBlocker, canPayAttackTaxes, getRequiredAttackers, hasPlayerDeclaredBlockers } from '../combat';
 import { canPaySpellCost, canPayUnrestrictedCost } from '../mana';
 import { getOverride } from '../effects/overrides';
 import { parseOracleText } from '../effects/parser';
@@ -729,7 +729,7 @@ function generateAttackerActions(state: GameState, playerId: string): DeclareAtt
     }
   }
 
-  return actions;
+  return actions.filter(action => canPayAttackTaxes(state, playerId, action.attacks));
 }
 
 /**

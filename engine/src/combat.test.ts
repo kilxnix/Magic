@@ -54,6 +54,21 @@ function makeMustAttack(id: string = 'must-attack'): CardDefinition {
   };
 }
 
+function makePropaganda(): CardDefinition {
+  return {
+    id: 'propaganda',
+    name: 'Propaganda',
+    type_line: 'Enchantment',
+    oracle_text: "Creatures can't attack you unless their controller pays {2} for each creature they control that's attacking you.",
+    mana_cost: '{2}{U}',
+    cmc: 3,
+    colors: ['U'],
+    color_identity: ['U'],
+    keywords: [],
+    card_types: ['enchantment'],
+  };
+}
+
 function setupBattlefield() {
   const decks = [
     { playerId: 'p1', name: 'Alice', cards: [makeBear('bear-1'), makeBear('bear-2')], commanderId: 'cmd1' },
@@ -242,6 +257,34 @@ describe('Declare Attackers', () => {
 
     expect(getRequiredAttackers(state, 'p1')).toEqual([]);
     expect(() => declareAttackers(state, 'p1', [])).not.toThrow();
+  });
+
+  it('requires and pays Propaganda-style attack taxes per attacker', () => {
+    const decks = [
+      { playerId: 'p1', name: 'Alice', cards: [makeBear('bear-1'), makeBear('bear-2')], commanderId: 'cmd1' },
+      { playerId: 'p2', name: 'Bob', cards: [makePropaganda()], commanderId: 'cmd2' },
+    ];
+    let state = initGameState(decks);
+    for (const [id, card] of state.cards) {
+      state.cards.set(id, { ...card, zone: 'battlefield', summoningSick: false });
+    }
+    state.players[0].manaPool = { W: 0, U: 0, B: 0, R: 0, G: 0, C: 3 };
+    state = { ...state, phase: 'combat', step: 'declare_attackers' };
+    const attackers = getCardsInZone(state, 'p1', 'battlefield');
+
+    expect(() => declareAttackers(state, 'p1', attackers.map(card => ({
+      cardInstanceId: card.instanceId,
+      defendingPlayerId: 'p2',
+    })))).toThrow('Cannot pay attack tax');
+
+    state.players[0].manaPool = { W: 0, U: 0, B: 0, R: 0, G: 0, C: 4 };
+    const next = declareAttackers(state, 'p1', attackers.map(card => ({
+      cardInstanceId: card.instanceId,
+      defendingPlayerId: 'p2',
+    })));
+
+    expect(next.players[0].manaPool.C).toBe(0);
+    expect(next.combat?.attackers).toHaveLength(2);
   });
 });
 

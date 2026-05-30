@@ -1,4 +1,4 @@
-import { AttackerDeclaration, BlockerDeclaration, CardInstance, CombatState, GameState, Player } from './types';
+import { AttackerDeclaration, BlockerDeclaration, CardInstance, CombatState, GameState, ManaCost, Player } from './types';
 import { getCardDefinition, getPlayer } from './game-state';
 import {
   canAttackThisTurn,
@@ -14,6 +14,11 @@ import { isEffectiveCreature } from './effective-types';
 import { checkTriggersForEvent } from './stack';
 import { checkStateBasedActions } from './state-based';
 import { applyDamageReplacementEffects } from './effects/replacement';
+import { canPayUnrestrictedCost, payUnrestrictedManaCost } from './mana';
+
+function emptyGenericCost(generic: number): ManaCost {
+  return { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0, generic };
+}
 
 export function canDeclareAttacker(state: GameState, playerId: string, cardInstanceId: string): boolean {
   const playerIndex = state.players.findIndex(p => p.id === playerId);
@@ -49,6 +54,40 @@ export function getRequiredAttackers(state: GameState, playerId: string): string
     .map(card => card.instanceId);
 }
 
+function attackTaxForPermanent(defOracle: string): number {
+  const match = defOracle.match(/creatures\s+can't\s+attack\s+you\s+unless\s+their\s+controller\s+pays\s+\{(\d+)\}\s+for\s+each\s+creature\s+they\s+control\s+that's\s+attacking\s+you/i);
+  return match ? Number.parseInt(match[1], 10) : 0;
+}
+
+function attackTaxForDefender(state: GameState, defenderId: string): number {
+  let tax = 0;
+  for (const card of state.cards.values()) {
+    if (card.ownerId !== defenderId || card.zone !== 'battlefield') continue;
+    const def = getCardDefinition(state, card);
+    tax += attackTaxForPermanent(def.oracle_text);
+  }
+  return tax;
+}
+
+export function attackTaxCost(state: GameState, attacks: AttackerDeclaration[]): ManaCost {
+  let generic = 0;
+  const attacksByDefender = new Map<string, number>();
+  for (const attack of attacks) {
+    attacksByDefender.set(attack.defendingPlayerId, (attacksByDefender.get(attack.defendingPlayerId) ?? 0) + 1);
+  }
+  for (const [defenderId, count] of attacksByDefender) {
+    generic += attackTaxForDefender(state, defenderId) * count;
+  }
+  return emptyGenericCost(generic);
+}
+
+export function canPayAttackTaxes(state: GameState, playerId: string, attacks: AttackerDeclaration[]): boolean {
+  const cost = attackTaxCost(state, attacks);
+  if (cost.generic <= 0) return true;
+  const player = state.players.find(p => p.id === playerId);
+  return Boolean(player && canPayUnrestrictedCost(player, cost));
+}
+
 export function declareAttackers(state: GameState, playerId: string, attacks: AttackerDeclaration[]): GameState {
   const declaredAttackers = new Set<string>();
 
@@ -75,6 +114,17 @@ export function declareAttackers(state: GameState, playerId: string, attacks: At
     }
   }
 
+  const taxCost = attackTaxCost(state, attacks);
+  const playerIndex = state.players.findIndex(player => player.id === playerId);
+  if (taxCost.generic > 0 && (playerIndex < 0 || !canPayUnrestrictedCost(state.players[playerIndex], taxCost))) {
+    throw new Error(`Cannot pay attack tax: {${taxCost.generic}}`);
+  }
+  const newPlayers = state.players.map((player, index) =>
+    index === playerIndex && taxCost.generic > 0
+      ? payUnrestrictedManaCost(player, taxCost)
+      : player
+  );
+
   // Tap attackers (unless they have vigilance)
   const newCards = new Map(state.cards);
   const tappedAttackerIds: string[] = [];
@@ -96,6 +146,7 @@ export function declareAttackers(state: GameState, playerId: string, attacks: At
 
   let resultState: GameState = {
     ...state,
+    players: newPlayers,
     cards: newCards,
     combat,
     playersWhoAttackedThisTurn: attacks.length > 0
