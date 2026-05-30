@@ -62,6 +62,7 @@ import {
   actionKey,
   buildActionPrompt,
   buildStateUpdate,
+  resolveTopStackSearchPrompt,
   createSearchLibraryPromptRequest,
   applySearchLibraryPromptResponse,
   createSelectTargetPromptRequest,
@@ -2915,43 +2916,28 @@ export function useShelectorGame() {
         }
 
         if (!controllerId || !searchInfo) return false;
-        const search = searchInfo;
-
-        // Remove the item from stack
-        const newStack = state.stack.slice(0, -1);
-        const newCards = new Map(state.cards);
-
-        // For spells, move to graveyard
-        if (top.kind === 'Spell') {
-          const tc = state.cards.get(top.cardInstanceId);
-          if (tc) newCards.set(tc.instanceId, { ...tc, zone: 'graveyard' as Zone });
+        const resolvedSearch = resolveTopStackSearchPrompt(state, {
+          id: `search-${top.id}`,
+          playerId: humanIdRef.current,
+          revealPolicy: searchInfo.filter || searchInfo.filterSpec ? 'reveal' : 'hidden',
+          minSelections: 0,
+          maxSelections: 1,
+        });
+        if (!resolvedSearch.ok) {
+          messages.push({ role: 'system', text: resolvedSearch.message });
+          return false;
         }
 
-        state = {
-          ...state,
-          stack: newStack,
-          cards: newCards,
-          priorityPlayerIndex: state.activePlayerIndex,
-          hasPriorityPassed: state.players.map(() => false),
+        const search = {
+          ...searchInfo,
+          destination: resolvedSearch.request.destination,
+          tapped: resolvedSearch.request.tapped,
+          shuffle: resolvedSearch.request.shuffle,
         };
+        state = resolvedSearch.state;
         engineRef.current = state as GameStateWithAI;
-
-        const searchFilter = cardFilterFromSearchInfo(search);
-        const promptRequest = createSearchLibraryPromptRequest(
-          state,
-          humanIdRef.current,
-          searchFilter,
-          search.destination,
-          {
-            id: `search-${top.id}`,
-            sourceInstanceId,
-            tapped: search.tapped,
-            shuffle: search.shuffle,
-            revealPolicy: search.filter || search.filterSpec ? 'reveal' : 'hidden',
-            minSelections: 0,
-            maxSelections: 1,
-          },
-        );
+        recordAuthorityUpdate(resolvedSearch.update);
+        const promptRequest = resolvedSearch.request;
         const pickerMetadata = searchPickerMetadata(search);
         const pickerCards = [...promptRequest.legalChoices, ...promptRequest.invalidChoices]
           .map((choice): TutorCardOption | null => {

@@ -29,6 +29,7 @@ import {
   createPayCostsPromptRequest,
   diffGameStates,
   labelForAction,
+  resolveTopStackSearchPrompt,
   stateFingerprint,
 } from './authority';
 import { resolveCombatDamage } from './combat';
@@ -631,6 +632,60 @@ describe('authority action boundary', () => {
       reason: 'illegal_response',
       message: 'Illegal search selection: Not Legendary',
     })]);
+  });
+
+  it('resolves a stack search item into a typed prompt without auto-selecting a library card', () => {
+    const state = stateWithSisaySearchChoices();
+    const filter: CardFilter = {
+      supertypes: ['Legendary'],
+      permanent: true,
+      manaValueLessThanSourcePower: true,
+    };
+    state.stack = [{
+      kind: 'ActivatedAbility',
+      id: 'stack_sisay_search',
+      sourceInstanceId: 'sisay_1',
+      controllerId: 'p1',
+      ability: {
+        targets: [],
+        effects: [{
+          kind: 'SearchLibrary',
+          player: { kind: 'Controller' },
+          filter,
+          destination: 'battlefield',
+          shuffle: true,
+        }],
+      },
+      targets: [],
+    }];
+    state.hasPriorityPassed = [true, true];
+
+    const result = resolveTopStackSearchPrompt(state, {
+      playerId: 'p1',
+      createdAt: 42,
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.stack).toHaveLength(0);
+    expect(result.state.cards.get('arcane_signet_1')?.zone).toBe('library');
+    expect(result.request.kind).toBe('SearchLibrary');
+    expect(result.request.sourceInstanceId).toBe('sisay_1');
+    expect(result.request.legalChoices.map(choice => choice.cardName)).toEqual(['Yoshimaru, Ever Faithful']);
+    expect(result.request.invalidChoices.find(choice => choice.cardName === 'Arcane Signet')?.reason)
+      .toBe('Not Legendary');
+    expect(result.update.oldStateId).toBe(stateFingerprint(state));
+    expect(result.update.newStateId).toBe(stateFingerprint(result.state));
+    expect(result.update.oldStateId).not.toBe(result.update.newStateId);
+
+    const rejected = applySearchLibraryPromptResponse(result.state, result.request, {
+      requestId: result.request.id,
+      kind: 'SearchLibrary',
+      playerId: 'p1',
+      selectedCardInstanceIds: ['arcane_signet_1'],
+    });
+    expect(rejected.ok).toBe(false);
+    expect(rejected.message).toBe('Illegal search selection: Not Legendary');
   });
 
   it('validates replacement responses for searched shock lands', () => {

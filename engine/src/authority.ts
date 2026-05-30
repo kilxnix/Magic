@@ -20,12 +20,13 @@ import { putPendingTriggerOnStack, putTriggersOnStack } from './stack';
 import { executeSearchLibrary, executeShuffleLibrary, matchesCardFilter } from './effects/executor';
 import { getEffectivePower, getEffectiveToughness } from './effects/continuous';
 import { parseOracleText } from './effects/parser';
+import { getOverride } from './effects/overrides';
 import { getOptionalUntappedLifeCost } from './permanent-entry';
 import { validateStateInvariants } from './invariants';
 import { instanceHasKeyword } from './keywords';
 import type { AIAction } from './ai/types';
 import type { ActionFailure, GameEvent as ActionGameEvent } from './actions-public';
-import type { CardFilter } from './effects/ast';
+import type { CardFilter, Effect, SearchLibraryEffect, TargetRef } from './effects/ast';
 import type { TargetSpec } from './effects/targets';
 
 export type ClientActionSource = 'ui' | 'ai' | 'system';
@@ -121,6 +122,31 @@ export interface SearchLibraryPromptResponse {
   selectedCardInstanceIds: string[];
   payLifeToEnterUntapped?: boolean;
 }
+
+export type ResolveStackSearchPromptFailure =
+  | 'stack_empty'
+  | 'not_controller'
+  | 'no_search_effect'
+  | 'unsupported_search_player';
+
+export interface ResolveStackSearchPromptOptions extends CreateSearchLibraryPromptOptions {
+  playerId?: string;
+}
+
+export type ResolveStackSearchPromptResult =
+  | {
+      ok: true;
+      state: GameState;
+      request: SearchLibraryPromptRequest;
+      update: EngineStateUpdate;
+      stackItemId: string;
+      sourceName: string;
+    }
+  | {
+      ok: false;
+      reason: ResolveStackSearchPromptFailure;
+      message: string;
+    };
 
 export interface ClientPromptResponse {
   requestId: string;
@@ -1453,6 +1479,159 @@ export function createSearchLibraryPromptRequest(
     legalChoices,
     invalidChoices,
     createdAt,
+  };
+}
+
+function isSearchLibraryEffect(effect: unknown): effect is SearchLibraryEffect {
+  return Boolean(effect && typeof effect === 'object' && (effect as { kind?: unknown }).kind === 'SearchLibrary');
+}
+
+function searchPlayerFromTargetRef(
+  ref: TargetRef,
+  controllerId: string,
+  targets: string[] = [],
+): string | null {
+  switch (ref.kind) {
+    case 'Controller':
+    case 'Source':
+      return controllerId;
+    case 'Player':
+      return ref.playerId;
+    case 'Chosen':
+      return targets[0] ?? null;
+    default:
+      return null;
+  }
+}
+
+function spellEffectsFromStackItem(state: GameState, item: Extract<StackItem, { kind: 'Spell' }>): Effect[] {
+  const card = state.cards.get(item.cardInstanceId);
+  const def = card ? state.cardDefinitions.get(card.definitionId) : undefined;
+  if (!def) return [];
+
+  const override = getOverride(def.id, def.name);
+  if (override?.kind === 'Spell') return override.effects as Effect[];
+
+  const parsed = parseOracleText(def.oracle_text, def.mana_cost);
+  if (parsed.kind === 'Spell') return parsed.effects as Effect[];
+  if (parsed.kind === 'Modal' && item.chosenModes?.length) {
+    const effects: Effect[] = [];
+    for (const modeIndex of item.chosenModes) {
+      const mode = parsed.modal.choices[modeIndex];
+      if (mode) effects.push(...(mode.effects as Effect[]));
+    }
+    return effects;
+  }
+  return [];
+}
+
+function stackItemSearchEffect(state: GameState, item: StackItem): SearchLibraryEffect | null {
+  const effects = item.kind === 'Spell'
+    ? spellEffectsFromStackItem(state, item)
+    : item.kind === 'ActivatedAbility' || item.kind === 'TriggeredAbility'
+      ? item.ability.effects as Effect[]
+      : [];
+  return effects.find(isSearchLibraryEffect) ?? null;
+}
+
+function stackItemControllerId(item: StackItem): string {
+  if (item.kind === 'Spell') return item.casterId;
+  return item.controllerId;
+}
+
+function stackItemSourceInstanceId(item: StackItem): string | undefined {
+  return item.kind === 'Spell' ? item.cardInstanceId : item.sourceInstanceId;
+}
+
+function stackItemSourceName(state: GameState, item: StackItem): string {
+  const sourceId = stackItemSourceInstanceId(item);
+  const source = sourceId ? state.cards.get(sourceId) : undefined;
+  const def = source ? state.cardDefinitions.get(source.definitionId) : undefined;
+  return def?.name || 'Search';
+}
+
+function removeTopStackItemForPrompt(state: GameState, item: StackItem): GameState {
+  const newStack = state.stack.slice(0, -1);
+  let cards = state.cards;
+  if (item.kind === 'Spell' && !item.isCopy) {
+    const card = state.cards.get(item.cardInstanceId);
+    if (card) {
+      cards = new Map(state.cards);
+      cards.set(card.instanceId, {
+        ...card,
+        zone: 'graveyard',
+        tapped: false,
+        damage: 0,
+      });
+    }
+  }
+  return {
+    ...state,
+    cards,
+    stack: newStack,
+    priorityPlayerIndex: state.activePlayerIndex,
+    hasPriorityPassed: state.players.map(() => false),
+  };
+}
+
+export function resolveTopStackSearchPrompt(
+  state: GameState,
+  options: ResolveStackSearchPromptOptions = {},
+): ResolveStackSearchPromptResult {
+  if (state.stack.length === 0) {
+    return { ok: false, reason: 'stack_empty', message: 'Stack is empty' };
+  }
+
+  const item = state.stack[state.stack.length - 1];
+  const controllerId = stackItemControllerId(item);
+  if (options.playerId && controllerId !== options.playerId) {
+    return {
+      ok: false,
+      reason: 'not_controller',
+      message: 'Top stack search belongs to another player',
+    };
+  }
+
+  const effect = stackItemSearchEffect(state, item);
+  if (!effect) {
+    return { ok: false, reason: 'no_search_effect', message: 'Top stack item has no search effect' };
+  }
+
+  const playerId = searchPlayerFromTargetRef(effect.player, controllerId, 'targets' in item ? item.targets : []);
+  if (!playerId) {
+    return {
+      ok: false,
+      reason: 'unsupported_search_player',
+      message: 'This search effect does not target a single searchable player',
+    };
+  }
+
+  const nextState = removeTopStackItemForPrompt(state, item);
+  const sourceInstanceId = stackItemSourceInstanceId(item);
+  const createdAt = options.createdAt ?? Date.now();
+  const request = createSearchLibraryPromptRequest(
+    nextState,
+    playerId,
+    effect.filter,
+    effect.destination,
+    {
+      ...options,
+      id: options.id || `search-${item.id}`,
+      sourceInstanceId,
+      tapped: options.tapped ?? effect.tapped,
+      shuffle: options.shuffle ?? effect.shuffle,
+      createdAt,
+    },
+  );
+  const update = buildStateUpdate(state, nextState);
+
+  return {
+    ok: true,
+    state: nextState,
+    request,
+    update,
+    stackItemId: item.id,
+    sourceName: stackItemSourceName(state, item),
   };
 }
 
