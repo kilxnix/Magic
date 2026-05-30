@@ -53,6 +53,7 @@ export {
   success as actionSuccess,
   tryPlayLand,
   tryTapLandForMana,
+  tryUntapManaSource,
   tryCastSpell,
   tryActivateAbility,
   tryPassPriority,

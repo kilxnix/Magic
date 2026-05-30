@@ -13,6 +13,7 @@ import type { AIAction, AIDifficulty, AIPlayerConfig, ActionEvaluation } from '.
 import {
   tryPlayLand,
   tryTapLandForMana,
+  tryUntapManaSource,
   tryCastSpell,
   tryActivateAbility,
   tryPassPriority,
@@ -56,6 +57,9 @@ export function dispatchAIAction(
 
     case 'ActivateManaAbility':
       return tryTapLandForMana(state, playerId, action.cardInstanceId, action.color);
+
+    case 'ManualUntapManaSource':
+      return tryUntapManaSource(state, playerId, action.cardInstanceId, action.color, action.amount);
 
     case 'CastSpell':
       // CastSpell in the AIAction doesn't carry a manaPayment — the mana pool

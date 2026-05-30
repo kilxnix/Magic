@@ -1037,6 +1037,11 @@ function actionReferencesSameObject(legal: AIAction, requested: AIAction): boole
       return requested.kind === 'ActivateManaAbility'
         && legal.cardInstanceId === requested.cardInstanceId
         && legal.color === requested.color;
+    case 'ManualUntapManaSource':
+      return requested.kind === 'ManualUntapManaSource'
+        && legal.cardInstanceId === requested.cardInstanceId
+        && legal.color === requested.color
+        && legal.amount === requested.amount;
     case 'CastSpell':
       return requested.kind === 'CastSpell'
         && legal.cardInstanceId === requested.cardInstanceId
@@ -1090,6 +1095,8 @@ export function labelForAction(state: GameState, action: AIAction): string {
       return `Cast ${cardName(state, state.cards.get(action.cardInstanceId)) || 'spell'}${targetSuffix(state, action.targets)}`;
     case 'ActivateManaAbility':
       return `Tap ${cardName(state, state.cards.get(action.cardInstanceId)) || 'source'} for ${action.color}`;
+    case 'ManualUntapManaSource':
+      return `Undo mana tap for ${cardName(state, state.cards.get(action.cardInstanceId)) || 'source'}`;
     case 'ActivateAbility':
       return `Activate ${cardName(state, state.cards.get(action.cardInstanceId)) || 'ability'}${targetSuffix(state, action.targets)}`;
     case 'DeclareAttackers':
@@ -1147,6 +1154,7 @@ const ACTION_KIND_LABELS: Record<AIAction['kind'], string> = {
   CastSpell: 'Cast',
   PlayLand: 'Land',
   ActivateManaAbility: 'Mana',
+  ManualUntapManaSource: 'Undo Mana',
   ActivateAbility: 'Ability',
   DeclareAttackers: 'Attack',
   DeclareBlockers: 'Block',

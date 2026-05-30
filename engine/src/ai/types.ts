@@ -38,6 +38,18 @@ export interface ActivateManaAbilityAction {
 }
 
 /**
+ * A manual correction that reverses a just-added mana activation before the
+ * floating mana has been spent. This is not generated as a normal legal play;
+ * it exists so UI corrections still flow through validated engine actions.
+ */
+export interface ManualUntapManaSourceAction {
+  kind: 'ManualUntapManaSource';
+  cardInstanceId: string;
+  color: ManaColor;
+  amount: number;
+}
+
+/**
  * An action to declare attackers during the declare attackers step.
  */
 export interface DeclareAttackersAction {
@@ -86,6 +98,7 @@ export type AIAction =
   | CastSpellAction
   | PlayLandAction
   | ActivateManaAbilityAction
+  | ManualUntapManaSourceAction
   | ActivateAbilityAction
   | DeclareAttackersAction
   | DeclareBlockersAction

@@ -51,6 +51,7 @@ export type GameEvent =
   | { kind: 'SpellCast'; playerId: string; cardId: string }
   | { kind: 'AbilityActivated'; playerId: string; cardId: string; abilityIndex: number }
   | { kind: 'ManaTapped'; playerId: string; cardId: string; color: ManaColor }
+  | { kind: 'ManaUntapped'; playerId: string; cardId: string; color: ManaColor; amount: number; manual: true }
   | {
       kind: 'CountersAdjusted';
       playerId: string;
@@ -186,6 +187,50 @@ export function tryTapLandForMana(
   } catch (e) {
     return fail('internal_error', (e as Error).message);
   }
+}
+
+export function tryUntapManaSource(
+  state: GameState,
+  playerId: string,
+  cardInstanceId: string,
+  color: ManaColor,
+  amount = 1,
+): ActionResult {
+  const card = state.cards.get(cardInstanceId);
+  if (!card) return fail('card_not_found', 'Card not found');
+  if (card.ownerId !== playerId) return fail('card_not_found', 'Not your card');
+  if (card.zone !== 'battlefield') return fail('not_in_zone', 'Card not on battlefield');
+  if (!card.tapped) return fail('internal_error', 'Card is not tapped');
+
+  const playerIndex = state.players.findIndex(player => player.id === playerId);
+  if (playerIndex < 0) return fail('card_not_found', 'Player not found');
+  const player = state.players[playerIndex];
+  const spendAmount = Math.max(1, Math.floor(amount));
+  if ((player.manaPool[color] || 0) < spendAmount) {
+    return fail('insufficient_mana', `No unspent ${color} mana to remove`);
+  }
+
+  const newCards = new Map(state.cards);
+  newCards.set(cardInstanceId, { ...card, tapped: false });
+  const players = state.players.map((candidate, index) => {
+    if (index !== playerIndex) return candidate;
+    return {
+      ...candidate,
+      manaPool: {
+        ...candidate.manaPool,
+        [color]: candidate.manaPool[color] - spendAmount,
+      },
+    };
+  });
+  const next = { ...state, cards: newCards, players };
+  return success(next, [{
+    kind: 'ManaUntapped',
+    playerId,
+    cardId: cardInstanceId,
+    color,
+    amount: spendAmount,
+    manual: true,
+  }]);
 }
 
 export function tryCastSpell(

@@ -48,6 +48,7 @@ import {
   type ManaPool,
   type TriggeredAbilityStackItem,
   tryAdjustCounters,
+  tryUntapManaSource,
   getCostReduction,
   getOverride,
   getEffectivePower,
@@ -263,6 +264,7 @@ function isMeaningfulAutoSkipAction(action: AIAction): boolean {
   switch (action.kind) {
     case 'PassPriority':
     case 'ActivateManaAbility':
+    case 'ManualUntapManaSource':
       return false;
     case 'DeclareAttackers':
       return action.attacks.length > 0;
@@ -1823,6 +1825,17 @@ function toSimpleLegalAction(action: AIAction, engineState: GameState): SimpleLe
         cardInstanceId: action.cardInstanceId,
         cardName: def?.name,
         label: `${verb} ${def?.name || 'permanent'} for ${action.color}`,
+        _engineAction: action,
+      };
+    }
+    case 'ManualUntapManaSource': {
+      const inst = engineState.cards.get(action.cardInstanceId);
+      const def = inst ? engineState.cardDefinitions.get(inst.definitionId) : undefined;
+      return {
+        kind: 'ManualUntapManaSource',
+        cardInstanceId: action.cardInstanceId,
+        cardName: def?.name,
+        label: `Untap ${def?.name || 'mana source'}`,
         _engineAction: action,
       };
     }
@@ -4869,33 +4882,43 @@ export function useShelectorGame() {
     if (!tapRecord) return;
 
     const card = engine.cards.get(cardInstanceId);
-    if (!card || !card.tapped || card.zone !== 'battlefield' || card.ownerId !== humanIdRef.current) return;
-
-    const def = engine.cardDefinitions.get(card.definitionId);
-    if (!def) return;
-
-    // Untap the card
-    const newCards = new Map(engine.cards);
-    newCards.set(cardInstanceId, { ...card, tapped: false });
-
-    // Remove the mana it produced from the pool
-    const playerIdx = engine.players.findIndex(p => p.id === humanIdRef.current);
-    const player = engine.players[playerIdx];
-    const newPool = { ...player.manaPool };
-
-    newPool[tapRecord.color] = Math.max(0, newPool[tapRecord.color] - tapRecord.amount);
-
-    const newPlayers = engine.players.map((p, i) =>
-      i === playerIdx ? { ...p, manaPool: newPool } : p
+    const def = card ? engine.cardDefinitions.get(card.definitionId) : undefined;
+    const result = tryUntapManaSource(
+      engine,
+      humanIdRef.current,
+      cardInstanceId,
+      tapRecord.color,
+      tapRecord.amount,
     );
+    if (!result.ok) {
+      setActionError({ reason: result.reason, message: result.message });
+      addMessage('system', `Cannot untap mana source: ${result.message}`);
+      syncState();
+      return;
+    }
 
-    const newEngine = { ...engine, cards: newCards, players: newPlayers } as GameStateWithAI;
-    engineRef.current = newEngine;
+    engineRef.current = result.state as GameStateWithAI;
+    applyEvents(result.events, result.state);
+    recordStateUpdate(engine, result.state, {
+      kind: 'ManualUntapManaSource',
+      cardInstanceId,
+      color: tapRecord.color,
+      amount: tapRecord.amount,
+      label: `Untap ${def?.name || 'mana source'}`,
+      _engineAction: {
+        kind: 'ManualUntapManaSource',
+        cardInstanceId,
+        color: tapRecord.color,
+        amount: tapRecord.amount,
+      },
+    } as SimpleLegalAction, result.events, { source: 'system' });
 
     uncommittedTapsRef.current.delete(cardInstanceId);
-    addMessage('player', `Untapped ${def.name}. Floating: ${formatManaPool(newPool)}`);
+    const player = result.state.players.find(p => p.id === humanIdRef.current);
+    const pool = player?.manaPool || { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 };
+    addMessage('player', `Untapped ${def?.name || 'mana source'}. Floating: ${formatManaPool(pool)}`);
     syncState();
-  }, [addMessage, syncState]);
+  }, [addMessage, applyEvents, recordStateUpdate, syncState]);
 
   const adjustCounters = useCallback((cardInstanceId: string, counterType: string, delta: number) => {
     const engine = engineRef.current;

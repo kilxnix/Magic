@@ -10,6 +10,7 @@ export type {
   CastSpellAction,
   PlayLandAction,
   ActivateManaAbilityAction,
+  ManualUntapManaSourceAction,
   ActivateAbilityAction,
   DeclareAttackersAction,
   DeclareBlockersAction,

@@ -4,6 +4,7 @@ import type {
   CastSpellAction,
   PlayLandAction,
   ActivateManaAbilityAction,
+  ManualUntapManaSourceAction,
   DeclareAttackersAction,
   DeclareBlockersAction,
   PassPriorityAction,
@@ -47,6 +48,20 @@ describe('AI Types', () => {
     expect(action.color).toBe('G');
   });
 
+  it('creates ManualUntapManaSourceAction correctly', () => {
+    const action: ManualUntapManaSourceAction = {
+      kind: 'ManualUntapManaSource',
+      cardInstanceId: 'land_1',
+      color: 'G',
+      amount: 1,
+    };
+
+    expect(action.kind).toBe('ManualUntapManaSource');
+    expect(action.cardInstanceId).toBe('land_1');
+    expect(action.color).toBe('G');
+    expect(action.amount).toBe(1);
+  });
+
   it('creates DeclareAttackersAction correctly', () => {
     const action: DeclareAttackersAction = {
       kind: 'DeclareAttackers',
@@ -88,16 +103,18 @@ describe('AI Types', () => {
       { kind: 'CastSpell', cardInstanceId: 'c1', targets: [] },
       { kind: 'PlayLand', cardInstanceId: 'l1' },
       { kind: 'ActivateManaAbility', cardInstanceId: 'l1', color: 'U' },
+      { kind: 'ManualUntapManaSource', cardInstanceId: 'l1', color: 'U', amount: 1 },
       { kind: 'DeclareAttackers', attacks: [] },
       { kind: 'DeclareBlockers', blocks: [] },
       { kind: 'PassPriority' },
     ];
 
-    expect(actions).toHaveLength(6);
+    expect(actions).toHaveLength(7);
     expect(actions.map(a => a.kind)).toEqual([
       'CastSpell',
       'PlayLand',
       'ActivateManaAbility',
+      'ManualUntapManaSource',
       'DeclareAttackers',
       'DeclareBlockers',
       'PassPriority',

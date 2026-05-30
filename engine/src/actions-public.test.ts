@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { tryPlayLand, tryTapLandForMana, tryCastSpell, tryActivateAbility, tryPassPriority, tryDeclareAttackers, tryDeclareBlockers, tryEquip, tryAdjustCounters, resetLoopDetector } from './actions-public';
+import { tryPlayLand, tryTapLandForMana, tryUntapManaSource, tryCastSpell, tryActivateAbility, tryPassPriority, tryDeclareAttackers, tryDeclareBlockers, tryEquip, tryAdjustCounters, resetLoopDetector } from './actions-public';
 import { makeTestState } from './__tests__/test-helpers';
 import { populateParsedCache } from './cards/card-parser-cache';
 import type { CardDefinition, GameState } from './types';
@@ -287,6 +287,63 @@ describe('tryTapLandForMana', () => {
     expect(manaResult.state.players[0].restrictedMana).toEqual([
       { color: 'G', amount: 1, restriction: 'creatureTypeSpell', creatureType: 'Elf', sourceInstanceId: cavernId },
     ]);
+  });
+});
+
+describe('tryUntapManaSource', () => {
+  it('untaps a tapped mana source and removes its unspent mana through a validated action', () => {
+    let state = makeTestState({ battlefieldLands: 1 });
+    const landId = [...state.cards.values()].find(c => c.zone === 'battlefield')!.instanceId;
+    const tapResult = tryTapLandForMana(state, 'human', landId, 'G');
+    expect(tapResult.ok).toBe(true);
+    if (!tapResult.ok) return;
+    state = tapResult.state;
+
+    const result = tryUntapManaSource(state, 'human', landId, 'G', 1);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.cards.get(landId)?.tapped).toBe(false);
+    expect(result.state.players[0].manaPool.G).toBe(0);
+    expect(result.events[0]).toEqual({
+      kind: 'ManaUntapped',
+      playerId: 'human',
+      cardId: landId,
+      color: 'G',
+      amount: 1,
+      manual: true,
+    });
+  });
+
+  it('rejects mana untap correction when the matching floating mana is already spent', () => {
+    let state = makeTestState({ battlefieldLands: 1 });
+    const landId = [...state.cards.values()].find(c => c.zone === 'battlefield')!.instanceId;
+    const tapResult = tryTapLandForMana(state, 'human', landId, 'G');
+    expect(tapResult.ok).toBe(true);
+    if (!tapResult.ok) return;
+    state = {
+      ...tapResult.state,
+      players: tapResult.state.players.map(player =>
+        player.id === 'human'
+          ? { ...player, manaPool: { ...player.manaPool, G: 0 } }
+          : player,
+      ),
+    };
+
+    const result = tryUntapManaSource(state, 'human', landId, 'G', 1);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe('insufficient_mana');
+  });
+
+  it('rejects untapping an already untapped mana source', () => {
+    const state = makeTestState({ battlefieldLands: 1 });
+    const landId = [...state.cards.values()].find(c => c.zone === 'battlefield')!.instanceId;
+
+    const result = tryUntapManaSource(state, 'human', landId, 'G', 1);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.message).toBe('Card is not tapped');
   });
 });
 
