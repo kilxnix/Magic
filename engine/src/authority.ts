@@ -3456,11 +3456,12 @@ export function applyNamedCardPromptResponse(
     };
   }
 
-  const normalizedChoice = normalizeCardNameChoice(response.chosenCardName);
+  const chosenName = response.chosenCardName.trim().replace(/\s+/g, ' ');
+  const normalizedChoice = normalizeCardNameChoice(chosenName);
   const legalChoice = request.legalChoices.find(choice =>
     normalizeCardNameChoice(choice.cardName) === normalizedChoice,
   );
-  if (!normalizedChoice || !legalChoice || legalChoice.legal === false) {
+  if (!normalizedChoice) {
     const message = `Illegal named-card choice: ${response.chosenCardName || 'blank'}.`;
     return {
       requestId: response.requestId,
@@ -3470,6 +3471,7 @@ export function applyNamedCardPromptResponse(
       update: namedCardPromptRejectUpdate(state, request, response, 'illegal_response', message),
     };
   }
+  const resolvedName = legalChoice?.cardName || chosenName;
 
   const stackIndex = state.stack.findIndex(item => item.id === request.stackItemId);
   if (stackIndex < 0) {
@@ -3489,7 +3491,7 @@ export function applyNamedCardPromptResponse(
     ...stackItem,
     namedCardChoices: {
       ...(stackItem.namedCardChoices || {}),
-      [request.choiceKey]: legalChoice.cardName,
+      [request.choiceKey]: resolvedName,
     },
   } as StackItem;
   const nextState: GameState = { ...state, stack };
@@ -3516,10 +3518,10 @@ export function applyNamedCardPromptResponse(
         requestId: response.requestId,
         playerId: response.playerId,
         promptKind: 'NamedCard',
-        namedCardName: legalChoice.cardName,
+        namedCardName: resolvedName,
       }],
     },
-    namedCardName: legalChoice.cardName,
+    namedCardName: resolvedName,
   };
 }
 

@@ -20,6 +20,7 @@ interface CardPickerModalProps {
   onPick: (cardInstanceId: string) => void;
   onCancel?: () => void;
   cancelLabel?: string;
+  allowCustomName?: boolean;
 }
 
 export function sortCardPickerCards<T extends Pick<CardPickerCard, 'legal' | 'name' | 'typeLine'>>(cards: T[]): T[] {
@@ -33,9 +34,11 @@ export function sortCardPickerCards<T extends Pick<CardPickerCard, 'legal' | 'na
   });
 }
 
-export function CardPickerModal({ title, cards, filter, onPick, onCancel, cancelLabel = 'Cancel search' }: CardPickerModalProps) {
+export function CardPickerModal({ title, cards, filter, onPick, onCancel, cancelLabel = 'Cancel search', allowCustomName = false }: CardPickerModalProps) {
   const [search, setSearch] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const customName = search.trim().replace(/\s+/g, ' ');
+  const customOptionId = customName ? `custom-name:${encodeURIComponent(customName)}` : '';
 
   const filtered = useMemo(() => sortCardPickerCards(cards.filter(card => {
     const haystack = [card.name, card.typeLine, card.manaCost, card.oracleText || ''].join(' ').toLowerCase();
@@ -89,6 +92,9 @@ export function CardPickerModal({ title, cards, filter, onPick, onCancel, cancel
             if (event.key === 'Enter' && selected && selected.legal !== false) {
               event.preventDefault();
               onPick(selected.instanceId);
+            } else if (event.key === 'Enter' && allowCustomName && customOptionId) {
+              event.preventDefault();
+              onPick(customOptionId);
             }
             if (event.key === 'ArrowDown') {
               event.preventDefault();
@@ -158,18 +164,46 @@ export function CardPickerModal({ title, cards, filter, onPick, onCancel, cancel
             </button>
           ))}
           {filtered.length === 0 && (
-            <div className="py-4 text-center text-sm text-stone-500">No matching cards found</div>
+            <div className="rounded border border-stone-700 bg-stone-900 p-4 text-center text-sm text-stone-500">
+              <div>No matching cards found</div>
+              {allowCustomName && customName && (
+                <button
+                  type="button"
+                  onClick={() => onPick(customOptionId)}
+                  className="mt-3 min-h-10 rounded bg-amber-500 px-4 py-2 text-sm font-black text-neutral-950 transition-colors hover:bg-amber-400"
+                >
+                  Name "{customName}"
+                </button>
+              )}
+            </div>
           )}
         </div>
         <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <button
-            type="button"
-            disabled={!selected || selected.legal === false}
-            onClick={() => selected && selected.legal !== false && onPick(selected.instanceId)}
-            className="min-h-10 rounded bg-amber-500 px-4 py-2 text-sm font-black text-neutral-950 transition-colors hover:bg-amber-400 disabled:cursor-not-allowed disabled:opacity-45"
-          >
-            Pick selected
-          </button>
+          {selected && selected.legal !== false ? (
+            <button
+              type="button"
+              onClick={() => onPick(selected.instanceId)}
+              className="min-h-10 rounded bg-amber-500 px-4 py-2 text-sm font-black text-neutral-950 transition-colors hover:bg-amber-400"
+            >
+              Pick selected
+            </button>
+          ) : allowCustomName && customName ? (
+            <button
+              type="button"
+              onClick={() => onPick(customOptionId)}
+              className="min-h-10 rounded bg-amber-500 px-4 py-2 text-sm font-black text-neutral-950 transition-colors hover:bg-amber-400"
+            >
+              Name "{customName}"
+            </button>
+          ) : (
+            <button
+              type="button"
+              disabled
+              className="min-h-10 rounded bg-amber-500 px-4 py-2 text-sm font-black text-neutral-950 opacity-45"
+            >
+              Pick selected
+            </button>
+          )}
           {onCancel && (
             <button
               type="button"

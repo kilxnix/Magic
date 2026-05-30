@@ -5322,7 +5322,9 @@ export function useShelectorGame() {
     if (pendingStackNamedCardChoice) {
       const engineForChoice = engineRef.current;
       if (!engineForChoice) return;
-      const namedCard = pendingStackNamedCardChoice.namesByOptionId[cardInstanceId];
+      const namedCard = cardInstanceId.startsWith('custom-name:')
+        ? decodeURIComponent(cardInstanceId.slice('custom-name:'.length)).trim().replace(/\s+/g, ' ')
+        : pendingStackNamedCardChoice.namesByOptionId[cardInstanceId];
       if (!namedCard) {
         addMessage('system', `${pendingStackNamedCardChoice.sourceName}: that card name is not available.`);
         syncState();

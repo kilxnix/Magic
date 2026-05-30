@@ -1941,11 +1941,20 @@ describe('authority action boundary', () => {
       namedCardName: "Thassa's Oracle",
     }]);
 
-    const illegal = applyNamedCardPromptResponse(state, request, {
+    const arbitrary = applyNamedCardPromptResponse(state, request, {
       requestId: request.id,
       kind: 'NamedCard',
       playerId: 'p1',
       chosenCardName: 'Black Lotus',
+    });
+    expect(arbitrary.ok).toBe(true);
+    expect(arbitrary.namedCardName).toBe('Black Lotus');
+
+    const illegal = applyNamedCardPromptResponse(state, request, {
+      requestId: request.id,
+      kind: 'NamedCard',
+      playerId: 'p1',
+      chosenCardName: '',
     });
     expect(illegal.ok).toBe(false);
     expect(illegal.message).toContain('Illegal named-card choice');

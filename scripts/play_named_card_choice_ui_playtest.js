@@ -41,6 +41,7 @@ const { chromium } = findPlaywrightPackage();
 
 const BASE_URL = (process.env.DECKREPS_BASE_URL || 'http://127.0.0.1:5173').replace(/\/$/, '');
 const HEADLESS = process.env.HEADLESS !== '0';
+const NAMED_CARD_CHOICE = process.env.NAMED_CARD_CHOICE || "Thassa's Oracle";
 const ARTIFACT_DIR = path.resolve(process.env.UI_PLAYTEST_ARTIFACT_DIR || 'playtest-artifacts/named-card-choice');
 const RUN_ID = new Date().toISOString().replace(/[:.]/g, '-');
 
@@ -220,9 +221,14 @@ async function driveToNamedCardPrompt(page) {
 
     const trace = await driveToNamedCardPrompt(page);
     await screenshot(page, '03-named-card-prompt.png');
-    await page.getByPlaceholder(/Search name/i).fill('oracle');
+    await page.getByPlaceholder(/Search name/i).fill(NAMED_CARD_CHOICE);
     await page.waitForTimeout(250);
-    await page.getByRole('button', { name: /Thassa's Oracle/i }).first().click();
+    const exactCard = page.getByRole('button', { name: new RegExp(NAMED_CARD_CHOICE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') });
+    if ((await exactCard.count()) > 0 && await exactCard.first().isVisible().catch(() => false)) {
+      await exactCard.first().click();
+    } else {
+      await page.getByRole('button', { name: `Name "${NAMED_CARD_CHOICE}"`, exact: true }).click();
+    }
     await page.waitForTimeout(1500);
     const body = await page.locator('body').innerText();
     fs.writeFileSync(artifact('post-pick-body.txt'), body);
@@ -233,6 +239,7 @@ async function driveToNamedCardPrompt(page) {
     const result = {
       ok: true,
       baseUrl: BASE_URL,
+      namedCardChoice: NAMED_CARD_CHOICE,
       trace,
       artifactDir: path.join(ARTIFACT_DIR, RUN_ID),
     };

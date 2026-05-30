@@ -2701,6 +2701,7 @@ export function GameBoard({
           onPick={onTutorPick}
           onCancel={onTutorCancel}
           cancelLabel={tutorCancelLabel}
+          allowCustomName={(tutorTitle || '').toLowerCase().includes('name a card')}
         />
       )}
       {libraryChoice && onResolveLibraryChoice && (
