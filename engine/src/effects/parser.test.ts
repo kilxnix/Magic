@@ -323,6 +323,31 @@ describe('parseOracleText', () => {
       expect(result.effects).toHaveLength(1);
       expect(result.effects[0].kind).toBe('Untap');
     });
+
+    it('parses land tap and untap targeting', () => {
+      const tap = parseOracleText('Tap target land.');
+      expect(tap.kind).toBe('Spell');
+      if (tap.kind !== 'Spell') return;
+      expect(tap.effects[0].kind).toBe('Tap');
+      expect(tap.targets[0].type).toBe('Land');
+
+      const untap = parseOracleText('Untap target land.');
+      expect(untap.kind).toBe('Spell');
+      if (untap.kind !== 'Spell') return;
+      expect(untap.effects[0].kind).toBe('Untap');
+      expect(untap.targets[0].type).toBe('Land');
+    });
+
+    it('parses "Untap up to seven lands."', () => {
+      const result = parseOracleText('Untap up to seven lands.');
+      expect(result.kind).toBe('Spell');
+      if (result.kind !== 'Spell') return;
+      expect(result.effects[0].kind).toBe('Untap');
+      if (result.effects[0].kind !== 'Untap') return;
+      expect(result.effects[0].target).toEqual({ kind: 'AllOfType', filter: { types: ['land'] } });
+      expect(result.effects[0].maxCount).toBe(7);
+      expect(result.targets).toHaveLength(0);
+    });
   });
 
   describe('token creation patterns', () => {

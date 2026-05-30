@@ -975,8 +975,17 @@ function matchAddCounters(tokens: string[], startIndex: number): PatternResult {
   return null;
 }
 
+function targetTypeFromSimplePermanentWord(word: string): TargetType | null {
+  if (word === 'creature') return 'Creature';
+  if (word === 'land') return 'Land';
+  if (word === 'artifact') return 'Artifact';
+  if (word === 'enchantment') return 'Enchantment';
+  if (word === 'permanent') return 'Permanent';
+  return null;
+}
+
 /**
- * Match: "tap target creature"
+ * Match: "tap target creature/land/artifact/enchantment/permanent"
  */
 function matchTap(tokens: string[], startIndex: number): PatternResult {
   const slice = tokens.slice(startIndex);
@@ -984,12 +993,13 @@ function matchTap(tokens: string[], startIndex: number): PatternResult {
   if (slice.length < 3) return null;
   if (slice[0] !== 'tap') return null;
   if (slice[1] !== 'target') return null;
-  if (slice[2] !== 'creature') return null;
+  const targetType = targetTypeFromSimplePermanentWord(slice[2]);
+  if (!targetType) return null;
 
   let consumed = 3;
   if (tokens[startIndex + consumed] === '.') consumed++;
 
-  const spec = makeTargetSpec('Creature');
+  const spec = makeTargetSpec(targetType);
   const effect: Effect = {
     kind: 'Tap',
     target: makeChosenRef(spec),
@@ -999,26 +1009,48 @@ function matchTap(tokens: string[], startIndex: number): PatternResult {
 }
 
 /**
- * Match: "untap target creature"
+ * Match: "untap target creature/land/artifact/enchantment/permanent"
+ * Match: "untap up to seven lands"
  */
 function matchUntap(tokens: string[], startIndex: number): PatternResult {
   const slice = tokens.slice(startIndex);
 
-  if (slice.length < 3) return null;
   if (slice[0] !== 'untap') return null;
-  if (slice[1] !== 'target') return null;
-  if (slice[2] !== 'creature') return null;
 
-  let consumed = 3;
-  if (tokens[startIndex + consumed] === '.') consumed++;
+  if (slice[1] === 'target') {
+    if (slice.length < 3) return null;
+    const targetType = targetTypeFromSimplePermanentWord(slice[2]);
+    if (!targetType) return null;
 
-  const spec = makeTargetSpec('Creature');
-  const effect: Effect = {
-    kind: 'Untap',
-    target: makeChosenRef(spec),
-  };
+    let consumed = 3;
+    if (tokens[startIndex + consumed] === '.') consumed++;
 
-  return { effects: [effect], targets: [spec], consumed };
+    const spec = makeTargetSpec(targetType);
+    const effect: Effect = {
+      kind: 'Untap',
+      target: makeChosenRef(spec),
+    };
+
+    return { effects: [effect], targets: [spec], consumed };
+  }
+
+  if (slice[1] === 'up' && slice[2] === 'to') {
+    const count = parseSmallNumberToken(slice[3]);
+    if (Number.isNaN(count)) return null;
+    const filter = parseStaticFilterType(slice[4]);
+    if (!filter) return null;
+    let consumed = 5;
+    if (tokens[startIndex + consumed] === '.') consumed++;
+
+    const effect: Effect = {
+      kind: 'Untap',
+      target: { kind: 'AllOfType', filter },
+      maxCount: count,
+    };
+    return { effects: [effect], targets: [], consumed };
+  }
+
+  return null;
 }
 
 /**

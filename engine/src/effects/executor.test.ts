@@ -63,6 +63,19 @@ function createTestState(): GameState {
     card_types: ['instant'],
   });
 
+  cardDefinitions.set('def-land', {
+    id: 'def-land',
+    name: 'Test Land',
+    type_line: 'Land',
+    oracle_text: '',
+    mana_cost: '',
+    cmc: 0,
+    colors: [],
+    color_identity: [],
+    keywords: [],
+    card_types: ['land'],
+  });
+
   return {
     players: [
       {
@@ -617,6 +630,35 @@ describe('Phase 10 effects', () => {
       );
 
       expect(newState.cards.get('creature-1')?.tapped).toBe(false);
+    });
+
+    it('untaps only up to the requested number of matching permanents', () => {
+      const state = createTestState();
+      const cards = new Map(state.cards);
+      for (let i = 1; i <= 8; i++) {
+        cards.set(`land-${i}`, {
+          instanceId: `land-${i}`,
+          definitionId: 'def-land',
+          ownerId: 'player-1',
+          zone: 'battlefield',
+          tapped: true,
+          summoningSick: false,
+          counters: {},
+          damage: 0,
+          isCommander: false,
+        });
+      }
+      const modifiedState = { ...state, cards };
+
+      const effects: Effect[] = [
+        { kind: 'Untap', target: { kind: 'AllOfType', filter: { types: ['land'] } }, maxCount: 7 },
+      ];
+
+      const newState = executeEffects(modifiedState, effects, 'player-1', [], []);
+      const untapped = [...newState.cards.values()]
+        .filter(card => card.definitionId === 'def-land' && card.zone === 'battlefield' && !card.tapped);
+
+      expect(untapped).toHaveLength(7);
     });
   });
 

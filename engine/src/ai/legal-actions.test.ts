@@ -715,6 +715,34 @@ describe('getLegalTargets', () => {
     expect(targets).not.toContain('creature2');
   });
 
+  it('returns only lands on the battlefield for Land target type', () => {
+    const state = createTestState();
+
+    addCard(state, 'forest', 'p1', 'battlefield', {
+      name: 'Forest',
+      type_line: 'Basic Land - Forest',
+      card_types: ['land'],
+    });
+    addCard(state, 'sol-ring', 'p1', 'battlefield', {
+      name: 'Sol Ring',
+      type_line: 'Artifact',
+      card_types: ['artifact'],
+    });
+    addCard(state, 'land-in-hand', 'p1', 'hand', {
+      name: 'Island',
+      type_line: 'Basic Land - Island',
+      card_types: ['land'],
+    });
+
+    const targets = getLegalTargets(state, 'p1', {
+      id: 'target1',
+      type: 'Land',
+      count: 1,
+    });
+
+    expect(targets).toEqual(['forest']);
+  });
+
   it('returns any card from an opponent graveyard for graveyard-card target type', () => {
     const state = createTestState();
 

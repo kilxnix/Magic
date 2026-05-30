@@ -1,41 +1,41 @@
 {
-  "generatedAt": "2026-05-30T11:30:57.795Z",
+  "generatedAt": "2026-05-30T11:36:53.647Z",
   "source": "mtg_data/cards_min.jsonl",
   "commanderLegalOnly": true,
   "includedCards": 30969,
   "totalOracleFaces": 31420,
-  "parsedFaces": 15153,
-  "unparsedFaces": 16267,
-  "parsedPercent": 48.23,
+  "parsedFaces": 15257,
+  "unparsedFaces": 16163,
+  "parsedPercent": 48.56,
   "parsedKindCounts": {
-    "Unparsed": 16267,
-    "Spell": 11474,
-    "ETB": 1210,
+    "Unparsed": 16163,
+    "Spell": 11569,
+    "ETB": 1217,
     "KeywordOnly": 887,
-    "Triggered": 650,
-    "EntryCounters": 363,
+    "Triggered": 652,
+    "EntryCounters": 361,
     "StaticAbility": 339,
-    "Modal": 230
+    "Modal": 232
   },
   "unparsedReasons": [
     {
       "reason": "No recognized pattern",
-      "count": 14816
+      "count": 14721
     },
     {
       "reason": "Could not parse ETB effect clause",
-      "count": 793
+      "count": 786
     },
     {
       "reason": "Could not parse trigger effect clause",
-      "count": 658
+      "count": 656
     }
   ],
   "syntaxClusters": [
     {
       "id": "trigger-timing",
       "reason": "Triggered or delayed triggered abilities need event registration and APNAP ordering.",
-      "count": 7055,
+      "count": 7009,
       "samples": [
         {
           "name": "Nissa, Worldsoul Speaker",
@@ -48,12 +48,6 @@
           "set": "jmp",
           "reason": "No recognized pattern",
           "text": "Enchant creature When this Aura enters, tap enchanted creature. Enchanted creature doesn't untap during its controller's untap step."
-        },
-        {
-          "name": "Palinchron",
-          "set": "vma",
-          "reason": "No recognized pattern",
-          "text": "Flying When this creature enters, untap up to seven lands. {2}{U}{U}: Return this creature to its owner's hand."
         },
         {
           "name": "Murk Dwellers",
@@ -84,13 +78,19 @@
           "set": "emn",
           "reason": "Could not parse ETB effect clause",
           "text": "When this creature enters, look at the top four cards of your library. You may reveal a Human card from among them and put it into your hand. Put the rest on the bottom of your library in any order."
+        },
+        {
+          "name": "Mindlink Mech",
+          "set": "neo",
+          "reason": "No recognized pattern",
+          "text": "Flying Whenever this Vehicle becomes crewed for the first time each turn, until end of turn, this Vehicle becomes a copy of target nonlegendary creature that crewed it this turn, except it's 4/3, it's a Vehicle artifact in addition to its other types, and it has flying. Crew 1"
         }
       ]
     },
     {
       "id": "unclassified",
       "reason": "Unparsed text did not match a known syntax cluster; inspect manually.",
-      "count": 3560,
+      "count": 3514,
       "samples": [
         {
           "name": "Static Orb",
@@ -145,7 +145,7 @@
     {
       "id": "continuous-layers",
       "reason": "Continuous effects need layer/timestamp/dependency handling.",
-      "count": 3360,
+      "count": 3348,
       "samples": [
         {
           "name": "Sensory Deprivation",
@@ -200,7 +200,7 @@
     {
       "id": "combat-multiplayer",
       "reason": "Combat or multiplayer-defender text needs combat/defender-aware execution.",
-      "count": 2445,
+      "count": 2438,
       "samples": [
         {
           "name": "Marang River Prowler",
@@ -255,7 +255,7 @@
     {
       "id": "tokens-counters",
       "reason": "Token/counter wording needs typed objects, counters, and downstream interactions.",
-      "count": 2362,
+      "count": 2354,
       "samples": [
         {
           "name": "Seedship Agrarian",
@@ -310,7 +310,7 @@
     {
       "id": "replacement-prevention",
       "reason": "Replacement/prevention effects require replacement-layer handling.",
-      "count": 1641,
+      "count": 1638,
       "samples": [
         {
           "name": "Sodden Verdure",
@@ -365,7 +365,7 @@
     {
       "id": "non-hand-zones",
       "reason": "Non-hand zone casting/movement needs zone permission and visibility checks.",
-      "count": 1554,
+      "count": 1553,
       "samples": [
         {
           "name": "Road of Return",
@@ -420,7 +420,7 @@
     {
       "id": "cost-system",
       "reason": "Alternative/additional/reduced costs need prompt-backed payment and legality.",
-      "count": 1248,
+      "count": 1245,
       "samples": [
         {
           "name": "Nissa, Worldsoul Speaker",
@@ -530,7 +530,7 @@
     {
       "id": "choice-modal",
       "reason": "Choice/modal/naming text should be prompt-backed instead of deterministic.",
-      "count": 841,
+      "count": 835,
       "samples": [
         {
           "name": "Road of Return",
@@ -585,7 +585,7 @@
     {
       "id": "copy-stack",
       "reason": "Copy/stack mechanics need stack-object identity and trigger multiplication.",
-      "count": 613,
+      "count": 611,
       "samples": [
         {
           "name": "Mindlink Mech",
@@ -640,7 +640,7 @@
     {
       "id": "special-mechanics",
       "reason": "Special mechanics need dedicated state and UI presentation.",
-      "count": 299,
+      "count": 298,
       "samples": [
         {
           "name": "Sword-Swallowing Seraph",
@@ -695,14 +695,8 @@
     {
       "id": "digital-only",
       "reason": "Alchemy/digital-only wording needs an explicit unsupported or emulated mechanic.",
-      "count": 2,
+      "count": 1,
       "samples": [
-        {
-          "name": "Silvanus's Invoker",
-          "set": "clb",
-          "reason": "No recognized pattern",
-          "text": "Conjure Elemental — {8}: Untap target land you control. It becomes an 8/8 Elemental creature with trample and haste until end of turn. It's still a land."
-        },
         {
           "name": "Skyblade's Boon",
           "set": "mh2",
@@ -808,6 +802,11 @@
       "text": "{2}{B}, Sacrifice a creature: Create two Treasure tokens. (They're artifacts with \"{T}, Sacrifice this token: Add one mana of any color.\") Sacrifice three Treasures: Draw a card."
     },
     {
+      "name": "Palinchron",
+      "kind": "Spell",
+      "text": "Flying When this creature enters, untap up to seven lands. {2}{U}{U}: Return this creature to its owner's hand."
+    },
+    {
       "name": "Veil of Summer",
       "kind": "Spell",
       "text": "Draw a card if an opponent has cast a blue or black spell this turn. Spells you control can't be countered this turn. You and permanents you control gain hexproof from blue and from black until end of turn. (You and they can't be the target"
@@ -816,11 +815,6 @@
       "name": "Disposal Mummy",
       "kind": "ETB",
       "text": "When this creature enters, exile target card from an opponent's graveyard."
-    },
-    {
-      "name": "Wei Strike Force",
-      "kind": "KeywordOnly",
-      "text": "Horsemanship (This creature can't be blocked except by creatures with horsemanship.)"
     }
   ],
   "unparsedSamples": [

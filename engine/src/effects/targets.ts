@@ -3,7 +3,7 @@ import { canBeTargetedByOpponent, canBeTargetedByController } from '../keywords'
 import { isEffectiveCreature } from '../effective-types';
 import { getCardDefinition } from '../game-state';
 
-export type TargetType = 'Creature' | 'Player' | 'Any' | 'Permanent' | 'Artifact' | 'Enchantment' | 'ArtifactOrEnchantment' | 'ArtifactEnchantmentOrLand' | 'NonlandPermanent' | 'Spell' | 'NoncreatureSpell' | 'CreatureSpell' | 'InstantOrSorcerySpell' | 'CardInGraveyard' | 'CreatureCardInGraveyard' | 'CreatureOrEnchantmentCardInGraveyard';
+export type TargetType = 'Creature' | 'Player' | 'Any' | 'Permanent' | 'Land' | 'Artifact' | 'Enchantment' | 'ArtifactOrEnchantment' | 'ArtifactEnchantmentOrLand' | 'NonlandPermanent' | 'Spell' | 'NoncreatureSpell' | 'CreatureSpell' | 'InstantOrSorcerySpell' | 'CardInGraveyard' | 'CreatureCardInGraveyard' | 'CreatureOrEnchantmentCardInGraveyard';
 
 export interface TargetSpec {
   /** Stable id for mapping spec -> StackItem.targets position */
@@ -95,16 +95,20 @@ export function validateTargetChoices(
         if (!isAnyTarget(state, chosenId)) {
           throw new Error(`Invalid target for ${spec.id}: expected any target, got ${chosenId}`);
         }
-      } else if (spec.type === 'Permanent' || spec.type === 'NonlandPermanent') {
+      } else if (spec.type === 'Permanent' || spec.type === 'NonlandPermanent' || spec.type === 'Land') {
         // Any permanent on the battlefield
         const card = state.cards.get(chosenId);
         if (!card || card.zone !== 'battlefield') {
           throw new Error(`Invalid target for ${spec.id}: expected permanent on battlefield, got ${chosenId}`);
         }
+        const def = getCardDefinition(state, card);
         if (spec.type === 'NonlandPermanent') {
-          const def = getCardDefinition(state, card);
           if (def.card_types.includes('land')) {
             throw new Error(`Invalid target for ${spec.id}: expected nonland permanent, got land`);
+          }
+        } else if (spec.type === 'Land') {
+          if (!def.card_types.includes('land')) {
+            throw new Error(`Invalid target for ${spec.id}: expected land, got ${chosenId}`);
           }
         }
       } else if (spec.type === 'Artifact') {

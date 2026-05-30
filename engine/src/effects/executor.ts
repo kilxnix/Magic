@@ -750,6 +750,31 @@ function rebuildLibraryOrder(
   return { ...state, cards: newCards };
 }
 
+function executeUntapAllOfType(
+  state: GameState,
+  filter: CardFilter,
+  maxCount?: number,
+): GameState {
+  const candidates: CardInstance[] = [];
+  for (const card of state.cards.values()) {
+    if (card.zone !== 'battlefield' || !card.tapped) continue;
+    const def = getCardDefinition(state, card);
+    if (!matchesCardFilter(def, filter)) continue;
+    candidates.push(card);
+  }
+
+  if (candidates.length === 0) return state;
+
+  const limit = maxCount === undefined ? candidates.length : Math.max(0, maxCount);
+  if (limit === 0) return state;
+
+  const newCards = new Map(state.cards);
+  for (const card of candidates.slice(0, limit)) {
+    newCards.set(card.instanceId, { ...card, tapped: false });
+  }
+  return { ...state, cards: newCards };
+}
+
 function orderChosenCards(sourceCards: CardInstance[], chosenIds: string[]): CardInstance[] {
   const byId = new Map(sourceCards.map(card => [card.instanceId, card]));
   const seen = new Set<string>();
@@ -2028,6 +2053,12 @@ function executeEffect(
       return executeTap(state, tapTargetId);
     }
     case 'Untap': {
+      if (effect.target.kind === 'AllOfType') {
+        const maxCount = effect.maxCount === undefined
+          ? undefined
+          : resolveAmount(effect.maxCount, xValue, state, casterId, chosenTargets, undefined, eventContext?.cardInstanceId);
+        return executeUntapAllOfType(state, effect.target.filter, maxCount);
+      }
       const untapTargetId = resolveTargetRef(effect.target, casterId, chosenTargets);
       return executeUntap(state, untapTargetId);
     }

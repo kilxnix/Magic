@@ -176,6 +176,8 @@ export interface TapEffect {
 export interface UntapEffect {
   kind: 'Untap';
   target: TargetRef;
+  /** Optional cap for non-targeting untap effects such as "untap up to seven lands." */
+  maxCount?: AmountRef;
 }
 
 export interface CreateTokenEffect {

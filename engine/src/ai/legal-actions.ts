@@ -134,6 +134,7 @@ export function getLegalTargets(
   } else if (
     spec.type === 'Permanent'
     || spec.type === 'NonlandPermanent'
+    || spec.type === 'Land'
     || spec.type === 'Artifact'
     || spec.type === 'Enchantment'
     || spec.type === 'ArtifactOrEnchantment'
@@ -144,6 +145,7 @@ export function getLegalTargets(
       const def = getCardDefinition(state, card);
 
       if (spec.type === 'NonlandPermanent' && def.card_types.includes('land')) continue;
+      if (spec.type === 'Land' && !def.card_types.includes('land')) continue;
       if (spec.type === 'Artifact' && !def.card_types.includes('artifact')) continue;
       if (spec.type === 'Enchantment' && !def.card_types.includes('enchantment')) continue;
       if (

@@ -2235,6 +2235,8 @@ function targetFailureReason(state: GameState, spec: TargetSpec, targetId: strin
       return 'Not a creature';
     case 'Permanent':
       return 'Does not match this permanent target restriction';
+    case 'Land':
+      return def.card_types.includes('land') ? 'Does not match this land target restriction' : 'Not a land';
     case 'NonlandPermanent':
       return def.card_types.includes('land') ? 'Land permanents are excluded' : 'Does not match this target restriction';
     case 'Artifact':
