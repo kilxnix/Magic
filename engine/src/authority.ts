@@ -361,6 +361,8 @@ export type EngineEvent =
       requestId: string;
       playerId: string;
       promptKind: EnginePromptKind;
+      selectedCardInstanceIds?: string[];
+      destination?: SearchLibraryDestination;
     }
   | {
       kind: 'PromptResponseRejected';
@@ -369,6 +371,7 @@ export type EngineEvent =
       promptKind: EnginePromptKind;
       reason: ClientPromptFailure;
       message: string;
+      selectedCardInstanceIds?: string[];
     }
   | {
       kind: 'RulesEvent';
@@ -999,6 +1002,7 @@ function promptRejectUpdate(
       promptKind: request.kind,
       reason,
       message,
+      selectedCardInstanceIds: response.selectedCardInstanceIds,
     }],
     prompt: buildActionPrompt(state),
   };
@@ -1165,6 +1169,8 @@ export function applySearchLibraryPromptResponse(
         requestId: response.requestId,
         playerId: response.playerId,
         promptKind: 'SearchLibrary',
+        selectedCardInstanceIds: selectedIds,
+        destination: request.destination,
       }],
     },
   };

@@ -251,6 +251,7 @@ describe('authority action boundary', () => {
       promptKind: 'SearchLibrary',
       reason: 'illegal_response',
       message: 'Illegal search selection: Not Legendary',
+      selectedCardInstanceIds: ['arcane_signet_1'],
     }]);
     expect(state.cards.get('arcane_signet_1')?.zone).toBe('library');
     expect(state.cards.get('yoshimaru_1')?.zone).toBe('library');
@@ -277,6 +278,8 @@ describe('authority action boundary', () => {
       requestId: request.id,
       playerId: 'p1',
       promptKind: 'SearchLibrary',
+      selectedCardInstanceIds: ['yoshimaru_1'],
+      destination: 'battlefield',
     }]);
   });
 
