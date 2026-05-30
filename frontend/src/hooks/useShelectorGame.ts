@@ -294,19 +294,72 @@ function displayNameForTarget(engineState: GameState, targetId: string): string 
   return engineState.players.find(player => player.id === targetId)?.name || targetId;
 }
 
+function targetZoneLabel(zone: Zone): string {
+  switch (zone) {
+    case 'battlefield':
+      return 'Battlefield';
+    case 'graveyard':
+      return 'Graveyard';
+    case 'exile':
+      return 'Exile';
+    case 'command':
+      return 'Command zone';
+    case 'hand':
+      return 'Hand';
+    case 'library':
+      return 'Library';
+    case 'stack':
+      return 'Stack';
+    default: {
+      const _never: never = zone;
+      return _never;
+    }
+  }
+}
+
+function targetCardOrdinal(engineState: GameState, card: CardInstance): { index: number; count: number } {
+  const name = getCardDefinition(engineState, card).name || card.definitionId;
+  const matches = [...engineState.cards.values()]
+    .filter(candidate =>
+      candidate.ownerId === card.ownerId
+      && candidate.zone === card.zone
+      && (getCardDefinition(engineState, candidate).name || candidate.definitionId) === name)
+    .sort((a, b) => a.instanceId.localeCompare(b.instanceId));
+  return {
+    index: Math.max(0, matches.findIndex(candidate => candidate.instanceId === card.instanceId)) + 1,
+    count: matches.length,
+  };
+}
+
 function targetPickerLabel(engineState: GameState, targetId: string): string {
   const card = engineState.cards.get(targetId);
   if (card) {
     const name = displayNameForTarget(engineState, targetId);
     const owner = engineState.players.find(player => player.id === card.ownerId);
-    return owner ? `${name} (${owner.name})` : name;
+    const ordinal = targetCardOrdinal(engineState, card);
+    const duplicateSuffix = ordinal.count > 1 ? ` #${ordinal.index}` : '';
+    return owner ? `${name} (${owner.name}, ${targetZoneLabel(card.zone)}${duplicateSuffix})` : `${name} (${targetZoneLabel(card.zone)}${duplicateSuffix})`;
+  }
+  const stackItem = engineState.stack.find(item => item.id === targetId);
+  if (stackItem) {
+    if (stackItem.kind === 'Spell') {
+      const spellCard = engineState.cards.get(stackItem.cardInstanceId);
+      const controller = engineState.players.find(player => player.id === stackItem.casterId);
+      const name = spellCard ? displayNameForTarget(engineState, spellCard.instanceId) : 'Spell';
+      return `${name} (${controller?.name || stackItem.casterId}, Stack)`;
+    }
+    const source = engineState.cards.get(stackItem.sourceInstanceId);
+    const controller = engineState.players.find(player => player.id === stackItem.controllerId);
+    const name = source ? displayNameForTarget(engineState, source.instanceId) : 'Object';
+    const kind = stackItem.kind === 'TriggeredAbility' ? 'trigger' : 'ability';
+    return `${name} ${kind} (${controller?.name || stackItem.controllerId}, Stack)`;
   }
   return displayNameForTarget(engineState, targetId);
 }
 
 function targetLabelSuffix(engineState: GameState, targets?: string[]): string {
   if (!targets?.length) return '';
-  return ` targeting ${targets.map(targetId => displayNameForTarget(engineState, targetId)).join(', ')}`;
+  return ` targeting ${targets.map(targetId => targetPickerLabel(engineState, targetId)).join(', ')}`;
 }
 
 function modalSelectedModeSuffix(engineState: GameState, action: Extract<AIAction, { kind: 'CastSpell' }>): string {

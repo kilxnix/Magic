@@ -2391,9 +2391,66 @@ export function applySearchLibraryPromptResponse(
   };
 }
 
+function cardZoneLabel(zone: Zone): string {
+  switch (zone) {
+    case 'battlefield':
+      return 'Battlefield';
+    case 'graveyard':
+      return 'Graveyard';
+    case 'exile':
+      return 'Exile';
+    case 'command':
+      return 'Command zone';
+    case 'hand':
+      return 'Hand';
+    case 'library':
+      return 'Library';
+    case 'stack':
+      return 'Stack';
+    default: {
+      const _never: never = zone;
+      return _never;
+    }
+  }
+}
+
+function targetCardOrdinal(state: GameState, card: CardInstance): { index: number; count: number } {
+  const name = cardName(state, card) || card.definitionId;
+  const matches = [...state.cards.values()]
+    .filter(candidate =>
+      candidate.ownerId === card.ownerId
+      && candidate.zone === card.zone
+      && (cardName(state, candidate) || candidate.definitionId) === name)
+    .sort((a, b) => a.instanceId.localeCompare(b.instanceId));
+  return {
+    index: Math.max(0, matches.findIndex(candidate => candidate.instanceId === card.instanceId)) + 1,
+    count: matches.length,
+  };
+}
+
 function targetLabel(state: GameState, targetId: string): string {
   const card = state.cards.get(targetId);
-  if (card) return cardName(state, card) || targetId;
+  if (card) {
+    const name = cardName(state, card) || targetId;
+    const owner = playerName(state, card.ownerId) || card.ownerId;
+    const ordinal = targetCardOrdinal(state, card);
+    const duplicateSuffix = ordinal.count > 1 ? ` #${ordinal.index}` : '';
+    return `${name} (${owner}, ${cardZoneLabel(card.zone)}${duplicateSuffix})`;
+  }
+  const stackItem = state.stack.find(item => item.id === targetId);
+  if (stackItem) {
+    if (stackItem.kind === 'Spell') {
+      const spellCard = state.cards.get(stackItem.cardInstanceId);
+      const name = spellCard ? cardName(state, spellCard) : undefined;
+      const controller = playerName(state, stackItem.casterId) || stackItem.casterId;
+      return `${name || 'Spell'} (${controller}, Stack)`;
+    }
+    const source = state.cards.get(stackItem.sourceInstanceId);
+    const sourceName = source ? cardName(state, source) : undefined;
+    const controller = playerName(state, stackItem.controllerId) || stackItem.controllerId;
+    const kind = stackItem.kind === 'TriggeredAbility' ? 'trigger' : 'ability';
+    return `${sourceName || 'Object'} ${kind} (${controller}, Stack)`;
+  }
   return playerName(state, targetId) || targetId;
 }
 

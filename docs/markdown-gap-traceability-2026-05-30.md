@@ -38,7 +38,7 @@ Source files audited:
 | 6. Replacement effects on all zone changes | partial | Shock/fetch-style entry choices have tests/UI coverage in slices. Replacement coverage is not global. |
 | 7. One legal action generator everywhere | partial | Engine and AI moved closer to shared try/action paths. Review/coaching are not fully unified. |
 | 8. Context-aware card clicks | partial | Hover/modal/card inspect improvements exist. Not every card context maps to exact legal action choices. |
-| 9. Target selection | partial | Targeting tests exist. Complex multiplayer target selection/fizzle/revalidation is not complete. |
+| 9. Target selection | partial | Targeting tests exist, and target prompts now disambiguate duplicate same-name objects by controller, zone, and ordinal in both authority choices and `/play` collapsed target choices. Complex multiplayer target selection/fizzle/revalidation is not complete. |
 | 10. Turn/phase/event feed projection | partial | Public phase label polishing, validated manual turn/phase correction, and UI tests exist. Full state-id event consistency/replay is not done. |
 | 11. Mandatory choices separate from priority | partial | Search/scry/surveil choices exist, and Brainstorm now pauses for mandatory hand-to-library-top selection after draw resolution. Universal mandatory-choice handling is not complete. |
 | 12. Auto-pay as proposal | partial | Auto-pay preview and Sisay auto-pay are browser-proven. `/play` synthetic auto-pay action generation now includes both registered battlefield cost reducers and intrinsic reducers printed on the spell itself, matching the engine cast path for cards such as Blasphemous Act/Cavern-Hoard Dragon. Full trust UI for every special mana case is incomplete. |
@@ -101,7 +101,7 @@ Minimum acceptance bar from that file:
 | 2.6 Triggered Abilities | partial |
 | 2.7 Replacement And Prevention Effects | partial |
 | 2.8 State-Based Actions | partial/test-proven |
-| 2.9 Target Legality | partial |
+| 2.9 Target Legality | partial; duplicate same-name target choices are now disambiguated by controller/zone/ordinal in typed prompts and `/play` pickers |
 | 2.10 Cost Payment Rules | partial |
 | 2.11 Timing Permissions | partial |
 | 2.12 Modal And Optional Choices | partial; Brainstorm now has prompt-backed hand-to-library-top ordering |

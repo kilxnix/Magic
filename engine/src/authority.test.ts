@@ -1085,6 +1085,43 @@ describe('authority action boundary', () => {
     }]);
   });
 
+  it('disambiguates duplicate target names by controller, zone, and ordinal', () => {
+    const state = stateWithTargetChoices();
+    state.cards.set('forest_2', cardInstance('forest_2', 'forest', 'p1', 'battlefield'));
+    state.cards.set('forest_graveyard_1', cardInstance('forest_graveyard_1', 'forest', 'p1', 'graveyard'));
+
+    const request = createSelectTargetPromptRequest(state, 'p1', {
+      id: 'target-permanent',
+      type: 'Permanent',
+      count: 1,
+    }, {
+      id: 'prompt-duplicate-targets',
+      createdAt: 1711,
+    });
+
+    expect(request.legalChoices).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        targetId: 'forest_1',
+        label: 'Forest (Player One, Battlefield #1)',
+      }),
+      expect.objectContaining({
+        targetId: 'forest_2',
+        label: 'Forest (Player One, Battlefield #2)',
+      }),
+      expect.objectContaining({
+        targetId: 'bear_1',
+        label: 'Grizzly Bears (Player Two, Battlefield)',
+      }),
+    ]));
+    expect(request.invalidChoices).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        targetId: 'forest_graveyard_1',
+        label: 'Forest (Player One, Graveyard)',
+        reason: 'Not on the battlefield',
+      }),
+    ]));
+  });
+
   it('uses source-aware control and another-object constraints in typed target prompts', () => {
     const state = stateWithTargetChoices();
     const friendlyBear = {
