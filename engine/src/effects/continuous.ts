@@ -126,6 +126,7 @@ function isAffectedBy(
   // Check card filter
   if (
     ability.filter.types
+    || ability.filter.excludeTypes
     || ability.filter.subtypes
     || ability.filter.colors
     || ability.filter.cmc
@@ -332,6 +333,7 @@ export function getCostReduction(
     // If there's a filter, check against the spell being cast
     if (spellDef && (
       effect.ability.filter.types
+      || effect.ability.filter.excludeTypes
       || effect.ability.filter.subtypes
       || effect.ability.filter.colors
       || effect.ability.filter.cmc
@@ -345,6 +347,43 @@ export function getCostReduction(
   }
 
   return reduction;
+}
+
+/**
+ * Get the total cost increase for spells cast by a player from continuous effects.
+ */
+export function getCostIncrease(
+  state: GameState,
+  casterId: string,
+  spellDef?: CardDefinition,
+): number {
+  let increase = 0;
+
+  const effects = state.continuousEffects || [];
+  for (const effect of effects) {
+    if (effect.ability.modifier.kind !== 'IncreaseCost') continue;
+    if (effect.ability.controller === 'you' && effect.controllerId !== casterId) continue;
+    if (effect.ability.controller === 'opponent' && effect.controllerId === casterId) continue;
+
+    const source = state.cards.get(effect.sourceInstanceId);
+    if (!source || source.zone !== 'battlefield') continue;
+
+    if (spellDef && (
+      effect.ability.filter.types
+      || effect.ability.filter.excludeTypes
+      || effect.ability.filter.subtypes
+      || effect.ability.filter.colors
+      || effect.ability.filter.cmc
+      || effect.ability.filter.power
+      || effect.ability.filter.chosenCreatureTypeFromSource
+    )) {
+      if (!matchesCardFilter(spellDef, effect.ability.filter, { state, sourceInstanceId: effect.sourceInstanceId })) continue;
+    }
+
+    increase += effect.ability.modifier.amount;
+  }
+
+  return increase;
 }
 
 type CostReductionController = 'you' | 'opponents' | 'any';

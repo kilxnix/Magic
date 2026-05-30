@@ -338,6 +338,42 @@ describe('getLegalActions', () => {
       expect(getLegalActions(state, 'p1').some(a => a.kind === 'CastSpell' && a.cardInstanceId === 'draw1')).toBe(true);
     });
 
+    it('uses registered cost increasers when generating cast actions', () => {
+      let state = createTestState({
+        priorityPlayerIndex: 0,
+        activePlayerIndex: 0,
+        phase: 'precombat_main',
+      });
+      state.players[0].manaPool = { W: 0, U: 1, B: 0, R: 0, G: 0, C: 1 };
+
+      addCard(state, 'tax1', 'p1', 'battlefield', {
+        name: 'Tax Bear',
+        type_line: 'Creature - Human Soldier',
+        oracle_text: 'Noncreature spells cost {1} more to cast.',
+        mana_cost: '{1}{W}',
+        cmc: 2,
+        colors: ['W'],
+        card_types: ['creature'],
+        power: 2,
+        toughness: 1,
+      });
+      addCard(state, 'draw1', 'p1', 'hand', {
+        name: 'Impulse',
+        type_line: 'Instant',
+        oracle_text: 'Look at the top four cards of your library. Put one of them into your hand and the rest on the bottom of your library.',
+        mana_cost: '{1}{U}',
+        cmc: 2,
+        colors: ['U'],
+        card_types: ['instant'],
+      });
+
+      expect(getLegalActions(state, 'p1').some(a => a.kind === 'CastSpell' && a.cardInstanceId === 'draw1')).toBe(true);
+
+      state = registerContinuousAbilitiesForPermanent(state, 'tax1');
+
+      expect(getLegalActions(state, 'p1').some(a => a.kind === 'CastSpell' && a.cardInstanceId === 'draw1')).toBe(false);
+    });
+
     it('generates counterspell actions targeting spells on the stack', () => {
       const state = createTestState({
         priorityPlayerIndex: 0,

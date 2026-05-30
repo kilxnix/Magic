@@ -1300,6 +1300,14 @@ export function matchesCardFilter(def: CardDefinition, filter: CardFilter, conte
     if (!hasMatchingType) return false;
   }
 
+  if (filter.excludeTypes) {
+    const typeLine = def.type_line.toLowerCase();
+    const hasExcludedType = filter.excludeTypes.some(t =>
+      def.card_types.includes(t as any) || typeLine.includes(t.toLowerCase())
+    );
+    if (hasExcludedType) return false;
+  }
+
   // Check subtypes
   if (filter.subtypes) {
     const typeLine = def.type_line.toLowerCase();

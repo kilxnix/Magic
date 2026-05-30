@@ -4051,6 +4051,9 @@ function parseStaticFilterType(word: string): CardFilter | null {
   if (word === 'battles' || word === 'battle') return { types: ['battle'] };
   if (word === 'permanents' || word === 'permanent') return { permanent: true };
   if (word === 'spells' || word === 'spell') return {};
+  if (word === 'noncreature' || word === 'noncreatures') return { excludeTypes: ['creature'] };
+  if (word === 'nonartifact' || word === 'nonartifacts') return { excludeTypes: ['artifact'] };
+  if (word === 'nonland' || word === 'nonlands') return { excludeTypes: ['land'] };
   if (word === 'legendary') return { supertypes: ['Legendary'] };
   if (word === 'basic') return { supertypes: ['Basic'] };
   if (word === 'snow') return { supertypes: ['Snow'] };
@@ -4069,6 +4072,7 @@ function mergeStaticFilters(a: CardFilter, b: CardFilter): CardFilter {
     types: merge(a.types, b.types),
     subtypes: merge(a.subtypes, b.subtypes),
     excludeSubtypes: merge(a.excludeSubtypes, b.excludeSubtypes),
+    excludeTypes: merge(a.excludeTypes, b.excludeTypes),
     supertypes: merge(a.supertypes, b.supertypes),
     colors: merge(a.colors, b.colors),
     multicolored: a.multicolored || b.multicolored || undefined,
@@ -4192,6 +4196,8 @@ function matchStaticAbility(tokens: string[]): StaticAbilityEffect | null {
     if (tokens[idx] === 'you' && tokens[idx + 1] === 'control') { controller = 'you'; idx += 2; }
     else if (tokens[idx] === 'an' && tokens[idx + 1] === 'opponent' && tokens[idx + 2] === 'controls') { controller = 'opponent'; idx += 3; }
     else if (tokens[idx] === 'you' && tokens[idx + 1] === 'cast') { controller = 'you'; idx += 2; }
+    else if (tokens[idx] === 'your' && tokens[idx + 1] === 'opponents' && tokens[idx + 2] === 'cast') { controller = 'opponent'; idx += 3; }
+    else if (tokens[idx] === 'cost') { controller = 'any'; }
     else return null;
   }
 
@@ -4276,11 +4282,12 @@ function matchStaticAbility(tokens: string[]): StaticAbilityEffect | null {
     const costMatch = tokens[idx]?.match(/^\{(\d+)\}$/);
     if (!costMatch) return null;
     idx++;
-    if (tokens[idx] !== 'less') return null;
+    if (tokens[idx] !== 'less' && tokens[idx] !== 'more') return null;
+    const kind = tokens[idx] === 'less' ? 'ReduceCost' : 'IncreaseCost';
     idx++;
     if (tokens[idx] === 'to' && tokens[idx + 1] === 'cast') idx += 2;
     if (tokens[idx] === '.') idx++;
-    return { kind: 'StaticAbility', modifier: { kind: 'ReduceCost', amount: parseInt(costMatch[1], 10) }, filter, controller, excludeSelf, selfOnly };
+    return { kind: 'StaticAbility', modifier: { kind, amount: parseInt(costMatch[1], 10) }, filter, controller, excludeSelf, selfOnly };
   }
   return null;
 }

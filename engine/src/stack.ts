@@ -8,7 +8,7 @@ import { validateTargetChoices, TargetSpec, TargetType } from './effects/targets
 import { checkStateBasedActions } from './state-based';
 import type { Effect, StaticAbilityEffect } from './effects/ast';
 import { findCastZoneRestriction, getCommanderTaxForCast } from './casting-restrictions';
-import { getCostReduction, getIntrinsicCostReduction, registerContinuousEffect } from './effects/continuous';
+import { getCostIncrease, getCostReduction, getIntrinsicCostReduction, registerContinuousEffect } from './effects/continuous';
 import { getCommanderDestinationZone } from './commander';
 import { buildBattlefieldEntryPlan } from './permanent-entry';
 import { applyWardForStackItem } from './ward';
@@ -368,8 +368,15 @@ function reduceGenericCost(
   cost: ReturnType<typeof parseManaString>,
   def: CardDefinition,
 ): ReturnType<typeof parseManaString> {
-  const reduction = Math.min(cost.generic, getCostReduction(state, playerId, def) + getIntrinsicCostReduction(state, playerId, def));
-  return reduction > 0 ? { ...cost, generic: cost.generic - reduction } : cost;
+  const increasedCost = {
+    ...cost,
+    generic: cost.generic + getCostIncrease(state, playerId, def),
+  };
+  const reduction = Math.min(
+    increasedCost.generic,
+    getCostReduction(state, playerId, def) + getIntrinsicCostReduction(state, playerId, def),
+  );
+  return reduction > 0 ? { ...increasedCost, generic: increasedCost.generic - reduction } : increasedCost;
 }
 
 function hasCantBeCounteredText(text: string): boolean {

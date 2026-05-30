@@ -119,7 +119,7 @@ Minimum acceptance bar from that file:
 | 6.2 "Legal" Label Is Not Trustworthy | partial |
 | 6.3 Destination Labels Are Too Broad | partial |
 | 6.4 Hidden Information Is Not Communicated Cleanly | partial |
-| 7.1 Auto-Pay Exists But Needs Trust Layer | partial; `/play` auto-pay now applies intrinsic spell cost reducers in its visible action/payment preview path as well as the engine transaction path |
+| 7.1 Auto-Pay Exists But Needs Trust Layer | partial; `/play` auto-pay now applies intrinsic spell cost reducers in its visible action/payment preview path as well as the engine transaction path, and engine legal-action generation now applies generic cost increasers for noncreature/opponent spell tax effects |
 | 7.2 Floating Mana Handling | partial |
 | 7.3 Special Mana Rules | partial |
 | 8.1 Combat Still Too Compressed | partial |

@@ -413,6 +413,7 @@ export interface CardFilter {
   multicolored?: boolean;
   cmc?: { op: 'eq' | 'lte' | 'gte'; value: number };
   permanent?: boolean;
+  excludeTypes?: string[];
   manaValueLessThanSourcePower?: boolean;
   power?: { op: 'eq' | 'lte' | 'gte'; value: number };
   chosenCreatureTypeFromSource?: boolean;
@@ -516,7 +517,8 @@ export type StaticModifier =
     }
   | { kind: 'GrantKeyword'; keyword: string }
   | { kind: 'GrantKeywords'; keywords: string[] }
-  | { kind: 'ReduceCost'; amount: number };
+  | { kind: 'ReduceCost'; amount: number }
+  | { kind: 'IncreaseCost'; amount: number };
 
 /**
  * A static ability that applies continuously while the source is on the battlefield.

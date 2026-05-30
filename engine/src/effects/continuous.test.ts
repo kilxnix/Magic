@@ -9,6 +9,7 @@ import {
   getEffectivePower,
   getEffectiveToughness,
   getGrantedKeywords,
+  getCostIncrease,
   getCostReduction,
   getIntrinsicCostReduction,
   evaluateCondition,
@@ -273,6 +274,25 @@ describe('Static Ability Parsing', () => {
       types: ['creature'],
       chosenCreatureTypeFromSource: true,
     });
+  });
+
+  it('parses noncreature spell cost increasers', () => {
+    const result = parseOracleText('Noncreature spells cost {1} more to cast.');
+    expect(result.kind).toBe('StaticAbility');
+    if (result.kind !== 'StaticAbility') return;
+
+    expect(result.ability.modifier).toEqual({ kind: 'IncreaseCost', amount: 1 });
+    expect(result.ability.filter).toEqual({ excludeTypes: ['creature'] });
+    expect(result.ability.controller).toBe('any');
+  });
+
+  it('parses opponent spell tax effects', () => {
+    const result = parseOracleText('Spells your opponents cast cost {1} more to cast.');
+    expect(result.kind).toBe('StaticAbility');
+    if (result.kind !== 'StaticAbility') return;
+
+    expect(result.ability.modifier).toEqual({ kind: 'IncreaseCost', amount: 1 });
+    expect(result.ability.controller).toBe('opponent');
   });
 
   it('parses "Zombies you control get +1/+1"', () => {
@@ -679,6 +699,64 @@ describe('Cost Reduction', () => {
 
     expect(getCostReduction(state, 'p1')).toBe(1);
     expect(getCostReduction(state, 'p2')).toBe(0); // only for controller
+  });
+
+  it('increases matching spell costs and respects noncreature filters', () => {
+    const taxText = 'Noncreature spells cost {1} more to cast.';
+    const parsed = parseOracleText(taxText);
+    expect(parsed.kind).toBe('StaticAbility');
+    if (parsed.kind !== 'StaticAbility') return;
+
+    const cards = new Map<string, CardInstance>();
+    cards.set('thalia_1', makeCard('thalia_1', 'thalia_def', 'p1', 'battlefield'));
+    cards.set('impulse_1', makeCard('impulse_1', 'impulse_def', 'p1', 'hand'));
+    cards.set('bear_1', makeCard('bear_1', 'bear_def', 'p1', 'hand'));
+
+    const defs = new Map<string, CardDefinition>();
+    defs.set('thalia_def', makeDef('thalia_def', {
+      name: 'Tax Bear',
+      type_line: 'Creature - Human Soldier',
+      oracle_text: taxText,
+      card_types: ['creature'],
+      power: 2,
+      toughness: 1,
+    }));
+    defs.set('impulse_def', makeDef('impulse_def', {
+      name: 'Impulse',
+      type_line: 'Instant',
+      mana_cost: '{1}{U}',
+      cmc: 2,
+      card_types: ['instant'],
+      colors: ['U'],
+    }));
+    defs.set('bear_def', makeDef('bear_def', {
+      name: 'Grizzly Bears',
+      type_line: 'Creature - Bear',
+      mana_cost: '{1}{G}',
+      cmc: 2,
+      card_types: ['creature'],
+      colors: ['G'],
+      power: 2,
+      toughness: 2,
+    }));
+
+    const players = [makePlayer('p1'), makePlayer('p2')];
+    players[0] = {
+      ...players[0],
+      manaPool: { ...emptyManaPool(), U: 1, C: 1 },
+    };
+
+    let state = {
+      ...makeState({ players, cards, cardDefinitions: defs }),
+      phase: 'precombat_main' as const,
+      step: 'main' as const,
+    };
+    expect(canCastSpell(state, 'p1', 'impulse_1')).toBe(true);
+
+    state = registerContinuousEffect(state, 'thalia_1', 'p1', parsed.ability);
+    expect(getCostIncrease(state, 'p1', defs.get('impulse_def')!)).toBe(1);
+    expect(getCostIncrease(state, 'p1', defs.get('bear_def')!)).toBe(0);
+    expect(canCastSpell(state, 'p1', 'impulse_1')).toBe(false);
   });
 
   it('makes an otherwise uncastable instant castable through parsed cost reduction', () => {

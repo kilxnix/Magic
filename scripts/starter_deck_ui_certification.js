@@ -112,6 +112,34 @@ function collectBadLines(body) {
     .filter(line => /commander not found|unsupported save|could not start|rules invariant failed|error:/i.test(line));
 }
 
+async function handleOpenPrompt(page, trace, step) {
+  const pickButton = page.getByRole('button', { name: 'Pick selected', exact: true }).first();
+  if ((await pickButton.count()) > 0 && await pickButton.isVisible().catch(() => false) && await pickButton.isEnabled().catch(() => false)) {
+    await pickButton.click();
+    trace.push({ step, action: 'Pick selected' });
+    await page.waitForTimeout(500);
+    return true;
+  }
+
+  const keepSelected = page.getByRole('button', { name: 'Keep Selected', exact: true }).first();
+  if ((await keepSelected.count()) > 0 && await keepSelected.isVisible().catch(() => false) && await keepSelected.isEnabled().catch(() => false)) {
+    await keepSelected.click();
+    trace.push({ step, action: 'Keep Selected' });
+    await page.waitForTimeout(500);
+    return true;
+  }
+
+  const confirm = page.getByRole('button', { name: 'Confirm', exact: true }).first();
+  if ((await confirm.count()) > 0 && await confirm.isVisible().catch(() => false) && await confirm.isEnabled().catch(() => false)) {
+    await confirm.click();
+    trace.push({ step, action: 'Confirm' });
+    await page.waitForTimeout(500);
+    return true;
+  }
+
+  return false;
+}
+
 async function certifyStarter(browser, starter, index) {
   const context = await browser.newContext({ viewport: { width: 1280, height: 850 } });
   const page = await context.newPage();
@@ -129,13 +157,7 @@ async function certifyStarter(browser, starter, index) {
 
     for (let step = 0; step < 14; step += 1) {
       await dismissOverlays(page);
-      const confirm = page.getByRole('button', { name: 'Confirm', exact: true }).first();
-      if ((await confirm.count()) > 0 && await confirm.isVisible().catch(() => false) && await confirm.isEnabled().catch(() => false)) {
-        await confirm.click();
-        trace.push({ step, action: 'Confirm' });
-        await page.waitForTimeout(500);
-        continue;
-      }
+      if (await handleOpenPrompt(page, trace, step)) continue;
       const actions = await visibleActionButtons(page);
       const selected = chooseAction(actions);
       if (!selected) {

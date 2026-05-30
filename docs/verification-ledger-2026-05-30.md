@@ -7,12 +7,12 @@ Scope: recent `game-reliability-refactor` work from `88e54bb..597d918`, with Sis
 | Area | Command | Result |
 | --- | --- | --- |
 | Backend + agent | `pytest backend/tests backend/agent/tests` | 187 passed, 13 skipped |
-| Engine | `cd engine && npm.cmd test -- --run` | 1141 passed, 1 skipped |
+| Engine | `cd engine && npm.cmd test -- --run` | 1393 passed, 1 skipped |
 | Starter deck card QA | `cd engine && npm.cmd test -- --run src/__tests__/starter-decks-card-qa.test.ts` | 16 passed |
 | Frontend | `cd frontend && npm.cmd test -- --run` | 30 passed |
 | Engine build | `cd engine && npm.cmd run build` | Passed |
 | Frontend build | `cd frontend && npm.cmd run build` | Passed |
-| Intrinsic cost reduction slice | `cd engine && npm.cmd test -- --run src/effects/continuous.test.ts src/ai/legal-actions.test.ts src/__tests__/xenagos-tournament-playtest.test.ts` | 96 passed; covers registered cost reducers, intrinsic self-reducers such as Blasphemous Act/Cavern-Hoard Dragon, and Xenagos deck mana/cast paths. |
+| Cost modifier slice | `cd engine && npm.cmd test -- --run src/effects/continuous.test.ts src/ai/legal-actions.test.ts` | 95 passed; covers registered cost reducers, intrinsic self-reducers in the broader continuous suite, and new noncreature/opponent spell cost increasers in legal action generation. |
 | Mobile typecheck | `cd mobile && npm.cmd run typecheck` | Passed |
 | Mobile lint | `cd mobile && npm.cmd run lint` | Initially broken because ESLint was not installed/configured; fixed during this audit and now passes |
 | Mobile dependency audit | `cd mobile && npm.cmd audit --omit=dev --json` | Fails with 28 production dependency advisories, mostly Expo/Metro transitive packages; the available bundled fix is a semver-major Expo upgrade and was not applied in this audit |
@@ -38,6 +38,8 @@ Scope: recent `game-reliability-refactor` work from `88e54bb..597d918`, with Sis
 - Updated `scripts/play_save_slots_playtest.js` so the save-slot verifier opens the current hamburger menu, selects `Saves`, and checks saved-game audit event-log persistence.
 - Added mobile ESLint dependencies/configuration so `mobile npm run lint` is a real passing command instead of a broken script.
 - Updated `/play` auto-pay action generation to include intrinsic cost reducers printed on the spell itself, matching the engine path used by `tryCastSpell` and `getEffectiveCastCost`.
+- Added engine parsing/execution support for generic spell cost increasers such as `Noncreature spells cost {1} more to cast` and `Spells your opponents cast cost {1} more to cast`.
+- Updated the starter deck browser certification to handle real picker prompts during starter deck turns instead of trying to click through an open modal.
 
 ## What This Does Not Prove
 
