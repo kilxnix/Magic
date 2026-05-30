@@ -207,6 +207,17 @@ export interface SerializedDamagePreventionEffectV1 {
   expiresAtTurnNumber: number;
 }
 
+export interface SerializedGameOutcomePreventionEffectV1 {
+  id: string;
+  sourceInstanceId?: string;
+  controllerId: string;
+  protectedPlayerIds?: string[];
+  preventsLoss?: boolean;
+  preventsWin?: boolean;
+  preventsLifeLoss?: boolean;
+  expiresAtTurnNumber: number;
+}
+
 export interface SerializedDiceRollRecordV1 {
   id: string;
   playerId: string;
@@ -245,6 +256,7 @@ export interface SerializedGameStateV1 {
   sideboards?: Array<[string, SerializedCardDefinitionV1[]]>;
   damageHistory?: SerializedDamageRecordV1[];
   damagePreventionEffects?: SerializedDamagePreventionEffectV1[];
+  gameOutcomePreventionEffects?: SerializedGameOutcomePreventionEffectV1[];
   diceRolls?: SerializedDiceRollRecordV1[];
 }
 

@@ -19,7 +19,7 @@ import { parseOracleText } from './parser';
 import { getOverride } from './overrides';
 import type { TargetSpec } from './targets';
 import { typeLineHasSubtype, typeLineHasSupertype, typeLineHasType } from '../type-line';
-import { playerCantLose, playerCantWin } from '../game-outcome';
+import { playerCantLose, playerCantWin, playerCantLoseLife, registerGameOutcomePrevention } from '../game-outcome';
 
 /**
  * Context for effect execution, includes X value from spell casting.
@@ -775,13 +775,21 @@ function executeGainLife(state: GameState, playerId: string, amount: number): Ga
  * Execute a LoseLife effect.
  */
 function executeLoseLife(state: GameState, playerId: string, amount: number): GameState {
+  if (playerCantLoseLife(state, playerId)) return state;
+
+  const event: ReplacementEvent = { type: 'LifeLost', targetId: playerId, amount };
+  const { event: replaced } = applyReplacements(state, event);
+  if (!replaced) return state;
+  const finalAmount = replaced.amount ?? amount;
+  if (finalAmount <= 0) return state;
+
   const playerIndex = state.players.findIndex(p => p.id === playerId);
   if (playerIndex === -1) {
     throw new Error(`Player ${playerId} not found`);
   }
 
   const newPlayers = state.players.map((p, i) =>
-    i === playerIndex ? { ...p, life: p.life - amount } : p
+    i === playerIndex ? { ...p, life: p.life - finalAmount } : p
   );
 
   return { ...state, players: newPlayers };
@@ -3009,6 +3017,27 @@ function executeEffect(
     case 'PhaseOut': {
       const poTargetId = resolveTargetRef(effect.target, casterId, chosenTargets);
       return executePhaseOut(state, poTargetId);
+    }
+    case 'PreventGameOutcome': {
+      const protectedPlayerIds = (() => {
+        if (effect.player.kind === 'EachPlayer') {
+          return state.players.filter(player => !player.hasLost).map(player => player.id);
+        }
+        if (effect.player.kind === 'EachOpponent') {
+          return state.players.filter(player => player.id !== casterId && !player.hasLost).map(player => player.id);
+        }
+        return [resolveTargetRef(effect.player, casterId, chosenTargets, state, eventContext)];
+      })();
+
+      return registerGameOutcomePrevention(state, {
+        sourceInstanceId,
+        controllerId: casterId,
+        protectedPlayerIds,
+        preventsLoss: effect.preventsLoss,
+        preventsWin: effect.preventsWin,
+        preventsLifeLoss: effect.preventsLifeLoss,
+        expiresAtTurnNumber: state.turnNumber,
+      });
     }
     // WinGame: all other players lose
     case 'WinGame': {

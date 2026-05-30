@@ -52,6 +52,10 @@ function parseSmallNumberToken(token: string): number {
   return Number.isNaN(numeric) ? parseWordNumber(token) : numeric;
 }
 
+function isCantToken(token: string | undefined): boolean {
+  return token === "can't" || token === 'can\u2019t' || token === 'cant' || token === 'cannot';
+}
+
 function parsePowerToughnessToken(token: string): { fixed: number; amount?: AmountRef } | null {
   if (token === 'x') {
     return { fixed: 0, amount: { kind: 'EventSpellManaValue' } };
@@ -3722,6 +3726,46 @@ function matchGrantKeyword(tokens: string[], startIndex: number): PatternResult 
   const slice = tokens.slice(startIndex);
 
   if (slice.length < 4) return null;
+
+  if (
+    slice[0] === 'creatures'
+    && slice[1] === 'you'
+    && slice[2] === 'control'
+    && slice[3] === 'gain'
+  ) {
+    let idx = 4;
+    let keyword: string | null = null;
+    const twoWordKey = slice[idx] + ' ' + slice[idx + 1];
+    if (GRANTABLE_KEYWORDS[twoWordKey]) {
+      keyword = GRANTABLE_KEYWORDS[twoWordKey];
+      idx += 2;
+    } else if (GRANTABLE_KEYWORDS[slice[idx]]) {
+      keyword = GRANTABLE_KEYWORDS[slice[idx]];
+      idx++;
+    }
+    if (!keyword) return null;
+
+    let untilEndOfTurn = false;
+    if (slice[idx] === 'until' && slice[idx + 1] === 'end' &&
+        slice[idx + 2] === 'of' && slice[idx + 3] === 'turn') {
+      untilEndOfTurn = true;
+      idx += 4;
+    }
+
+    if (slice[idx] === '.') idx++;
+
+    return {
+      effects: [{
+        kind: 'GrantKeyword',
+        target: { kind: 'AllCreaturesYouControl' },
+        keyword,
+        untilEndOfTurn,
+      }],
+      targets: [],
+      consumed: idx,
+    };
+  }
+
   if (slice[0] !== 'target') return null;
   if (slice[1] !== 'creature') return null;
 
@@ -3992,6 +4036,84 @@ function matchPhaseOut(tokens: string[], startIndex: number): PatternResult {
   }
 
   return null;
+}
+
+/**
+ * Match: "players can't lose life this turn"
+ * Match: "players can't lose the game or win the game this turn"
+ * Match: "your opponents can't win the game this turn"
+ */
+function matchPreventGameOutcome(tokens: string[], startIndex: number): PatternResult {
+  const slice = tokens.slice(startIndex);
+  if (slice.length < 4) return null;
+
+  let idx = 0;
+  let player: TargetRef | null = null;
+  if (slice[idx] === 'players' || (slice[idx] === 'each' && slice[idx + 1] === 'player')) {
+    player = { kind: 'EachPlayer' };
+    idx += slice[idx] === 'each' ? 2 : 1;
+  } else if (slice[idx] === 'you') {
+    player = { kind: 'Controller' };
+    idx++;
+  } else if (slice[idx] === 'your' && slice[idx + 1] === 'opponents') {
+    player = { kind: 'EachOpponent' };
+    idx += 2;
+  }
+
+  if (!player) return null;
+  if (slice[idx] === 'can' && slice[idx + 1] === 'not') {
+    idx += 2;
+  } else if (isCantToken(slice[idx])) {
+    idx++;
+  } else {
+    return null;
+  }
+
+  let preventsLoss = false;
+  let preventsWin = false;
+  let preventsLifeLoss = false;
+
+  const consumeLoseGame = (): boolean => {
+    if (slice[idx] !== 'lose' || slice[idx + 1] !== 'the' || slice[idx + 2] !== 'game') return false;
+    preventsLoss = true;
+    idx += 3;
+    return true;
+  };
+  const consumeWinGame = (): boolean => {
+    if (slice[idx] !== 'win' || slice[idx + 1] !== 'the' || slice[idx + 2] !== 'game') return false;
+    preventsWin = true;
+    idx += 3;
+    return true;
+  };
+  const consumeLoseLife = (): boolean => {
+    if (slice[idx] !== 'lose' || slice[idx + 1] !== 'life') return false;
+    preventsLifeLoss = true;
+    idx += 2;
+    return true;
+  };
+
+  if (!consumeLoseLife() && !consumeLoseGame() && !consumeWinGame()) return null;
+
+  while (slice[idx] === 'or' || slice[idx] === 'and') {
+    idx++;
+    if (!consumeLoseLife() && !consumeLoseGame() && !consumeWinGame()) {
+      idx--;
+      break;
+    }
+  }
+
+  if (slice[idx] === 'this' && slice[idx + 1] === 'turn') idx += 2;
+  if (slice[idx] === '.') idx++;
+
+  const effect: Effect = {
+    kind: 'PreventGameOutcome',
+    player,
+    preventsLoss,
+    preventsWin,
+    preventsLifeLoss,
+    duration: 'turn',
+  };
+  return { effects: [effect], targets: [], consumed: idx };
 }
 
 /**
@@ -4486,7 +4608,7 @@ function parseEffectClauseInternal(tokens: string[], startIndex: number): Patter
   }
 
   const patterns = [
-    matchWinGame, matchLoseGame, matchForEachAddMana, matchAddMana,
+    matchPreventGameOutcome, matchWinGame, matchLoseGame, matchForEachAddMana, matchAddMana,
     matchBlink, matchCopyThatSpell, matchCopySpell, matchCopyCreature, matchModifyPTAndLoseKeyword, matchGrantKeywordAndDynamicPT, matchTargetCombatRestriction, matchGrantKeyword, matchPhaseOut,
     matchPreventDamage, matchDealDamageGreatestManaValue, matchDealDamageForEach, matchForEachDraw, matchCreateTokenForEach,
     matchExileFromLibraryTop, matchSearchLibraryGeneric, matchSacrificeSelfUnlessTargetOpponentSacrifices, matchEachOpponentSacrifice,
@@ -4525,6 +4647,7 @@ function parseEffectClause(tokens: string[], startIndex: number): PatternResult 
   // Try patterns in priority order (specific/complex before general, X patterns first)
   const patterns = [
     // Win/lose game effects (simple patterns, high priority)
+    matchPreventGameOutcome,      // "players can't lose the game or win the game this turn"
     matchWinGame,                 // "you win the game"
     matchLoseGame,                // "you lose the game" / "target player loses the game"
     matchForEachAddMana,          // "add {R} for each card in target opponent's hand"

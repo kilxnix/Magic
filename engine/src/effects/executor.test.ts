@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { executeEffects, executeEffectsWithSBA, executeSearchLibrary, resetTokenCounter } from './executor';
 import type { Effect } from './ast';
 import type { GameState, CardInstance, CardDefinition, TriggeredAbilityRef } from '../types';
+import { advanceToNextTurn } from '../turn-manager';
 
 function createTestState(): GameState {
   const cards = new Map<string, CardInstance>();
@@ -2274,6 +2275,38 @@ describe('EachOpponent and AllCreatures effects', () => {
 
       expect(newState.players.find(player => player.id === 'player-1')?.hasLost).toBe(false);
       expect(newState.players.find(player => player.id === 'player-2')?.hasLost).toBe(false);
+    });
+
+    it("honors turn-scoped players-can't-lose-life / lose / win prevention", () => {
+      let state = createTestState();
+
+      state = executeEffects(state, [
+        {
+          kind: 'PreventGameOutcome',
+          player: { kind: 'EachPlayer' },
+          preventsLoss: true,
+          preventsWin: true,
+          preventsLifeLoss: true,
+          duration: 'turn',
+        },
+      ], 'player-1', [], []);
+
+      state = executeEffects(state, [
+        { kind: 'LoseLife', player: { kind: 'Player', playerId: 'player-1' }, amount: 9 },
+        { kind: 'LoseGame', player: { kind: 'Player', playerId: 'player-1' } },
+        { kind: 'WinGame', player: { kind: 'Player', playerId: 'player-2' } },
+      ], 'player-2', [], []);
+
+      expect(state.players.find(player => player.id === 'player-1')?.life).toBe(40);
+      expect(state.players.find(player => player.id === 'player-1')?.hasLost).toBe(false);
+      expect(state.players.find(player => player.id === 'player-2')?.hasLost).toBe(false);
+
+      state = advanceToNextTurn(state);
+      state = executeEffects(state, [
+        { kind: 'LoseLife', player: { kind: 'Player', playerId: 'player-1' }, amount: 3 },
+      ], 'player-2', [], []);
+
+      expect(state.players.find(player => player.id === 'player-1')?.life).toBe(37);
     });
   });
 

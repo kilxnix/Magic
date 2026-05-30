@@ -170,6 +170,28 @@ describe('State-Based Actions', () => {
     expect(next.players[0].hasLost).toBe(false);
   });
 
+  it("does not mark a player as lost during a turn-scoped can't-lose effect", () => {
+    const decks = [
+      { playerId: 'p1', name: 'Alice', cards: [], commanderId: 'cmd1' },
+      { playerId: 'p2', name: 'Bob', cards: [], commanderId: 'cmd2' },
+    ];
+    const state = initGameState(decks);
+    state.players[0].life = -3;
+    state.players[0].poisonCounters = 10;
+    state.players[0].commanderDamage = { enemyCommander: 21 };
+    state.gameOutcomePreventionEffects = [{
+      id: 'everybody-lives',
+      controllerId: 'p1',
+      protectedPlayerIds: ['p1', 'p2'],
+      preventsLoss: true,
+      expiresAtTurnNumber: state.turnNumber,
+    }];
+
+    const next = checkStateBasedActions(state);
+
+    expect(next.players[0].hasLost).toBe(false);
+  });
+
   it('handles multiple creatures dying at once', () => {
     const decks = [
       { playerId: 'p1', name: 'Alice', cards: [makeBear('b1'), makeBear('b2')], commanderId: 'cmd1' },

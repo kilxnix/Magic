@@ -187,6 +187,68 @@ describe('parseOracleText', () => {
       if (lose.kind !== 'LoseLife') return;
       expect(lose.amount).toBe(2);
     });
+
+    it('parses turn-scoped life-loss and game-outcome prevention', () => {
+      const life = parseOracleText("Players can't lose life this turn.");
+      expect(life.kind).toBe('Spell');
+      if (life.kind !== 'Spell') return;
+      expect(life.effects).toEqual([
+        {
+          kind: 'PreventGameOutcome',
+          player: { kind: 'EachPlayer' },
+          preventsLoss: false,
+          preventsWin: false,
+          preventsLifeLoss: true,
+          duration: 'turn',
+        },
+      ]);
+
+      const outcome = parseOracleText("Players can't lose the game or win the game this turn.");
+      expect(outcome.kind).toBe('Spell');
+      if (outcome.kind !== 'Spell') return;
+      expect(outcome.effects).toEqual([
+        {
+          kind: 'PreventGameOutcome',
+          player: { kind: 'EachPlayer' },
+          preventsLoss: true,
+          preventsWin: true,
+          preventsLifeLoss: false,
+          duration: 'turn',
+        },
+      ]);
+    });
+
+    it('parses Everybody Lives-style full prevention text', () => {
+      const result = parseOracleText(
+        "Creatures you control gain indestructible until end of turn. Players can't lose life this turn. Players can't lose the game or win the game this turn.",
+      );
+      expect(result.kind).toBe('Spell');
+      if (result.kind !== 'Spell') return;
+      expect(result.effects).toEqual([
+        {
+          kind: 'GrantKeyword',
+          target: { kind: 'AllCreaturesYouControl' },
+          keyword: 'Indestructible',
+          untilEndOfTurn: true,
+        },
+        {
+          kind: 'PreventGameOutcome',
+          player: { kind: 'EachPlayer' },
+          preventsLoss: false,
+          preventsWin: false,
+          preventsLifeLoss: true,
+          duration: 'turn',
+        },
+        {
+          kind: 'PreventGameOutcome',
+          player: { kind: 'EachPlayer' },
+          preventsLoss: true,
+          preventsWin: true,
+          preventsLifeLoss: false,
+          duration: 'turn',
+        },
+      ]);
+    });
   });
 
   describe('ETB trigger patterns', () => {

@@ -305,6 +305,17 @@ export interface DamagePreventionEffectRef {
   expiresAtTurnNumber: number;
 }
 
+export interface GameOutcomePreventionEffectRef {
+  id: string;
+  sourceInstanceId?: string;
+  controllerId: string;
+  protectedPlayerIds?: string[];
+  preventsLoss?: boolean;
+  preventsWin?: boolean;
+  preventsLifeLoss?: boolean;
+  expiresAtTurnNumber: number;
+}
+
 export interface DiceRollRecord {
   id: string;
   playerId: string;
@@ -360,6 +371,9 @@ export interface GameState {
 
   // Turn-scoped damage prevention such as Fog.
   damagePreventionEffects?: DamagePreventionEffectRef[];
+
+  // Turn-scoped outcome and life-loss prevention such as Everybody Lives!
+  gameOutcomePreventionEffects?: GameOutcomePreventionEffectRef[];
 
   // Public presentation history for effects such as "roll a d20".
   diceRolls?: DiceRollRecord[];

@@ -51,6 +51,7 @@ export type Effect =
   | GrantKeywordEffect
   | LoseKeywordEffect
   | PhaseOutEffect
+  | PreventGameOutcomeEffect
   | WinGameEffect
   | LoseGameEffect
   | AddManaEffect
@@ -390,6 +391,15 @@ export interface LoseKeywordEffect {
 export interface PhaseOutEffect {
   kind: 'PhaseOut';
   target: TargetRef;
+}
+
+export interface PreventGameOutcomeEffect {
+  kind: 'PreventGameOutcome';
+  player: TargetRef;
+  preventsLoss?: boolean;
+  preventsWin?: boolean;
+  preventsLifeLoss?: boolean;
+  duration: 'turn';
 }
 
 // Win the game

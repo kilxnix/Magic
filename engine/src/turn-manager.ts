@@ -1,6 +1,7 @@
 import { GameState, Phase, Step } from './types';
 import { checkTriggersForEvent } from './stack';
 import { pruneDamagePreventionEffects } from './effects/replacement';
+import { pruneGameOutcomePreventionEffects } from './game-outcome';
 import { getCardDefinition } from './game-state';
 
 export const STEP_ORDER: Step[] = [
@@ -36,6 +37,7 @@ function derivePhase(currentStep: Step, nextStep: Step): Phase {
 
 export function advanceStep(state: GameState): GameState {
   state = pruneDamagePreventionEffects(state);
+  state = pruneGameOutcomePreventionEffects(state);
   const currentIndex = STEP_ORDER.indexOf(state.step);
 
   if (currentIndex === STEP_ORDER.length - 1) {
@@ -77,6 +79,7 @@ export function advanceStep(state: GameState): GameState {
 
 export function advanceToNextTurn(state: GameState): GameState {
   state = pruneDamagePreventionEffects(state);
+  state = pruneGameOutcomePreventionEffects(state);
   const playerCount = state.players.length;
   let nextIndex = (state.activePlayerIndex + 1) % playerCount;
 
@@ -106,6 +109,7 @@ export function advanceToNextTurn(state: GameState): GameState {
     hasPriorityPassed: new Array(playerCount).fill(false),
     combat: null,
     damagePreventionEffects: [],
+    gameOutcomePreventionEffects: [],
   };
 }
 

@@ -364,6 +364,35 @@ describe('serializeGameState / deserializeGameState', () => {
     ]);
   });
 
+  it('round-trips turn-scoped game outcome prevention effects', () => {
+    const state = createTestState();
+    state.gameOutcomePreventionEffects = [{
+      id: 'everybody-lives',
+      sourceInstanceId: 'spell-1',
+      controllerId: 'p1',
+      protectedPlayerIds: ['p1', 'p2'],
+      preventsLoss: true,
+      preventsWin: true,
+      preventsLifeLoss: true,
+      expiresAtTurnNumber: state.turnNumber,
+    }];
+
+    const deserialized = deserializeGameState(serializeGameState(state));
+
+    expect(deserialized.gameOutcomePreventionEffects).toEqual([
+      {
+        id: 'everybody-lives',
+        sourceInstanceId: 'spell-1',
+        controllerId: 'p1',
+        protectedPlayerIds: ['p1', 'p2'],
+        preventsLoss: true,
+        preventsWin: true,
+        preventsLifeLoss: true,
+        expiresAtTurnNumber: state.turnNumber,
+      },
+    ]);
+  });
+
   it('round-trips multi-face definitions, active permanent faces, and split-face stack choices', () => {
     const state = createTestState();
     addCard(state, 'modal1', 'p1', 'battlefield', {

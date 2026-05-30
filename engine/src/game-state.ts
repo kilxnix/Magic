@@ -89,6 +89,8 @@ export function initGameState(decks: DeckInput[]): GameState {
     battlefieldAbilities: new Map(),
     pendingTriggers: [],
     delayedTriggers: [],
+    damagePreventionEffects: [],
+    gameOutcomePreventionEffects: [],
   };
 }
 

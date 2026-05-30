@@ -382,6 +382,12 @@ export function serializeGameState(state: GameState): SerializedGameStateV1 {
     damagePreventionEffects: state.damagePreventionEffects
       ? state.damagePreventionEffects.map(effect => ({ ...effect }))
       : undefined,
+    gameOutcomePreventionEffects: state.gameOutcomePreventionEffects
+      ? state.gameOutcomePreventionEffects.map(effect => ({
+          ...effect,
+          protectedPlayerIds: effect.protectedPlayerIds ? [...effect.protectedPlayerIds] : undefined,
+        }))
+      : undefined,
     diceRolls: state.diceRolls
       ? state.diceRolls.map(roll => ({ ...roll }))
       : undefined,
@@ -430,6 +436,12 @@ export function deserializeGameState(data: SerializedGameStateV1): GameState {
     ])),
     damagePreventionEffects: data.damagePreventionEffects
       ? data.damagePreventionEffects.map(effect => ({ ...effect }))
+      : undefined,
+    gameOutcomePreventionEffects: data.gameOutcomePreventionEffects
+      ? data.gameOutcomePreventionEffects.map(effect => ({
+          ...effect,
+          protectedPlayerIds: effect.protectedPlayerIds ? [...effect.protectedPlayerIds] : undefined,
+        }))
       : undefined,
     diceRolls: data.diceRolls
       ? data.diceRolls.map(roll => ({
