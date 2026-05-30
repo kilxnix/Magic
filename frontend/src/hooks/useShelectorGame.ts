@@ -56,6 +56,7 @@ import {
   actionKey,
   buildActionPrompt,
   buildStateUpdate,
+  validateStateInvariants,
   resolveTopStackSearchPrompt,
   createSearchLibraryPromptRequest,
   applySearchLibraryPromptResponse,
@@ -2012,9 +2013,18 @@ export function useShelectorGame() {
 
   const recordSystemStateTransition = useCallback((before: GameState, after: GameState): GameState => {
     if (before === after) return after;
+    const invariantReport = validateStateInvariants(after);
+    if (!invariantReport.ok) {
+      const message = `Engine invariant failed during automatic transition: ${
+        invariantReport.violations[0]?.message || 'invalid state'
+      }`;
+      setActionError({ reason: 'invariant_violation', message });
+      addMessage('system', message);
+      return before;
+    }
     recordAuthorityUpdate(buildStateUpdate(before, after));
     return after;
-  }, [recordAuthorityUpdate]);
+  }, [addMessage, recordAuthorityUpdate]);
 
   const advanceStepWithAuthority = useCallback((state: GameState): GameState =>
     recordSystemStateTransition(state, advanceStep(state)),
