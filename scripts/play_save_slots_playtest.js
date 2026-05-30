@@ -61,6 +61,22 @@ async function openGameSaves(page) {
   await page.getByRole('button', { name: /^Saves\b/ }).click();
 }
 
+async function readSavedSlot(page, slot) {
+  return page.evaluate(targetSlot => new Promise((resolve, reject) => {
+    const request = indexedDB.open('deckreps_play_saves_v1', 1);
+    request.onerror = () => reject(request.error || new Error('IndexedDB open failed'));
+    request.onsuccess = () => {
+      const db = request.result;
+      const tx = db.transaction('slots', 'readonly');
+      const store = tx.objectStore('slots');
+      const get = store.get(targetSlot);
+      get.onerror = () => reject(get.error || new Error('IndexedDB read failed'));
+      get.onsuccess = () => resolve(get.result || null);
+      tx.oncomplete = () => db.close();
+    };
+  }), slot);
+}
+
 (async () => {
   const browser = await chromium.launch({ headless: HEADLESS });
   const context = await browser.newContext({ viewport: { width: 1280, height: 850 } });
@@ -78,9 +94,17 @@ async function openGameSaves(page) {
     await page.getByRole('button', { name: 'Start 1v1' }).click();
     await page.getByText('Keep', { exact: true }).waitFor({ timeout: 60000 });
     await page.getByText('Keep', { exact: true }).click();
+    const firstAction = page.getByRole('button', { name: /Skip Rest of Turn|End Phase|Done|Pass/i }).first();
+    await firstAction.waitFor({ timeout: 15000 });
+    await firstAction.click();
+    await page.waitForTimeout(500);
     await openGameSaves(page);
     await page.getByRole('button', { name: 'Save Here' }).first().click();
     await page.getByText('Saved slot 1').waitFor({ timeout: 10000 });
+    const savedSlot = await readSavedSlot(page, 1);
+    assert(savedSlot?.snapshot?.engineEventLogInitialState, 'save slot is missing the audit replay initial state');
+    assert(Array.isArray(savedSlot?.snapshot?.engineEventLog), 'save slot is missing the audit event log array');
+    assert(savedSlot.snapshot.engineEventLog.length > 0, 'save slot did not persist any authority action audit records');
     await page.screenshot({ path: artifact('play-save-slots-game.png'), fullPage: false });
 
     await page.reload({ waitUntil: 'domcontentloaded' });

@@ -19,7 +19,7 @@ Scope: recent `game-reliability-refactor` work from `88e54bb..597d918`, with Sis
 
 | Flow | Command | Result |
 | --- | --- | --- |
-| `/play` save slots | `node scripts/play_save_slots_playtest.js` | Initially failed because the verifier still expected the old `Open game saves` button; updated to use the current hamburger menu. Passed after fix. |
+| `/play` save slots | `node scripts/play_save_slots_playtest.js` | Passed; now also verifies saved-game replay audit fields (`engineEventLogInitialState` plus authority action records). |
 | Admin console | `DECKREPS_QA_ADMIN_TOKEN=local-ui-qa-token node scripts/admin_console_playtest.js` | Passed locally |
 | Multiplayer rooms | `DECKREPS_BASE_URL=http://127.0.0.1:5173 DECKREPS_QA_ADMIN_TOKEN=local-ui-qa-token node scripts/room_ui_playtest.js` | Passed locally; covered shared tracker, engine beta start, 4-player room, mobile room checks, and unsupported-action error |
 | Search picker UI | `DECKREPS_BASE_URL=http://127.0.0.1:5173 node scripts/play_search_picker_ui_playtest.js` | Passed locally |
@@ -31,7 +31,7 @@ Scope: recent `game-reliability-refactor` work from `88e54bb..597d918`, with Sis
 
 ## Fixes Made During This Audit
 
-- Updated `scripts/play_save_slots_playtest.js` so the save-slot verifier opens the current hamburger menu and selects `Saves`.
+- Updated `scripts/play_save_slots_playtest.js` so the save-slot verifier opens the current hamburger menu, selects `Saves`, and checks saved-game audit event-log persistence.
 - Added mobile ESLint dependencies/configuration so `mobile npm run lint` is a real passing command instead of a broken script.
 
 ## What This Does Not Prove
