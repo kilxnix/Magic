@@ -828,8 +828,7 @@ registerOverrideByName('Read the Bones', {
   targets: [],
 });
 
-// Fact or Fiction - choose a revealed pile with factOrFictionPileIds; fallback
-// keeps the larger pile in hand and puts the rest into the graveyard.
+// Fact or Fiction - choose a revealed pile with factOrFictionPileIds.
 registerOverrideByName('Fact or Fiction', {
   kind: 'Spell',
   effects: [
@@ -841,7 +840,6 @@ registerOverrideByName('Fact or Fiction', {
       restDestination: 'graveyard',
       minSelections: 1,
       maxSelections: 5,
-      fallbackSelectionCount: 3,
       selectedCardChoiceId: 'factOrFictionPileIds',
     },
   ],

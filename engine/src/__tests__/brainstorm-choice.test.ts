@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { executeEffects } from '../effects/executor';
 import { getOverride } from '../effects/overrides';
+import { resolveTopOfStack } from '../stack';
 import type { CardDefinition, CardInstance, GameState } from '../types';
 
 function def(id: string, name: string): CardDefinition {
@@ -40,6 +41,7 @@ function stateWithBrainstormCards(): GameState {
     def('draw-b-def', 'Draw B'),
     def('draw-c-def', 'Draw C'),
     def('rest-def', 'Rest'),
+    def('fact-def', 'Fact or Fiction'),
   ];
   return {
     players: [{
@@ -61,6 +63,7 @@ function stateWithBrainstormCards(): GameState {
       ['draw-b', card('draw-b', 'draw-b-def', 'library')],
       ['draw-c', card('draw-c', 'draw-c-def', 'library')],
       ['rest', card('rest', 'rest-def', 'library')],
+      ['fact', card('fact', 'fact-def', 'hand')],
     ]),
     cardDefinitions: new Map(definitions.map(definition => [definition.id, definition])),
     activePlayerIndex: 0,
@@ -105,7 +108,7 @@ describe('Brainstorm card selection', () => {
     const next = resolveBrainstorm(stateWithBrainstormCards());
 
     expect([...next.cards.values()].filter(instance => instance.ownerId === 'p1' && instance.zone === 'hand'))
-      .toHaveLength(5);
+      .toHaveLength(6);
     expect([...next.cards.values()].filter(instance => instance.ownerId === 'p1' && instance.zone === 'library').map(instance => instance.instanceId))
       .toEqual(['rest']);
   });
@@ -123,10 +126,36 @@ describe('top-library pile choices', () => {
     expect(next.cards.get('rest')?.zone).toBe('graveyard');
   });
 
-  it('uses a deterministic larger-pile fallback for Fact or Fiction when no pile is supplied', () => {
+  it('does not choose a Fact or Fiction pile when no selection is supplied', () => {
     const next = resolveOverride(stateWithBrainstormCards(), 'Fact or Fiction');
 
-    expect(['draw-a', 'draw-b', 'draw-c'].map(id => next.cards.get(id)?.zone)).toEqual(['hand', 'hand', 'hand']);
-    expect(next.cards.get('rest')?.zone).toBe('graveyard');
+    expect(['draw-a', 'draw-b', 'draw-c', 'rest'].map(id => next.cards.get(id)?.zone)).toEqual([
+      'library',
+      'library',
+      'library',
+      'library',
+    ]);
+  });
+
+  it('leaves Fact or Fiction on the stack until its pile choice is supplied', () => {
+    const state = stateWithBrainstormCards();
+    const fact = state.cards.get('fact')!;
+    const onStack: GameState = {
+      ...state,
+      cards: new Map(state.cards).set('fact', { ...fact, zone: 'stack' }),
+      stack: [{
+        kind: 'Spell',
+        id: 'stack_fact',
+        cardInstanceId: 'fact',
+        casterId: 'p1',
+        targets: [],
+      }],
+    };
+
+    const next = resolveTopOfStack(onStack);
+
+    expect(next.stack).toHaveLength(1);
+    expect(next.cards.get('fact')?.zone).toBe('stack');
+    expect(next.cards.get('draw-a')?.zone).toBe('library');
   });
 });

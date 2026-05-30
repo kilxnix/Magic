@@ -1732,7 +1732,7 @@ function executeChooseFromTopOfLibrary(
   selectedCardIds: string[],
   minSelections: number,
   maxSelections: number,
-  fallbackSelectionCount: number,
+  fallbackSelectionCount?: number,
 ): GameState {
   const libraryCards = [...state.cards.values()]
     .filter(card => card.ownerId === playerId && card.zone === 'library');
@@ -1743,10 +1743,15 @@ function executeChooseFromTopOfLibrary(
   const restLibrary = libraryCards.slice(revealCount);
   const revealedById = new Map(revealed.map(card => [card.instanceId, card]));
   const uniqueSelected = [...new Set(selectedCardIds.filter(id => revealedById.has(id)))];
-  const selectionCount = uniqueSelected.length >= minSelections && uniqueSelected.length <= maxSelections
+  const hasValidSelection = uniqueSelected.length === selectedCardIds.length
+    && uniqueSelected.length >= minSelections
+    && uniqueSelected.length <= maxSelections;
+  if (!hasValidSelection && fallbackSelectionCount === undefined) return state;
+
+  const selectionCount = hasValidSelection
     ? uniqueSelected.length
-    : Math.min(Math.max(fallbackSelectionCount, minSelections), maxSelections, revealed.length);
-  const selected = (uniqueSelected.length >= minSelections && uniqueSelected.length <= maxSelections
+    : Math.min(Math.max(fallbackSelectionCount ?? minSelections, minSelections), maxSelections, revealed.length);
+  const selected = (hasValidSelection
     ? uniqueSelected
     : revealed.slice(0, selectionCount).map(card => card.instanceId))
     .map(id => revealedById.get(id))
@@ -2856,7 +2861,7 @@ function executeEffect(
         selectedIds,
         effect.minSelections ?? 0,
         effect.maxSelections ?? choiceCount,
-        effect.fallbackSelectionCount ?? effect.maxSelections ?? choiceCount,
+        effect.fallbackSelectionCount,
       );
     }
     case 'ShuffleLibrary': {

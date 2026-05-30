@@ -6,7 +6,7 @@ import { parseOracleText } from './effects/parser';
 import { executeEffectsWithSBA } from './effects/executor';
 import { validateTargetChoices, TargetSpec, TargetType } from './effects/targets';
 import { checkStateBasedActions } from './state-based';
-import type { Effect, ModalSpell, StaticAbilityEffect } from './effects/ast';
+import type { AmountRef, Effect, ModalSpell, StaticAbilityEffect, TargetRef } from './effects/ast';
 import { findCastZoneRestriction, getCommanderTaxForCast } from './casting-restrictions';
 import { getCostIncrease, getCostReduction, getIntrinsicCostReduction, registerContinuousEffect } from './effects/continuous';
 import { getCommanderDestinationZone } from './commander';
@@ -55,6 +55,110 @@ function validateModalModeSelection(modal: ModalSpell, modes: number[]): void {
       throw new Error(`Invalid modal choice ${modeIndex}`);
     }
   }
+}
+
+function splitStackChoiceIds(value?: string): string[] {
+  if (!value) return [];
+  return value.split(',').map(part => part.trim()).filter(Boolean);
+}
+
+function stackAmountToNumber(amount: AmountRef, xValue = 0): number {
+  if (typeof amount === 'number' && Number.isFinite(amount)) return Math.max(0, Math.floor(amount));
+  if (amount && typeof amount === 'object') {
+    const kind = (amount as { kind?: string }).kind;
+    if (kind === 'X') return Math.max(0, Math.floor(xValue));
+    if (kind === 'XMultiplied') {
+      const multiplier = (amount as { multiplier?: number }).multiplier ?? 1;
+      return Math.max(0, Math.floor(xValue * multiplier));
+    }
+  }
+  return 1;
+}
+
+function targetMapFromSpecs(targetSpecs: TargetSpec[], targets: string[]): Map<string, string> {
+  const mapped = new Map<string, string>();
+  targetSpecs.forEach((spec, index) => {
+    const targetId = targets[index];
+    if (targetId) mapped.set(spec.id, targetId);
+  });
+  return mapped;
+}
+
+function resolveChoicePlayerId(
+  state: GameState,
+  controllerId: string,
+  playerRef: TargetRef,
+  targetSpecs: TargetSpec[],
+  targets: string[],
+): string {
+  if (!playerRef || typeof playerRef !== 'object') return controllerId;
+  const ref = playerRef as { kind?: string; playerId?: string; targetId?: string };
+  if (ref.kind === 'Controller') return controllerId;
+  if (ref.kind === 'Player' && ref.playerId) return ref.playerId;
+  if (ref.kind === 'ActivePlayer') return state.players[state.activePlayerIndex]?.id ?? controllerId;
+  if ((ref.kind === 'Chosen' || ref.kind === 'TargetController') && ref.targetId) {
+    const targetId = targetMapFromSpecs(targetSpecs, targets).get(ref.targetId);
+    if (!targetId) return controllerId;
+    const player = state.players.find(p => p.id === targetId);
+    if (player) return player.id;
+    const card = state.cards.get(targetId);
+    if (card) return card.ownerId;
+  }
+  return controllerId;
+}
+
+function hasMissingRequiredStackChoice(
+  state: GameState,
+  effects: Effect[],
+  controllerId: string,
+  targetSpecs: TargetSpec[],
+  targets: string[],
+  namedCardChoices?: Record<string, string>,
+  xValue = 0,
+): boolean {
+  for (const effect of effects) {
+    if (effect.kind === 'Conditional') {
+      if (hasMissingRequiredStackChoice(state, [effect.effect], controllerId, targetSpecs, targets, namedCardChoices, xValue)) {
+        return true;
+      }
+      if (effect.elseEffect && hasMissingRequiredStackChoice(state, [effect.elseEffect], controllerId, targetSpecs, targets, namedCardChoices, xValue)) {
+        return true;
+      }
+      continue;
+    }
+
+    if (effect.kind !== 'ChooseFromTopOfLibrary') continue;
+
+    const choiceCount = stackAmountToNumber(effect.count, xValue);
+    const choicePlayerId = resolveChoicePlayerId(state, controllerId, effect.player, targetSpecs, targets);
+    const libraryCards = [...state.cards.values()]
+      .filter(card => card.ownerId === choicePlayerId && card.zone === 'library');
+    const revealed = libraryCards.slice(0, Math.min(choiceCount, libraryCards.length));
+    if (revealed.length === 0) continue;
+
+    const minSelections = effect.minSelections ?? 0;
+    const maxSelections = effect.maxSelections ?? choiceCount;
+    const choiceKey = effect.selectedCardChoiceId ?? 'topLibraryChoiceIds';
+    const rawChoice = namedCardChoices?.[choiceKey] ?? namedCardChoices?.selectedCardIds;
+    if (!rawChoice) {
+      if (minSelections > 0) return true;
+      continue;
+    }
+
+    const submittedIds = splitStackChoiceIds(rawChoice);
+    const uniqueIds = [...new Set(submittedIds)];
+    const legalIds = new Set(revealed.map(card => card.instanceId));
+    if (
+      uniqueIds.length !== submittedIds.length
+      || uniqueIds.length < minSelections
+      || uniqueIds.length > maxSelections
+      || uniqueIds.some(id => !legalIds.has(id))
+    ) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 function hasAdditionalXLifeCost(def: CardDefinition): boolean {
@@ -1360,6 +1464,12 @@ export function resolveTopOfStack(state: GameState): GameState {
 
   // Handle triggered ability resolution
   if (isTriggeredAbilityStackItem(topItem)) {
+    const effects = topItem.ability.effects as Effect[];
+    const targetSpecs = normalizeStackTargetSpecs(topItem.targetSpecs);
+    if (hasMissingRequiredStackChoice(state, effects, topItem.controllerId, targetSpecs, topItem.targets, topItem.namedCardChoices)) {
+      return state;
+    }
+
     let resultState: GameState = {
       ...state,
       stack: newStack,
@@ -1368,9 +1478,6 @@ export function resolveTopOfStack(state: GameState): GameState {
     };
 
     // Execute the triggered ability's effects
-    const effects = topItem.ability.effects as Effect[];
-    const targetSpecs = normalizeStackTargetSpecs(topItem.targetSpecs);
-
     const resolvedTargets = sanitizeTargetsAtResolution(resultState, topItem.controllerId, targetSpecs, topItem.targets, topItem.sourceInstanceId);
     if (targetSpecs.length > 0 && !resolvedTargets.hasLegalTarget) {
       return checkStateBasedActions(resultState);
@@ -1392,15 +1499,18 @@ export function resolveTopOfStack(state: GameState): GameState {
 
   // Handle activated ability resolution
   if (isActivatedAbilityStackItem(topItem)) {
+    const effects = topItem.ability.effects as Effect[];
+    const targetSpecs = normalizeStackTargetSpecs(topItem.ability.targets);
+    if (hasMissingRequiredStackChoice(state, effects, topItem.controllerId, targetSpecs, topItem.targets, topItem.namedCardChoices)) {
+      return state;
+    }
+
     let resultState: GameState = {
       ...state,
       stack: newStack,
       hasPriorityPassed: new Array(state.players.length).fill(false),
       priorityPlayerIndex: state.activePlayerIndex,
     };
-
-    const effects = topItem.ability.effects as Effect[];
-    const targetSpecs = normalizeStackTargetSpecs(topItem.ability.targets);
 
     const resolvedTargets = sanitizeTargetsAtResolution(resultState, topItem.controllerId, targetSpecs, topItem.targets, topItem.sourceInstanceId);
     if (targetSpecs.length > 0 && !resolvedTargets.hasLegalTarget) {
@@ -1487,6 +1597,17 @@ export function resolveTopOfStack(state: GameState): GameState {
     // Try to find effect definition: override first, then parse
     const override = getOverride(def.id, def.name);
     if (override && override.kind === 'Spell') {
+      if (hasMissingRequiredStackChoice(
+        state,
+        override.effects,
+        spellItem.casterId,
+        override.targets,
+        spellItem.targets,
+        spellItem.namedCardChoices,
+        spellItem.xValue ?? 0,
+      )) {
+        return state;
+      }
       const resolvedTargets = sanitizeTargetsAtResolution(intermediateState, spellItem.casterId, override.targets, spellItem.targets, spellItem.cardInstanceId);
       if (override.targets.length > 0 && !resolvedTargets.hasLegalTarget) {
         resultState = checkStateBasedActions(intermediateState);
@@ -1507,6 +1628,17 @@ export function resolveTopOfStack(state: GameState): GameState {
       // Try to parse oracle text
       const parsed = parseOracleText(normalizeOracleText(def.oracle_text, def.name));
       if (parsed.kind === 'Spell') {
+        if (hasMissingRequiredStackChoice(
+          state,
+          parsed.effects,
+          spellItem.casterId,
+          parsed.targets,
+          spellItem.targets,
+          spellItem.namedCardChoices,
+          spellItem.xValue ?? 0,
+        )) {
+          return state;
+        }
         const resolvedTargets = sanitizeTargetsAtResolution(intermediateState, spellItem.casterId, parsed.targets, spellItem.targets, spellItem.cardInstanceId);
         if (parsed.targets.length > 0 && !resolvedTargets.hasLegalTarget) {
           resultState = checkStateBasedActions(intermediateState);
@@ -1538,6 +1670,18 @@ export function resolveTopOfStack(state: GameState): GameState {
           for (const t of choice.targets) {
             allTargetSpecs.push({ id: t.id, type: t.type as TargetType, count: 1 });
           }
+        }
+
+        if (hasMissingRequiredStackChoice(
+          state,
+          allEffects,
+          spellItem.casterId,
+          allTargetSpecs,
+          spellItem.targets,
+          spellItem.namedCardChoices,
+          spellItem.xValue ?? 0,
+        )) {
+          return state;
         }
 
         const resolvedTargets = sanitizeTargetsAtResolution(intermediateState, spellItem.casterId, allTargetSpecs, spellItem.targets, spellItem.cardInstanceId);
