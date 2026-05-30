@@ -116,6 +116,7 @@ export function ShelectorGamePage() {
     untapManaSource,
     adjustCounters,
     adjustPlayerCounter,
+    adjustCommanderDamage,
     moveCardManually,
     adjustDamage,
     createManualToken,
@@ -803,6 +804,7 @@ export function ShelectorGamePage() {
           onUntapMana={untapManaSource}
           onAdjustCounters={adjustCounters}
           onAdjustPlayerCounter={adjustPlayerCounter}
+          onAdjustCommanderDamage={adjustCommanderDamage}
           onMoveCard={moveCardManually}
           onAdjustDamage={adjustDamage}
           onCreateToken={createManualToken}

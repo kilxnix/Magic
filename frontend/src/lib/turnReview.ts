@@ -67,6 +67,8 @@ export function actionIdentity(action: AIAction): string {
       return `${action.kind}:${action.cardInstanceId}:${action.counterType}:${action.delta}`;
     case 'ManualAdjustPlayerCounter':
       return `${action.kind}:${action.playerId}:${action.counterType}:${action.delta}`;
+    case 'ManualAdjustCommanderDamage':
+      return `${action.kind}:${action.playerId}:${action.commanderInstanceId}:${action.delta}`;
     case 'ManualMoveCard':
       return `${action.kind}:${action.cardInstanceId}:${action.zone}`;
     case 'ManualAdjustDamage':
@@ -134,6 +136,13 @@ export function describeReviewAction(state: GameState, action: AIAction): string
       const player = state.players.find(candidate => candidate.id === action.playerId);
       const sign = action.delta > 0 ? '+' : '';
       return `${sign}${action.delta} ${action.counterType} counter on ${player?.name || 'a player'}`;
+    }
+    case 'ManualAdjustCommanderDamage': {
+      const player = state.players.find(candidate => candidate.id === action.playerId);
+      const commander = state.cards.get(action.commanderInstanceId);
+      const commanderDef = commander ? getCardDefinition(state, commander) : undefined;
+      const sign = action.delta > 0 ? '+' : '';
+      return `${sign}${action.delta} commander damage to ${player?.name || 'a player'} from ${commanderDef?.name || 'a commander'}`;
     }
     case 'ManualMoveCard': {
       const inst = state.cards.get(action.cardInstanceId);

@@ -7,6 +7,7 @@ import type {
   ManualUntapManaSourceAction,
   ManualAdjustCountersAction,
   ManualAdjustPlayerCounterAction,
+  ManualAdjustCommanderDamageAction,
   ManualMoveCardAction,
   ManualAdjustDamageAction,
   ManualCreateTokenAction,
@@ -117,6 +118,20 @@ describe('AI Types', () => {
     expect(action.delta).toBe(1);
   });
 
+  it('creates ManualAdjustCommanderDamageAction correctly', () => {
+    const action: ManualAdjustCommanderDamageAction = {
+      kind: 'ManualAdjustCommanderDamage',
+      playerId: 'player_1',
+      commanderInstanceId: 'commander_1',
+      delta: 3,
+    };
+
+    expect(action.kind).toBe('ManualAdjustCommanderDamage');
+    expect(action.playerId).toBe('player_1');
+    expect(action.commanderInstanceId).toBe('commander_1');
+    expect(action.delta).toBe(3);
+  });
+
   it('creates ManualMoveCardAction correctly', () => {
     const action: ManualMoveCardAction = {
       kind: 'ManualMoveCard',
@@ -197,6 +212,7 @@ describe('AI Types', () => {
       { kind: 'ManualUntapManaSource', cardInstanceId: 'l1', color: 'U', amount: 1 },
       { kind: 'ManualAdjustCounters', cardInstanceId: 'c1', counterType: '+1/+1', delta: 1 },
       { kind: 'ManualAdjustPlayerCounter', playerId: 'p1', counterType: 'experience', delta: 1 },
+      { kind: 'ManualAdjustCommanderDamage', playerId: 'p1', commanderInstanceId: 'cmd1', delta: 1 },
       { kind: 'ManualMoveCard', cardInstanceId: 'c1', zone: 'graveyard' },
       { kind: 'ManualAdjustDamage', cardInstanceId: 'c1', delta: 2 },
       { kind: 'ManualCreateToken', name: 'Treasure', count: 1, power: 0, toughness: 0, colors: [], types: ['artifact'], subtypes: ['Treasure'] },
@@ -208,7 +224,7 @@ describe('AI Types', () => {
       { kind: 'PassPriority' },
     ];
 
-    expect(actions).toHaveLength(15);
+    expect(actions).toHaveLength(16);
     expect(actions.map(a => a.kind)).toEqual([
       'CastSpell',
       'PlayLand',
@@ -216,6 +232,7 @@ describe('AI Types', () => {
       'ManualUntapManaSource',
       'ManualAdjustCounters',
       'ManualAdjustPlayerCounter',
+      'ManualAdjustCommanderDamage',
       'ManualMoveCard',
       'ManualAdjustDamage',
       'ManualCreateToken',

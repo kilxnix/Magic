@@ -75,6 +75,16 @@ export type GameEvent =
       manual: true;
     }
   | {
+      kind: 'CommanderDamageAdjusted';
+      playerId: string;
+      targetPlayerId: string;
+      commanderInstanceId: string;
+      delta: number;
+      previous: number;
+      next: number;
+      manual: true;
+    }
+  | {
       kind: 'CardMovedManually';
       playerId: string;
       cardId: string;
@@ -551,6 +561,56 @@ export function tryAdjustPlayerCounter(
       delta,
       previous,
       next: nextCount,
+      manual: true,
+    },
+    ...runWinCheck(next),
+  ]);
+}
+
+export function tryAdjustCommanderDamage(
+  state: GameState,
+  playerId: string,
+  targetPlayerId: string,
+  commanderInstanceId: string,
+  delta: number,
+): ActionResult {
+  if (!state.players.some(p => p.id === playerId)) return fail('card_not_found', 'Player not found');
+  const target = state.players.find(p => p.id === targetPlayerId);
+  if (!target) return fail('card_not_found', 'Target player not found');
+  const commander = state.cards.get(commanderInstanceId);
+  if (!commander) return fail('card_not_found', 'Commander not found');
+  if (!commander.isCommander) return fail('illegal_target', 'Commander damage source must be a commander');
+  if (!Number.isInteger(delta) || delta === 0 || Math.abs(delta) > 99) {
+    return fail('illegal_target', 'Commander damage adjustment must be a non-zero integer from -99 to 99');
+  }
+
+  const previous = Math.max(0, target.commanderDamage[commanderInstanceId] ?? 0);
+  const nextDamage = Math.max(0, previous + delta);
+  if (previous === nextDamage) {
+    return fail('illegal_target', 'No commander damage to remove');
+  }
+
+  const players = state.players.map(player => {
+    if (player.id !== targetPlayerId) return player;
+    const commanderDamage = { ...player.commanderDamage };
+    if (nextDamage === 0) {
+      delete commanderDamage[commanderInstanceId];
+    } else {
+      commanderDamage[commanderInstanceId] = nextDamage;
+    }
+    return { ...player, commanderDamage };
+  });
+  const next = { ...state, players };
+
+  return success(next, [
+    {
+      kind: 'CommanderDamageAdjusted',
+      playerId,
+      targetPlayerId,
+      commanderInstanceId,
+      delta,
+      previous,
+      next: nextDamage,
       manual: true,
     },
     ...runWinCheck(next),

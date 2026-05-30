@@ -13,6 +13,7 @@ export type {
   ManualUntapManaSourceAction,
   ManualAdjustCountersAction,
   ManualAdjustPlayerCounterAction,
+  ManualAdjustCommanderDamageAction,
   ManualMoveCardAction,
   ManualAdjustDamageAction,
   ManualCreateTokenAction,

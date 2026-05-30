@@ -137,6 +137,7 @@ export function PlayPage() {
     untapManaSource,
     adjustCounters,
     adjustPlayerCounter,
+    adjustCommanderDamage,
     moveCardManually,
     adjustDamage,
     createManualToken,
@@ -789,6 +790,7 @@ export function PlayPage() {
             onUntapMana={untapManaSource}
             onAdjustCounters={adjustCounters}
             onAdjustPlayerCounter={adjustPlayerCounter}
+            onAdjustCommanderDamage={adjustCommanderDamage}
             onMoveCard={moveCardManually}
             onAdjustDamage={adjustDamage}
             onCreateToken={createManualToken}

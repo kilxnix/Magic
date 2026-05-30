@@ -1177,6 +1177,11 @@ function actionReferencesSameObject(legal: AIAction, requested: AIAction): boole
         && legal.playerId === requested.playerId
         && legal.counterType === requested.counterType
         && legal.delta === requested.delta;
+    case 'ManualAdjustCommanderDamage':
+      return requested.kind === 'ManualAdjustCommanderDamage'
+        && legal.playerId === requested.playerId
+        && legal.commanderInstanceId === requested.commanderInstanceId
+        && legal.delta === requested.delta;
     case 'ManualMoveCard':
       return requested.kind === 'ManualMoveCard'
         && legal.cardInstanceId === requested.cardInstanceId
@@ -1256,6 +1261,10 @@ function illegalActionMessage(state: GameState, playerId: string, action: AIActi
     const result = dispatchAIAction(state, playerId, action);
     return result.ok ? 'That player-counter correction is not available now.' : result.message;
   }
+  if (action.kind === 'ManualAdjustCommanderDamage') {
+    const result = dispatchAIAction(state, playerId, action);
+    return result.ok ? 'That commander damage correction is not available now.' : result.message;
+  }
   if (action.kind === 'ManualMoveCard') {
     const result = dispatchAIAction(state, playerId, action);
     return result.ok ? 'That zone correction is not available now.' : result.message;
@@ -1279,6 +1288,7 @@ function isValidatedOutOfBandAction(action: AIAction): boolean {
   return action.kind === 'ManualUntapManaSource'
     || action.kind === 'ManualAdjustCounters'
     || action.kind === 'ManualAdjustPlayerCounter'
+    || action.kind === 'ManualAdjustCommanderDamage'
     || action.kind === 'ManualMoveCard'
     || action.kind === 'ManualAdjustDamage'
     || action.kind === 'ManualCreateToken'
@@ -1299,6 +1309,8 @@ export function labelForAction(state: GameState, action: AIAction): string {
       return `Adjust ${cardName(state, state.cards.get(action.cardInstanceId)) || 'permanent'} counters`;
     case 'ManualAdjustPlayerCounter':
       return `Adjust ${playerName(state, action.playerId) || 'player'} ${action.counterType} counters`;
+    case 'ManualAdjustCommanderDamage':
+      return `Adjust ${playerName(state, action.playerId) || 'player'} commander damage from ${cardName(state, state.cards.get(action.commanderInstanceId)) || 'commander'}`;
     case 'ManualMoveCard':
       return `Move ${cardName(state, state.cards.get(action.cardInstanceId)) || 'card'} to ${action.zone}`;
     case 'ManualAdjustDamage':
@@ -1369,6 +1381,7 @@ const ACTION_KIND_LABELS: Record<AIAction['kind'], string> = {
   ManualUntapManaSource: 'Special action',
   ManualAdjustCounters: 'Special action',
   ManualAdjustPlayerCounter: 'Special action',
+  ManualAdjustCommanderDamage: 'Special action',
   ManualMoveCard: 'Special action',
   ManualAdjustDamage: 'Special action',
   ManualCreateToken: 'Special action',
@@ -1391,6 +1404,7 @@ function actionChoiceSummaryLabel(action: AIAction): string {
     case 'Equip':
     case 'ManualAdjustCounters':
     case 'ManualAdjustPlayerCounter':
+    case 'ManualAdjustCommanderDamage':
     case 'ManualMoveCard':
     case 'ManualAdjustDamage':
     case 'ManualUntapManaSource':

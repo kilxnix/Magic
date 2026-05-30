@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { tryPlayLand, tryTapLandForMana, tryUntapManaSource, tryCastSpell, tryActivateAbility, tryPassPriority, tryDeclareAttackers, tryDeclareBlockers, tryEquip, tryAdjustCounters, tryAdjustPlayerCounter, tryMoveCardManually, tryAdjustDamage, tryCreateManualToken, tryAttachCardManually, resetLoopDetector } from './actions-public';
+import { tryPlayLand, tryTapLandForMana, tryUntapManaSource, tryCastSpell, tryActivateAbility, tryPassPriority, tryDeclareAttackers, tryDeclareBlockers, tryEquip, tryAdjustCounters, tryAdjustPlayerCounter, tryAdjustCommanderDamage, tryMoveCardManually, tryAdjustDamage, tryCreateManualToken, tryAttachCardManually, resetLoopDetector } from './actions-public';
 import { makeTestState } from './__tests__/test-helpers';
 import { populateParsedCache } from './cards/card-parser-cache';
 import type { CardDefinition, GameState } from './types';
@@ -497,6 +497,53 @@ describe('tryAdjustPlayerCounter', () => {
 
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.reason).toBe('illegal_target');
+  });
+});
+
+describe('tryAdjustCommanderDamage', () => {
+  it('adds and removes commander damage from a commander source', () => {
+    const state = makeTestState({ battlefieldCreature: true });
+    state.cards.set('vanilla_creature_0', {
+      ...state.cards.get('vanilla_creature_0')!,
+      isCommander: true,
+    });
+
+    const added = tryAdjustCommanderDamage(state, 'human', 'ai1', 'vanilla_creature_0', 7);
+
+    expect(added.ok).toBe(true);
+    if (!added.ok) return;
+    expect(added.state.players.find(player => player.id === 'ai1')?.commanderDamage.vanilla_creature_0).toBe(7);
+    expect(added.events).toContainEqual(expect.objectContaining({
+      kind: 'CommanderDamageAdjusted',
+      playerId: 'human',
+      targetPlayerId: 'ai1',
+      commanderInstanceId: 'vanilla_creature_0',
+      delta: 7,
+      previous: 0,
+      next: 7,
+      manual: true,
+    }));
+
+    const removed = tryAdjustCommanderDamage(added.state, 'human', 'ai1', 'vanilla_creature_0', -3);
+    expect(removed.ok).toBe(true);
+    if (!removed.ok) return;
+    expect(removed.state.players.find(player => player.id === 'ai1')?.commanderDamage.vanilla_creature_0).toBe(4);
+  });
+
+  it('rejects non-commander sources and missing commander damage removal', () => {
+    const state = makeTestState({ battlefieldCreature: true });
+
+    const nonCommander = tryAdjustCommanderDamage(state, 'human', 'ai1', 'vanilla_creature_0', 1);
+    expect(nonCommander.ok).toBe(false);
+    if (!nonCommander.ok) expect(nonCommander.reason).toBe('illegal_target');
+
+    state.cards.set('vanilla_creature_0', {
+      ...state.cards.get('vanilla_creature_0')!,
+      isCommander: true,
+    });
+    const missing = tryAdjustCommanderDamage(state, 'human', 'ai1', 'vanilla_creature_0', -1);
+    expect(missing.ok).toBe(false);
+    if (!missing.ok) expect(missing.reason).toBe('illegal_target');
   });
 });
 

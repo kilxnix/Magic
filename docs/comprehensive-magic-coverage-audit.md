@@ -24,7 +24,7 @@ Area table:
 | P0 | partial | modal-choice-ui | Typed ChooseMode prompts validate mode responses, modal action labels expose selected mode text, scry/surveil/search prompts use engine request validation, and Brainstorm now pauses for a prompt-backed hand-to-library-top choice; continue replacing deterministic card-specific shortcuts with prompt-backed choices. |
 | P0 | partial | casting-costs | Expand alternative costs, additional costs, cost increasers/reducers, X choices, and free-spell casting prompts. |
 | P0 | partial | combat | Add browser combat certification for all starter decks plus multiplayer attack/block assignment. |
-| P0 | partial | commander-rules | Add partner/background/doctor companion import and cast certification plus Drannith-style restrictions. |
+| P0 | partial | commander-rules | Manual commander-damage correction now validates commander sources and feeds commander-damage loss checks; add partner/background/doctor companion import and cast certification plus Drannith-style restrictions. |
 | P0 | partial | continuous-effects-layers | Expand layer engine to full CR-style dependency/timestamp model beyond current practical layer 6/7 and devotion coverage. |
 | P0 | partial | deck-import | Add importer golden corpus for real exported lists and bad-data cases. |
 | P0 | partial | equipment-auras | Manual attach/detach correction now flows through validated engine actions and the card inspector; add UI certification for equip, Aura legality, and illegal attachment SBAs. |
@@ -45,7 +45,7 @@ Area table:
 | P1 | partial | ai-shelector | Add speed and legality benchmark across archetypes and stack-heavy high-power states. |
 | P1 | partial | graveyard-exile | Add zone permission engine for casting/activating from non-hand zones. |
 | P1 | partial | keywords-evergreen | Audit every evergreen keyword and bind each to at least one fixture card. |
-| P1 | partial | manual-correction-tools | Manual repair tools now cover permanent counters, player counters/poison, token creation, zone movement, marked damage, mana untap, and attach/detach corrections; continue adding commander damage, phase rewinds, and replay-audited correction summaries. |
+| P1 | partial | manual-correction-tools | Manual repair tools now cover permanent counters, player counters/poison, commander damage, token creation, zone movement, marked damage, mana untap, and attach/detach corrections; continue adding phase rewinds and replay-audited correction summaries. |
 | P1 | partial | manual-overrides | Add override registry metadata with reason, owner, and fixture card. |
 | P1 | partial | multiplayer | Bridge rooms to authoritative engine sessions and add four-player combat/priority browser proof. |
 | P1 | partial | rules-update-process | Wire edge-case generation and coverage audit into a scheduled certification run after every card-data refresh. |

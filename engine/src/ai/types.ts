@@ -73,6 +73,13 @@ export interface ManualAdjustPlayerCounterAction {
   delta: number;
 }
 
+export interface ManualAdjustCommanderDamageAction {
+  kind: 'ManualAdjustCommanderDamage';
+  playerId: string;
+  commanderInstanceId: string;
+  delta: number;
+}
+
 export interface ManualMoveCardAction {
   kind: 'ManualMoveCard';
   cardInstanceId: string;
@@ -155,6 +162,7 @@ export type AIAction =
   | ManualUntapManaSourceAction
   | ManualAdjustCountersAction
   | ManualAdjustPlayerCounterAction
+  | ManualAdjustCommanderDamageAction
   | ManualMoveCardAction
   | ManualAdjustDamageAction
   | ManualCreateTokenAction

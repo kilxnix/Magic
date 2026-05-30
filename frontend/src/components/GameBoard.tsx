@@ -140,6 +140,7 @@ interface GameBoardProps {
   onUntapMana?: (cardInstanceId: string) => void;
   onAdjustCounters?: (cardInstanceId: string, counterType: string, delta: number) => void;
   onAdjustPlayerCounter?: (playerId: string, counterType: string, delta: number) => void;
+  onAdjustCommanderDamage?: (playerId: string, commanderInstanceId: string, delta: number) => void;
   onMoveCard?: (cardInstanceId: string, zone: ManualMoveZone) => void;
   onAdjustDamage?: (cardInstanceId: string, delta: number) => void;
   onCreateToken?: (token: ManualTokenInput) => void;
@@ -1365,21 +1366,31 @@ function ManualTokenModal({
 
 function ManualPlayerCounterModal({
   players,
+  commanders = [],
   onAdjust,
+  onAdjustCommanderDamage,
   onCancel,
 }: {
   players: SimpleGameState['aiPlayers'];
+  commanders?: { instanceId: string; name: string }[];
   onAdjust: (playerId: string, counterType: string, delta: number) => void;
+  onAdjustCommanderDamage?: (playerId: string, commanderInstanceId: string, delta: number) => void;
   onCancel: () => void;
 }) {
   const [playerId, setPlayerId] = useState(players[0]?.id || '');
   const [counterType, setCounterType] = useState('poison');
+  const [commanderId, setCommanderId] = useState(commanders[0]?.instanceId || '');
   const selectedPlayer = players.find(player => player.id === playerId) || players[0];
+  const selectedCommander = commanders.find(commander => commander.instanceId === commanderId) || commanders[0];
   const quickCounters = ['poison', 'energy', 'experience', 'the ring', 'rad', 'ticket'];
 
   useEffect(() => {
     if (!playerId && players[0]) setPlayerId(players[0].id);
   }, [playerId, players]);
+
+  useEffect(() => {
+    if (!commanderId && commanders[0]) setCommanderId(commanders[0].instanceId);
+  }, [commanderId, commanders]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -1393,6 +1404,10 @@ function ManualPlayerCounterModal({
     const cleanCounter = counterType.trim().replace(/\s+/g, ' ').toLowerCase();
     if (!selectedPlayer || !cleanCounter) return;
     onAdjust(selectedPlayer.id, cleanCounter, delta);
+  };
+  const adjustCommander = (delta: number) => {
+    if (!selectedPlayer || !selectedCommander || !onAdjustCommanderDamage) return;
+    onAdjustCommanderDamage(selectedPlayer.id, selectedCommander.instanceId, delta);
   };
 
   return (
@@ -1476,6 +1491,55 @@ function ManualPlayerCounterModal({
                 ) : (
                   <span className="text-stone-500">No player counters.</span>
                 )}
+              </div>
+            </div>
+          )}
+
+          {onAdjustCommanderDamage && commanders.length > 0 && (
+            <div className="rounded border border-neutral-800 bg-neutral-900 p-3">
+              <div className="mb-2 text-[10px] font-bold uppercase tracking-wider text-stone-400">
+                Commander Damage
+              </div>
+              <label className="mb-3 block space-y-1 text-xs font-bold uppercase tracking-wider text-stone-500">
+                <span>Source Commander</span>
+                <select
+                  value={commanderId}
+                  onChange={event => setCommanderId(event.target.value)}
+                  className="min-h-11 w-full rounded border border-neutral-700 bg-neutral-950 px-3 text-sm normal-case tracking-normal text-stone-100 focus:border-amber-400 focus:outline-none"
+                >
+                  {commanders.map(commander => (
+                    <option key={commander.instanceId} value={commander.instanceId}>{commander.name}</option>
+                  ))}
+                </select>
+              </label>
+              <div className="mb-3 flex flex-wrap gap-2 text-xs text-stone-300">
+                {selectedPlayer && commanders.map(commander => {
+                  const amount = selectedPlayer.commanderDamage[commander.instanceId] || 0;
+                  if (amount <= 0) return null;
+                  return (
+                    <span key={commander.instanceId} className="rounded border border-red-700/60 bg-red-950/50 px-2 py-1 text-red-100">
+                      {commander.name}: {amount}
+                    </span>
+                  );
+                })}
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => adjustCommander(-1)}
+                  disabled={!selectedPlayer || !selectedCommander}
+                  className="min-h-10 rounded border border-neutral-700 bg-neutral-950 px-3 text-sm font-bold text-stone-200 transition-colors hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Remove Damage
+                </button>
+                <button
+                  type="button"
+                  onClick={() => adjustCommander(1)}
+                  disabled={!selectedPlayer || !selectedCommander}
+                  className="min-h-10 rounded bg-red-500 px-3 text-sm font-black text-white transition-colors hover:bg-red-400 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Add Damage
+                </button>
               </div>
             </div>
           )}
@@ -2067,6 +2131,7 @@ export function GameBoard({
   onUntapMana,
   onAdjustCounters,
   onAdjustPlayerCounter,
+  onAdjustCommanderDamage,
   onMoveCard,
   onAdjustDamage,
   onCreateToken,
@@ -2408,6 +2473,21 @@ export function GameBoard({
   const passedPriorityNames = prioritySnapshot?.passedPriorityPlayerIds.map(playerNameForId) ?? [];
   const stackTopId = prioritySnapshot?.stackTop?.id || gameState.stack[gameState.stack.length - 1]?.id;
   const stackItemsTopFirst = [...gameState.stack].reverse();
+  const commanderDamageSources = [
+    ...gameState.humanCommandZone,
+    ...flattenWithAttachments(gameState.humanBattlefield),
+    ...gameState.humanGraveyard,
+    ...Object.values(gameState.aiCommandZones).flat(),
+    ...Object.values(gameState.aiBattlefields).flatMap(flattenWithAttachments),
+    ...Object.values(gameState.aiGraveyards).flat(),
+  ]
+    .filter(card => card.isCommander)
+    .reduce<{ instanceId: string; name: string }[]>((sources, card) => {
+      if (!sources.some(source => source.instanceId === card.instanceId)) {
+        sources.push({ instanceId: card.instanceId, name: card.name });
+      }
+      return sources;
+    }, []);
   const battlefieldAttachmentCandidates = [
     ...flattenWithAttachments(gameState.humanBattlefield),
     ...Object.values(gameState.aiBattlefields).flatMap(flattenWithAttachments),
@@ -2496,9 +2576,11 @@ export function GameBoard({
       {showPlayerCounters && onAdjustPlayerCounter && (
         <ManualPlayerCounterModal
           players={[gameState.humanPlayer, ...gameState.aiPlayers]}
+          commanders={commanderDamageSources}
           onAdjust={(targetPlayerId, counterType, delta) => {
             onAdjustPlayerCounter(targetPlayerId, counterType, delta);
           }}
+          onAdjustCommanderDamage={onAdjustCommanderDamage}
           onCancel={() => setShowPlayerCounters(false)}
         />
       )}

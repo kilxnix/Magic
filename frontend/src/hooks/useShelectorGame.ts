@@ -199,6 +199,7 @@ export interface SimplePlayer {
   name: string;
   life: number;
   poisonCounters: number;
+  commanderDamage: Record<string, number>;
   playerCounters: Record<string, number>;
   handCount: number;
   libraryCount: number;
@@ -355,6 +356,7 @@ function isMeaningfulAutoSkipAction(action: AIAction): boolean {
     case 'ManualUntapManaSource':
     case 'ManualAdjustCounters':
     case 'ManualAdjustPlayerCounter':
+    case 'ManualAdjustCommanderDamage':
     case 'ManualMoveCard':
     case 'ManualAdjustDamage':
     case 'ManualCreateToken':
@@ -1619,6 +1621,7 @@ function deriveSimpleState(
       name: aiCommanderNames[aiId] || `AI ${aiId}`,
       life: aiP.life,
       poisonCounters: aiP.poisonCounters,
+      commanderDamage: { ...aiP.commanderDamage },
       playerCounters: { ...(aiP.playerCounters || {}) },
       handCount: getCardsInZone(engine, aiId, 'hand').length,
       libraryCount: getCardsInZone(engine, aiId, 'library').length,
@@ -1690,7 +1693,7 @@ function deriveSimpleState(
 
   // First AI for backward-compatible aliases
   const firstAiId = aiIds[0] || 'ai1';
-  const firstAiPlayer = aiPlayers[0] || { id: firstAiId, name: 'AI', life: 40, poisonCounters: 0, playerCounters: {}, handCount: 0, libraryCount: 0 };
+  const firstAiPlayer = aiPlayers[0] || { id: firstAiId, name: 'AI', life: 40, poisonCounters: 0, commanderDamage: {}, playerCounters: {}, handCount: 0, libraryCount: 0 };
 
   // Convert raw turn number to round number (turn 1&2 in 2-player = round 1, etc.)
   const playerCount = engine.players.length;
@@ -1720,6 +1723,7 @@ function deriveSimpleState(
       name: 'You',
       life: humanPlayer.life,
       poisonCounters: humanPlayer.poisonCounters,
+      commanderDamage: { ...humanPlayer.commanderDamage },
       playerCounters: { ...(humanPlayer.playerCounters || {}) },
       handCount: getCardsInZone(engine, humanId, 'hand').length,
       libraryCount: getCardsInZone(engine, humanId, 'library').length,
@@ -1887,6 +1891,17 @@ function toSimpleLegalAction(action: AIAction, engineState: GameState): SimpleLe
       return {
         kind: 'ManualAdjustPlayerCounter',
         label: `${sign}${action.delta} ${action.counterType} counter on ${playerName}`,
+        _engineAction: action,
+      };
+    }
+    case 'ManualAdjustCommanderDamage': {
+      const playerName = engineState.players.find(player => player.id === action.playerId)?.name || 'player';
+      const commander = engineState.cards.get(action.commanderInstanceId);
+      const def = commander ? getCardDefinition(engineState, commander) : undefined;
+      const sign = action.delta > 0 ? '+' : '';
+      return {
+        kind: 'ManualAdjustCommanderDamage',
+        label: `${sign}${action.delta} commander damage to ${playerName} from ${def?.name || 'commander'}`,
         _engineAction: action,
       };
     }
@@ -5455,6 +5470,42 @@ export function useShelectorGame() {
     syncState();
   }, [addMessage, applyActionThroughAuthority, applyEvents, syncState]);
 
+  const adjustCommanderDamage = useCallback((targetPlayerId: string, commanderInstanceId: string, delta: number) => {
+    const engine = engineRef.current;
+    if (!engine) return;
+
+    const targetName = engine.players.find(player => player.id === targetPlayerId)?.name || targetPlayerId;
+    const commander = engine.cards.get(commanderInstanceId);
+    const commanderDef = commander ? getCardDefinition(engine, commander) : undefined;
+    const action: AIAction = {
+      kind: 'ManualAdjustCommanderDamage',
+      playerId: targetPlayerId,
+      commanderInstanceId,
+      delta,
+    };
+    const response = applyActionThroughAuthority(engine, humanIdRef.current, action, {
+      source: 'system',
+      label: toSimpleLegalAction(action, engine).label,
+    });
+    if (!response.ok || !response.state) {
+      const message = response.message || 'That commander damage correction was rejected.';
+      setActionError({ reason: response.reason || 'illegal_action', message });
+      addMessage('system', `Cannot adjust commander damage: ${message}`);
+      syncState();
+      return;
+    }
+
+    engineRef.current = response.state as GameStateWithAI;
+    applyEvents(response.events || [], response.state);
+
+    const sign = delta > 0 ? '+' : '';
+    addMessage(
+      'system',
+      `Manual correction: ${targetName} ${sign}${delta} commander damage from ${commanderDef?.name || 'commander'}.`,
+    );
+    syncState();
+  }, [addMessage, applyActionThroughAuthority, applyEvents, syncState]);
+
   const moveCardManually = useCallback((
     cardInstanceId: string,
     zone: 'hand' | 'battlefield' | 'graveyard' | 'exile' | 'command',
@@ -7182,6 +7233,7 @@ export function useShelectorGame() {
     untapManaSource,
     adjustCounters,
     adjustPlayerCounter,
+    adjustCommanderDamage,
     moveCardManually,
     adjustDamage,
     createManualToken,

@@ -126,7 +126,7 @@ Minimum acceptance bar from that file:
 | 8.2 No Observed Blocker Assignment UI | partial/not fully browser-proven |
 | 8.3 Attack Requirements And Restrictions | partial |
 | 9.1 Zone-Change Identity | partial; manual zone moves clear stale attachments, and manual attach/detach now preserves explicit attachment identity |
-| 9.2 Command Zone Rules | partial |
+| 9.2 Command Zone Rules | partial; manual commander-damage correction validates commander sources and feeds commander-damage loss checks |
 | 9.3 Graveyard/Exile/Library UX | partial |
 | 10.1 State Changes Need Presentation Events | partial; d20 rolls now have persisted presentation records and authoritative DiceRolled events, and manual attachment changes emit action events |
 | 10.2 Cause And Effect Need Better Timing | partial |

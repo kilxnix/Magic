@@ -62,6 +62,7 @@ export {
   tryEquip,
   tryAdjustCounters,
   tryAdjustPlayerCounter,
+  tryAdjustCommanderDamage,
   tryMoveCardManually,
   tryAdjustDamage,
   tryCreateManualToken,
