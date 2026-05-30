@@ -94,7 +94,7 @@ Minimum acceptance bar from that file:
 | 1.3 No Clear Separation Between Legal Actions, Suggested Actions, And Coach Actions | partial |
 | 1.4 No Proven Canonical Event-Sourced State | partial/test-proven for engine event-log replay records and `/play` saved-game audit fields |
 | 2.1 Sisay Legal Choice Filtering | browser-proven for tested flow |
-| 2.2 Search Legality In General | partial; top-N search prompts now limit choices to the looked-at cards and bottom unselected cards for Impulse-style effects, and ExileUntilNamed effects now prompt through a typed live named-card choice in `/play` with arbitrary card-name entry instead of forcing a hard-coded Oracle line. Room deck locking now has tested partner-commander/sideboard exclusion and decorated export cleanup before deck cards are sent to room state. |
+| 2.2 Search Legality In General | partial; top-N search prompts now limit choices to the looked-at cards and bottom unselected cards for Impulse-style effects, ExileUntilNamed effects now prompt through a typed live named-card choice in `/play` with arbitrary card-name entry instead of forcing a hard-coded Oracle line, and unrestricted tutor prompts now require a selection when a card is findable while restricted hidden-library searches still allow fail-to-find. Room deck locking now has tested partner-commander/sideboard exclusion and decorated export cleanup before deck cards are sent to room state. |
 | 2.3 Card Type Constraints | partial |
 | 2.4 Mana Value Constraints | partial |
 | 2.5 Continuous Effects And Layers | partial |
@@ -188,6 +188,8 @@ Additional action-layout verification added after this audit: Undo now lives in 
 Additional save-slot verification added after this audit: engine-level autosave rotation now uses four autosave slots, matching the `/play` four-slot browser save surface and its existing save-slot UI tests.
 
 Additional picker-wording verification added after this audit: card/search picker availability metadata now says `Selectable`/`Unavailable` instead of `Legal`/`Illegal`, reducing overclaims when the picker is exposing a prompt filter rather than proving every global rules condition. Destination chips now distinguish top/bottom library movement and command-zone movement explicitly.
+
+Additional search-rule verification added after this audit: unrestricted tutor prompts now default to one required selection when the library contains a findable card, and a paired authority test confirms restricted hidden-library searches can still fail to find.
 
 ## Direct Answer
 

@@ -568,6 +568,53 @@ describe('authority action boundary', () => {
     }]);
   });
 
+  it('requires unrestricted tutor searches to choose a card when the library has choices', () => {
+    const state = stateWithSisaySearchChoices();
+    const request = createSearchLibraryPromptRequest(state, 'p1', {}, 'hand', {
+      id: 'prompt-unrestricted-tutor',
+      maxSelections: 1,
+      createdAt: 1,
+    });
+
+    expect(request.minSelections).toBe(1);
+    expect(request.legalChoices.length).toBeGreaterThan(0);
+
+    const rejected = applySearchLibraryPromptResponse(state, request, {
+      requestId: request.id,
+      kind: 'SearchLibrary',
+      playerId: 'p1',
+      selectedCardInstanceIds: [],
+    });
+
+    expect(rejected.ok).toBe(false);
+    expect(rejected.reason).toBe('illegal_response');
+    expect(rejected.message).toBe('Search response must choose between 1 and 1 card(s).');
+  });
+
+  it('still allows fail-to-find for restricted hidden-library searches', () => {
+    const state = stateWithSisaySearchChoices();
+    const request = createSearchLibraryPromptRequest(state, 'p1', { types: ['land'], subtypes: ['Island'] }, 'hand', {
+      id: 'prompt-restricted-search',
+      maxSelections: 1,
+      createdAt: 1,
+    });
+
+    expect(request.minSelections).toBe(0);
+    expect(request.legalChoices).toHaveLength(0);
+
+    const accepted = applySearchLibraryPromptResponse(state, request, {
+      requestId: request.id,
+      kind: 'SearchLibrary',
+      playerId: 'p1',
+      selectedCardInstanceIds: [],
+    });
+
+    expect(accepted.ok).toBe(true);
+    if (accepted.ok) {
+      expect(accepted.state).toBe(state);
+    }
+  });
+
   it('uses Sisay current dynamic power when validating search prompt choices', () => {
     const sisay: CardDefinition = {
       ...def('sisay', 'Sisay, Weatherlight Captain', 'Legendary Creature - Human Soldier', '{2}{W}'),

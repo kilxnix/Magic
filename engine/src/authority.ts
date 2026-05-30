@@ -1780,6 +1780,17 @@ function evaluateSearchLibraryChoice(
   };
 }
 
+function isEmptyFilterValue(value: unknown): boolean {
+  if (value === undefined || value === null || value === false) return true;
+  if (Array.isArray(value)) return value.length === 0;
+  if (typeof value === 'object') return Object.keys(value as Record<string, unknown>).length === 0;
+  return false;
+}
+
+function isUnqualifiedSearchFilter(filter: CardFilter): boolean {
+  return Object.values(filter).every(isEmptyFilterValue);
+}
+
 export function createSearchLibraryPromptRequest(
   state: GameState,
   playerId: string,
@@ -1809,7 +1820,8 @@ export function createSearchLibraryPromptRequest(
 
   const legalChoices = choices.filter(choice => choice.legal);
   const invalidChoices = choices.filter(choice => !choice.legal);
-  const minSelections = options.minSelections ?? 0;
+  const minSelections = options.minSelections
+    ?? (isUnqualifiedSearchFilter(filter) && legalChoices.length > 0 ? 1 : 0);
   const maxSelections = options.maxSelections ?? 1;
 
   return {
