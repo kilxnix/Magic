@@ -1583,6 +1583,20 @@ describe('counter pattern matchers (task 17)', () => {
     expect(result.targets).toHaveLength(0);
   });
 
+  it('parses counters placed on this artifact as source-targeted', () => {
+    const result = parseOracleText('Put a charge counter on this artifact.');
+
+    expect(result.kind).toBe('Spell');
+    if (result.kind !== 'Spell') return;
+    expect(result.effects[0]).toMatchObject({
+      kind: 'AddCounters',
+      target: { kind: 'Source' },
+      counterType: 'charge',
+      count: 1,
+    });
+    expect(result.targets).toHaveLength(0);
+  });
+
   it('parses "put a flying counter on target creature"', () => {
     const result = parseOracleText('Put a flying counter on target creature.');
 

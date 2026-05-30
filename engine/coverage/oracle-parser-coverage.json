@@ -1,35 +1,35 @@
 {
-  "generatedAt": "2026-05-30T12:32:02.394Z",
+  "generatedAt": "2026-05-30T12:34:22.664Z",
   "source": "mtg_data/cards_min.jsonl",
   "commanderLegalOnly": true,
   "includedCards": 30969,
   "totalOracleFaces": 31420,
-  "parsedFaces": 15552,
-  "unparsedFaces": 15868,
-  "parsedPercent": 49.5,
+  "parsedFaces": 16063,
+  "unparsedFaces": 15357,
+  "parsedPercent": 51.12,
   "parsedKindCounts": {
-    "Unparsed": 15868,
-    "Spell": 10488,
-    "ETB": 2045,
-    "Triggered": 1179,
-    "KeywordOnly": 887,
-    "EntryCounters": 362,
+    "Unparsed": 15357,
+    "Spell": 10851,
+    "ETB": 2090,
+    "Triggered": 1317,
+    "KeywordOnly": 876,
     "StaticAbility": 340,
+    "EntryCounters": 338,
     "Modal": 236,
     "Dies": 15
   },
   "unparsedReasons": [
     {
       "reason": "No recognized pattern",
-      "count": 13269
+      "count": 12929
     },
     {
       "reason": "Could not parse ETB effect clause",
-      "count": 1408
+      "count": 1363
     },
     {
       "reason": "Could not parse trigger effect clause",
-      "count": 1160
+      "count": 1034
     },
     {
       "reason": "Could not parse dies effect clause",
@@ -40,14 +40,8 @@
     {
       "id": "trigger-timing",
       "reason": "Triggered or delayed triggered abilities need event registration and APNAP ordering.",
-      "count": 6834,
+      "count": 6420,
       "samples": [
-        {
-          "name": "Coalition Relic",
-          "set": "dmc",
-          "reason": "No recognized pattern",
-          "text": "{T}: Add one mana of any color. {T}: Put a charge counter on this artifact. At the beginning of your first main phase, remove all charge counters from this artifact. Add one mana of any color for each charge counter removed this way."
-        },
         {
           "name": "Mindlink Mech",
           "set": "neo",
@@ -89,6 +83,12 @@
           "set": "ecc",
           "reason": "Could not parse ETB effect clause",
           "text": "Flying When this creature enters, put target creature card from an opponent's graveyard onto the battlefield under your control. It gains haste. At the beginning of your next end step, exile it. Persist (When this creature dies, if it had no -1/-1 counters on it, return it to the battlefield under its owner's control with a -1/-1 counter on it.)"
+        },
+        {
+          "name": "Dazzling Sphinx",
+          "set": "otc",
+          "reason": "No recognized pattern",
+          "text": "Flying Whenever this creature deals combat damage to a player, that player exiles cards from the top of their library until they exile an instant or sorcery card. You may cast that card without paying its mana cost. Then that player puts the exiled cards that weren't cast this way on the bottom of their library in a random order."
         }
       ]
     },
@@ -150,7 +150,7 @@
     {
       "id": "continuous-layers",
       "reason": "Continuous effects need layer/timestamp/dependency handling.",
-      "count": 3290,
+      "count": 3261,
       "samples": [
         {
           "name": "Sensory Deprivation",
@@ -205,7 +205,7 @@
     {
       "id": "combat-multiplayer",
       "reason": "Combat or multiplayer-defender text needs combat/defender-aware execution.",
-      "count": 2423,
+      "count": 2379,
       "samples": [
         {
           "name": "Marang River Prowler",
@@ -260,14 +260,8 @@
     {
       "id": "tokens-counters",
       "reason": "Token/counter wording needs typed objects, counters, and downstream interactions.",
-      "count": 2315,
+      "count": 1804,
       "samples": [
-        {
-          "name": "Coalition Relic",
-          "set": "dmc",
-          "reason": "No recognized pattern",
-          "text": "{T}: Add one mana of any color. {T}: Put a charge counter on this artifact. At the beginning of your first main phase, remove all charge counters from this artifact. Add one mana of any color for each charge counter removed this way."
-        },
         {
           "name": "Puppeteer Clique",
           "set": "ecc",
@@ -309,13 +303,19 @@
           "set": "dsc",
           "reason": "Could not parse ETB effect clause",
           "text": "Lifelink When this creature enters, return up to one target creature card from your graveyard to the battlefield with a lifelink counter on it. Miracle {1}{B} (You may cast this card for its miracle cost when you draw it if it's the first card you drew this turn.)"
+        },
+        {
+          "name": "Gix's Caress",
+          "set": "bro",
+          "reason": "No recognized pattern",
+          "text": "Target opponent reveals their hand. You choose a nonland card from it. That player discards that card. Create a tapped Powerstone token. (It's an artifact with \"{T}: Add {C}. This mana can't be spent to cast a nonartifact spell.\")"
         }
       ]
     },
     {
       "id": "replacement-prevention",
       "reason": "Replacement/prevention effects require replacement-layer handling.",
-      "count": 1623,
+      "count": 1600,
       "samples": [
         {
           "name": "Sodden Verdure",
@@ -370,7 +370,7 @@
     {
       "id": "non-hand-zones",
       "reason": "Non-hand zone casting/movement needs zone permission and visibility checks.",
-      "count": 1552,
+      "count": 1500,
       "samples": [
         {
           "name": "Road of Return",
@@ -425,7 +425,7 @@
     {
       "id": "cost-system",
       "reason": "Alternative/additional/reduced costs need prompt-backed payment and legality.",
-      "count": 1229,
+      "count": 1221,
       "samples": [
         {
           "name": "Pteramander",
@@ -480,7 +480,7 @@
     {
       "id": "choice-modal",
       "reason": "Choice/modal/naming text should be prompt-backed instead of deterministic.",
-      "count": 819,
+      "count": 813,
       "samples": [
         {
           "name": "Road of Return",
@@ -535,7 +535,7 @@
     {
       "id": "library-selection",
       "reason": "Library search/look/reveal effects need legal choices, destinations, reveal policy, and ordering.",
-      "count": 773,
+      "count": 767,
       "samples": [
         {
           "name": "Safewright Quest",
@@ -590,7 +590,7 @@
     {
       "id": "copy-stack",
       "reason": "Copy/stack mechanics need stack-object identity and trigger multiplication.",
-      "count": 610,
+      "count": 600,
       "samples": [
         {
           "name": "Mindlink Mech",
@@ -645,7 +645,7 @@
     {
       "id": "special-mechanics",
       "reason": "Special mechanics need dedicated state and UI presentation.",
-      "count": 294,
+      "count": 286,
       "samples": [
         {
           "name": "Sword-Swallowing Seraph",

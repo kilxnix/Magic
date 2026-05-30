@@ -988,8 +988,8 @@ function matchAddCounters(tokens: string[], startIndex: number): PatternResult {
     const afterOn = typeEndIdx + 2;
 
     // Sub-case A1: "put a +1/+1 counter on ~" (self-target)
-    if (slice[afterOn] === '~') {
-      let consumed = afterOn + 1;
+    if (slice[afterOn] === '~' || (slice[afterOn] === 'this' && targetTypeFromSimplePermanentWord(slice[afterOn + 1]))) {
+      let consumed = slice[afterOn] === 'this' ? afterOn + 2 : afterOn + 1;
       if (tokens[startIndex + consumed] === '.') consumed++;
 
       const effect: Effect = {

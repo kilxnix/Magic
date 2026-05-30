@@ -161,6 +161,19 @@ describe('parseActivatedAbilities', () => {
     expect(abilities[0].effects[0].kind).toBe('Draw');
   });
 
+  it('parses source-targeted counter activated abilities', () => {
+    const text = '{T}: Put a charge counter on this artifact.';
+    const abilities = parseActivatedAbilities(text);
+    expect(abilities).toHaveLength(1);
+    expect(abilities[0].cost.tap).toBe(true);
+    expect(abilities[0].effects[0]).toMatchObject({
+      kind: 'AddCounters',
+      target: { kind: 'Source' },
+      counterType: 'charge',
+      count: 1,
+    });
+  });
+
   it('parses {2}{B}: effect as mana-only cost', () => {
     const text = '{2}{B}: Draw a card.';
     const abilities = parseActivatedAbilities(text);
