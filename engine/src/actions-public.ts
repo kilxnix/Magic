@@ -11,7 +11,7 @@ import {
   getAvailableManaColors,
   type PlayLandOptions,
 } from './actions';
-import { castSpell, canCastSpell, type CastSpellOptions } from './stack';
+import { castSpell, canCastSpell, getEffectiveCastCost, type CastSpellOptions } from './stack';
 import { canPaySpellCost, canPayUnrestrictedCost, parseManaString } from './mana';
 import { getCardDefinition } from './game-state';
 import { passPriority } from './priority';
@@ -278,9 +278,10 @@ export function tryCastSpell(
   if (state.priorityPlayerIndex !== playerIndex) return fail('priority_not_yours', 'You do not have priority');
 
   // Check that the player's mana pool can cover the spell's mana cost
-  const spellCost = parseManaString(def.mana_cost);
+  const fallbackCost = parseManaString(def.mana_cost);
   const taxAmount = card.zone === 'command' ? getCommanderTaxForCast(state, playerId, cardInstanceId) : 0;
-  const totalCost = reduceGenericCost(state, playerId, { ...spellCost, generic: spellCost.generic + taxAmount }, def);
+  const totalCost = getEffectiveCastCost(state, playerId, cardInstanceId, options)
+    ?? reduceGenericCost(state, playerId, { ...fallbackCost, generic: fallbackCost.generic + taxAmount }, def);
   if (!canPaySpellCost(player, totalCost, def, card)) {
     return fail('insufficient_mana', 'Insufficient mana in pool');
   }

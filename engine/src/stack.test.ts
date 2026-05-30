@@ -337,6 +337,108 @@ describe('Stack', () => {
       expect(next.stack[0].casterId).toBe('p1');
     });
 
+    it('uses delve cards from graveyard to pay generic spell costs', () => {
+      const delveSpell: CardDefinition = {
+        id: 'treasure-cruise-1',
+        name: 'Treasure Cruise',
+        type_line: 'Sorcery',
+        oracle_text: 'Delve\nDraw three cards.',
+        mana_cost: '{7}{U}',
+        cmc: 8,
+        colors: ['U'],
+        color_identity: ['U'],
+        keywords: ['Delve'],
+        card_types: ['sorcery'],
+      };
+      const fillers = Array.from({ length: 7 }, (_, index) => makeVanillaCard(`grave-${index}`, `Grave ${index}`));
+      const decks = [
+        { playerId: 'p1', name: 'Alice', cards: [delveSpell, ...fillers], commanderId: 'cmd1' },
+        { playerId: 'p2', name: 'Bob', cards: [], commanderId: 'cmd2' },
+      ];
+      let state = initGameState(decks);
+      const spell = getCardsInZone(state, 'p1', 'library').find(card => card.definitionId === delveSpell.id)!;
+      state.cards.set(spell.instanceId, { ...spell, zone: 'hand' });
+      for (const card of getCardsInZone(state, 'p1', 'library').filter(card => card.instanceId !== spell.instanceId)) {
+        state.cards.set(card.instanceId, { ...card, zone: 'graveyard' });
+      }
+      state.players[0].manaPool = { W: 0, U: 1, B: 0, R: 0, G: 0, C: 0 };
+      state = { ...state, phase: 'precombat_main' };
+
+      expect(canCastSpell(state, 'p1', spell.instanceId)).toBe(true);
+      const next = castSpell(state, 'p1', spell.instanceId);
+      expect(next.cards.get(spell.instanceId)?.zone).toBe('stack');
+      expect([...next.cards.values()].filter(card => card.zone === 'exile')).toHaveLength(7);
+      expect(next.players[0].manaPool.U).toBe(0);
+    });
+
+    it('uses convoke creatures to pay spell costs and taps them', () => {
+      const convokeSpell: CardDefinition = {
+        id: 'conclave-convoke-1',
+        name: 'Conclave Test',
+        type_line: 'Sorcery',
+        oracle_text: 'Convoke\nCreate a token.',
+        mana_cost: '{3}{G}',
+        cmc: 4,
+        colors: ['G'],
+        color_identity: ['G'],
+        keywords: ['Convoke'],
+        card_types: ['sorcery'],
+      };
+      const creatures = [makeVanillaCard('c1', 'Helper One'), makeVanillaCard('c2', 'Helper Two'), makeVanillaCard('c3', 'Helper Three')];
+      const decks = [
+        { playerId: 'p1', name: 'Alice', cards: [convokeSpell, ...creatures], commanderId: 'cmd1' },
+        { playerId: 'p2', name: 'Bob', cards: [], commanderId: 'cmd2' },
+      ];
+      let state = initGameState(decks);
+      const spell = getCardsInZone(state, 'p1', 'library').find(card => card.definitionId === convokeSpell.id)!;
+      state.cards.set(spell.instanceId, { ...spell, zone: 'hand' });
+      const helpers = getCardsInZone(state, 'p1', 'library').filter(card => card.instanceId !== spell.instanceId);
+      for (const card of helpers) state.cards.set(card.instanceId, { ...card, zone: 'battlefield', tapped: false });
+      state.players[0].manaPool = { W: 0, U: 0, B: 0, R: 0, G: 1, C: 0 };
+      state = { ...state, phase: 'precombat_main' };
+
+      expect(canCastSpell(state, 'p1', spell.instanceId)).toBe(true);
+      const next = castSpell(state, 'p1', spell.instanceId);
+      expect(helpers.every(card => next.cards.get(card.instanceId)?.tapped)).toBe(true);
+      expect(next.cards.get(spell.instanceId)?.zone).toBe('stack');
+    });
+
+    it('uses improvise artifacts to pay generic spell costs and taps them', () => {
+      const improviseSpell: CardDefinition = {
+        id: 'improvise-test-1',
+        name: 'Improvise Test',
+        type_line: 'Sorcery',
+        oracle_text: 'Improvise\nDraw a card.',
+        mana_cost: '{3}{U}',
+        cmc: 4,
+        colors: ['U'],
+        color_identity: ['U'],
+        keywords: ['Improvise'],
+        card_types: ['sorcery'],
+      };
+      const artifacts = [
+        { ...makeArtifact(), id: 'artifact-a', name: 'Artifact A' },
+        { ...makeArtifact(), id: 'artifact-b', name: 'Artifact B' },
+        { ...makeArtifact(), id: 'artifact-c', name: 'Artifact C' },
+      ];
+      const decks = [
+        { playerId: 'p1', name: 'Alice', cards: [improviseSpell, ...artifacts], commanderId: 'cmd1' },
+        { playerId: 'p2', name: 'Bob', cards: [], commanderId: 'cmd2' },
+      ];
+      let state = initGameState(decks);
+      const spell = getCardsInZone(state, 'p1', 'library').find(card => card.definitionId === improviseSpell.id)!;
+      state.cards.set(spell.instanceId, { ...spell, zone: 'hand' });
+      const helpers = getCardsInZone(state, 'p1', 'library').filter(card => card.instanceId !== spell.instanceId);
+      for (const card of helpers) state.cards.set(card.instanceId, { ...card, zone: 'battlefield', tapped: false });
+      state.players[0].manaPool = { W: 0, U: 1, B: 0, R: 0, G: 0, C: 0 };
+      state = { ...state, phase: 'precombat_main' };
+
+      expect(canCastSpell(state, 'p1', spell.instanceId)).toBe(true);
+      const next = castSpell(state, 'p1', spell.instanceId);
+      expect(helpers.every(card => next.cards.get(card.instanceId)?.tapped)).toBe(true);
+      expect(next.cards.get(spell.instanceId)?.zone).toBe('stack');
+    });
+
     it('resets priority passed after casting', () => {
       const { state, cardInstanceId } = setupWithCardInHand(makeCreature());
       state.hasPriorityPassed[0] = true;

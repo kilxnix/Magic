@@ -21,6 +21,9 @@ export interface CastSpellOptions {
   chosenModes?: number[];
   namedCardChoices?: Record<string, string>;
   cardChoices?: CardInstance['choices'];
+  delveCardIds?: string[];
+  convokeCreatureIds?: string[];
+  improviseArtifactIds?: string[];
 }
 
 function normalizeCastOptions(options?: number[] | CastSpellOptions): CastSpellOptions {
@@ -36,6 +39,129 @@ function copyCardChoices(choices?: CardInstance['choices']): CardInstance['choic
     imprintedCardIds: choices.imprintedCardIds ? [...choices.imprintedCardIds] : undefined,
     discardedCardIds: choices.discardedCardIds ? [...choices.discardedCardIds] : undefined,
   } : undefined;
+}
+
+interface CostMechanicPlan {
+  cost: ReturnType<typeof parseManaString>;
+  tapIds: string[];
+  exileIds: string[];
+}
+
+function hasKeywordOrText(def: CardDefinition, keyword: string): boolean {
+  const normalized = keyword.toLowerCase();
+  return def.keywords.some(item => item.toLowerCase() === normalized)
+    || new RegExp(`\\b${keyword}\\b`, 'i').test(def.oracle_text);
+}
+
+function cardColorsForPayment(def: CardDefinition): Array<'W' | 'U' | 'B' | 'R' | 'G'> {
+  return def.colors.filter((color): color is 'W' | 'U' | 'B' | 'R' | 'G' => color !== 'C');
+}
+
+function getControllerBattlefieldCards(
+  state: GameState,
+  playerId: string,
+  predicate: (card: CardInstance, def: CardDefinition) => boolean,
+): CardInstance[] {
+  return [...state.cards.values()].filter(card => {
+    if (card.ownerId !== playerId || card.zone !== 'battlefield' || card.tapped) return false;
+    const def = state.cardDefinitions.get(card.definitionId);
+    return !!def && predicate(card, def);
+  });
+}
+
+function orderedMechanicCandidates<T extends CardInstance>(
+  candidates: T[],
+  preferredIds?: string[],
+): T[] {
+  if (!preferredIds?.length) return candidates;
+  const byId = new Map(candidates.map(card => [card.instanceId, card]));
+  return preferredIds.map(id => byId.get(id)).filter((card): card is T => Boolean(card));
+}
+
+function reduceCostForConvokeCreature(
+  cost: ReturnType<typeof parseManaString>,
+  creatureDef: CardDefinition,
+): ReturnType<typeof parseManaString> {
+  const next = { ...cost };
+  for (const color of cardColorsForPayment(creatureDef)) {
+    if (next[color] > 0) {
+      next[color] -= 1;
+      return next;
+    }
+  }
+  if (next.generic > 0) {
+    next.generic -= 1;
+    return next;
+  }
+  return cost;
+}
+
+function buildCostMechanicPlan(
+  state: GameState,
+  playerId: string,
+  spellCard: CardInstance,
+  spellDef: CardDefinition,
+  baseCost: ReturnType<typeof parseManaString>,
+  options: CastSpellOptions,
+): CostMechanicPlan {
+  const player = state.players.find(p => p.id === playerId);
+  if (!player) return { cost: baseCost, tapIds: [], exileIds: [] };
+
+  let cost = { ...baseCost };
+  const tapIds: string[] = [];
+  const exileIds: string[] = [];
+  const hasExplicitMechanicChoice = Boolean(
+    options.delveCardIds?.length
+    || options.convokeCreatureIds?.length
+    || options.improviseArtifactIds?.length,
+  );
+
+  const isPayable = () => canPaySpellCost(player, cost, spellDef, spellCard);
+  if (!hasExplicitMechanicChoice && isPayable()) return { cost, tapIds, exileIds };
+
+  if (hasKeywordOrText(spellDef, 'delve') && cost.generic > 0) {
+    const graveyardCards = [...state.cards.values()]
+      .filter(card => card.ownerId === playerId && card.zone === 'graveyard' && card.instanceId !== spellCard.instanceId);
+    const chosen = orderedMechanicCandidates(graveyardCards, options.delveCardIds);
+    const candidates = options.delveCardIds?.length ? chosen : graveyardCards;
+    for (const card of candidates) {
+      if (cost.generic <= 0) break;
+      exileIds.push(card.instanceId);
+      cost = { ...cost, generic: cost.generic - 1 };
+      if (!hasExplicitMechanicChoice && isPayable()) break;
+    }
+  }
+
+  if (hasKeywordOrText(spellDef, 'convoke')) {
+    const creatures = getControllerBattlefieldCards(state, playerId, (_card, def) => def.card_types.includes('creature'));
+    const candidates = options.convokeCreatureIds?.length
+      ? orderedMechanicCandidates(creatures, options.convokeCreatureIds)
+      : creatures;
+    for (const creature of candidates) {
+      const creatureDef = state.cardDefinitions.get(creature.definitionId);
+      if (!creatureDef) continue;
+      const nextCost = reduceCostForConvokeCreature(cost, creatureDef);
+      if (nextCost === cost) continue;
+      tapIds.push(creature.instanceId);
+      cost = nextCost;
+      if (!hasExplicitMechanicChoice && isPayable()) break;
+    }
+  }
+
+  if (hasKeywordOrText(spellDef, 'improvise') && cost.generic > 0) {
+    const artifacts = getControllerBattlefieldCards(state, playerId, (_card, def) => def.card_types.includes('artifact'));
+    const candidates = options.improviseArtifactIds?.length
+      ? orderedMechanicCandidates(artifacts, options.improviseArtifactIds)
+      : artifacts;
+    for (const artifact of candidates) {
+      if (cost.generic <= 0) break;
+      tapIds.push(artifact.instanceId);
+      cost = { ...cost, generic: cost.generic - 1 };
+      if (!hasExplicitMechanicChoice && isPayable()) break;
+    }
+  }
+
+  return { cost, tapIds: [...new Set(tapIds)], exileIds: [...new Set(exileIds)] };
 }
 
 function hasCastSacrificeToCounterChoice(oracleText: string): boolean {
@@ -673,6 +799,21 @@ export function registerContinuousAbilitiesForPermanent(state: GameState, instan
   return resultState;
 }
 
+export function getEffectiveCastCost(
+  state: GameState,
+  playerId: string,
+  cardInstanceId: string,
+  options: CastSpellOptions = {},
+): ReturnType<typeof parseManaString> | null {
+  const card = state.cards.get(cardInstanceId);
+  if (!card) return null;
+  const def = getCardDefinition(state, card);
+  const baseCost = parseManaString(def.mana_cost);
+  const taxAmount = card.zone === 'command' ? getCommanderTaxForCast(state, playerId, cardInstanceId) : 0;
+  const reducedCost = reduceGenericCost(state, playerId, { ...baseCost, generic: baseCost.generic + taxAmount }, def);
+  return buildCostMechanicPlan(state, playerId, card, def, reducedCost, options).cost;
+}
+
 export function canCastSpell(state: GameState, playerId: string, cardInstanceId: string): boolean {
   const card = state.cards.get(cardInstanceId);
   if (!card) return false;
@@ -702,9 +843,8 @@ export function canCastSpell(state: GameState, playerId: string, cardInstanceId:
   }
 
   // Check mana (including commander tax for command zone casts)
-  const baseCost = parseManaString(def.mana_cost);
-  const taxAmount = card.zone === 'command' ? getCommanderTaxForCast(state, playerId, cardInstanceId) : 0;
-  const totalCost = reduceGenericCost(state, playerId, { ...baseCost, generic: baseCost.generic + taxAmount }, def);
+  const totalCost = getEffectiveCastCost(state, playerId, cardInstanceId);
+  if (!totalCost) return false;
 
   if (!canPaySpellCost(player!, totalCost, def, card)) return false;
 
@@ -737,7 +877,9 @@ export function castSpell(
   const player = state.players[playerIndex];
   const isFromCommandZone = card.zone === 'command';
   const taxAmount = isFromCommandZone ? getCommanderTaxForCast(state, playerId, cardInstanceId) : 0;
-  const totalCost = reduceGenericCost(state, playerId, { ...cost, generic: cost.generic + taxAmount }, def);
+  const reducedCost = reduceGenericCost(state, playerId, { ...cost, generic: cost.generic + taxAmount }, def);
+  const mechanicPlan = buildCostMechanicPlan(state, playerId, card, def, reducedCost, castOptions);
+  const totalCost = mechanicPlan.cost;
   const usedRestrictedMana = getSpellPaymentRestrictedMana(player, totalCost, def, card);
   const usedConditionalMana = getSpellPaymentConditionalMana(player, totalCost, def, card);
   const paidPlayer = paySpellCost(player, totalCost, def, card);
@@ -768,6 +910,14 @@ export function castSpell(
 
   // Move card to stack zone
   const newCards = new Map(state.cards);
+  for (const tapId of mechanicPlan.tapIds) {
+    const tappedCard = newCards.get(tapId);
+    if (tappedCard) newCards.set(tapId, { ...tappedCard, tapped: true });
+  }
+  for (const exileId of mechanicPlan.exileIds) {
+    const exiledCard = newCards.get(exileId);
+    if (exiledCard) newCards.set(exileId, { ...exiledCard, zone: 'exile', tapped: false, damage: 0 });
+  }
   newCards.set(cardInstanceId, { ...card, zone: 'stack' as const });
 
   // Add to stack
