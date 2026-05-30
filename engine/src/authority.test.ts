@@ -2409,6 +2409,102 @@ describe('authority action boundary', () => {
     }));
   });
 
+  it('audits rejected prompt-response event records without mutating replay state', () => {
+    const state = stateWithSisaySearchChoices();
+    const request = createSearchLibraryPromptRequest(state, 'p1', {
+      supertypes: ['Legendary'],
+      permanent: true,
+      manaValueLessThanSourcePower: true,
+    }, 'battlefield', {
+      id: 'prompt-event-log-sisay',
+      sourceInstanceId: 'sisay_1',
+      minSelections: 1,
+      maxSelections: 1,
+      createdAt: 19,
+    });
+    const response = {
+      requestId: request.id,
+      kind: 'SearchLibrary' as const,
+      playerId: 'p1',
+      selectedCardInstanceIds: ['arcane_signet_1'],
+    };
+    const rejected = applySearchLibraryPromptResponse(state, request, response);
+    expect(rejected.ok).toBe(false);
+    expect(rejected.update).toBeDefined();
+
+    const logRecord = createEngineEventLogRecord(
+      0,
+      { kind: 'Prompt', request, response },
+      rejected.update!,
+      false,
+    );
+    const report = auditEngineEventLogReplay(state, [logRecord]);
+
+    expect(logRecord.expectedOk).toBe(false);
+    expect(logRecord.stateIdBefore).toBe(stateFingerprint(state));
+    expect(logRecord.stateIdAfter).toBe(stateFingerprint(state));
+    expect(logRecord.rulesEvents.map(event => event.kind)).toEqual(['PromptResponseRejected']);
+    expect(report.ok).toBe(true);
+    expect(report.finalState).toBe(state);
+    expect(report.steps[0]).toEqual(expect.objectContaining({
+      requestId: request.id,
+      ok: true,
+      actualRuleEventKinds: ['PromptResponseRejected'],
+      expectedVisibleDiffKinds: [],
+      actualVisibleDiffKinds: [],
+    }));
+  });
+
+  it('rejects event-log replay when a supposedly accepted prompt response replays as illegal', () => {
+    const state = stateWithSisaySearchChoices();
+    const request = createSearchLibraryPromptRequest(state, 'p1', {
+      supertypes: ['Legendary'],
+      permanent: true,
+      manaValueLessThanSourcePower: true,
+    }, 'battlefield', {
+      id: 'prompt-event-log-illegal-as-accepted',
+      sourceInstanceId: 'sisay_1',
+      minSelections: 1,
+      maxSelections: 1,
+      createdAt: 20,
+    });
+    const response = {
+      requestId: request.id,
+      kind: 'SearchLibrary' as const,
+      playerId: 'p1',
+      selectedCardInstanceIds: ['arcane_signet_1'],
+    };
+    const rejected = applySearchLibraryPromptResponse(state, request, response);
+    expect(rejected.ok).toBe(false);
+    expect(rejected.update).toBeDefined();
+
+    const forgedAcceptedRecord = createEngineEventLogRecord(
+      0,
+      { kind: 'Prompt', request, response },
+      {
+        ...rejected.update!,
+        rulesEvents: [{
+          kind: 'PromptResponseAccepted',
+          requestId: request.id,
+          playerId: 'p1',
+          promptKind: 'SearchLibrary',
+          selectedCardInstanceIds: ['arcane_signet_1'],
+          destination: 'battlefield',
+        }],
+      },
+      true,
+    );
+    const report = auditEngineEventLogReplay(state, [forgedAcceptedRecord]);
+
+    expect(report.ok).toBe(false);
+    expect(report.steps[0]).toEqual(expect.objectContaining({
+      requestId: request.id,
+      ok: false,
+      reason: 'result_mismatch',
+      message: 'Event log result mismatch: expected ok=true, got ok=false.',
+    }));
+  });
+
   it('replays validated manual mana untap corrections after a mana action', () => {
     const state = stateWithForestInHand();
     const forest = [...state.cards.values()].find(card => card.ownerId === 'p1' && card.definitionId === 'forest');

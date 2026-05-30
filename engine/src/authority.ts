@@ -671,7 +671,7 @@ export interface EngineReplayAuditStep {
   ok: boolean;
   actionKind?: AIAction['kind'];
   promptKind?: EnginePromptKind;
-  reason?: ClientActionFailure | ClientPromptFailure | 'missing_state' | 'invariant_violation' | 'state_mismatch' | 'event_mismatch' | 'diff_mismatch';
+  reason?: ClientActionFailure | ClientPromptFailure | 'missing_state' | 'invariant_violation' | 'state_mismatch' | 'event_mismatch' | 'diff_mismatch' | 'result_mismatch';
   message?: string;
 }
 
@@ -686,6 +686,7 @@ export interface EngineEventLogRecord {
   actorPlayerId: string;
   kind: EngineReplayRecord['kind'];
   requestId: string;
+  expectedOk: boolean;
   stateIdBefore: string;
   stateIdAfter: string;
   record: EngineReplayRecord;
@@ -5284,20 +5285,24 @@ export function createEngineEventLogRecord(
   sequence: number,
   record: EngineReplayRecord,
   update: EngineStateUpdate,
+  expectedOkOrTimestamp: boolean | number = true,
   timestamp?: number,
 ): EngineEventLogRecord {
   const request = record.kind === 'Action' ? record.request : record.request;
+  const expectedOk = typeof expectedOkOrTimestamp === 'boolean' ? expectedOkOrTimestamp : true;
+  const resolvedTimestamp = typeof expectedOkOrTimestamp === 'number' ? expectedOkOrTimestamp : timestamp;
   return {
     sequence,
     actorPlayerId: request.playerId,
     kind: record.kind,
     requestId: request.id,
+    expectedOk,
     stateIdBefore: update.oldStateId,
     stateIdAfter: update.newStateId,
     record,
     rulesEvents: update.rulesEvents,
     visibleDiffs: update.visibleDiffs,
-    timestamp,
+    timestamp: resolvedTimestamp,
   };
 }
 
@@ -5356,7 +5361,7 @@ export function auditEngineEventLogReplay(
     const step: EngineEventLogAuditStep = {
       ...baseStep,
       stateAfterId,
-      ok: result.ok,
+      ok: result.ok === record.expectedOk,
       reason: result.reason,
       message: result.message,
       actualRuleEventKinds,
@@ -5364,7 +5369,23 @@ export function auditEngineEventLogReplay(
     };
     steps.push(step);
 
-    if (!result.ok || !result.state) {
+    if (result.ok !== record.expectedOk) {
+      steps[steps.length - 1] = {
+        ...step,
+        ok: false,
+        reason: 'result_mismatch',
+        message: `Event log result mismatch: expected ok=${record.expectedOk}, got ok=${result.ok}.`,
+      };
+      return { ok: false, steps };
+    }
+
+    if (!result.update) {
+      steps[steps.length - 1] = {
+        ...step,
+        ok: false,
+        reason: 'missing_state',
+        message: 'Event log replay did not produce a state update.',
+      };
       return { ok: false, steps };
     }
 
@@ -5374,6 +5395,16 @@ export function auditEngineEventLogReplay(
         ok: false,
         reason: 'state_mismatch',
         message: `Event log state-after mismatch: expected ${record.stateIdAfter}, got ${stateAfterId || 'missing state update'}.`,
+      };
+      return { ok: false, steps };
+    }
+
+    if (record.expectedOk && !result.state) {
+      steps[steps.length - 1] = {
+        ...step,
+        ok: false,
+        reason: 'missing_state',
+        message: 'Accepted event-log replay did not produce a resulting state.',
       };
       return { ok: false, steps };
     }
@@ -5398,7 +5429,8 @@ export function auditEngineEventLogReplay(
       return { ok: false, steps };
     }
 
-    const invariantReport = validateStateInvariants(result.state);
+    const nextState = record.expectedOk ? result.state! : state;
+    const invariantReport = validateStateInvariants(nextState);
     if (!invariantReport.ok) {
       steps[steps.length - 1] = {
         ...step,
@@ -5409,7 +5441,7 @@ export function auditEngineEventLogReplay(
       return { ok: false, steps };
     }
 
-    state = result.state;
+    state = nextState;
   }
 
   return {

@@ -45,7 +45,7 @@ Source files audited:
 | 13. Continuous effects/derived characteristics | partial | Sisay power and some layers/effective types work. Full CR-style layer/dependency system is not complete. |
 | 14. AI uses same engine contract | partial | AI action tests pass and AI uses try paths in slices. Full 4p politics/hidden-info safe AI is not complete. |
 | 15. Deterministic scenario testing | partial | Many scenarios exist; not the whole listed minimum bar. |
-| 16. Replay/audit layer | partial/test-proven | `auditEngineEventLogReplay` can replay committed action/prompt records from event-log state hashes, verify rules-event and visible-diff sequences, and fail on mismatch. This is not yet a full persisted/shareable replay product. |
+| 16. Replay/audit layer | partial/test-proven | `auditEngineEventLogReplay` can replay committed action/prompt records from event-log state hashes, verify rules-event and visible-diff sequences, audit expected prompt/action rejections, and fail on mismatch. This is not yet a full persisted/shareable replay product. |
 
 Minimum acceptance bar from that file:
 
@@ -71,7 +71,7 @@ Minimum acceptance bar from that file:
 | Fix 3: Shared Legality Engine | partial | Action paths improved, review and UI suggestions still not fully unified. |
 | Fix 4: Prompt System | partial | Search/scry/surveil/equipment style prompts exist, Brainstorm hand-to-library-top selection exists, and manual attach/detach plus turn/phase correction now use validated action requests; no fully generic typed request system. |
 | Fix 5: Transactional Engine Updates | partial | Authority/action response structures exist; not a complete event-sourced transaction model. |
-| Fix 6: Event-Sourced Replay | partial/test-proven | Engine event-log records now carry request, before/after state IDs, rules events, and visible diffs; `auditEngineEventLogReplay` replays and rejects tampered/mismatched records. Persistence and UI replay are still incomplete. |
+| Fix 6: Event-Sourced Replay | partial/test-proven | Engine event-log records now carry request, before/after state IDs, expected accepted/rejected result, rules events, and visible diffs; `auditEngineEventLogReplay` replays and rejects tampered/mismatched records. Persistence and UI replay are still incomplete. |
 | Fix 7: Review Must Audit Legality | partial | Review wording and some legality surfacing exist; no full legality audit. |
 | Fix 8: Stack And Priority | partial | Visible stack/priority exists; full-control/stop settings are incomplete. |
 | Fix 9: Turn And Phase Labels | partial/browser-checked in UI scripts | Labels improved and a validated turn/phase correction surface exists; event consistency is not globally audited. |
