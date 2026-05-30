@@ -39,7 +39,7 @@ Area table:
 | P0 | partial | tokens | Add a token factory certification table and browser proof for Krenko, Talrand, Goblin Spymaster, Dockside-style counting, and token sacrifice. |
 | P0 | partial | triggers-etb | Create a trigger matrix by event kind and add missing beginning/end step token triggers. |
 | P0 | partial | turn-structure-priority | Add multiplayer APNAP priority fixtures and browser proof for skip rest of turn after stack/combat windows. |
-| P0 | partial | ui-gameplay | Add browser automation certification for each starter deck and all action categories. |
+| P0 | partial | ui-gameplay | D20 rolls now persist as public engine state, emit authoritative DiceRolled events, and appear as a disappearing playfield toast; add browser automation certification for each starter deck and all action categories. |
 | P1 | partial | keywords-non-evergreen | Prowess now registers as a real noncreature-spell trigger with temporary +1/+1 cleanup; continue the mechanic-by-mechanic implementation list for other popular Commander mechanics. |
 | P1 | partial | post-game-review | Decision reviews now audit selected actions through the engine authority boundary and are attached to authoritative state updates; continue broadening line comparison and replay presentation. |
 | P1 | partial | ai-shelector | Add speed and legality benchmark across archetypes and stack-heavy high-power states. |

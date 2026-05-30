@@ -204,6 +204,20 @@ export interface SimplePlayer {
   libraryCount: number;
 }
 
+export interface SimpleDiceRoll {
+  id: string;
+  playerId: string;
+  sourceInstanceId?: string;
+  sourceName?: string;
+  sides: 20;
+  result: number;
+  outcomeMin: number;
+  outcomeMax: number;
+  turnNumber: number;
+  phase: string;
+  step: string;
+}
+
 export interface SimpleGameState {
   turnNumber: number;
   phase: string;
@@ -220,6 +234,8 @@ export interface SimpleGameState {
   gameOver: boolean;
   winnerId: string | null;
   manaPool: { W: number; U: number; B: number; R: number; G: number; C: number };
+  diceRolls: SimpleDiceRoll[];
+  lastDiceRoll: SimpleDiceRoll | null;
 
   // Multiplayer AI support: arrays/records keyed by AI player ID
   aiPlayers: SimplePlayer[];
@@ -1630,6 +1646,19 @@ function deriveSimpleState(
   // Convert raw turn number to round number (turn 1&2 in 2-player = round 1, etc.)
   const playerCount = engine.players.length;
   const roundNumber = publicTurnNumber(engine.turnNumber, playerCount);
+  const diceRolls: SimpleDiceRoll[] = (engine.diceRolls || []).map(roll => ({
+    id: roll.id,
+    playerId: roll.playerId,
+    sourceInstanceId: roll.sourceInstanceId,
+    sourceName: roll.sourceName,
+    sides: roll.sides,
+    result: roll.result,
+    outcomeMin: roll.outcomeMin,
+    outcomeMax: roll.outcomeMax,
+    turnNumber: publicTurnNumber(roll.turnNumber, playerCount),
+    phase: roll.phase,
+    step: roll.step,
+  }));
 
   return {
     turnNumber: roundNumber,
@@ -1655,6 +1684,8 @@ function deriveSimpleState(
     gameOver,
     winnerId,
     manaPool: { ...humanPlayer.manaPool },
+    diceRolls,
+    lastDiceRoll: diceRolls[diceRolls.length - 1] || null,
 
     // Multiplayer AI fields
     aiPlayers,

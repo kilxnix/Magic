@@ -77,7 +77,7 @@ Minimum acceptance bar from that file:
 | Fix 9: Turn And Phase Labels | partial/browser-checked in UI scripts | Labels improved; event consistency is not globally audited. |
 | Fix 10: Replacement/Choice Prompts | partial | Some ETB/tapped/pay-life prompts exist; not global replacement handling. |
 | Fix 11: Continuous Effects And Layers | partial | Practical layer slices exist; not full Arena-like layer fidelity. |
-| Fix 12: Presentation Events | partial | Feed/last-played/modal polish exists; not a full animation/event pipeline. |
+| Fix 12: Presentation Events | partial | Feed/last-played/modal polish exists, and d20 rolls now persist through the engine authority update as DiceRolled events with a playfield toast. This is still not a full animation/event pipeline. |
 | Fix 13: AI Must Use Same Engine | partial | Better action wrappers; not full AI legality/hidden-info proof. |
 | Fix 14: Unsupported Rules Handling | partial | Some unsupported actions fail clearly; full card support/fallback coverage incomplete. |
 | Fix 15: Test Plan | partial | Many tests added; listed golden tests are not all fully browser-proven. |
@@ -128,7 +128,7 @@ Minimum acceptance bar from that file:
 | 9.1 Zone-Change Identity | partial |
 | 9.2 Command Zone Rules | partial |
 | 9.3 Graveyard/Exile/Library UX | partial |
-| 10.1 State Changes Need Presentation Events | partial |
+| 10.1 State Changes Need Presentation Events | partial; d20 rolls now have persisted presentation records and authoritative DiceRolled events |
 | 10.2 Cause And Effect Need Better Timing | partial |
 | 10.3 Battlefield Visual Hierarchy | partial |
 | 10.4 Card Presentation | partial |
@@ -155,7 +155,7 @@ Minimum acceptance bar from that file:
 | 7. Mana Payment And Autotap | partial |
 | 8. Combat Flow | partial |
 | 9. Opponent Simulation | partial |
-| 10. Animation/Event Pipeline | partial/not complete |
+| 10. Animation/Event Pipeline | partial/not complete; d20 is now evented and surfaced, broader animation/event coverage remains |
 | 11. Battlefield Layout And Visual Hierarchy | partial |
 | 12. Card Presentation | partial |
 | 13. Prompts And Modal Feel | partial |

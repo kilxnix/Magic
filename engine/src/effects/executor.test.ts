@@ -802,6 +802,17 @@ describe('Phase 10 effects', () => {
 
       expect(token).toBeDefined();
       expect(morningstar?.attachedTo).toBe(token?.instanceId);
+      expect(newState.diceRolls).toEqual([
+        expect.objectContaining({
+          playerId: 'player-1',
+          sourceInstanceId: 'morningstar-1',
+          sourceName: 'Goblin Morningstar',
+          sides: 20,
+          result: 20,
+          outcomeMin: 10,
+          outcomeMax: 20,
+        }),
+      ]);
     });
   });
 

@@ -225,6 +225,28 @@ describe('serializeGameState / deserializeGameState', () => {
     expect(deserialized.damagePreventionEffects).toEqual(state.damagePreventionEffects);
   });
 
+  it('round-trips public dice roll presentation history correctly', () => {
+    const state = createTestState();
+    state.diceRolls = [{
+      id: 'dice_1_1_morningstar_20',
+      playerId: 'p1',
+      sourceInstanceId: 'morningstar-1',
+      sourceName: 'Goblin Morningstar',
+      sides: 20,
+      result: 20,
+      outcomeMin: 10,
+      outcomeMax: 20,
+      turnNumber: state.turnNumber,
+      phase: state.phase,
+      step: state.step,
+    }];
+
+    const serialized = serializeGameState(state);
+    const deserialized = deserializeGameState(serialized);
+
+    expect(deserialized.diceRolls).toEqual(state.diceRolls);
+  });
+
   it('round-trips grudge data correctly', () => {
     let state = initGrudgeTracking(createTestState());
     state = recordDamage(state, 'p2', 'p1', 10);

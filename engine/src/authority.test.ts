@@ -1790,6 +1790,45 @@ describe('authority action boundary', () => {
     ]));
   });
 
+  it('surfaces d20 rolls as authoritative presentation events', () => {
+    const before = stateWithForestInHand();
+    const after: GameState = {
+      ...before,
+      diceRolls: [{
+        id: 'dice_1',
+        playerId: 'p1',
+        sourceInstanceId: 'morningstar-1',
+        sourceName: 'Goblin Morningstar',
+        sides: 20,
+        result: 17,
+        outcomeMin: 10,
+        outcomeMax: 20,
+        turnNumber: before.turnNumber,
+        phase: before.phase,
+        step: before.step,
+      }],
+    };
+
+    const update = buildStateUpdate(before, after);
+
+    expect(update.rulesEvents).toContainEqual({
+      kind: 'DiceRolled',
+      roll: {
+        id: 'dice_1',
+        playerId: 'p1',
+        sourceInstanceId: 'morningstar-1',
+        sourceName: 'Goblin Morningstar',
+        sides: 20,
+        result: 17,
+        outcomeMin: 10,
+        outcomeMax: 20,
+        turnNumber: before.turnNumber,
+        phase: before.phase,
+        step: before.step,
+      },
+    });
+  });
+
   it('rejects actions that were not issued by the current engine prompt', () => {
     const state = stateWithForestInHand();
     const prompt = buildActionPrompt(state, 'p1');

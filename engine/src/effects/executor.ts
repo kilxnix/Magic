@@ -3,7 +3,7 @@
 // Phase 14: Extended with ExileFromLibrary, GainControl, ForEach, EachPlayer, AllOfType
 // Phase 17: Conditional, Blink, Copy, GrantKeyword, PhaseOut, loyalty ability execution
 
-import type { GameState, CardInstance, CardDefinition, PendingTrigger, Zone } from '../types';
+import type { GameState, CardInstance, CardDefinition, PendingTrigger, Zone, DiceRollRecord } from '../types';
 import { isSpellStackItem } from '../types';
 import type { Effect, TargetRef, AmountRef, TokenDefinition, CardFilter, SurveilEffect, ForEachAmount, Condition, LoyaltyAbility } from './ast';
 import { getCardDefinition, pruneDetachedEffects } from '../game-state';
@@ -1300,7 +1300,27 @@ function executeRollD20(state: GameState, effect: Extract<Effect, { kind: 'RollD
   const outcome = effect.outcomes.find(o => roll >= o.min && roll <= o.max);
   if (!outcome) return state;
 
-  let nextState = state;
+  const sourceCard = ctx.sourceInstanceId ? state.cards.get(ctx.sourceInstanceId) : undefined;
+  const sourceDef = sourceCard ? getCardDefinition(state, sourceCard) : undefined;
+  const priorRolls = state.diceRolls || [];
+  const rollRecord: DiceRollRecord = {
+    id: `dice_${state.turnNumber}_${priorRolls.length + 1}_${ctx.sourceInstanceId || 'effect'}_${roll}`,
+    playerId: ctx.casterId,
+    sourceInstanceId: ctx.sourceInstanceId,
+    sourceName: sourceDef?.name,
+    sides: 20,
+    result: roll,
+    outcomeMin: outcome.min,
+    outcomeMax: outcome.max,
+    turnNumber: state.turnNumber,
+    phase: state.phase,
+    step: state.step,
+  };
+
+  let nextState: GameState = {
+    ...state,
+    diceRolls: [...priorRolls, rollRecord],
+  };
   for (const nestedEffect of outcome.effects) {
     nextState = executeEffect(nextState, nestedEffect, ctx);
   }

@@ -10,6 +10,7 @@ import type {
   StackItem,
   Step,
   Zone,
+  DiceRollRecord,
 } from './types';
 import { getLegalActions } from './ai/legal-actions';
 import { getLegalTargets } from './ai/legal-actions';
@@ -852,6 +853,20 @@ export interface CombatSummary {
   damageAssignment: { cardId: string; amount: number }[];
 }
 
+export interface DiceRollSummary {
+  id: string;
+  playerId: string;
+  sourceInstanceId?: string;
+  sourceName?: string;
+  sides: 20;
+  result: number;
+  outcomeMin: number;
+  outcomeMax: number;
+  turnNumber: number;
+  phase: Phase;
+  step: Step;
+}
+
 export type EngineEvent =
   | {
       kind: 'ActionAccepted';
@@ -902,6 +917,10 @@ export type EngineEvent =
   | {
       kind: 'RulesEvent';
       event: ActionGameEvent;
+    }
+  | {
+      kind: 'DiceRolled';
+      roll: DiceRollSummary;
     }
   | {
       kind: 'ReviewDecisionRecorded';
@@ -1110,6 +1129,7 @@ function stateSignature(state: GameState): unknown {
     step: state.step,
     turnNumber: state.turnNumber,
     spellsCastThisTurn: state.spellsCastThisTurn,
+    diceRolls: state.diceRolls,
     hasPriorityPassed: state.hasPriorityPassed,
     stack: state.stack.map(item => stackSummary(state, item)),
     combat: state.combat
@@ -4301,6 +4321,32 @@ export function diffGameStates(before: GameState, after: GameState): VisibleDiff
   return diffs;
 }
 
+function summarizeDiceRoll(roll: DiceRollRecord): DiceRollSummary {
+  return {
+    id: roll.id,
+    playerId: roll.playerId,
+    sourceInstanceId: roll.sourceInstanceId,
+    sourceName: roll.sourceName,
+    sides: roll.sides,
+    result: roll.result,
+    outcomeMin: roll.outcomeMin,
+    outcomeMax: roll.outcomeMax,
+    turnNumber: roll.turnNumber,
+    phase: roll.phase,
+    step: roll.step,
+  };
+}
+
+function diceRollEvents(before: GameState, after: GameState): EngineEvent[] {
+  const beforeIds = new Set((before.diceRolls || []).map(roll => roll.id));
+  return (after.diceRolls || [])
+    .filter(roll => !beforeIds.has(roll.id))
+    .map(roll => ({
+      kind: 'DiceRolled' as const,
+      roll: summarizeDiceRoll(roll),
+    }));
+}
+
 export function buildStateUpdate(
   before: GameState,
   after: GameState,
@@ -4328,6 +4374,7 @@ export function buildStateUpdate(
   for (const event of actionEvents) {
     rulesEvents.push({ kind: 'RulesEvent', event });
   }
+  rulesEvents.push(...diceRollEvents(before, after));
 
   return {
     oldStateId: stateFingerprint(before),

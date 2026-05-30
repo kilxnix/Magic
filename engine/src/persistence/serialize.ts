@@ -367,6 +367,9 @@ export function serializeGameState(state: GameState): SerializedGameStateV1 {
     damagePreventionEffects: state.damagePreventionEffects
       ? state.damagePreventionEffects.map(effect => ({ ...effect }))
       : undefined,
+    diceRolls: state.diceRolls
+      ? state.diceRolls.map(roll => ({ ...roll }))
+      : undefined,
   };
 
   // Include grudge data if present
@@ -407,6 +410,13 @@ export function deserializeGameState(data: SerializedGameStateV1): GameState {
     ])),
     damagePreventionEffects: data.damagePreventionEffects
       ? data.damagePreventionEffects.map(effect => ({ ...effect }))
+      : undefined,
+    diceRolls: data.diceRolls
+      ? data.diceRolls.map(roll => ({
+          ...roll,
+          phase: roll.phase as GameState['phase'],
+          step: roll.step as GameState['step'],
+        }))
       : undefined,
   };
 

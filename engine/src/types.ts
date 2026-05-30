@@ -299,6 +299,20 @@ export interface DamagePreventionEffectRef {
   expiresAtTurnNumber: number;
 }
 
+export interface DiceRollRecord {
+  id: string;
+  playerId: string;
+  sourceInstanceId?: string;
+  sourceName?: string;
+  sides: 20;
+  result: number;
+  outcomeMin: number;
+  outcomeMax: number;
+  turnNumber: number;
+  phase: Phase;
+  step: Step;
+}
+
 export interface GameState {
   players: Player[];
   cards: Map<string, CardInstance>;
@@ -327,6 +341,9 @@ export interface GameState {
 
   // Turn-scoped damage prevention such as Fog.
   damagePreventionEffects?: DamagePreventionEffectRef[];
+
+  // Public presentation history for effects such as "roll a d20".
+  diceRolls?: DiceRollRecord[];
 }
 
 export function emptyManaPool(): ManaPool {

@@ -183,9 +183,16 @@ function summarizeStateUpdate(
   if (!update) return '';
   const accepted = update.rulesEvents.find(event => event.kind === 'ActionAccepted');
   const label = accepted?.kind === 'ActionAccepted' ? accepted.label || accepted.actionKind : 'State update';
+  const dice = update.rulesEvents
+    .filter(event => event.kind === 'DiceRolled')
+    .map(event => event.kind === 'DiceRolled'
+      ? `${event.roll.sourceName || 'd20'} rolled ${event.roll.result}`
+      : '')
+    .filter(Boolean)
+    .join('; ');
   const diffs = summarizeVisibleDiffs(update.visibleDiffs, nameForPlayer);
   const prompt = update.prompt?.title;
-  return [label, diffs, prompt].filter(Boolean).join(' - ');
+  return [label, dice, diffs, prompt].filter(Boolean).join(' - ');
 }
 
 function stateUpdateActor(update: EngineStateUpdate, gameState: SimpleGameState): string {
@@ -2016,6 +2023,7 @@ export function GameBoard({
   const [hoveredCard, setHoveredCard] = useState<SimpleCard | null>(null);
   const [showLastPlayedToast, setShowLastPlayedToast] = useState(false);
   const [showEngineUpdateToast, setShowEngineUpdateToast] = useState(false);
+  const [showDiceToast, setShowDiceToast] = useState(false);
   const [stackLands, setStackLands] = useState(true);
   const [selectedOpponentId, setSelectedOpponentId] = useState<string | null>(null);
   const [showUtilityMenu, setShowUtilityMenu] = useState(false);
@@ -2045,6 +2053,16 @@ export function GameBoard({
     const timeout = window.setTimeout(() => setShowEngineUpdateToast(false), 3200);
     return () => window.clearTimeout(timeout);
   }, [lastStateUpdate?.newStateId, lastStateUpdate?.rulesEvents.length]);
+
+  useEffect(() => {
+    if (!gameState.lastDiceRoll) {
+      setShowDiceToast(false);
+      return;
+    }
+    setShowDiceToast(true);
+    const timeout = window.setTimeout(() => setShowDiceToast(false), 4200);
+    return () => window.clearTimeout(timeout);
+  }, [gameState.lastDiceRoll?.id]);
 
   useEffect(() => {
     if (!inspectedCard) return;
@@ -2959,6 +2977,17 @@ export function GameBoard({
             <div className="text-[9px] font-bold uppercase tracking-wider text-sky-300/80">Engine Update</div>
             <div className="truncate text-xs font-semibold text-stone-100">
               {summarizeStateUpdate(lastStateUpdate, playerNameForId)}
+            </div>
+          </div>
+        </div>
+      )}
+      {gameState.lastDiceRoll && showDiceToast && (
+        <div className="relative z-10 flex shrink-0 justify-end border-b border-neutral-800/70 bg-neutral-950/45 px-2 py-1 md:px-4">
+          <div className="max-w-full rounded border border-violet-400/40 bg-violet-950/80 px-3 py-1.5 text-left shadow-lg shadow-black/20 backdrop-blur sm:max-w-md">
+            <div className="text-[9px] font-bold uppercase tracking-wider text-violet-200/85">D20 Roll</div>
+            <div className="truncate text-xs font-semibold text-stone-100">
+              {gameState.lastDiceRoll.sourceName || 'Effect'} rolled {gameState.lastDiceRoll.result}
+              <span className="text-stone-400"> (range {gameState.lastDiceRoll.outcomeMin}-{gameState.lastDiceRoll.outcomeMax})</span>
             </div>
           </div>
         </div>

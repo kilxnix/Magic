@@ -202,6 +202,20 @@ export interface SerializedDamagePreventionEffectV1 {
   expiresAtTurnNumber: number;
 }
 
+export interface SerializedDiceRollRecordV1 {
+  id: string;
+  playerId: string;
+  sourceInstanceId?: string;
+  sourceName?: string;
+  sides: 20;
+  result: number;
+  outcomeMin: number;
+  outcomeMax: number;
+  turnNumber: number;
+  phase: string;
+  step: string;
+}
+
 /**
  * Full serialized game state for V1 schema.
  */
@@ -223,6 +237,7 @@ export interface SerializedGameStateV1 {
   sideboards?: Array<[string, SerializedCardDefinitionV1[]]>;
   damageHistory?: SerializedDamageRecordV1[];
   damagePreventionEffects?: SerializedDamagePreventionEffectV1[];
+  diceRolls?: SerializedDiceRollRecordV1[];
 }
 
 /**
