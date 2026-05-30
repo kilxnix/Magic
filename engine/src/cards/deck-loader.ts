@@ -128,16 +128,22 @@ function toManaColors(colors: string[]): ManaColor[] {
  */
 function parseCardTypes(typeLine: string): CardType[] {
   const types: CardType[] = [];
-  const lower = typeLine.toLowerCase();
+  const typeSection = typeLine
+    .replace(/\u2013|\u2014|-/g, ' — ')
+    .split('—')[0]
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean);
+  const typeTerms = new Set(typeSection);
 
-  if (lower.includes('creature')) types.push('creature');
-  if (lower.includes('instant')) types.push('instant');
-  if (lower.includes('sorcery')) types.push('sorcery');
-  if (lower.includes('artifact')) types.push('artifact');
-  if (lower.includes('enchantment')) types.push('enchantment');
-  if (lower.includes('planeswalker')) types.push('planeswalker');
-  if (lower.includes('land')) types.push('land');
-  if (lower.includes('battle')) types.push('battle');
+  if (typeTerms.has('creature')) types.push('creature');
+  if (typeTerms.has('instant')) types.push('instant');
+  if (typeTerms.has('sorcery')) types.push('sorcery');
+  if (typeTerms.has('artifact')) types.push('artifact');
+  if (typeTerms.has('enchantment')) types.push('enchantment');
+  if (typeTerms.has('planeswalker')) types.push('planeswalker');
+  if (typeTerms.has('land')) types.push('land');
+  if (typeTerms.has('battle')) types.push('battle');
 
   return types;
 }

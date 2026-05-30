@@ -173,6 +173,25 @@ describe('convertCard', () => {
     expect(def.toughness).toBe(5);
   });
 
+  it('parses card types from the type section, not subtype substrings', () => {
+    const islandScout = convertCard({
+      id: 'island-scout-001',
+      name: 'Island Scout',
+      type_line: 'Creature - Island Scout',
+      oracle_text: '',
+      mana_cost: '{1}{U}',
+      cmc: 2,
+      colors: ['U'],
+      color_identity: ['U'],
+      keywords: [],
+      power: '2',
+      toughness: '1',
+    });
+
+    expect(islandScout.card_types).toEqual(['creature']);
+    expect(islandScout.card_types).not.toContain('land');
+  });
+
   it('handles string cmc', () => {
     const def = convertCard({ ...sampleInstant, cmc: '3.5' });
     expect(def.cmc).toBe(3); // Floored
