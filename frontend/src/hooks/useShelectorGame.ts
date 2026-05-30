@@ -871,6 +871,13 @@ type PendingStackSacrificeChoice = {
   mandatory: boolean;
 };
 
+type PendingStackNamedCardChoice = {
+  stackItemId: string;
+  choiceKey: string;
+  sourceName: string;
+  namesByOptionId: Record<string, string>;
+};
+
 type PendingCastChoiceMode = 'discardLand' | 'sacrificeCreature' | 'creatureType';
 
 function toTutorCardOption(state: GameState, card: CardInstance): TutorCardOption | null {
@@ -1127,6 +1134,53 @@ function libraryChoiceInfoFromEffects(effects: unknown[] | undefined): { mode: '
     mode: effect.kind === 'Scry' ? 'scry' : 'surveil',
     count: amountRefToChoiceCount(effect.count),
   };
+}
+
+function namedCardChoiceInfoFromEffects(
+  effects: unknown[] | undefined,
+  namedCardChoices: Record<string, string> | undefined,
+): { choiceKey: string; foundDestination?: TutorDestination } | undefined {
+  if (!Array.isArray(effects)) return undefined;
+  for (const effect of effects) {
+    if (!effect || typeof effect !== 'object') continue;
+    const candidate = effect as { kind?: string; namedCardChoiceId?: string; foundDestination?: TutorDestination };
+    if (candidate.kind !== 'ExileUntilNamed') continue;
+    const choiceKey = candidate.namedCardChoiceId || 'namedCard';
+    if (Object.prototype.hasOwnProperty.call(namedCardChoices || {}, choiceKey)) continue;
+    return { choiceKey, foundDestination: candidate.foundDestination };
+  }
+  return undefined;
+}
+
+function namedCardChoiceOptionsForPlayer(
+  state: GameState,
+  playerId: string,
+  foundDestination: TutorDestination | undefined,
+): { cards: TutorCardOption[]; namesByOptionId: Record<string, string> } {
+  const knownByName = new Map<string, TutorCardOption>();
+  for (const card of state.cards.values()) {
+    if (card.ownerId !== playerId) continue;
+    const option = toTutorCardOption(state, card);
+    if (!option) continue;
+    const key = normalizeLookupName(option.name);
+    if (!key || knownByName.has(key)) continue;
+    knownByName.set(key, {
+      ...option,
+      instanceId: `named-card:${key}`,
+      legal: true,
+      reason: 'Name this card for the resolving search effect',
+      destination: foundDestination || 'choice',
+    });
+  }
+
+  const namesByOptionId: Record<string, string> = {};
+  const cards = [...knownByName.values()]
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map(option => {
+      namesByOptionId[option.instanceId] = option.name;
+      return option;
+    });
+  return { cards, namesByOptionId };
 }
 
 type StackSacrificeChoiceInfo = {
@@ -2302,6 +2356,7 @@ export function useShelectorGame() {
   const pendingTargetChoiceRef = useRef<PendingTargetChoice | null>(null);
   const pendingHandTopLibraryChoiceRef = useRef<PendingHandTopLibraryChoice | null>(null);
   const pendingStackSacrificeChoiceRef = useRef<PendingStackSacrificeChoice | null>(null);
+  const pendingStackNamedCardChoiceRef = useRef<PendingStackNamedCardChoice | null>(null);
   const pendingLibraryChoiceRef = useRef<{ stackItemId: string; mode: 'scry' | 'surveil' } | null>(null);
   const libraryManipulationPromptRequestRef = useRef<LibraryManipulationPromptRequest | null>(null);
   const [optionalTriggerChoice, setOptionalTriggerChoice] = useState<OptionalTriggerChoice | null>(null);
@@ -3591,6 +3646,72 @@ export function useShelectorGame() {
         return true;
       };
 
+      const tryPauseForNamedCardChoice = (): boolean => {
+        if (state.stack.length === 0) return false;
+        const top = state.stack[state.stack.length - 1] as StackItem & { namedCardChoices?: Record<string, string> };
+        if (!top) return false;
+
+        let controllerId: string | undefined;
+        let sourceName = 'Name a card';
+        let sourceInstanceId: string | undefined;
+        let effects: unknown[] | undefined;
+
+        if (top.kind === 'Spell') {
+          controllerId = top.casterId;
+          sourceInstanceId = top.cardInstanceId;
+          const spellCard = state.cards.get(top.cardInstanceId);
+          const spellDef = spellCard ? getCardDefinition(state, spellCard) : undefined;
+          sourceName = spellDef?.name || sourceName;
+          effects = spellEffectsForChoicePrompt(state, top);
+        } else if (top.kind === 'ActivatedAbility') {
+          controllerId = top.controllerId;
+          sourceInstanceId = top.sourceInstanceId;
+          const sourceCard = state.cards.get(top.sourceInstanceId);
+          const sourceDef = sourceCard ? getCardDefinition(state, sourceCard) : undefined;
+          sourceName = sourceDef?.name || sourceName;
+          effects = top.ability.effects;
+        } else if (top.kind === 'TriggeredAbility') {
+          controllerId = top.controllerId;
+          sourceInstanceId = top.sourceInstanceId;
+          const sourceCard = state.cards.get(top.sourceInstanceId);
+          const sourceDef = sourceCard ? getCardDefinition(state, sourceCard) : undefined;
+          sourceName = sourceDef?.name || sourceName;
+          effects = top.ability.effects;
+        }
+
+        if (controllerId !== humanIdRef.current) return false;
+        const info = namedCardChoiceInfoFromEffects(effects, top.namedCardChoices);
+        if (!info) return false;
+
+        const { cards, namesByOptionId } = namedCardChoiceOptionsForPlayer(
+          state,
+          humanIdRef.current,
+          info.foundDestination,
+        );
+        if (cards.length === 0) return false;
+
+        engineRef.current = state as GameStateWithAI;
+        pendingStackNamedCardChoiceRef.current = {
+          stackItemId: top.id,
+          choiceKey: info.choiceKey,
+          sourceName,
+          namesByOptionId,
+        };
+        tutorRemainingRef.current = 0;
+        tutorFilterRef.current = undefined;
+        tutorFilterSpecRef.current = undefined;
+        tutorTappedRef.current = false;
+        tutorShuffleRef.current = false;
+        tutorSourceNameRef.current = sourceName;
+        tutorSourceInstanceIdRef.current = sourceInstanceId;
+        tutorPromptRequestRef.current = null;
+        setTutorTitle(`${sourceName}: name a card`);
+        setTutorCards(cards);
+        setTutorPhase(true);
+        messages.push({ role: 'system', text: `${sourceName} - name a card before resolution.` });
+        return true;
+      };
+
       const tryPauseForStackSacrificeChoice = (): boolean => {
         if (state.stack.length === 0) return false;
         const top = state.stack[state.stack.length - 1] as StackItem & { namedCardChoices?: Record<string, string> };
@@ -3781,6 +3902,7 @@ export function useShelectorGame() {
             // does not have to click through every opponent phase.
             if (state.hasPriorityPassed.every((p, i) => p || state.players[i].hasLost)) {
               console.log(`  -> all passed, resolving stack (${state.stack.length} items)`);
+              if (tryPauseForNamedCardChoice()) break;
               if (tryPauseForStackSacrificeChoice()) break;
               if (tryPauseForLibraryChoice()) break;
               if (tryResolveTutor()) break;
@@ -3811,6 +3933,7 @@ export function useShelectorGame() {
                 // Check if all players have now passed (stack resolves)
                 if (state.hasPriorityPassed.every((p, i) => p || state.players[i].hasLost)) {
                   console.log(`  -> all passed, resolving stack (${state.stack.length} items)`);
+                  if (tryPauseForNamedCardChoice()) break;
                   if (tryPauseForStackSacrificeChoice()) break;
                   if (tryPauseForLibraryChoice()) break;
                   if (tryResolveTutor()) break;
@@ -3845,6 +3968,7 @@ export function useShelectorGame() {
 
           // Fallback: no valid priority player — just resolve
           console.log(`  -> resolving stack (${state.stack.length} items)`);
+          if (tryPauseForNamedCardChoice()) break;
           if (tryPauseForStackSacrificeChoice()) break;
           if (tryPauseForLibraryChoice()) break;
           if (tryResolveTutor()) break;
@@ -4622,6 +4746,7 @@ export function useShelectorGame() {
       pendingTargetChoiceRef.current = null;
       pendingHandTopLibraryChoiceRef.current = null;
       pendingStackSacrificeChoiceRef.current = null;
+      pendingStackNamedCardChoiceRef.current = null;
       tutorSourceInstanceIdRef.current = undefined;
       tutorPromptRequestRef.current = null;
       tutorSelectedIdsRef.current = [];
@@ -5186,6 +5311,59 @@ export function useShelectorGame() {
     }
 
     const pendingStackSacrificeChoice = pendingStackSacrificeChoiceRef.current;
+    const pendingStackNamedCardChoice = pendingStackNamedCardChoiceRef.current;
+    if (pendingStackNamedCardChoice) {
+      const engineForChoice = engineRef.current;
+      if (!engineForChoice) return;
+      const namedCard = pendingStackNamedCardChoice.namesByOptionId[cardInstanceId];
+      if (!namedCard) {
+        addMessage('system', `${pendingStackNamedCardChoice.sourceName}: that card name is not available.`);
+        syncState();
+        return;
+      }
+      const stackIndex = engineForChoice.stack.findIndex(item => item.id === pendingStackNamedCardChoice.stackItemId);
+      if (stackIndex < 0) {
+        pendingStackNamedCardChoiceRef.current = null;
+        setTutorPhase(false);
+        setTutorCards([]);
+        setTutorTitle('');
+        addMessage('system', `${pendingStackNamedCardChoice.sourceName}: the stack item is no longer available.`);
+        syncState();
+        return;
+      }
+      const stackItem = engineForChoice.stack[stackIndex] as StackItem & { namedCardChoices?: Record<string, string> };
+      const stack = [...engineForChoice.stack];
+      stack[stackIndex] = {
+        ...stackItem,
+        namedCardChoices: {
+          ...(stackItem.namedCardChoices || {}),
+          [pendingStackNamedCardChoice.choiceKey]: namedCard,
+        },
+      } as StackItem;
+
+      pendingStackNamedCardChoiceRef.current = null;
+      setTutorPhase(false);
+      setTutorCards([]);
+      setTutorTitle('');
+
+      let state: GameState = {
+        ...engineForChoice,
+        stack,
+      };
+      state = resolveTopOfStackWithAuthority(state);
+      state = runSBAAndTriggers(state);
+
+      const loopMessages: { role: ChatMessage['role']; text: string }[] = [];
+      const loopLogEntries: GameLogEntry[] = [];
+      state = advanceGameLoop(state, loopMessages, loopLogEntries);
+      engineRef.current = state as GameStateWithAI;
+      addMessage('player', `${pendingStackNamedCardChoice.sourceName}: named ${namedCard}.`);
+      for (const msg of loopMessages) addMessage(msg.role, msg.text);
+      if (loopLogEntries.length > 0) setGameLog(prev => [...prev, ...loopLogEntries]);
+      syncState();
+      return;
+    }
+
     if (pendingStackSacrificeChoice) {
       const engineForChoice = engineRef.current;
       if (!engineForChoice) return;
@@ -5662,6 +5840,11 @@ export function useShelectorGame() {
       syncState();
       return;
     }
+    if (pendingStackNamedCardChoiceRef.current) {
+      addMessage('system', `${pendingStackNamedCardChoiceRef.current.sourceName} requires naming a card.`);
+      syncState();
+      return;
+    }
     const pendingStackSacrificeChoice = pendingStackSacrificeChoiceRef.current;
     if (pendingStackSacrificeChoice?.mandatory) {
       addMessage('system', `${pendingStackSacrificeChoice.sourceName} requires choosing a permanent to sacrifice.`);
@@ -5805,6 +5988,7 @@ export function useShelectorGame() {
     pendingTargetChoiceRef.current = null;
     pendingHandTopLibraryChoiceRef.current = null;
     pendingStackSacrificeChoiceRef.current = null;
+    pendingStackNamedCardChoiceRef.current = null;
     optionalTriggerPromptRequestRef.current = null;
     damageAssignmentPromptRequestRef.current = null;
     triggerOrderPromptRequestRef.current = null;
@@ -6458,6 +6642,10 @@ export function useShelectorGame() {
       }
       if (pendingStackSacrificeChoiceRef.current) {
         addMessage('system', `Finish ${pendingStackSacrificeChoiceRef.current.sourceName} sacrifice choice first.`);
+        return;
+      }
+      if (pendingStackNamedCardChoiceRef.current) {
+        addMessage('system', `Finish ${pendingStackNamedCardChoiceRef.current.sourceName} card-name choice first.`);
         return;
       }
 
@@ -7664,6 +7852,7 @@ export function useShelectorGame() {
       pendingTargetChoiceRef.current = snapshot.pendingTargetChoice || null;
       pendingHandTopLibraryChoiceRef.current = null;
       pendingStackSacrificeChoiceRef.current = null;
+      pendingStackNamedCardChoiceRef.current = null;
       tutorPromptRequestRef.current = snapshot.tutorPromptRequest || null;
       tutorRemainingRef.current = snapshot.tutorRemaining || 0;
       tutorFilterRef.current = snapshot.tutorFilter;
