@@ -902,6 +902,20 @@ export type EngineEvent =
   | {
       kind: 'RulesEvent';
       event: ActionGameEvent;
+    }
+  | {
+      kind: 'ReviewDecisionRecorded';
+      requestId: string;
+      playerId: string;
+      decisionId: string;
+      selectedLabel: string;
+      selectedScore: number;
+      bestLabel?: string;
+      bestScore?: number;
+      scoreDelta: number;
+      confidence: 'high' | 'medium' | 'low' | string;
+      legalActionCount: number;
+      rulesAuditOk: boolean;
     };
 
 export interface EngineStateUpdate {
@@ -933,6 +947,17 @@ export interface StateUpdateRequestInfo {
   playerId: string;
   actionKind: AIAction['kind'];
   label?: string;
+  review?: {
+    decisionId: string;
+    selectedLabel: string;
+    selectedScore: number;
+    bestLabel?: string;
+    bestScore?: number;
+    scoreDelta: number;
+    confidence: 'high' | 'medium' | 'low' | string;
+    legalActionCount: number;
+    rulesAuditOk: boolean;
+  };
 }
 
 const MANA_COLORS: ManaColor[] = ['W', 'U', 'B', 'R', 'G', 'C'];
@@ -4278,6 +4303,14 @@ export function buildStateUpdate(
       actionKind: requestInfo.actionKind,
       label: requestInfo.label,
     });
+    if (requestInfo.review) {
+      rulesEvents.push({
+        kind: 'ReviewDecisionRecorded',
+        requestId: requestInfo.requestId,
+        playerId: requestInfo.playerId,
+        ...requestInfo.review,
+      });
+    }
   }
   for (const event of actionEvents) {
     rulesEvents.push({ kind: 'RulesEvent', event });

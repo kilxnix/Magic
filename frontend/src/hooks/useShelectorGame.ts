@@ -2175,7 +2175,7 @@ export function useShelectorGame() {
     after: GameState,
     action: SimpleLegalAction,
     events: ActionGameEvent[],
-    options: { playerId?: string; source?: 'ui' | 'ai' | 'system' } = {},
+    options: { playerId?: string; source?: 'ui' | 'ai' | 'system'; decisionReview?: DecisionReview } = {},
   ) => {
     const playerId = options.playerId || humanIdRef.current;
     const request = createClientActionRequest(before, playerId, action._engineAction, {
@@ -2190,6 +2190,19 @@ export function useShelectorGame() {
         playerId,
         actionKind: request.action.kind,
         label: request.label,
+        review: options.decisionReview
+          ? {
+              decisionId: options.decisionReview.decisionId,
+              selectedLabel: options.decisionReview.selected.label,
+              selectedScore: options.decisionReview.selected.score,
+              bestLabel: options.decisionReview.best?.label,
+              bestScore: options.decisionReview.best?.score,
+              scoreDelta: options.decisionReview.scoreDelta,
+              confidence: options.decisionReview.confidence,
+              legalActionCount: options.decisionReview.legalActionCount,
+              rulesAuditOk: options.decisionReview.rulesAudit.ok,
+            }
+          : undefined,
       },
         events,
       );
@@ -6432,7 +6445,7 @@ export function useShelectorGame() {
         // Accumulate events from this action and open the EndGameModal if needed
         applyEvents(collectedEvents, newState);
         if (!authorityUpdateRecorded) {
-          recordStateUpdate(engine as GameState, newState, action, collectedEvents);
+          recordStateUpdate(engine as GameState, newState, action, collectedEvents, { decisionReview });
         }
 
         // Track uncommitted mana taps (can be untapped) vs committed (used for a spell)

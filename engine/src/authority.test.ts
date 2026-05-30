@@ -17,6 +17,7 @@ import {
   auditPromptReplay,
   auditSearchPromptReplay,
   buildActionPrompt,
+  buildStateUpdate,
   createClientActionRequest,
   createBattlefieldEntryReplacementPromptRequest,
   createChooseModePromptRequest,
@@ -1731,6 +1732,55 @@ describe('authority action boundary', () => {
       }),
     ]));
     expect(response.update?.prompt?.playerId).toBe('p1');
+  });
+
+  it('can attach review decision metadata to an authoritative state update', () => {
+    const before = stateWithForestInHand();
+    const after = applyClientActionRequest(
+      before,
+      createClientActionRequest(before, 'p1', {
+        kind: 'PlayLand',
+        cardInstanceId: [...before.cards.values()].find(card => card.definitionId === 'forest')!.instanceId,
+      }, {
+        id: 'req-reviewed-play',
+        createdAt: 3,
+      }),
+    ).state!;
+
+    const update = buildStateUpdate(before, after, {
+      requestId: 'req-reviewed-play',
+      playerId: 'p1',
+      actionKind: 'PlayLand',
+      label: 'Play Forest',
+      review: {
+        decisionId: 'decision-1',
+        selectedLabel: 'Play Forest',
+        selectedScore: 8.3,
+        bestLabel: 'Play Forest',
+        bestScore: 8.3,
+        scoreDelta: 0,
+        confidence: 'high',
+        legalActionCount: 3,
+        rulesAuditOk: true,
+      },
+    });
+
+    expect(update.rulesEvents).toEqual(expect.arrayContaining([
+      {
+        kind: 'ReviewDecisionRecorded',
+        requestId: 'req-reviewed-play',
+        playerId: 'p1',
+        decisionId: 'decision-1',
+        selectedLabel: 'Play Forest',
+        selectedScore: 8.3,
+        bestLabel: 'Play Forest',
+        bestScore: 8.3,
+        scoreDelta: 0,
+        confidence: 'high',
+        legalActionCount: 3,
+        rulesAuditOk: true,
+      },
+    ]));
   });
 
   it('rejects actions that were not issued by the current engine prompt', () => {

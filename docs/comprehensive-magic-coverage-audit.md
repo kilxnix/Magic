@@ -4,8 +4,8 @@ Total areas: 28
 
 By status:
 - certified: 0
-- partial: 26
-- gap: 2
+- partial: 27
+- gap: 1
 - blocked: 0
 
 By priority:
@@ -14,7 +14,6 @@ By priority:
 
 Open P0/P1 gaps:
 - [P0] modal-choice-ui: Add generic choice request/resolution layer instead of deterministic shortcuts.
-- [P1] post-game-review: Attach review records to authoritative action events and compare against legal alternatives.
 
 Missing evidence references:
 - none
@@ -42,7 +41,7 @@ Area table:
 | P0 | partial | turn-structure-priority | Add multiplayer APNAP priority fixtures and browser proof for skip rest of turn after stack/combat windows. |
 | P0 | partial | ui-gameplay | Add browser automation certification for each starter deck and all action categories. |
 | P1 | partial | keywords-non-evergreen | Prowess now registers as a real noncreature-spell trigger with temporary +1/+1 cleanup; continue the mechanic-by-mechanic implementation list for other popular Commander mechanics. |
-| P1 | gap | post-game-review | Attach review records to authoritative action events and compare against legal alternatives. |
+| P1 | partial | post-game-review | Decision reviews now audit selected actions through the engine authority boundary and are attached to authoritative state updates; continue broadening line comparison and replay presentation. |
 | P1 | partial | ai-shelector | Add speed and legality benchmark across archetypes and stack-heavy high-power states. |
 | P1 | partial | graveyard-exile | Add zone permission engine for casting/activating from non-hand zones. |
 | P1 | partial | keywords-evergreen | Audit every evergreen keyword and bind each to at least one fixture card. |
