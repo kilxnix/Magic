@@ -1362,6 +1362,55 @@ describe('EachOpponent and AllCreatures effects', () => {
     });
   });
 
+  describe('Fight effect', () => {
+    it('deals simultaneous creature damage and lets SBAs destroy lethally damaged creatures', () => {
+      const state = createTestState();
+      state.cardDefinitions.set('def-small-creature', {
+        id: 'def-small-creature',
+        name: 'Small Creature',
+        type_line: 'Creature - Test',
+        oracle_text: '',
+        mana_cost: '{1}{G}',
+        cmc: 2,
+        colors: ['G'],
+        color_identity: ['G'],
+        keywords: [],
+        power: 2,
+        toughness: 2,
+        card_types: ['creature'],
+      });
+      state.cards.set('creature-2', {
+        instanceId: 'creature-2',
+        definitionId: 'def-small-creature',
+        ownerId: 'player-2',
+        zone: 'battlefield',
+        tapped: false,
+        summoningSick: false,
+        counters: {},
+        damage: 0,
+        isCommander: false,
+      });
+
+      const newState = executeEffectsWithSBA(
+        state,
+        [{
+          kind: 'Fight',
+          fighterA: { kind: 'Chosen', targetId: 'target_1' },
+          fighterB: { kind: 'Chosen', targetId: 'target_2' },
+        }],
+        'player-1',
+        ['creature-1', 'creature-2'],
+        [
+          { id: 'target_1', type: 'Creature', count: 1 },
+          { id: 'target_2', type: 'Creature', count: 1 },
+        ],
+      );
+
+      expect(newState.cards.get('creature-1')?.zone).toBe('battlefield');
+      expect(newState.cards.get('creature-2')?.zone).toBe('graveyard');
+    });
+  });
+
   describe('EachOpponent Discard', () => {
     it('each opponent discards a card in a 4-player game', () => {
       const state = createFourPlayerState();

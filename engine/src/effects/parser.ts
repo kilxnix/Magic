@@ -1810,6 +1810,48 @@ function matchCounterSpell(tokens: string[], startIndex: number): PatternResult 
 }
 
 /**
+ * Match: "target creature you control fights target creature you don't control"
+ */
+function matchFight(tokens: string[], startIndex: number): PatternResult {
+  const slice = tokens.slice(startIndex);
+
+  if (slice[0] !== 'target') return null;
+  let idx = 1;
+  if (['white', 'blue', 'black', 'red', 'green'].includes(slice[idx])) idx++;
+  if (slice[idx] !== 'creature') return null;
+  idx++;
+  if (slice[idx] === 'you' && slice[idx + 1] === 'control') {
+    idx += 2;
+  }
+  if (slice[idx] !== 'fights') return null;
+  idx++;
+  if (slice[idx] !== 'target') return null;
+  idx++;
+  if (['white', 'blue', 'black', 'red', 'green'].includes(slice[idx])) idx++;
+  if (slice[idx] !== 'creature') return null;
+  idx++;
+  if (
+    (slice[idx] === 'you' && (slice[idx + 1] === "don't" || slice[idx + 1] === 'dont') && slice[idx + 2] === 'control')
+    || (slice[idx] === 'an' && slice[idx + 1] === 'opponent' && slice[idx + 2] === 'controls')
+  ) {
+    idx += 3;
+  }
+
+  let consumed = idx;
+  if (tokens[startIndex + consumed] === '.') consumed++;
+
+  const yourCreature = makeTargetSpec('Creature');
+  const opposingCreature = makeTargetSpec('Creature', { opponentControls: true });
+  const effect: Effect = {
+    kind: 'Fight',
+    fighterA: makeChosenRef(yourCreature),
+    fighterB: makeChosenRef(opposingCreature),
+  };
+
+  return { effects: [effect], targets: [yourCreature, opposingCreature], consumed };
+}
+
+/**
  * Match: "return target creature card from your graveyard to your hand"
  * Match: "return target creature card from your graveyard to the battlefield"
  * Match: "return target creature or enchantment card from your graveyard to your hand"
@@ -4020,7 +4062,7 @@ function parseEffectClauseInternal(tokens: string[], startIndex: number): Patter
     matchGainLife, matchLoseLife, matchExile, matchPutCreatureCardFromOpponentGraveyardOntoBattlefield, matchReturnFromGraveyard, matchReturnThatCardToHand,
     matchReturnLandYouControlToHand, matchReturnToHand, matchMill, matchGainEnergy, matchAddCounters, matchModifyPT, matchTap,
     matchUntap, matchRollD20, matchThatPlayerCreatesToken, matchCreateToken, matchDiscard, matchDiscardSelf, matchScry,
-    matchSurveil, matchCounterSpell,
+    matchSurveil, matchCounterSpell, matchFight,
   ];
   for (const pattern of patterns) {
     const result = pattern(tokens, actualStartIndex);
@@ -4121,6 +4163,7 @@ function parseEffectClause(tokens: string[], startIndex: number): PatternResult 
     matchScry,
     matchSurveil,
     matchCounterSpell,
+    matchFight,
   ];
 
   for (const pattern of patterns) {

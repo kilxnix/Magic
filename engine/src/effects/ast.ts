@@ -25,6 +25,7 @@ export type Effect =
   | UntapEffect
   | CreateTokenEffect
   | RollD20Effect
+  | FightEffect
   | DiscardEffect
   | ScryEffect
   | SurveilEffect
@@ -263,6 +264,12 @@ export interface CounterSpellEffect {
   target: TargetRef;
   filter?: 'noncreature' | 'creature' | 'creatureOrEnchantment' | 'artifactOrCreature' | 'instantOrSorcery'; // undefined = any spell
   exileInstead?: boolean;
+}
+
+export interface FightEffect {
+  kind: 'Fight';
+  fighterA: TargetRef;
+  fighterB: TargetRef;
 }
 
 export interface ReturnFromGraveyardEffect {

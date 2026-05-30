@@ -1514,6 +1514,20 @@ function executeCounterSpell(
   return { ...state, cards: newCards, stack: newStack };
 }
 
+function executeFight(state: GameState, fighterAId: string, fighterBId: string): GameState {
+  const fighterA = state.cards.get(fighterAId);
+  const fighterB = state.cards.get(fighterBId);
+  if (!fighterA || !fighterB) return state;
+  if (fighterA.zone !== 'battlefield' || fighterB.zone !== 'battlefield') return state;
+  if (!isEffectiveCreature(state, fighterAId) || !isEffectiveCreature(state, fighterBId)) return state;
+
+  const powerA = getEffectivePower(state, fighterAId);
+  const powerB = getEffectivePower(state, fighterBId);
+  let nextState = executeDealDamage(state, fighterBId, powerA, fighterAId);
+  nextState = executeDealDamage(nextState, fighterAId, powerB, fighterBId);
+  return nextState;
+}
+
 /**
  * Execute a ReturnFromGraveyard effect.
  * Moves target creature card from graveyard to hand or battlefield.
@@ -2007,6 +2021,11 @@ function executeEffect(
     }
     case 'PreventDamage': {
       return executePreventDamage(state, effect, casterId, sourceInstanceId, xValue, chosenTargets);
+    }
+    case 'Fight': {
+      const fighterAId = resolveTargetRef(effect.fighterA, casterId, chosenTargets);
+      const fighterBId = resolveTargetRef(effect.fighterB, casterId, chosenTargets);
+      return executeFight(state, fighterAId, fighterBId);
     }
     case 'GainLife': {
       if (effect.player.kind === 'EachPlayer') {

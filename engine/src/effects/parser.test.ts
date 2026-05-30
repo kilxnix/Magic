@@ -719,6 +719,20 @@ describe('parseOracleText', () => {
     });
   });
 
+  describe('fight patterns', () => {
+    it("parses target creature fight spells with opposing target constraints", () => {
+      const result = parseOracleText("Target creature you control fights target creature you don't control.");
+      expect(result.kind).toBe('Spell');
+      if (result.kind !== 'Spell') return;
+      expect(result.effects[0]).toMatchObject({ kind: 'Fight' });
+      expect(result.targets[0].type).toBe('Creature');
+      expect(result.targets[1]).toMatchObject({
+        type: 'Creature',
+        constraints: { opponentControls: true },
+      });
+    });
+  });
+
   describe('counter spell patterns', () => {
     it('parses "Counter target spell."', () => {
       const result = parseOracleText('Counter target spell.');
