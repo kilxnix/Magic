@@ -17,6 +17,7 @@ import { canPlayLandDetailed } from './actions';
 import { canPayCost } from './mana';
 import { executeSearchLibrary, executeShuffleLibrary, matchesCardFilter } from './effects/executor';
 import { getEffectivePower } from './effects/continuous';
+import { parseOracleText } from './effects/parser';
 import { getOptionalUntappedLifeCost } from './permanent-entry';
 import { validateStateInvariants } from './invariants';
 import type { AIAction } from './ai/types';
@@ -56,7 +57,8 @@ export type EnginePromptKind =
   | 'ChooseReplacement'
   | 'PayCosts'
   | 'SelectCards'
-  | 'LibraryManipulation';
+  | 'LibraryManipulation'
+  | 'ChooseMode';
 
 export type ClientPromptFailure =
   | 'invalid_request'
@@ -126,6 +128,7 @@ export interface ClientPromptResponse {
   selectedManaActions?: ManaPaymentAction[];
   selectedCardInstanceIds?: string[];
   libraryManipulationChoices?: Record<string, string>;
+  selectedModeIndices?: number[];
 }
 
 export interface TargetChoice {
@@ -324,6 +327,40 @@ export interface LibraryManipulationPromptResponse {
   movedCardInstanceIds: string[];
 }
 
+export interface ModeChoice {
+  modeIndex: number;
+  label: string;
+  legal: boolean;
+  reason?: string;
+}
+
+export interface ChooseModePromptRequest {
+  id: string;
+  kind: 'ChooseMode';
+  playerId: string;
+  expectedStateId: string;
+  sourceInstanceId: string;
+  minSelections: number;
+  maxSelections: number;
+  legalChoices: ModeChoice[];
+  invalidChoices: ModeChoice[];
+  createdAt: number;
+}
+
+export interface CreateChooseModePromptOptions {
+  id?: string;
+  minSelections?: number;
+  maxSelections?: number;
+  createdAt?: number;
+}
+
+export interface ChooseModePromptResponse {
+  requestId: string;
+  kind: 'ChooseMode';
+  playerId: string;
+  selectedModeIndices: number[];
+}
+
 export interface SelectCardsPromptResponse {
   requestId: string;
   kind: 'SelectCards';
@@ -379,13 +416,19 @@ export interface LibraryManipulationPromptReplayRecord {
   response: LibraryManipulationPromptResponse;
 }
 
+export interface ChooseModePromptReplayRecord {
+  request: ChooseModePromptRequest;
+  response: ChooseModePromptResponse;
+}
+
 export type PromptReplayRecord =
   | SearchPromptReplayRecord
   | TargetPromptReplayRecord
   | ReplacementPromptReplayRecord
   | PayCostsPromptReplayRecord
   | SelectCardsPromptReplayRecord
-  | LibraryManipulationPromptReplayRecord;
+  | LibraryManipulationPromptReplayRecord
+  | ChooseModePromptReplayRecord;
 
 export interface PromptReplayAuditStep {
   index: number;
@@ -2525,6 +2568,158 @@ export function applyLibraryManipulationPromptResponse(
   };
 }
 
+function chooseModeRejectUpdate(
+  state: GameState,
+  request: ChooseModePromptRequest,
+  response: ChooseModePromptResponse,
+  reason: ClientPromptFailure,
+  message: string,
+): EngineStateUpdate {
+  const currentStateId = stateFingerprint(state);
+  return {
+    oldStateId: request.expectedStateId,
+    newStateId: currentStateId,
+    activePlayerId: activePlayerId(state),
+    priorityPlayerId: priorityPlayerId(state),
+    phase: state.phase,
+    step: state.step,
+    turnNumber: state.turnNumber,
+    priority: prioritySnapshot(state),
+    visibleDiffs: [],
+    rulesEvents: [{
+      kind: 'PromptResponseRejected',
+      requestId: response.requestId,
+      playerId: response.playerId,
+      promptKind: request.kind,
+      reason,
+      message,
+    }],
+    prompt: buildActionPrompt(state),
+  };
+}
+
+function modalChoicesForCard(state: GameState, sourceInstanceId: string): { chooseCount: number; upTo?: boolean; choices: ModeChoice[] } | undefined {
+  const card = state.cards.get(sourceInstanceId);
+  const def = card ? state.cardDefinitions.get(card.definitionId) : undefined;
+  if (!def) return undefined;
+  const parsed = parseOracleText(def.oracle_text);
+  if (parsed.kind !== 'Modal') return undefined;
+  return {
+    chooseCount: parsed.modal.chooseCount,
+    upTo: parsed.modal.upTo,
+    choices: parsed.modal.choices.map((choice, modeIndex) => ({
+      modeIndex,
+      label: choice.label || `Mode ${modeIndex + 1}`,
+      legal: true,
+    })),
+  };
+}
+
+export function createChooseModePromptRequest(
+  state: GameState,
+  playerId: string,
+  sourceInstanceId: string,
+  options: CreateChooseModePromptOptions = {},
+): ChooseModePromptRequest {
+  const expectedStateId = stateFingerprint(state);
+  const createdAt = options.createdAt ?? Date.now();
+  const modal = modalChoicesForCard(state, sourceInstanceId);
+  const minSelections = options.minSelections ?? (modal?.upTo ? 1 : modal?.chooseCount ?? 1);
+  const maxSelections = options.maxSelections ?? (modal?.chooseCount ?? minSelections);
+  const legalChoices = modal?.choices || [];
+  return {
+    id: options.id || `choose_mode_${expectedStateId}_${hashText(`${playerId}:${sourceInstanceId}:${createdAt}`)}`,
+    kind: 'ChooseMode',
+    playerId,
+    expectedStateId,
+    sourceInstanceId,
+    minSelections,
+    maxSelections,
+    legalChoices,
+    invalidChoices: modal ? [] : [{
+      modeIndex: -1,
+      label: 'No modal choices',
+      legal: false,
+      reason: 'The source is not a modal spell',
+    }],
+    createdAt,
+  };
+}
+
+export function applyChooseModePromptResponse(
+  state: GameState,
+  request: ChooseModePromptRequest,
+  response: ChooseModePromptResponse,
+): ClientPromptResponse {
+  if (request.kind !== 'ChooseMode' || response.kind !== 'ChooseMode' || request.id !== response.requestId) {
+    const message = 'Prompt response does not match the active mode-choice request.';
+    return {
+      requestId: response.requestId,
+      ok: false,
+      reason: 'invalid_request',
+      message,
+      update: chooseModeRejectUpdate(state, request, response, 'invalid_request', message),
+    };
+  }
+
+  if (request.playerId !== response.playerId) {
+    const message = 'This mode-choice prompt belongs to another player.';
+    return {
+      requestId: response.requestId,
+      ok: false,
+      reason: 'wrong_player',
+      message,
+      update: chooseModeRejectUpdate(state, request, response, 'wrong_player', message),
+    };
+  }
+
+  const currentStateId = stateFingerprint(state);
+  if (request.expectedStateId !== currentStateId) {
+    const message = 'The game state changed before this mode-choice response reached the engine.';
+    return {
+      requestId: response.requestId,
+      ok: false,
+      reason: 'stale_state',
+      message,
+      update: chooseModeRejectUpdate(state, request, response, 'stale_state', message),
+    };
+  }
+
+  const selectedModes = [...new Set(response.selectedModeIndices)];
+  const legalModes = new Set(request.legalChoices.map(choice => choice.modeIndex));
+  if (
+    selectedModes.length !== response.selectedModeIndices.length
+    || selectedModes.length < request.minSelections
+    || selectedModes.length > request.maxSelections
+    || selectedModes.some(mode => !legalModes.has(mode))
+  ) {
+    const message = `Mode response must choose between ${request.minSelections} and ${request.maxSelections} legal mode(s).`;
+    return {
+      requestId: response.requestId,
+      ok: false,
+      reason: 'illegal_response',
+      message,
+      update: chooseModeRejectUpdate(state, request, response, 'illegal_response', message),
+    };
+  }
+
+  return {
+    requestId: response.requestId,
+    ok: true,
+    state,
+    update: {
+      ...buildStateUpdate(state, state),
+      rulesEvents: [{
+        kind: 'PromptResponseAccepted',
+        requestId: response.requestId,
+        playerId: response.playerId,
+        promptKind: 'ChooseMode',
+      }],
+    },
+    selectedModeIndices: selectedModes,
+  };
+}
+
 function manaPoolDiffs(before: ManaPool, after: ManaPool, playerId: string): VisibleDiff[] {
   const diffs: VisibleDiff[] = [];
   for (const color of MANA_COLORS) {
@@ -3141,7 +3336,9 @@ export function auditPromptReplay(
           ? applyPayCostsPromptResponse(state, request, response as PayCostsPromptResponse)
           : request.kind === 'SelectCards'
             ? applySelectCardsPromptResponse(state, request, response as SelectCardsPromptResponse)
-            : applyLibraryManipulationPromptResponse(state, request, response as LibraryManipulationPromptResponse);
+            : request.kind === 'LibraryManipulation'
+              ? applyLibraryManipulationPromptResponse(state, request, response as LibraryManipulationPromptResponse)
+              : applyChooseModePromptResponse(state, request, response as ChooseModePromptResponse);
     const step: PromptReplayAuditStep = {
       index,
       requestId: request.id,
@@ -3202,7 +3399,9 @@ export function auditEngineReplay(
               ? applyPayCostsPromptResponse(state, record.request, record.response as PayCostsPromptResponse)
               : record.request.kind === 'SelectCards'
                 ? applySelectCardsPromptResponse(state, record.request, record.response as SelectCardsPromptResponse)
-                : applyLibraryManipulationPromptResponse(state, record.request, record.response as LibraryManipulationPromptResponse);
+                : record.request.kind === 'LibraryManipulation'
+                  ? applyLibraryManipulationPromptResponse(state, record.request, record.response as LibraryManipulationPromptResponse)
+                  : applyChooseModePromptResponse(state, record.request, record.response as ChooseModePromptResponse);
 
     const step: EngineReplayAuditStep = {
       index,

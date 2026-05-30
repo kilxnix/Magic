@@ -73,6 +73,8 @@ import {
   applySelectCardsPromptResponse,
   createLibraryManipulationPromptRequest,
   applyLibraryManipulationPromptResponse,
+  createChooseModePromptRequest,
+  applyChooseModePromptResponse,
   type ActionPromptChoice,
   type ClientActionResponse,
   type EnginePrompt,
@@ -5340,6 +5342,47 @@ export function useShelectorGame() {
           const player = engine.players.find(p => p.id === humanId);
 
           let precastState: GameState = engine as GameState;
+
+          if (engineAction.chosenModes?.length) {
+            const modeRequest = createChooseModePromptRequest(
+              precastState,
+              humanIdRef.current,
+              engineAction.cardInstanceId,
+            );
+            const modeResponse = applyChooseModePromptResponse(precastState, modeRequest, {
+              requestId: modeRequest.id,
+              kind: 'ChooseMode',
+              playerId: humanIdRef.current,
+              selectedModeIndices: engineAction.chosenModes,
+            });
+            recordAuthorityUpdate(modeResponse.update);
+            if (!modeResponse.ok) {
+              appendLog({
+                ...captureLogEntry(
+                  precastState,
+                  humanIdRef.current,
+                  aiIdsRef.current,
+                  'human',
+                  `Rejected mode choice for ${action.label}`,
+                  0,
+                  humanIdRef.current,
+                ),
+                playByPlay: `Mode choice for ${action.label} was rejected by the rules validator.`,
+                rulesAudit: {
+                  severity: 'error',
+                  reason: modeResponse.message || 'That mode choice is not legal in the current game state.',
+                },
+              });
+              setActionError({
+                reason: modeResponse.reason || 'illegal_response',
+                message: modeResponse.message || 'That mode choice is not legal in the current game state.',
+              });
+              addMessage('system', `Cannot choose mode: ${modeResponse.message || 'That mode choice is not legal.'}`);
+              syncState();
+              return;
+            }
+            authorityUpdateRecorded = true;
+          }
 
           if (card && player) {
             const targetSpecs = getSpellTargetSpecs(engine as GameState, card);

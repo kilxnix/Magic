@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   applyClientActionRequest,
+  applyChooseModePromptResponse,
   applyChooseReplacementPromptResponse,
   applyPayCostsPromptResponse,
   applyLibraryManipulationPromptResponse,
@@ -14,6 +15,7 @@ import {
   buildActionPrompt,
   createClientActionRequest,
   createBattlefieldEntryReplacementPromptRequest,
+  createChooseModePromptRequest,
   createLibraryManipulationPromptRequest,
   createSearchLibraryPromptRequest,
   createSelectCardsPromptRequest,
@@ -973,6 +975,39 @@ describe('authority action boundary', () => {
     });
     expect(illegal.ok).toBe(false);
     expect(illegal.message).toContain('choose each revealed card exactly once');
+  });
+
+  it('validates modal mode choices before a modal cast is submitted', () => {
+    const state = stateWithForestInHand();
+    const charm = def('test_charm', 'Test Charm', 'Instant', '{U}', 'Choose one —\n• Draw a card.\n• Gain 3 life.');
+    state.cardDefinitions.set(charm.id, charm);
+    state.cards.set('charm_in_hand', cardInstance('charm_in_hand', charm.id, 'p1', 'hand'));
+    const request = createChooseModePromptRequest(state, 'p1', 'charm_in_hand', {
+      id: 'prompt-mode-choice',
+      createdAt: 25,
+    });
+
+    expect(request.kind).toBe('ChooseMode');
+    expect(request.legalChoices.map(choice => choice.modeIndex)).toEqual([0, 1]);
+
+    const accepted = applyChooseModePromptResponse(state, request, {
+      requestId: request.id,
+      kind: 'ChooseMode',
+      playerId: 'p1',
+      selectedModeIndices: [1],
+    });
+    expect(accepted.ok).toBe(true);
+    expect(accepted.selectedModeIndices).toEqual([1]);
+    expect(accepted.state).toBe(state);
+
+    const illegal = applyChooseModePromptResponse(state, request, {
+      requestId: request.id,
+      kind: 'ChooseMode',
+      playerId: 'p1',
+      selectedModeIndices: [3],
+    });
+    expect(illegal.ok).toBe(false);
+    expect(illegal.reason).toBe('illegal_response');
   });
 
   it('includes selected target names in command labels', () => {
