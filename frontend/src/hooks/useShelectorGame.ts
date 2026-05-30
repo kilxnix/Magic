@@ -1330,9 +1330,9 @@ function normalizeOracleForFrontendParser(oracleText: string, cardName: string):
 }
 
 function definitionLooksPermanent(def: CardDefinition): boolean {
-  const typeText = [def.type_line, ...def.card_types].join(' ').toLowerCase();
-  return ['artifact', 'battle', 'creature', 'enchantment', 'land', 'planeswalker']
-    .some(type => typeText.includes(type));
+  return def.card_types.some(type =>
+    ['artifact', 'battle', 'creature', 'enchantment', 'land', 'planeswalker'].includes(type),
+  );
 }
 
 function spellEffectsForChoicePrompt(state: GameState, item: Extract<StackItem, { kind: 'Spell' }>): Effect[] {
