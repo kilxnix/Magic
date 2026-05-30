@@ -7,6 +7,7 @@ import {
   applyDamageAssignmentPromptResponse,
   applyOrderTriggersPromptResponse,
   applyOptionalTriggerPromptResponse,
+  applyOpeningMulliganRedraw,
   applyLibraryManipulationPromptResponse,
   applySearchLibraryPromptResponse,
   applySelectCardsPromptResponse,
@@ -1088,6 +1089,19 @@ describe('authority action boundary', () => {
     expect(mulliganAccepted.ok).toBe(true);
     expect(mulliganAccepted.state).toBe(state);
     expect(state.cards.get(forest!.instanceId)?.zone).toBe('hand');
+
+    state.cards.set(
+      'redraw_library_card',
+      cardInstance('redraw_library_card', forest!.definitionId, 'p1', 'library'),
+    );
+    const redraw = applyOpeningMulliganRedraw(state, 'p1', [forest!.instanceId]);
+    expect(redraw.ok).toBe(true);
+    if (!redraw.ok) return;
+    expect(redraw.redrawn).toBe(1);
+    expect(redraw.state.cards.get(forest!.instanceId)?.zone).toBe('library');
+    expect(redraw.state.cards.get('redraw_library_card')?.zone).toBe('hand');
+    expect(redraw.update.oldStateId).toBe(stateFingerprint(state));
+    expect(redraw.update.newStateId).toBe(stateFingerprint(redraw.state));
 
     const bottomRequest = createSelectCardsPromptRequest(state, 'p1', {
       id: 'prompt-opening-mulligan-bottom',

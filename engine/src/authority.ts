@@ -548,6 +548,26 @@ export interface SelectCardsPromptReplayRecord {
   response: SelectCardsPromptResponse;
 }
 
+export type OpeningMulliganRedrawFailure =
+  | 'empty_selection'
+  | 'duplicate_selection'
+  | 'illegal_selection'
+  | 'invariant_violation';
+
+export type OpeningMulliganRedrawResult =
+  | {
+      ok: true;
+      state: GameState;
+      update: EngineStateUpdate;
+      redrawn: number;
+    }
+  | {
+      ok: false;
+      reason: OpeningMulliganRedrawFailure;
+      message: string;
+      update: EngineStateUpdate;
+    };
+
 export interface LibraryManipulationPromptReplayRecord {
   request: LibraryManipulationPromptRequest;
   response: LibraryManipulationPromptResponse;
@@ -2730,6 +2750,104 @@ export function applySelectCardsPromptResponse(
       }],
     },
     selectedCardInstanceIds: selectedIds,
+  };
+}
+
+function shuffleCardEntries(entries: [string, CardInstance][]): [string, CardInstance][] {
+  const shuffled = [...entries];
+  for (let index = shuffled.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    [shuffled[index], shuffled[swapIndex]] = [shuffled[swapIndex], shuffled[index]];
+  }
+  return shuffled;
+}
+
+function openingMulliganRedrawReject(
+  state: GameState,
+  reason: OpeningMulliganRedrawFailure,
+  message: string,
+): OpeningMulliganRedrawResult {
+  return {
+    ok: false,
+    reason,
+    message,
+    update: {
+      ...buildStateUpdate(state, state),
+      rulesEvents: [{
+        kind: 'PromptResponseRejected',
+        requestId: 'opening-mulligan-redraw',
+        playerId: activePlayerId(state) || '',
+        promptKind: 'SelectCards',
+        reason: reason === 'invariant_violation' ? 'invariant_violation' : 'illegal_response',
+        message,
+      }],
+    },
+  };
+}
+
+export function applyOpeningMulliganRedraw(
+  state: GameState,
+  playerId: string,
+  cardInstanceIds: string[],
+): OpeningMulliganRedrawResult {
+  const selectedIds = [...new Set(cardInstanceIds.filter(Boolean))];
+  if (selectedIds.length === 0) {
+    return openingMulliganRedrawReject(state, 'empty_selection', 'Select at least one card to mulligan.');
+  }
+  if (selectedIds.length !== cardInstanceIds.filter(Boolean).length) {
+    return openingMulliganRedrawReject(state, 'duplicate_selection', 'A card can only be selected once.');
+  }
+
+  for (const id of selectedIds) {
+    const card = state.cards.get(id);
+    if (!card || card.ownerId !== playerId || card.zone !== 'hand') {
+      return openingMulliganRedrawReject(state, 'illegal_selection', 'Mulligan redraw selections must be cards in your hand.');
+    }
+  }
+
+  const selected = new Set(selectedIds);
+  const libraryEntries: [string, CardInstance][] = [];
+  const selectedEntries: [string, CardInstance][] = [];
+  const otherEntries: [string, CardInstance][] = [];
+
+  for (const [id, card] of state.cards) {
+    if (card.ownerId === playerId && card.zone === 'library') {
+      libraryEntries.push([id, card]);
+      continue;
+    }
+
+    if (selected.has(id) && card.ownerId === playerId && card.zone === 'hand') {
+      selectedEntries.push([id, { ...card, zone: 'library' }]);
+      continue;
+    }
+
+    otherEntries.push([id, card]);
+  }
+
+  const redrawn = Math.min(selectedEntries.length, libraryEntries.length);
+  const shuffledLibrary = shuffleCardEntries(libraryEntries).map(([id, card], index) => [
+    id,
+    { ...card, zone: index < redrawn ? 'hand' : 'library' },
+  ] as [string, CardInstance]);
+  const returnedSelected = shuffleCardEntries(selectedEntries);
+  const nextState: GameState = {
+    ...state,
+    cards: new Map([...otherEntries, ...shuffledLibrary, ...returnedSelected]),
+  };
+  const invariantReport = validateStateInvariants(nextState);
+  if (!invariantReport.ok) {
+    return openingMulliganRedrawReject(
+      state,
+      'invariant_violation',
+      `Engine invariant failed: ${invariantReport.violations[0]?.message || 'invalid state'}`,
+    );
+  }
+
+  return {
+    ok: true,
+    state: nextState,
+    update: buildStateUpdate(state, nextState),
+    redrawn,
   };
 }
 

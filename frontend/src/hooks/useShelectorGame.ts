@@ -73,6 +73,7 @@ import {
   applyPayCostsPromptResponse,
   createSelectCardsPromptRequest,
   applySelectCardsPromptResponse,
+  applyOpeningMulliganRedraw,
   createLibraryManipulationPromptRequest,
   applyLibraryManipulationPromptResponse,
   createOptionalTriggerPromptRequest,
@@ -1460,48 +1461,6 @@ function redrawOpeningHand(state: GameState, playerId: string, handSize = 7): Ga
   ] as [string, CardInstance]);
 
   return { ...state, cards: new Map([...otherEntries, ...shuffled]) };
-}
-
-function redrawSelectedOpeningHandCards(
-  state: GameState,
-  playerId: string,
-  cardInstanceIds: string[],
-): { state: GameState; redrawn: number } {
-  const selected = new Set(cardInstanceIds);
-  if (selected.size === 0) return { state, redrawn: 0 };
-
-  const libraryEntries: [string, CardInstance][] = [];
-  const selectedEntries: [string, CardInstance][] = [];
-  const otherEntries: [string, CardInstance][] = [];
-
-  for (const [id, card] of state.cards) {
-    if (card.ownerId === playerId && card.zone === 'library') {
-      libraryEntries.push([id, card]);
-      continue;
-    }
-
-    if (selected.has(id) && card.ownerId === playerId && card.zone === 'hand') {
-      selectedEntries.push([id, { ...card, zone: 'library' as Zone }]);
-      continue;
-    }
-
-    otherEntries.push([id, card]);
-  }
-
-  const redrawn = selectedEntries.length;
-  if (redrawn === 0) return { state, redrawn: 0 };
-
-  const shuffledLibrary = shuffleCardEntries(libraryEntries).map(([id, card], index) => [
-    id,
-    { ...card, zone: index < redrawn ? 'hand' as Zone : 'library' as Zone },
-  ] as [string, CardInstance]);
-
-  const returnedSelected = shuffleCardEntries(selectedEntries);
-
-  return {
-    state: { ...state, cards: new Map([...otherEntries, ...shuffledLibrary, ...returnedSelected]) },
-    redrawn: Math.min(redrawn, libraryEntries.length),
-  };
 }
 
 function bottomOpeningHandCards(state: GameState, playerId: string, count: number): GameState {
@@ -4163,7 +4122,13 @@ export function useShelectorGame() {
         return;
       }
 
-      const result = redrawSelectedOpeningHandCards(engine, humanIdRef.current, validIds);
+      const result = applyOpeningMulliganRedraw(engine, humanIdRef.current, validIds);
+      recordAuthorityUpdate(result.update);
+      if (!result.ok) {
+        addMessage('system', result.message);
+        syncState();
+        return;
+      }
       engineRef.current = result.state as GameStateWithAI;
       stepEffectsDoneRef.current.clear();
       setSelectedMulliganCardIds([]);
