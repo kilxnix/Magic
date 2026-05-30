@@ -1034,6 +1034,53 @@ describe('authority action boundary', () => {
     }]);
   });
 
+  it('uses source-aware control and another-object constraints in typed target prompts', () => {
+    const state = stateWithTargetChoices();
+    const friendlyBear = {
+      ...def('friendly_bear', 'Friendly Bear', 'Creature - Bear', '{1}{G}'),
+      card_types: ['creature' as const],
+      power: 2,
+      toughness: 2,
+    };
+    state.cardDefinitions.set(friendlyBear.id, friendlyBear);
+    state.cards.set('friendly_bear_1', cardInstance('friendly_bear_1', friendlyBear.id, 'p1', 'battlefield'));
+    state.cards.set('source_creature_1', cardInstance('source_creature_1', friendlyBear.id, 'p1', 'battlefield'));
+
+    const request = createSelectTargetPromptRequest(state, 'p1', {
+      id: 'target-another-your-creature',
+      type: 'Creature',
+      count: 1,
+      constraints: { controllerControls: true, notSource: true },
+    }, {
+      id: 'prompt-another-your-creature',
+      sourceInstanceId: 'source_creature_1',
+      createdAt: 171,
+    });
+
+    expect(request.legalChoices.map(choice => choice.targetId)).toEqual(['friendly_bear_1']);
+    expect(request.invalidChoices).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        targetId: 'bear_1',
+        legal: false,
+        reason: 'Target must be controlled by you',
+      }),
+      expect.objectContaining({
+        targetId: 'source_creature_1',
+        legal: false,
+        reason: 'Target must be another object',
+      }),
+    ]));
+
+    const rejected = applySelectTargetPromptResponse(state, request, {
+      requestId: request.id,
+      kind: 'SelectTarget',
+      playerId: 'p1',
+      selectedTargetIds: ['source_creature_1'],
+    });
+    expect(rejected.ok).toBe(false);
+    expect(rejected.message).toContain('Target must be another object');
+  });
+
   it('includes graveyard cards in typed target prompts when an effect targets a graveyard card', () => {
     const state = stateWithTargetChoices();
     const relic = def('dead_relic', 'Dead Relic', 'Artifact');

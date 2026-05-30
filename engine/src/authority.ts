@@ -2325,7 +2325,16 @@ function possibleTargetIds(state: GameState): string[] {
   return [...ids].sort((a, b) => targetLabel(state, a).localeCompare(targetLabel(state, b)));
 }
 
-function targetFailureReason(state: GameState, spec: TargetSpec, targetId: string): string {
+function targetFailureReason(
+  state: GameState,
+  spec: TargetSpec,
+  targetId: string,
+  playerId?: string,
+  sourceInstanceId?: string,
+): string {
+  if (spec.constraints?.notSource && sourceInstanceId && targetId === sourceInstanceId) {
+    return 'Target must be another object';
+  }
   const card = state.cards.get(targetId);
   if (spec.type === 'Player') return state.players.some(player => player.id === targetId && !player.hasLost)
     ? 'Does not match this target restriction'
@@ -2347,6 +2356,12 @@ function targetFailureReason(state: GameState, spec: TargetSpec, targetId: strin
     return 'Does not match this graveyard target restriction';
   }
   if (card.zone !== 'battlefield') return 'Not on the battlefield';
+  if (spec.constraints?.controllerControls && playerId && card.ownerId !== playerId) {
+    return 'Target must be controlled by you';
+  }
+  if (spec.constraints?.opponentControls && playerId && card.ownerId === playerId) {
+    return 'Target must be controlled by an opponent';
+  }
   const def = getCardDefinition(state, card);
   switch (spec.type) {
     case 'Creature':
@@ -2385,13 +2400,14 @@ function buildTargetChoices(
   state: GameState,
   playerId: string,
   spec: TargetSpec,
+  sourceInstanceId?: string,
 ): { legalChoices: TargetChoice[]; invalidChoices: TargetChoice[] } {
-  const legalIds = new Set(getLegalTargets(state, playerId, spec));
+  const legalIds = new Set(getLegalTargets(state, playerId, spec, sourceInstanceId));
   const choices = possibleTargetIds(state).map(targetId => ({
     targetId,
     label: targetLabel(state, targetId),
     legal: legalIds.has(targetId),
-    reason: legalIds.has(targetId) ? undefined : targetFailureReason(state, spec, targetId),
+    reason: legalIds.has(targetId) ? undefined : targetFailureReason(state, spec, targetId, playerId, sourceInstanceId),
   }));
   return {
     legalChoices: choices.filter(choice => choice.legal),
@@ -2407,7 +2423,7 @@ export function createSelectTargetPromptRequest(
 ): SelectTargetPromptRequest {
   const expectedStateId = stateFingerprint(state);
   const createdAt = options.createdAt ?? Date.now();
-  const { legalChoices, invalidChoices } = buildTargetChoices(state, playerId, targetSpec);
+  const { legalChoices, invalidChoices } = buildTargetChoices(state, playerId, targetSpec, options.sourceInstanceId);
   const count = targetSpec.count ?? 1;
   return {
     id: options.id || `target_${expectedStateId}_${hashText(`${playerId}:${targetSpec.id}:${createdAt}`)}`,
@@ -2510,10 +2526,10 @@ export function applySelectTargetPromptResponse(
     };
   }
 
-  const currentLegalIds = new Set(getLegalTargets(state, request.playerId, request.targetSpec));
+  const currentLegalIds = new Set(getLegalTargets(state, request.playerId, request.targetSpec, request.sourceInstanceId));
   for (const targetId of selectedIds) {
     if (!currentLegalIds.has(targetId)) {
-      const message = `Illegal target selection: ${targetFailureReason(state, request.targetSpec, targetId)}`;
+      const message = `Illegal target selection: ${targetFailureReason(state, request.targetSpec, targetId, request.playerId, request.sourceInstanceId)}`;
       return {
         requestId: response.requestId,
         ok: false,
