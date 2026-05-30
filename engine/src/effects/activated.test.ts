@@ -307,6 +307,27 @@ describe('matchesCardFilter', () => {
     expect(matchesCardFilter(creature, { types: ['land'] })).toBe(false);
   });
 
+  it('matches type and subtype filters by exact type-line terms, not substrings', () => {
+    const islandLikeCreature = createTestDef({
+      id: 'island_scout',
+      name: 'Island Scout',
+      type_line: 'Creature - Merfolk',
+      card_types: ['creature'],
+    });
+    const timeLord = createTestDef({
+      id: 'time_lord',
+      name: 'Time Lord',
+      type_line: 'Legendary Creature - Time Lord Doctor',
+      card_types: ['creature'],
+    });
+
+    expect(matchesCardFilter(islandLikeCreature, { types: ['land'] })).toBe(false);
+    expect(matchesCardFilter(islandLikeCreature, { subtypes: ['Island'] })).toBe(false);
+    expect(matchesCardFilter(basicForest, { subtypes: ['Forest'] })).toBe(true);
+    expect(matchesCardFilter(timeLord, { subtypes: ['Time Lord'] })).toBe(true);
+    expect(matchesCardFilter(timeLord, { subtypes: ['Tim'] })).toBe(false);
+  });
+
   it('filters by supertype', () => {
     expect(matchesCardFilter(basicForest, { supertypes: ['basic'] })).toBe(true);
     expect(matchesCardFilter(nonbasicLand, { supertypes: ['basic'] })).toBe(false);

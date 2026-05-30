@@ -1264,7 +1264,31 @@ type CardFilterContext = {
 
 function isPermanentDefinition(def: CardDefinition): boolean {
   return ['artifact', 'battle', 'creature', 'enchantment', 'land', 'planeswalker']
-    .some(type => def.card_types.includes(type as any) || def.type_line.toLowerCase().includes(type));
+    .some(type => def.card_types.includes(type as any) || typeLineSectionHasTerm(def.type_line, 'types', type));
+}
+
+function normalizeTypeLineDashes(text: string): string {
+  return text.replace(/[\u2013\u2014]|\u00e2\u20ac[\u201c\u201d]/g, '-');
+}
+
+function normalizeTypeTerm(text: string): string {
+  return normalizeTypeLineDashes(text).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+function typeLineSections(typeLine: string): { types: string; subtypes: string } {
+  const normalized = normalizeTypeLineDashes(typeLine);
+  const [types, ...subtypes] = normalized.split(/\s+-\s+/);
+  return {
+    types: normalizeTypeTerm(types || ''),
+    subtypes: normalizeTypeTerm(subtypes.join(' ')),
+  };
+}
+
+function typeLineSectionHasTerm(typeLine: string, section: 'types' | 'subtypes', term: string): boolean {
+  const normalizedTerm = normalizeTypeTerm(term);
+  if (!normalizedTerm) return false;
+  const sections = typeLineSections(typeLine);
+  return ` ${sections[section]} `.includes(` ${normalizedTerm} `);
 }
 
 /**
@@ -1295,23 +1319,21 @@ export function matchesCardFilter(def: CardDefinition, filter: CardFilter, conte
   // Check card types
   if (filter.types) {
     const hasMatchingType = filter.types.some(t =>
-      def.card_types.includes(t as any) || def.type_line.toLowerCase().includes(t.toLowerCase())
+      def.card_types.includes(t as any) || typeLineSectionHasTerm(def.type_line, 'types', t)
     );
     if (!hasMatchingType) return false;
   }
 
   if (filter.excludeTypes) {
-    const typeLine = def.type_line.toLowerCase();
     const hasExcludedType = filter.excludeTypes.some(t =>
-      def.card_types.includes(t as any) || typeLine.includes(t.toLowerCase())
+      def.card_types.includes(t as any) || typeLineSectionHasTerm(def.type_line, 'types', t)
     );
     if (hasExcludedType) return false;
   }
 
   // Check subtypes
   if (filter.subtypes) {
-    const typeLine = def.type_line.toLowerCase();
-    const hasMatchingSubtype = filter.subtypes.some(st => typeLine.includes(st.toLowerCase()));
+    const hasMatchingSubtype = filter.subtypes.some(st => typeLineSectionHasTerm(def.type_line, 'subtypes', st));
     if (!hasMatchingSubtype) return false;
   }
 
@@ -1320,19 +1342,17 @@ export function matchesCardFilter(def: CardDefinition, filter: CardFilter, conte
     const source = context.state.cards.get(context.sourceInstanceId);
     const chosenType = source?.choices?.chosenCreatureType?.trim().toLowerCase();
     if (!chosenType) return false;
-    if (!def.type_line.toLowerCase().includes(chosenType)) return false;
+    if (!typeLineSectionHasTerm(def.type_line, 'subtypes', chosenType)) return false;
   }
 
   if (filter.excludeSubtypes) {
-    const typeLine = def.type_line.toLowerCase();
-    const hasExcludedSubtype = filter.excludeSubtypes.some(st => typeLine.includes(st.toLowerCase()));
+    const hasExcludedSubtype = filter.excludeSubtypes.some(st => typeLineSectionHasTerm(def.type_line, 'subtypes', st));
     if (hasExcludedSubtype) return false;
   }
 
   // Check supertypes (e.g., "basic")
   if (filter.supertypes) {
-    const typeLine = def.type_line.toLowerCase();
-    const hasMatchingSupertype = filter.supertypes.some(st => typeLine.includes(st.toLowerCase()));
+    const hasMatchingSupertype = filter.supertypes.some(st => typeLineSectionHasTerm(def.type_line, 'types', st));
     if (!hasMatchingSupertype) return false;
   }
 
