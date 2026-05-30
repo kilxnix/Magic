@@ -4787,6 +4787,7 @@ export function useShelectorGame() {
     if (selectedIds.length > 0) {
       const engine = engineRef.current;
       if (!engine) return;
+      const newMulliganCount = mulliganCount + 1;
 
       const handIds = new Set(
         getCardsInZone(engine, humanIdRef.current, 'hand').map(card => card.instanceId),
@@ -4828,11 +4829,12 @@ export function useShelectorGame() {
       }
       engineRef.current = result.state as GameStateWithAI;
       stepEffectsDoneRef.current.clear();
+      setMulliganCount(newMulliganCount);
       setSelectedMulliganCardIds([]);
       setSelectedMulliganBottomIds([]);
       addMessage(
         'player',
-        `Mulliganed ${result.redrawn} selected card${result.redrawn === 1 ? '' : 's'} and drew ${result.redrawn}.`,
+        `Mulliganed ${result.redrawn} selected card${result.redrawn === 1 ? '' : 's'} and drew ${result.redrawn}. Choose ${newMulliganCount} card${newMulliganCount === 1 ? '' : 's'} to bottom before keeping.`,
       );
       syncState();
       return;
