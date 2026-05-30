@@ -748,7 +748,9 @@ export function castSpell(
     i === playerIndex
       ? {
           ...p,
+          life: paidPlayer.life,
           manaPool: paidPlayer.manaPool,
+          snowManaPool: paidPlayer.snowManaPool,
           restrictedMana: paidPlayer.restrictedMana,
           conditionalMana: paidPlayer.conditionalMana,
           commanderCastCount: isFromCommandZone && p.commanderInstanceId === cardInstanceId

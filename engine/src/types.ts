@@ -25,6 +25,8 @@ export interface ManaCost {
   hybrid?: ManaColor[][];
   /** Colored Phyrexian symbols such as {G/P}; each may be paid with that color or 2 life. */
   phyrexian?: ManaColor[];
+  /** Snow symbols such as {S}; each must be paid with mana produced by a snow source. */
+  snow?: number;
 }
 
 export interface CardDefinition {
@@ -219,6 +221,7 @@ export interface RestrictedMana {
   restriction: ManaRestrictionKind;
   creatureType?: string;
   sourceInstanceId?: string;
+  snow?: boolean;
 }
 
 export type ConditionalManaEffectKind = 'copyRedInstantOrSorcery';
@@ -228,6 +231,7 @@ export interface ConditionalMana {
   amount: number;
   effect: ConditionalManaEffectKind;
   sourceInstanceId?: string;
+  snow?: boolean;
 }
 
 export interface Player {
@@ -242,6 +246,7 @@ export interface Player {
   commanderCastCount: number; // times commander has been cast from command zone
   commanderCastCounts?: Record<string, number>; // per commander instance for partner tax
   manaPool: ManaPool;
+  snowManaPool?: ManaPool;
   restrictedMana?: RestrictedMana[];
   conditionalMana?: ConditionalMana[];
   hasPlayedLand: boolean;
@@ -308,6 +313,7 @@ export function createPlayer(id: string, name: string, life: number = 40): Playe
     commanderCastCount: 0,
     commanderCastCounts: {},
     manaPool: emptyManaPool(),
+    snowManaPool: emptyManaPool(),
     restrictedMana: [],
     conditionalMana: [],
     hasPlayedLand: false,

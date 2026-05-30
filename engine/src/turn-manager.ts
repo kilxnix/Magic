@@ -45,6 +45,7 @@ export function advanceStep(state: GameState): GameState {
   const updatedPlayers = state.players.map(p => ({
     ...p,
     manaPool: { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 },
+    snowManaPool: { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 },
     restrictedMana: [],
     conditionalMana: [],
   }));
@@ -83,9 +84,9 @@ export function advanceToNextTurn(state: GameState): GameState {
 
   const updatedPlayers = state.players.map((p, i) => {
     if (i === nextIndex) {
-      return { ...p, hasPlayedLand: false, landsPlayedThisTurn: 0, manaPool: { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 }, restrictedMana: [], conditionalMana: [] };
+      return { ...p, hasPlayedLand: false, landsPlayedThisTurn: 0, manaPool: { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 }, snowManaPool: { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 }, restrictedMana: [], conditionalMana: [] };
     }
-    return { ...p, manaPool: { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 }, restrictedMana: [], conditionalMana: [] };
+    return { ...p, manaPool: { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 }, snowManaPool: { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 }, restrictedMana: [], conditionalMana: [] };
   });
 
   return {

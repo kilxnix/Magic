@@ -46,18 +46,28 @@ export interface SerializedPlayerV1 {
     G: number;
     C: number;
   };
+  snowManaPool?: {
+    W: number;
+    U: number;
+    B: number;
+    R: number;
+    G: number;
+    C: number;
+  };
   restrictedMana?: Array<{
     color: string;
     amount: number;
     restriction: string;
     creatureType?: string;
     sourceInstanceId?: string;
+    snow?: boolean;
   }>;
   conditionalMana?: Array<{
     color: string;
     amount: number;
     effect: string;
     sourceInstanceId?: string;
+    snow?: boolean;
   }>;
   hasPlayedLand: boolean;
   hasPriority: boolean;

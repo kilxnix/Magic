@@ -20,6 +20,21 @@ function makeForest(): CardDefinition {
   };
 }
 
+function makeSnowCoveredForest(): CardDefinition {
+  return {
+    id: 'snow-forest-1',
+    name: 'Snow-Covered Forest',
+    type_line: 'Basic Snow Land â€” Forest',
+    oracle_text: '{T}: Add {G}.',
+    mana_cost: '',
+    cmc: 0,
+    colors: [],
+    color_identity: ['G'],
+    keywords: [],
+    card_types: ['land'],
+  };
+}
+
 function makeIsland(): CardDefinition {
   return {
     id: 'island-1',
@@ -273,6 +288,23 @@ describe('Land Actions', () => {
       const next = tapLandForMana(state, 'p1', card.instanceId, 'G');
       expect(next.cards.get(card.instanceId)!.tapped).toBe(true);
       expect(next.players[0].manaPool.G).toBe(1);
+    });
+
+    it('marks mana from snow permanents so it can pay snow costs', () => {
+      const decks = [{
+        playerId: 'p1', name: 'Alice',
+        cards: [makeSnowCoveredForest()], commanderId: 'cmd1',
+      }, {
+        playerId: 'p2', name: 'Bob',
+        cards: [], commanderId: 'cmd2',
+      }];
+      let state = initGameState(decks);
+      const card = getCardsInZone(state, 'p1', 'library')[0];
+      state.cards.set(card.instanceId, { ...card, zone: 'battlefield', summoningSick: false });
+
+      const next = tapLandForMana(state, 'p1', card.instanceId, 'G');
+      expect(next.players[0].manaPool.G).toBe(1);
+      expect(next.players[0].snowManaPool?.G).toBe(1);
     });
 
     it('throws if land is already tapped', () => {

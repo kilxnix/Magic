@@ -363,16 +363,25 @@ export function tapLandForMana(state: GameState, playerId: string, cardInstanceI
   }
 
   const playerIndex = state.players.findIndex(p => p.id === playerId);
+  const sourceProducesSnowMana = /\bsnow\b/i.test(def.type_line);
   const newPlayers = state.players.map((p, i) => {
     if (i !== playerIndex) return p;
-    const withMana = { ...p, manaPool: addMana(p.manaPool, color, amount) };
+    const withMana = {
+      ...p,
+      manaPool: addMana(p.manaPool, color, amount),
+      ...(sourceProducesSnowMana
+        ? { snowManaPool: addMana(p.snowManaPool || { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 }, color, amount) }
+        : {}),
+    };
     const withRestriction = addRestrictedMana(withMana, color, amount, def.manaProduction?.restriction, {
       sourceInstanceId: cardInstanceId,
       creatureType: card.choices?.chosenCreatureType,
+      snow: sourceProducesSnowMana,
     });
     if (manaHasSpellCopyRider(def.oracle_text)) {
       return addConditionalMana(withRestriction, color, amount, 'copyRedInstantOrSorcery', {
         sourceInstanceId: cardInstanceId,
+        snow: sourceProducesSnowMana,
       });
     }
     return withRestriction;

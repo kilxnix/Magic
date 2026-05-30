@@ -61,6 +61,20 @@ describe('Mana System', () => {
         phyrexian: ['G', 'U'],
       });
     });
+
+    it('parses snow mana symbols', () => {
+      const cost = parseManaString('{S}{S}{1}');
+      expect(cost).toEqual({
+        W: 0,
+        U: 0,
+        B: 0,
+        R: 0,
+        G: 0,
+        C: 0,
+        generic: 1,
+        snow: 2,
+      });
+    });
   });
 
   describe('addMana', () => {
@@ -128,6 +142,12 @@ describe('Mana System', () => {
 
       expect(canPayCost({ W: 0, U: 0, B: 0, R: 0, G: 1, C: 0 }, cost)).toBe(true);
       expect(canPayCost(emptyManaPool(), cost)).toBe(false);
+    });
+
+    it('does not allow pool-only snow costs without snow source information', () => {
+      const cost = parseManaString('{S}');
+
+      expect(canPayCost({ W: 0, U: 0, B: 0, R: 0, G: 1, C: 0 }, cost)).toBe(false);
     });
   });
 
@@ -202,6 +222,43 @@ describe('Mana System', () => {
 
       expect(canPaySpellCost(player, cost, spellDef)).toBe(false);
       expect(() => paySpellCost(player, cost, spellDef)).toThrow('Cannot pay mana cost');
+    });
+
+    it('requires snow mana for snow spell costs', () => {
+      const player = {
+        ...createPlayer('p1', 'Alice'),
+        manaPool: { W: 0, U: 0, B: 0, R: 0, G: 1, C: 0 },
+        snowManaPool: emptyManaPool(),
+      };
+      const cost = parseManaString('{S}');
+
+      expect(canPaySpellCost(player, cost, spellDef)).toBe(false);
+    });
+
+    it('spends mana marked as snow for snow spell costs', () => {
+      const player = {
+        ...createPlayer('p1', 'Alice'),
+        manaPool: { W: 0, U: 0, B: 0, R: 0, G: 1, C: 0 },
+        snowManaPool: { W: 0, U: 0, B: 0, R: 0, G: 1, C: 0 },
+      };
+      const cost = parseManaString('{S}');
+
+      const paid = paySpellCost(player, cost, spellDef);
+      expect(paid.manaPool.G).toBe(0);
+      expect(paid.snowManaPool?.G).toBe(0);
+    });
+
+    it('preserves snow mana for snow symbols when colored mana can be paid another way', () => {
+      const player = {
+        ...createPlayer('p1', 'Alice'),
+        manaPool: { W: 0, U: 0, B: 0, R: 0, G: 2, C: 0 },
+        snowManaPool: { W: 0, U: 0, B: 0, R: 0, G: 1, C: 0 },
+      };
+      const cost = parseManaString('{G}{S}');
+
+      const paid = paySpellCost(player, cost, spellDef);
+      expect(paid.manaPool.G).toBe(0);
+      expect(paid.snowManaPool?.G).toBe(0);
     });
   });
 
