@@ -257,6 +257,7 @@ export interface Player {
   id: string;
   name: string;
   life: number;
+  playerCounters?: Record<string, number>; // generic counters such as energy and experience
   poisonCounters: number; // NEW — for infect/poison loss condition (>=10 loses)
   commanderDamage: Record<string, number>; // commanderInstanceId -> damage taken
   commanderTax: number;

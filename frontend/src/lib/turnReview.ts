@@ -58,6 +58,8 @@ export function actionIdentity(action: AIAction): string {
       return `${action.kind}:${action.cardInstanceId}:${action.color}:${action.amount}`;
     case 'ManualAdjustCounters':
       return `${action.kind}:${action.cardInstanceId}:${action.counterType}:${action.delta}`;
+    case 'ManualAdjustPlayerCounter':
+      return `${action.kind}:${action.playerId}:${action.counterType}:${action.delta}`;
     case 'ManualCreateToken':
       return `${action.kind}:${action.name}:${action.count}:${action.power}/${action.toughness}:${action.colors.join(',')}:${action.types.join(',')}:${action.subtypes.join(',')}:${action.keywords?.join(',') || ''}`;
     case 'PassPriority':
@@ -114,6 +116,11 @@ export function describeReviewAction(state: GameState, action: AIAction): string
       const def = inst ? getCardDefinition(state, inst) : undefined;
       const sign = action.delta > 0 ? '+' : '';
       return `${sign}${action.delta} ${action.counterType} counter on ${def?.name || 'a permanent'}`;
+    }
+    case 'ManualAdjustPlayerCounter': {
+      const player = state.players.find(candidate => candidate.id === action.playerId);
+      const sign = action.delta > 0 ? '+' : '';
+      return `${sign}${action.delta} ${action.counterType} counter on ${player?.name || 'a player'}`;
     }
     case 'ManualCreateToken':
       return `Create ${action.count} ${action.name} token${action.count === 1 ? '' : 's'}`;

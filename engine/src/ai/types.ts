@@ -66,6 +66,13 @@ export interface ManualAdjustCountersAction {
   delta: number;
 }
 
+export interface ManualAdjustPlayerCounterAction {
+  kind: 'ManualAdjustPlayerCounter';
+  playerId: string;
+  counterType: string;
+  delta: number;
+}
+
 export interface ManualCreateTokenAction {
   kind: 'ManualCreateToken';
   name: string;
@@ -129,6 +136,7 @@ export type AIAction =
   | ActivateManaAbilityAction
   | ManualUntapManaSourceAction
   | ManualAdjustCountersAction
+  | ManualAdjustPlayerCounterAction
   | ManualCreateTokenAction
   | ActivateAbilityAction
   | DeclareAttackersAction

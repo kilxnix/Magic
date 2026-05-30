@@ -133,6 +133,7 @@ export function PlayPage() {
     setHoldPriority,
     untapManaSource,
     adjustCounters,
+    adjustPlayerCounter,
     createManualToken,
     untappableCardIds,
     endGame,
@@ -778,6 +779,7 @@ export function PlayPage() {
             collapseModeControlsOnMobile
             onUntapMana={untapManaSource}
             onAdjustCounters={adjustCounters}
+            onAdjustPlayerCounter={adjustPlayerCounter}
             onCreateToken={createManualToken}
             untappableCardIds={untappableCardIds}
             lastPlayedCard={lastPlayedCard}

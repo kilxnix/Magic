@@ -1935,6 +1935,35 @@ describe('authority action boundary', () => {
     })).toBe(true);
   });
 
+  it('replays validated manual player counter corrections through the authority boundary', () => {
+    const state = stateWithForestInHand();
+    const request = createClientActionRequest(state, 'p1', {
+      kind: 'ManualAdjustPlayerCounter',
+      playerId: 'p1',
+      counterType: 'experience',
+      delta: 3,
+    }, {
+      id: 'req-replay-manual-player-counter',
+      source: 'system',
+      createdAt: 39,
+    });
+
+    const adjusted = applyClientActionRequest(state, request);
+    expect(adjusted.ok).toBe(true);
+    expect(adjusted.state?.players.find(player => player.id === 'p1')?.playerCounters?.experience).toBe(3);
+    expect(adjusted.update?.visibleDiffs).toContainEqual(expect.objectContaining({
+      kind: 'PlayerCounterChanged',
+      playerId: 'p1',
+      counterType: 'experience',
+      from: 0,
+      to: 3,
+    }));
+
+    const report = auditActionReplay(state, [request]);
+    expect(report.ok).toBe(true);
+    expect(report.finalState?.players.find(player => player.id === 'p1')?.playerCounters?.experience).toBe(3);
+  });
+
   it('fails replay audit when a committed request no longer matches the previous state', () => {
     const state = stateWithForestInHand();
     const prompt = buildActionPrompt(state, 'p1');

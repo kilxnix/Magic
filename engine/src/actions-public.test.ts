@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { tryPlayLand, tryTapLandForMana, tryUntapManaSource, tryCastSpell, tryActivateAbility, tryPassPriority, tryDeclareAttackers, tryDeclareBlockers, tryEquip, tryAdjustCounters, tryCreateManualToken, resetLoopDetector } from './actions-public';
+import { tryPlayLand, tryTapLandForMana, tryUntapManaSource, tryCastSpell, tryActivateAbility, tryPassPriority, tryDeclareAttackers, tryDeclareBlockers, tryEquip, tryAdjustCounters, tryAdjustPlayerCounter, tryCreateManualToken, resetLoopDetector } from './actions-public';
 import { makeTestState } from './__tests__/test-helpers';
 import { populateParsedCache } from './cards/card-parser-cache';
 import type { CardDefinition, GameState } from './types';
@@ -452,6 +452,51 @@ describe('tryAdjustCounters', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.state.cards.get('vanilla_creature_0')?.counters['shield counter']).toBe(1);
+  });
+});
+
+describe('tryAdjustPlayerCounter', () => {
+  it('adds a generic player counter', () => {
+    const state = makeTestState({});
+
+    const result = tryAdjustPlayerCounter(state, 'human', 'human', 'experience', 2);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.players.find(player => player.id === 'human')?.playerCounters?.experience).toBe(2);
+    expect(result.events).toContainEqual(
+      expect.objectContaining({
+        kind: 'PlayerCounterAdjusted',
+        playerId: 'human',
+        targetPlayerId: 'human',
+        counterType: 'experience',
+        delta: 2,
+        previous: 0,
+        next: 2,
+        manual: true,
+      }),
+    );
+  });
+
+  it('routes poison through poisonCounters', () => {
+    const state = makeTestState({});
+
+    const result = tryAdjustPlayerCounter(state, 'human', 'human', 'poison', 1);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const player = result.state.players.find(candidate => candidate.id === 'human');
+    expect(player?.poisonCounters).toBe(1);
+    expect(player?.playerCounters?.poison).toBeUndefined();
+  });
+
+  it('rejects removing missing player counters', () => {
+    const state = makeTestState({});
+
+    const result = tryAdjustPlayerCounter(state, 'human', 'human', 'energy', -1);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe('illegal_target');
   });
 });
 

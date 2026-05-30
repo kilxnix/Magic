@@ -134,6 +134,7 @@ interface GameBoardProps {
   collapseModeControlsOnMobile?: boolean;
   onUntapMana?: (cardInstanceId: string) => void;
   onAdjustCounters?: (cardInstanceId: string, counterType: string, delta: number) => void;
+  onAdjustPlayerCounter?: (playerId: string, counterType: string, delta: number) => void;
   onCreateToken?: (token: ManualTokenInput) => void;
   untappableCardIds?: string[];
   lastPlayedCard?: LastPlayedCard | null;
@@ -148,6 +149,14 @@ function getCounterBadges(counters: Record<string, number>): { label: string; co
   return Object.entries(counters)
     .filter(([, v]) => v > 0)
     .map(([key, count]) => ({ label: key, count }));
+}
+
+function getPlayerCounterBadges(player: SimpleGameState['humanPlayer']): { label: string; count: number }[] {
+  const counters = { ...(player.playerCounters || {}) };
+  if (player.poisonCounters > 0) counters.poison = player.poisonCounters;
+  return Object.entries(counters)
+    .filter(([, count]) => count > 0)
+    .map(([label, count]) => ({ label, count }));
 }
 
 function getBattlefieldRowKey(card: SimpleCard): BattlefieldRowKey {
@@ -210,6 +219,8 @@ function describeVisibleDiff(diff: EngineStateUpdate['visibleDiffs'][number], na
       return `${nameForPlayer(diff.playerId)} ${diff.color} mana ${diff.from} -> ${diff.to}`;
     case 'PoisonChanged':
       return `${nameForPlayer(diff.playerId)} poison ${diff.from} -> ${diff.to}`;
+    case 'PlayerCounterChanged':
+      return `${nameForPlayer(diff.playerId)} ${diff.counterType} ${diff.from} -> ${diff.to}`;
     case 'PlayerLostChanged':
       return diff.to ? `${nameForPlayer(diff.playerId)} lost` : `${nameForPlayer(diff.playerId)} returned`;
     case 'CommanderDamageChanged':
@@ -1200,6 +1211,147 @@ function ManualTokenModal({
   );
 }
 
+function ManualPlayerCounterModal({
+  players,
+  onAdjust,
+  onCancel,
+}: {
+  players: SimpleGameState['aiPlayers'];
+  onAdjust: (playerId: string, counterType: string, delta: number) => void;
+  onCancel: () => void;
+}) {
+  const [playerId, setPlayerId] = useState(players[0]?.id || '');
+  const [counterType, setCounterType] = useState('poison');
+  const selectedPlayer = players.find(player => player.id === playerId) || players[0];
+  const quickCounters = ['poison', 'energy', 'experience', 'the ring', 'rad', 'ticket'];
+
+  useEffect(() => {
+    if (!playerId && players[0]) setPlayerId(players[0].id);
+  }, [playerId, players]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onCancel();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onCancel]);
+
+  const adjust = (delta: number) => {
+    const cleanCounter = counterType.trim().replace(/\s+/g, ' ').toLowerCase();
+    if (!selectedPlayer || !cleanCounter) return;
+    onAdjust(selectedPlayer.id, cleanCounter, delta);
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-[74] flex items-center justify-center bg-black/75 p-3 backdrop-blur-sm"
+      onClick={onCancel}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Adjust player counters"
+        className="w-[min(30rem,calc(100vw-1rem))] overflow-hidden rounded-lg border border-amber-500/35 bg-neutral-950 shadow-2xl shadow-black/70"
+        onClick={event => event.stopPropagation()}
+      >
+        <div className="flex items-center justify-between gap-3 border-b border-neutral-800 px-4 py-3">
+          <div>
+            <div className="text-[10px] font-bold uppercase tracking-wider text-amber-400">Manual Correction</div>
+            <div className="text-lg font-black text-stone-100">Player Counters</div>
+          </div>
+          <button
+            type="button"
+            onClick={onCancel}
+            className="flex h-9 w-9 items-center justify-center rounded border border-neutral-700 bg-neutral-900 text-stone-300 transition-colors hover:bg-neutral-800 hover:text-white"
+            aria-label="Close player counter editor"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="space-y-4 p-4">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="space-y-1 text-xs font-bold uppercase tracking-wider text-stone-500">
+              <span>Player</span>
+              <select
+                value={playerId}
+                onChange={event => setPlayerId(event.target.value)}
+                className="min-h-11 w-full rounded border border-neutral-700 bg-neutral-900 px-3 text-sm normal-case tracking-normal text-stone-100 focus:border-amber-400 focus:outline-none"
+              >
+                {players.map(player => (
+                  <option key={player.id} value={player.id}>{player.name}</option>
+                ))}
+              </select>
+            </label>
+            <label className="space-y-1 text-xs font-bold uppercase tracking-wider text-stone-500">
+              <span>Counter Type</span>
+              <input
+                value={counterType}
+                onChange={event => setCounterType(event.target.value)}
+                className="min-h-11 w-full rounded border border-neutral-700 bg-neutral-900 px-3 text-sm normal-case tracking-normal text-stone-100 focus:border-amber-400 focus:outline-none"
+              />
+            </label>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            {quickCounters.map(counter => (
+              <button
+                key={counter}
+                type="button"
+                onClick={() => setCounterType(counter)}
+                className={`min-h-9 rounded border px-3 text-xs font-bold transition-colors ${
+                  counterType === counter
+                    ? 'border-amber-300 bg-amber-400 text-neutral-950'
+                    : 'border-neutral-700 bg-neutral-900 text-stone-300 hover:border-neutral-500'
+                }`}
+              >
+                {counter}
+              </button>
+            ))}
+          </div>
+
+          {selectedPlayer && (
+            <div className="rounded border border-neutral-800 bg-neutral-900 p-3 text-xs text-stone-300">
+              <div className="mb-2 font-black uppercase tracking-wider text-stone-500">Current</div>
+              <div className="flex flex-wrap gap-2">
+                {getPlayerCounterBadges(selectedPlayer).length > 0 ? (
+                  getPlayerCounterBadges(selectedPlayer).map(counter => (
+                    <span key={counter.label} className="rounded border border-green-700/60 bg-green-950/60 px-2 py-1 text-green-200">
+                      {counter.label}: {counter.count}
+                    </span>
+                  ))
+                ) : (
+                  <span className="text-stone-500">No player counters.</span>
+                )}
+              </div>
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => adjust(-1)}
+              disabled={!selectedPlayer || !counterType.trim()}
+              className="min-h-11 rounded border border-neutral-700 bg-neutral-950 px-4 text-sm font-bold text-stone-200 transition-colors hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Remove
+            </button>
+            <button
+              type="button"
+              onClick={() => adjust(1)}
+              disabled={!selectedPlayer || !counterType.trim()}
+              className="min-h-11 rounded bg-amber-400 px-4 text-sm font-black text-neutral-950 transition-colors hover:bg-amber-300 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Add
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function LibraryChoiceModal({
   choice,
   onResolve,
@@ -1759,6 +1911,7 @@ export function GameBoard({
   onToggleHoldPriority,
   onUntapMana,
   onAdjustCounters,
+  onAdjustPlayerCounter,
   onCreateToken,
   untappableCardIds,
   lastPlayedCard,
@@ -1775,6 +1928,7 @@ export function GameBoard({
   const [selectedOpponentId, setSelectedOpponentId] = useState<string | null>(null);
   const [showUtilityMenu, setShowUtilityMenu] = useState(false);
   const [showTokenCreator, setShowTokenCreator] = useState(false);
+  const [showPlayerCounters, setShowPlayerCounters] = useState(false);
 
   const handleCardHover = (card: SimpleCard | null) => {
     setHoveredCard(card);
@@ -2133,6 +2287,15 @@ export function GameBoard({
           onCancel={() => setShowTokenCreator(false)}
         />
       )}
+      {showPlayerCounters && onAdjustPlayerCounter && (
+        <ManualPlayerCounterModal
+          players={[gameState.humanPlayer, ...gameState.aiPlayers]}
+          onAdjust={(targetPlayerId, counterType, delta) => {
+            onAdjustPlayerCounter(targetPlayerId, counterType, delta);
+          }}
+          onCancel={() => setShowPlayerCounters(false)}
+        />
+      )}
       {inspectedCard && (
         <CardInspectorModal
           card={inspectedCard}
@@ -2329,6 +2492,22 @@ export function GameBoard({
                 </button>
               )}
 
+              {onAdjustPlayerCounter && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowPlayerCounters(true);
+                    setShowUtilityMenu(false);
+                  }}
+                  className="flex min-h-11 w-full items-center justify-between rounded border border-neutral-800 bg-neutral-900 px-3 text-left text-sm font-bold text-stone-100 transition-colors hover:border-amber-400/60 hover:bg-neutral-800"
+                >
+                  <span>Player counters</span>
+                  <span className="rounded bg-neutral-800 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-stone-400">
+                    Manual
+                  </span>
+                </button>
+              )}
+
               {menuActions.length > 0 && (
                 <div className="space-y-2 border-t border-neutral-800 pt-3">
                   {menuActions.map(action => (
@@ -2427,6 +2606,15 @@ export function GameBoard({
                 {' / '}
                 Lib: {selectedOpponent.libraryCount}
               </div>
+              {getPlayerCounterBadges(selectedOpponent).length > 0 && (
+                <div className="mt-1 flex max-w-[13rem] flex-wrap gap-1">
+                  {getPlayerCounterBadges(selectedOpponent).map(counter => (
+                    <span key={counter.label} className="rounded border border-green-700/50 bg-green-950/60 px-1.5 py-0.5 text-[9px] font-bold text-green-200">
+                      {counter.label} {counter.count}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 	          <button
@@ -2698,6 +2886,15 @@ export function GameBoard({
             </span>
           </button>
         </div>
+        {getPlayerCounterBadges(gameState.humanPlayer).length > 0 && (
+          <div className="mb-2 flex flex-wrap gap-1.5">
+            {getPlayerCounterBadges(gameState.humanPlayer).map(counter => (
+              <span key={counter.label} className="rounded border border-green-700/50 bg-green-950/60 px-2 py-0.5 text-[10px] font-bold text-green-200">
+                {counter.label} {counter.count}
+              </span>
+            ))}
+          </div>
+        )}
 
         {/* Human command zone cards, including partners/backgrounds. */}
         {humanCommandZoneCards.length > 0 && (

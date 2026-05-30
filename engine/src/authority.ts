@@ -780,6 +780,13 @@ export type VisibleDiff =
       to: number;
     }
   | {
+      kind: 'PlayerCounterChanged';
+      playerId: string;
+      counterType: string;
+      from: number;
+      to: number;
+    }
+  | {
       kind: 'PlayerLostChanged';
       playerId: string;
       from: boolean;
@@ -1049,6 +1056,7 @@ function stateSignature(state: GameState): unknown {
       id: player.id,
       life: player.life,
       poisonCounters: player.poisonCounters,
+      playerCounters: player.playerCounters,
       commanderDamage: player.commanderDamage,
       commanderCastCount: player.commanderCastCount,
       commanderCastCounts: player.commanderCastCounts,
@@ -1099,6 +1107,11 @@ function actionReferencesSameObject(legal: AIAction, requested: AIAction): boole
     case 'ManualAdjustCounters':
       return requested.kind === 'ManualAdjustCounters'
         && legal.cardInstanceId === requested.cardInstanceId
+        && legal.counterType === requested.counterType
+        && legal.delta === requested.delta;
+    case 'ManualAdjustPlayerCounter':
+      return requested.kind === 'ManualAdjustPlayerCounter'
+        && legal.playerId === requested.playerId
         && legal.counterType === requested.counterType
         && legal.delta === requested.delta;
     case 'ManualCreateToken':
@@ -1164,6 +1177,10 @@ function illegalActionMessage(state: GameState, playerId: string, action: AIActi
     const result = dispatchAIAction(state, playerId, action);
     return result.ok ? 'That counter correction is not available now.' : result.message;
   }
+  if (action.kind === 'ManualAdjustPlayerCounter') {
+    const result = dispatchAIAction(state, playerId, action);
+    return result.ok ? 'That player-counter correction is not available now.' : result.message;
+  }
   if (action.kind === 'ManualCreateToken') {
     const result = dispatchAIAction(state, playerId, action);
     return result.ok ? 'That token correction is not available now.' : result.message;
@@ -1174,6 +1191,7 @@ function illegalActionMessage(state: GameState, playerId: string, action: AIActi
 function isValidatedOutOfBandAction(action: AIAction): boolean {
   return action.kind === 'ManualUntapManaSource'
     || action.kind === 'ManualAdjustCounters'
+    || action.kind === 'ManualAdjustPlayerCounter'
     || action.kind === 'ManualCreateToken';
 }
 
@@ -1189,6 +1207,8 @@ export function labelForAction(state: GameState, action: AIAction): string {
       return `Undo mana tap for ${cardName(state, state.cards.get(action.cardInstanceId)) || 'source'}`;
     case 'ManualAdjustCounters':
       return `Adjust ${cardName(state, state.cards.get(action.cardInstanceId)) || 'permanent'} counters`;
+    case 'ManualAdjustPlayerCounter':
+      return `Adjust ${playerName(state, action.playerId) || 'player'} ${action.counterType} counters`;
     case 'ManualCreateToken':
       return `Create ${action.count} ${action.name} token${action.count === 1 ? '' : 's'}`;
     case 'ActivateAbility':
@@ -1250,6 +1270,7 @@ const ACTION_KIND_LABELS: Record<AIAction['kind'], string> = {
   ActivateManaAbility: 'Mana ability',
   ManualUntapManaSource: 'Special action',
   ManualAdjustCounters: 'Special action',
+  ManualAdjustPlayerCounter: 'Special action',
   ManualCreateToken: 'Special action',
   ActivateAbility: 'Activated ability',
   DeclareAttackers: 'Attack/block',
@@ -1268,6 +1289,7 @@ function actionChoiceSummaryLabel(action: AIAction): string {
       return 'Attack/block';
     case 'Equip':
     case 'ManualAdjustCounters':
+    case 'ManualAdjustPlayerCounter':
     case 'ManualUntapManaSource':
     case 'ManualCreateToken':
       return 'Special action';
@@ -4134,6 +4156,19 @@ export function diffGameStates(before: GameState, after: GameState): VisibleDiff
         from: beforePlayer.poisonCounters,
         to: afterPlayer.poisonCounters,
       });
+    }
+    for (const counterType of numberRecordKeys(beforePlayer.playerCounters, afterPlayer.playerCounters)) {
+      const oldCount = beforePlayer.playerCounters?.[counterType] || 0;
+      const newCount = afterPlayer.playerCounters?.[counterType] || 0;
+      if (oldCount !== newCount) {
+        diffs.push({
+          kind: 'PlayerCounterChanged',
+          playerId: beforePlayer.id,
+          counterType,
+          from: oldCount,
+          to: newCount,
+        });
+      }
     }
     if (beforePlayer.hasLost !== afterPlayer.hasLost) {
       diffs.push({

@@ -65,6 +65,16 @@ export type GameEvent =
       manual: true;
     }
   | {
+      kind: 'PlayerCounterAdjusted';
+      playerId: string;
+      targetPlayerId: string;
+      counterType: string;
+      delta: number;
+      previous: number;
+      next: number;
+      manual: true;
+    }
+  | {
       kind: 'TokenCreated';
       playerId: string;
       tokenName: string;
@@ -455,6 +465,63 @@ export function tryAdjustCounters(
       kind: 'CountersAdjusted',
       playerId,
       cardId: cardInstanceId,
+      counterType: normalizedCounter,
+      delta,
+      previous,
+      next: nextCount,
+      manual: true,
+    },
+    ...runWinCheck(next),
+  ]);
+}
+
+export function tryAdjustPlayerCounter(
+  state: GameState,
+  playerId: string,
+  targetPlayerId: string,
+  counterType: string,
+  delta: number,
+): ActionResult {
+  if (!state.players.some(p => p.id === playerId)) return fail('card_not_found', 'Player not found');
+  const target = state.players.find(p => p.id === targetPlayerId);
+  if (!target) return fail('card_not_found', 'Target player not found');
+
+  const normalizedCounter = counterType.trim().replace(/\s+/g, ' ').toLowerCase();
+  if (normalizedCounter.length === 0 || normalizedCounter.length > 32) {
+    return fail('illegal_target', 'Counter type must be 1-32 characters');
+  }
+  if (!Number.isInteger(delta) || delta === 0 || Math.abs(delta) > 99) {
+    return fail('illegal_target', 'Counter adjustment must be a non-zero integer from -99 to 99');
+  }
+
+  const previous = normalizedCounter === 'poison'
+    ? Math.max(0, target.poisonCounters || 0)
+    : Math.max(0, target.playerCounters?.[normalizedCounter] ?? 0);
+  const nextCount = Math.max(0, previous + delta);
+  if (previous === nextCount) {
+    return fail('illegal_target', `No ${normalizedCounter} counters to remove`);
+  }
+
+  const nextPlayers = state.players.map(player => {
+    if (player.id !== targetPlayerId) return player;
+    if (normalizedCounter === 'poison') {
+      return { ...player, poisonCounters: nextCount };
+    }
+    const playerCounters = { ...(player.playerCounters || {}) };
+    if (nextCount === 0) {
+      delete playerCounters[normalizedCounter];
+    } else {
+      playerCounters[normalizedCounter] = nextCount;
+    }
+    return { ...player, playerCounters };
+  });
+  const next = { ...state, players: nextPlayers };
+
+  return success(next, [
+    {
+      kind: 'PlayerCounterAdjusted',
+      playerId,
+      targetPlayerId,
       counterType: normalizedCounter,
       delta,
       previous,

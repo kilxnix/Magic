@@ -144,6 +144,8 @@ export interface SimplePlayer {
   id: string;
   name: string;
   life: number;
+  poisonCounters: number;
+  playerCounters: Record<string, number>;
   handCount: number;
   libraryCount: number;
 }
@@ -268,6 +270,7 @@ function isMeaningfulAutoSkipAction(action: AIAction): boolean {
     case 'ActivateManaAbility':
     case 'ManualUntapManaSource':
     case 'ManualAdjustCounters':
+    case 'ManualAdjustPlayerCounter':
     case 'ManualCreateToken':
       return false;
     case 'DeclareAttackers':
@@ -1478,6 +1481,8 @@ function deriveSimpleState(
       id: aiId,
       name: aiCommanderNames[aiId] || `AI ${aiId}`,
       life: aiP.life,
+      poisonCounters: aiP.poisonCounters,
+      playerCounters: { ...(aiP.playerCounters || {}) },
       handCount: getCardsInZone(engine, aiId, 'hand').length,
       libraryCount: getCardsInZone(engine, aiId, 'library').length,
     });
@@ -1548,7 +1553,7 @@ function deriveSimpleState(
 
   // First AI for backward-compatible aliases
   const firstAiId = aiIds[0] || 'ai1';
-  const firstAiPlayer = aiPlayers[0] || { id: firstAiId, name: 'AI', life: 40, handCount: 0, libraryCount: 0 };
+  const firstAiPlayer = aiPlayers[0] || { id: firstAiId, name: 'AI', life: 40, poisonCounters: 0, playerCounters: {}, handCount: 0, libraryCount: 0 };
 
   // Convert raw turn number to round number (turn 1&2 in 2-player = round 1, etc.)
   const playerCount = engine.players.length;
@@ -1564,6 +1569,8 @@ function deriveSimpleState(
       id: humanId,
       name: 'You',
       life: humanPlayer.life,
+      poisonCounters: humanPlayer.poisonCounters,
+      playerCounters: { ...(humanPlayer.playerCounters || {}) },
       handCount: getCardsInZone(engine, humanId, 'hand').length,
       libraryCount: getCardsInZone(engine, humanId, 'library').length,
     },
@@ -1719,6 +1726,15 @@ function toSimpleLegalAction(action: AIAction, engineState: GameState): SimpleLe
         cardInstanceId: action.cardInstanceId,
         cardName: def?.name,
         label: `${sign}${action.delta} ${action.counterType} counter on ${def?.name || 'permanent'}`,
+        _engineAction: action,
+      };
+    }
+    case 'ManualAdjustPlayerCounter': {
+      const playerName = engineState.players.find(player => player.id === action.playerId)?.name || 'player';
+      const sign = action.delta > 0 ? '+' : '';
+      return {
+        kind: 'ManualAdjustPlayerCounter',
+        label: `${sign}${action.delta} ${action.counterType} counter on ${playerName}`,
         _engineAction: action,
       };
     }
@@ -5061,6 +5077,41 @@ export function useShelectorGame() {
     syncState();
   }, [addMessage, applyActionThroughAuthority, applyEvents, syncState]);
 
+  const adjustPlayerCounter = useCallback((targetPlayerId: string, counterType: string, delta: number) => {
+    const engine = engineRef.current;
+    if (!engine) return;
+
+    const action: AIAction = {
+      kind: 'ManualAdjustPlayerCounter',
+      playerId: targetPlayerId,
+      counterType,
+      delta,
+    };
+    const response = applyActionThroughAuthority(engine, humanIdRef.current, action, {
+      source: 'system',
+      label: toSimpleLegalAction(action, engine).label,
+    });
+    if (!response.ok || !response.state) {
+      const message = response.message || 'That player-counter correction was rejected.';
+      setActionError({ reason: response.reason || 'illegal_action', message });
+      addMessage('system', `Cannot adjust player counter: ${message}`);
+      syncState();
+      return;
+    }
+
+    engineRef.current = response.state as GameStateWithAI;
+    applyEvents(response.events || [], response.state);
+
+    const cleanCounterType = counterType.trim().replace(/\s+/g, ' ').toLowerCase();
+    const targetName = response.state.players.find(player => player.id === targetPlayerId)?.name || targetPlayerId;
+    const sign = delta > 0 ? '+' : '';
+    addMessage(
+      'system',
+      `Manual correction: ${targetName} ${sign}${delta} ${cleanCounterType} counter${Math.abs(delta) === 1 ? '' : 's'}.`,
+    );
+    syncState();
+  }, [addMessage, applyActionThroughAuthority, applyEvents, syncState]);
+
   const createManualToken = useCallback((token: {
     name: string;
     count: number;
@@ -5114,7 +5165,12 @@ export function useShelectorGame() {
       cardDefinitions: new Map(s.cardDefinitions),
       sideboards: s.sideboards ? new Map([...s.sideboards.entries()].map(([playerId, cards]) => [playerId, [...cards]])) : undefined,
       battlefieldAbilities: new Map(s.battlefieldAbilities),
-      players: s.players.map(p => ({ ...p, manaPool: { ...p.manaPool }, commanderDamage: { ...p.commanderDamage } })),
+      players: s.players.map(p => ({
+        ...p,
+        manaPool: { ...p.manaPool },
+        commanderDamage: { ...p.commanderDamage },
+        playerCounters: { ...(p.playerCounters || {}) },
+      })),
       stack: [...s.stack],
       pendingTriggers: [...s.pendingTriggers],
       hasPriorityPassed: [...s.hasPriorityPassed],
@@ -6670,6 +6726,7 @@ export function useShelectorGame() {
     setHoldPriority,
     untapManaSource,
     adjustCounters,
+    adjustPlayerCounter,
     createManualToken,
     clearActionError: () => setActionError(null),
   };

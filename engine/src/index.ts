@@ -61,6 +61,7 @@ export {
   tryDeclareBlockers,
   tryEquip,
   tryAdjustCounters,
+  tryAdjustPlayerCounter,
   tryCreateManualToken,
   resetLoopDetector,
 } from './actions-public';

@@ -6,6 +6,7 @@ import type {
   ActivateManaAbilityAction,
   ManualUntapManaSourceAction,
   ManualAdjustCountersAction,
+  ManualAdjustPlayerCounterAction,
   ManualCreateTokenAction,
   DeclareAttackersAction,
   DeclareBlockersAction,
@@ -97,6 +98,20 @@ describe('AI Types', () => {
     expect(action.subtypes).toEqual(['Goblin']);
   });
 
+  it('creates ManualAdjustPlayerCounterAction correctly', () => {
+    const action: ManualAdjustPlayerCounterAction = {
+      kind: 'ManualAdjustPlayerCounter',
+      playerId: 'player_1',
+      counterType: 'experience',
+      delta: 1,
+    };
+
+    expect(action.kind).toBe('ManualAdjustPlayerCounter');
+    expect(action.playerId).toBe('player_1');
+    expect(action.counterType).toBe('experience');
+    expect(action.delta).toBe(1);
+  });
+
   it('creates DeclareAttackersAction correctly', () => {
     const action: DeclareAttackersAction = {
       kind: 'DeclareAttackers',
@@ -140,19 +155,21 @@ describe('AI Types', () => {
       { kind: 'ActivateManaAbility', cardInstanceId: 'l1', color: 'U' },
       { kind: 'ManualUntapManaSource', cardInstanceId: 'l1', color: 'U', amount: 1 },
       { kind: 'ManualAdjustCounters', cardInstanceId: 'c1', counterType: '+1/+1', delta: 1 },
+      { kind: 'ManualAdjustPlayerCounter', playerId: 'p1', counterType: 'experience', delta: 1 },
       { kind: 'ManualCreateToken', name: 'Treasure', count: 1, power: 0, toughness: 0, colors: [], types: ['artifact'], subtypes: ['Treasure'] },
       { kind: 'DeclareAttackers', attacks: [] },
       { kind: 'DeclareBlockers', blocks: [] },
       { kind: 'PassPriority' },
     ];
 
-    expect(actions).toHaveLength(9);
+    expect(actions).toHaveLength(10);
     expect(actions.map(a => a.kind)).toEqual([
       'CastSpell',
       'PlayLand',
       'ActivateManaAbility',
       'ManualUntapManaSource',
       'ManualAdjustCounters',
+      'ManualAdjustPlayerCounter',
       'ManualCreateToken',
       'DeclareAttackers',
       'DeclareBlockers',
