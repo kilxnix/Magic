@@ -61,6 +61,7 @@ import {
   buildActionPrompt,
   buildStateUpdate,
   createEngineEventLogRecord,
+  stateFingerprint,
   validateStateInvariants,
   resolveTopStackSearchPrompt,
   createSearchLibraryPromptRequest,
@@ -483,6 +484,7 @@ export interface ShelectorGameSaveSnapshot {
   gameLog: GameLogEntry[];
   authorityUpdates: EngineStateUpdate[];
   engineEventLog?: EngineEventLogRecord[];
+  engineEventLogSeeds?: Record<number, SerializedGameStateV1>;
   engineEventLogInitialState?: SerializedGameStateV1 | null;
   lastStateUpdate: EngineStateUpdate | null;
   currentPrompt: EnginePrompt | null;
@@ -2307,6 +2309,7 @@ export function useShelectorGame() {
   // Engine state ref (mutable, not in React state to avoid re-serializing Map objects)
   const engineRef = useRef<GameStateWithAI | null>(null);
   const engineEventLogRef = useRef<EngineEventLogRecord[]>([]);
+  const engineEventLogSeedsRef = useRef<Record<number, SerializedGameStateV1>>({});
   const engineEventLogInitialStateRef = useRef<SerializedGameStateV1 | null>(null);
   // Keep deck info for mulligan re-init
   const humanDeckRef = useRef<GeneratedDeck | null>(null);
@@ -2389,6 +2392,7 @@ export function useShelectorGame() {
     const initialSnapshot = initialState ? serializeGameState(initialState) : null;
     engineEventLogInitialStateRef.current = initialSnapshot;
     engineEventLogRef.current = [];
+    engineEventLogSeedsRef.current = {};
     setEngineEventLog([]);
   }, []);
 
@@ -2396,19 +2400,28 @@ export function useShelectorGame() {
     record: EngineReplayRecord,
     update?: EngineStateUpdate,
     expectedOk = true,
+    stateBefore?: GameState,
   ) => {
     if (!update) return;
     const nextRecord = createEngineEventLogRecord(engineEventLogRef.current.length, record, update, expectedOk);
     const next = [...engineEventLogRef.current, nextRecord];
     engineEventLogRef.current = next;
+    const seedState = stateBefore || engineRef.current;
+    if (seedState && stateFingerprint(seedState) === update.oldStateId) {
+      engineEventLogSeedsRef.current = {
+        ...engineEventLogSeedsRef.current,
+        [nextRecord.sequence]: serializeGameState(seedState),
+      };
+    }
     setEngineEventLog(next);
   }, []);
 
   const appendEnginePromptEventLogRecord = useCallback((
     record: EngineReplayRecord,
     response: ClientPromptResponse,
+    stateBefore?: GameState,
   ) => {
-    appendEngineEventLogRecord(record, response.update, response.ok);
+    appendEngineEventLogRecord(record, response.update, response.ok, stateBefore);
   }, [appendEngineEventLogRecord]);
 
   const recordAuthorityUpdate = useCallback((update?: EngineStateUpdate) => {
@@ -2466,7 +2479,7 @@ export function useShelectorGame() {
       events,
       );
     recordAuthorityUpdate(update);
-    appendEngineEventLogRecord({ kind: 'Action', request }, update, true);
+    appendEngineEventLogRecord({ kind: 'Action', request }, update, true, before);
   }, [appendEngineEventLogRecord, recordAuthorityUpdate]);
 
   const applyActionThroughAuthority = useCallback((
@@ -2483,7 +2496,7 @@ export function useShelectorGame() {
     const response = applyClientActionRequest(state, request);
     if (options.recordUpdate !== false) {
       recordAuthorityUpdate(response.update);
-      appendEngineEventLogRecord({ kind: 'Action', request }, response.update, response.ok);
+      appendEngineEventLogRecord({ kind: 'Action', request }, response.update, response.ok, state);
     }
     return response;
   }, [appendEngineEventLogRecord, recordAuthorityUpdate]);
@@ -4829,9 +4842,10 @@ export function useShelectorGame() {
     // Advance engine to precombat main
     const advanced = advanceToPrecombatMain(engineRef.current || engine);
     engineRef.current = advanced as GameStateWithAI;
+    resetEngineEventLog(advanced);
 
     syncState();
-  }, [mulliganCount, selectedMulliganBottomIds, addMessage, appendEnginePromptEventLogRecord, syncState, advanceToPrecombatMain]);
+  }, [mulliganCount, selectedMulliganBottomIds, addMessage, appendEnginePromptEventLogRecord, resetEngineEventLog, syncState, advanceToPrecombatMain]);
 
   // Mulligan selected cards during the opening-hand trainer phase. If called
   // without selected cards, keep the old full-redraw London mulligan fallback.
@@ -4950,6 +4964,7 @@ export function useShelectorGame() {
 
         const advanced = advanceToPrecombatMain(newEngine);
         engineRef.current = advanced as GameStateWithAI;
+        resetEngineEventLog(advanced);
 
         syncState();
 
@@ -4985,7 +5000,7 @@ export function useShelectorGame() {
       setError(msg);
       console.error('Mulligan error:', err);
     }
-  }, [mulliganCount, addMessage, appendEnginePromptEventLogRecord, initEngine, recordAuthorityUpdate, syncState, advanceToPrecombatMain]);
+  }, [mulliganCount, addMessage, appendEnginePromptEventLogRecord, initEngine, recordAuthorityUpdate, resetEngineEventLog, syncState, advanceToPrecombatMain]);
 
   const toggleMulliganCard = useCallback((cardInstanceId: string) => {
     setSelectedMulliganCardIds(prev =>
@@ -6798,13 +6813,13 @@ export function useShelectorGame() {
           });
           const response = applyClientActionRequest(state, request);
           if (!response.ok || !response.state) {
-            appendEngineEventLogRecord({ kind: 'Action', request }, response.update, false);
+            appendEngineEventLogRecord({ kind: 'Action', request }, response.update, false, state);
             recordRejectedResponse(response, options.rejectionPrefix || 'Cannot apply action', uiAction);
             return null;
           }
           if (options.recordAcceptedUpdate !== false && response.update) {
             recordAuthorityUpdate(response.update);
-            appendEngineEventLogRecord({ kind: 'Action', request }, response.update, true);
+            appendEngineEventLogRecord({ kind: 'Action', request }, response.update, true, state);
             authorityUpdateRecorded = true;
           }
           if (response.events) {
@@ -7502,6 +7517,7 @@ export function useShelectorGame() {
       gameLog,
       authorityUpdates,
       engineEventLog: engineEventLogRef.current,
+      engineEventLogSeeds: engineEventLogSeedsRef.current,
       engineEventLogInitialState: engineEventLogInitialStateRef.current,
       lastStateUpdate,
       currentPrompt,
@@ -7647,6 +7663,7 @@ export function useShelectorGame() {
       setGameLog(snapshot.gameLog || []);
       setAuthorityUpdates(snapshot.authorityUpdates || []);
       engineEventLogRef.current = snapshot.engineEventLog || [];
+      engineEventLogSeedsRef.current = snapshot.engineEventLogSeeds || {};
       engineEventLogInitialStateRef.current = snapshot.engineEventLogInitialState || null;
       setEngineEventLog(snapshot.engineEventLog || []);
       setLastStateUpdate(snapshot.lastStateUpdate || null);

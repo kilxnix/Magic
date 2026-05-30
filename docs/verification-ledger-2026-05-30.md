@@ -19,7 +19,7 @@ Scope: recent `game-reliability-refactor` work from `88e54bb..597d918`, with Sis
 
 | Flow | Command | Result |
 | --- | --- | --- |
-| `/play` save slots | `node scripts/play_save_slots_playtest.js` | Passed; now also verifies saved-game replay audit fields (`engineEventLogInitialState` plus authority action/prompt records). |
+| `/play` save slots | `DECKREPS_BASE_URL=http://127.0.0.1:5179 node scripts/play_save_slots_playtest.js` | Passed against fresh built preview; now also verifies saved-game replay audit fields (`engineEventLogInitialState`, per-record seeds, authority action/prompt records) and the visible audit badge. |
 | Admin console | `DECKREPS_QA_ADMIN_TOKEN=local-ui-qa-token node scripts/admin_console_playtest.js` | Passed locally |
 | Multiplayer rooms | `DECKREPS_BASE_URL=http://127.0.0.1:5173 DECKREPS_QA_ADMIN_TOKEN=local-ui-qa-token node scripts/room_ui_playtest.js` | Passed locally; covered shared tracker, engine beta start, 4-player room, mobile room checks, and unsupported-action error |
 | Search picker UI | `DECKREPS_BASE_URL=http://127.0.0.1:5173 node scripts/play_search_picker_ui_playtest.js` | Passed locally |

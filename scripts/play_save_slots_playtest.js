@@ -105,6 +105,8 @@ async function readSavedSlot(page, slot) {
     assert(savedSlot?.snapshot?.engineEventLogInitialState, 'save slot is missing the audit replay initial state');
     assert(Array.isArray(savedSlot?.snapshot?.engineEventLog), 'save slot is missing the audit event log array');
     assert(savedSlot.snapshot.engineEventLog.length > 0, 'save slot did not persist any authority action audit records');
+    assert(Object.keys(savedSlot.snapshot.engineEventLogSeeds || {}).length > 0, 'save slot is missing per-record audit seeds');
+    await page.getByText(/Audit OK|Audit ready/).first().waitFor({ timeout: 10000 });
     await page.screenshot({ path: artifact('play-save-slots-game.png'), fullPage: false });
 
     await page.reload({ waitUntil: 'domcontentloaded' });

@@ -32,6 +32,7 @@ export interface SerializedPlayerV1 {
   name: string;
   life: number;
   poisonCounters?: number; // optional for backward compat with existing saves
+  playerCounters?: Record<string, number>;
   commanderDamage: Record<string, number>;
   commanderTax: number;
   commanderInstanceId: string | null;
@@ -70,6 +71,7 @@ export interface SerializedPlayerV1 {
     snow?: boolean;
   }>;
   hasPlayedLand: boolean;
+  landsPlayedThisTurn?: number;
   hasPriority: boolean;
   hasLost: boolean;
   isAI: boolean;
@@ -92,6 +94,7 @@ export interface SerializedCardInstanceV1 {
   damage: number;
   deathtouchDamage?: boolean;
   isCommander: boolean;
+  isToken?: boolean;
   fromSideboard?: boolean;
   activeFaceName?: string;
   choices?: {

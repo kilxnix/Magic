@@ -12,6 +12,7 @@ import { importDeckUrlLocally } from '../lib/deckUrlImport';
 import { FLOATING_TABLE_LAYOUT } from '../lib/gameBoardLayout';
 import { shelectorApiUrl } from '../lib/api';
 import { BEGINNER_DECKS, type BeginnerDeck } from '../lib/beginnerDecks';
+import { auditPlaySaveSnapshot } from '../lib/playSaveAudit';
 import {
   deletePlaySaveSlot,
   getPlaySaveSlots,
@@ -356,6 +357,7 @@ export function PlayPage() {
         {saveSlots.map((record, index) => {
           const slot = index + 1;
           const active = activeSaveSlot === slot;
+          const audit = record ? auditPlaySaveSnapshot(record.snapshot) : null;
           return (
             <div
               key={slot}
@@ -376,6 +378,15 @@ export function PlayPage() {
                   {record && (
                     <span className="block text-xs text-stone-400">
                       Turn {record.turnNumber} · {record.phase} · {new Date(record.savedAt).toLocaleString()}
+                    </span>
+                  )}
+                  {audit && (
+                    <span className={`mt-1 inline-flex rounded border px-1.5 py-0.5 text-[11px] font-black uppercase tracking-wide ${
+                      audit.ok
+                        ? 'border-emerald-500/40 bg-emerald-950/30 text-emerald-200'
+                        : 'border-red-500/40 bg-red-950/30 text-red-200'
+                    }`}>
+                      {audit.message}
                     </span>
                   )}
                 </button>

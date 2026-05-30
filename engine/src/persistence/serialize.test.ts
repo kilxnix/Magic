@@ -10,6 +10,7 @@ import {
 import { SAVE_VERSION } from './schema';
 import { GameState, createPlayer, Phase, Step, CardDefinition, CardInstance } from '../types';
 import { initGrudgeTracking, recordDamage } from '../ai/grudges';
+import { stateFingerprint } from '../authority';
 
 // Helper to create minimal game state
 function createTestState(playerCount: number = 2): GameState {
@@ -27,6 +28,7 @@ function createTestState(playerCount: number = 2): GameState {
     phase: 'precombat_main' as Phase,
     step: 'upkeep' as Step,
     turnNumber: 5,
+    spellsCastThisTurn: 0,
     hasPriorityPassed: players.map(() => false),
     stack: [],
     combat: null,
@@ -93,6 +95,8 @@ describe('serializeGameState / deserializeGameState', () => {
     const state = createTestState();
     state.players[0].life = 35;
     state.players[0].hasPlayedLand = true;
+    state.players[0].landsPlayedThisTurn = 1;
+    state.players[0].playerCounters = { energy: 2 };
     state.players[0].manaPool = { W: 1, U: 0, B: 0, R: 0, G: 2, C: 0 };
     state.players[1].hasLost = true;
 
@@ -101,8 +105,32 @@ describe('serializeGameState / deserializeGameState', () => {
 
     expect(deserialized.players[0].life).toBe(35);
     expect(deserialized.players[0].hasPlayedLand).toBe(true);
+    expect(deserialized.players[0].landsPlayedThisTurn).toBe(1);
+    expect(deserialized.players[0].playerCounters.energy).toBe(2);
     expect(deserialized.players[0].manaPool.G).toBe(2);
     expect(deserialized.players[1].hasLost).toBe(true);
+  });
+
+  it('preserves authority state fingerprint across serialization', () => {
+    const state = createTestState();
+    state.players[0].hasPlayedLand = true;
+    state.players[0].landsPlayedThisTurn = 1;
+    state.players[0].playerCounters = { experience: 3 };
+    state.spellsCastThisTurn = undefined;
+    addCard(state, 'treasure1', 'p1', 'battlefield', {
+      id: 'treasure-token',
+      name: 'Treasure',
+      type_line: 'Token Artifact - Treasure',
+      card_types: ['artifact'],
+      mana_cost: '',
+      cmc: 0,
+    });
+    const treasure = state.cards.get('treasure1')!;
+    state.cards.set('treasure1', { ...treasure, isToken: true });
+
+    const deserialized = deserializeGameState(serializeGameState(state));
+
+    expect(stateFingerprint(deserialized)).toBe(stateFingerprint(state));
   });
 
   it('round-trips cards correctly', () => {
