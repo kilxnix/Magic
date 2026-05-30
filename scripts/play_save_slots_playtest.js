@@ -56,6 +56,11 @@ async function dismissOverlays(page) {
   }
 }
 
+async function openGameSaves(page) {
+  await page.getByRole('button', { name: 'Open game menu' }).click();
+  await page.getByRole('button', { name: /^Saves\b/ }).click();
+}
+
 (async () => {
   const browser = await chromium.launch({ headless: HEADLESS });
   const context = await browser.newContext({ viewport: { width: 1280, height: 850 } });
@@ -73,7 +78,7 @@ async function dismissOverlays(page) {
     await page.getByRole('button', { name: 'Start 1v1' }).click();
     await page.getByText('Keep', { exact: true }).waitFor({ timeout: 60000 });
     await page.getByText('Keep', { exact: true }).click();
-    await page.getByRole('button', { name: 'Open game saves' }).click();
+    await openGameSaves(page);
     await page.getByRole('button', { name: 'Save Here' }).first().click();
     await page.getByText('Saved slot 1').waitFor({ timeout: 10000 });
     await page.screenshot({ path: artifact('play-save-slots-game.png'), fullPage: false });
@@ -83,8 +88,8 @@ async function dismissOverlays(page) {
     await page.getByText('Game Saves', { exact: true }).waitFor({ timeout: 10000 });
     await page.waitForFunction(() => document.body.innerText.includes('Goreclaw, Terror of Qal Sisma'), null, { timeout: 10000 });
     await page.getByRole('button', { name: 'Load' }).first().click();
-    await page.getByRole('button', { name: 'Open game saves' }).waitFor({ timeout: 15000 });
-    await page.getByRole('button', { name: 'Open game saves' }).click();
+    await page.getByRole('button', { name: 'Open game menu' }).waitFor({ timeout: 15000 });
+    await openGameSaves(page);
     await page.getByText('Loaded slot 1.').waitFor({ timeout: 10000 });
     await page.screenshot({ path: artifact('play-save-slots-restored.png'), fullPage: false });
 
