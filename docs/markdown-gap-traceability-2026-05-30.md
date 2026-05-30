@@ -116,7 +116,7 @@ Minimum acceptance bar from that file:
 | 5.2 Action Categories Are Coarse | partial |
 | 5.3 No Unified Typed Prompt Surface | partial; `/play` now covers search, scry, surveil, sacrifice, library-top ordering, and typed named-card choice prompts, but the prompt system is still not one fully generic typed request surface across every rule/action path |
 | 6.1 Invalid Choices Are Not Hidden Or Disabled | partial |
-| 6.2 "Legal" Label Is Not Trustworthy | partial |
+| 6.2 "Legal" Label Is Not Trustworthy | partial/test-proven; card/search picker badges now use `Selectable` and `Unavailable` wording instead of a broad `Legal` claim, with helper tests and frontend build verification. |
 | 6.3 Destination Labels Are Too Broad | partial |
 | 6.4 Hidden Information Is Not Communicated Cleanly | partial |
 | 7.1 Auto-Pay Exists But Needs Trust Layer | partial; `/play` auto-pay now applies intrinsic spell cost reducers in its visible action/payment preview path as well as the engine transaction path, and engine legal-action generation now applies generic cost increasers for noncreature/opponent spell tax effects |
@@ -186,6 +186,8 @@ Additional guide-mode verification added after this audit: new-player guidance n
 Additional action-layout verification added after this audit: Undo now lives in the top header controls, while phase movement remains in the lower dock near the hand/play area. This directly reduces lower action-dock crowding without moving turn progression back away from cards.
 
 Additional save-slot verification added after this audit: engine-level autosave rotation now uses four autosave slots, matching the `/play` four-slot browser save surface and its existing save-slot UI tests.
+
+Additional picker-wording verification added after this audit: card/search picker availability metadata now says `Selectable`/`Unavailable` instead of `Legal`/`Illegal`, reducing overclaims when the picker is exposing a prompt filter rather than proving every global rules condition.
 
 ## Direct Answer
 

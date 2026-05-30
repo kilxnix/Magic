@@ -4,7 +4,7 @@
  *
  * It imports a search-heavy mono-green Commander deck through the real UI,
  * starts a practice game, drives actions until a library-search prompt opens,
- * and asserts that the rendered picker tells the player legality,
+ * and asserts that the rendered picker tells the player availability,
  * destination, tapped/reveal state, and searchable card text.
  */
 
@@ -219,20 +219,20 @@ async function assertSearchPicker(page) {
 
   const body = await page.locator('body').innerText();
   const normalized = body.replace(/\s+/g, ' ');
-  const hasLegal = /\bLegal\b/i.test(normalized);
+  const hasAvailability = /\b(Selectable|Unavailable)\b/i.test(normalized);
   const hasDestination = /\bTo (hand|battlefield|graveyard|top|bottom|exile|command)\b/i.test(normalized);
   const hasRevealState = /\b(Reveal|Hidden pick)\b/i.test(normalized);
   const hasReason = /\b(Matches|Legal library choice)\b/i.test(normalized);
 
   await screenshot(page, 'search-picker-open.png');
 
-  assert(hasLegal, 'Search picker did not show Legal/Illegal metadata');
+  assert(hasAvailability, 'Search picker did not show availability metadata');
   assert(hasDestination, 'Search picker did not show destination metadata');
   assert(hasRevealState, 'Search picker did not show reveal/hidden metadata');
   assert(hasReason, 'Search picker did not show why the card is selectable');
 
   return {
-    hasLegal,
+    hasAvailability,
     hasDestination,
     hasRevealState,
     hasReason,

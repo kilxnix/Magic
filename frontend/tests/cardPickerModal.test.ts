@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { sortCardPickerCards } from '../src/components/CardPickerModal';
+import { cardPickerAvailabilityLabel, sortCardPickerCards } from '../src/components/CardPickerModal';
 
 describe('CardPickerModal helpers', () => {
   it('sorts legal search choices before disabled choices, then by name', () => {
@@ -16,5 +16,11 @@ describe('CardPickerModal helpers', () => {
       'Arcane Signet',
       'Counterspell',
     ]);
+  });
+
+  it('uses availability wording instead of overclaiming full rules legality', () => {
+    expect(cardPickerAvailabilityLabel({ legal: true })).toBe('Selectable');
+    expect(cardPickerAvailabilityLabel({})).toBe('Selectable');
+    expect(cardPickerAvailabilityLabel({ legal: false })).toBe('Unavailable');
   });
 });

@@ -34,6 +34,10 @@ export function sortCardPickerCards<T extends Pick<CardPickerCard, 'legal' | 'na
   });
 }
 
+export function cardPickerAvailabilityLabel(card: Pick<CardPickerCard, 'legal'>): string {
+  return card.legal === false ? 'Unavailable' : 'Selectable';
+}
+
 export function CardPickerModal({ title, cards, filter, onPick, onCancel, cancelLabel = 'Cancel search', allowCustomName = false }: CardPickerModalProps) {
   const [search, setSearch] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -133,7 +137,7 @@ export function CardPickerModal({ title, cards, filter, onPick, onCancel, cancel
                     ? 'bg-red-400/15 text-red-100'
                     : 'bg-emerald-400/15 text-emerald-100'
                 }`}>
-                  {card.legal === false ? 'Illegal' : 'Legal'}
+                  {cardPickerAvailabilityLabel(card)}
                 </span>
                 {destinationLabel(card) && (
                   <span className="rounded bg-sky-400/15 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-sky-100">
