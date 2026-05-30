@@ -220,7 +220,7 @@ async function assertSearchPicker(page) {
   const body = await page.locator('body').innerText();
   const normalized = body.replace(/\s+/g, ' ');
   const hasAvailability = /\b(Selectable|Unavailable)\b/i.test(normalized);
-  const hasDestination = /\bTo (hand|battlefield|graveyard|top|bottom|exile|command)\b/i.test(normalized);
+  const hasDestination = /\b(To (hand|battlefield|graveyard|top of library|bottom of library|exile|command zone)|Destination choice)\b/i.test(normalized);
   const hasRevealState = /\b(Reveal|Hidden pick)\b/i.test(normalized);
   const hasReason = /\b(Matches|Legal library choice)\b/i.test(normalized);
 

@@ -38,6 +38,21 @@ export function cardPickerAvailabilityLabel(card: Pick<CardPickerCard, 'legal'>)
   return card.legal === false ? 'Unavailable' : 'Selectable';
 }
 
+export function cardPickerDestinationLabel(card: Pick<CardPickerCard, 'destination'>): string | undefined {
+  if (!card.destination) return undefined;
+  const labels: Record<NonNullable<CardPickerCard['destination']>, string> = {
+    hand: 'To hand',
+    battlefield: 'To battlefield',
+    graveyard: 'To graveyard',
+    top: 'To top of library',
+    bottom: 'To bottom of library',
+    exile: 'To exile',
+    command: 'To command zone',
+    choice: 'Destination choice',
+  };
+  return labels[card.destination];
+}
+
 export function CardPickerModal({ title, cards, filter, onPick, onCancel, cancelLabel = 'Cancel search', allowCustomName = false }: CardPickerModalProps) {
   const [search, setSearch] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -66,21 +81,6 @@ export function CardPickerModal({ title, cards, filter, onPick, onCancel, cancel
     const currentIndex = Math.max(0, candidates.findIndex(card => card.instanceId === selected?.instanceId));
     const nextIndex = (currentIndex + delta + candidates.length) % candidates.length;
     setSelectedId(candidates[nextIndex].instanceId);
-  }
-
-  function destinationLabel(card: CardPickerCard): string | undefined {
-    if (!card.destination) return undefined;
-    const labels: Record<NonNullable<CardPickerCard['destination']>, string> = {
-      hand: 'To hand',
-      battlefield: 'To battlefield',
-      graveyard: 'To graveyard',
-      top: 'To top',
-      bottom: 'To bottom',
-      exile: 'To exile',
-      command: 'To command',
-      choice: 'Choice',
-    };
-    return labels[card.destination];
   }
 
   return (
@@ -139,9 +139,9 @@ export function CardPickerModal({ title, cards, filter, onPick, onCancel, cancel
                 }`}>
                   {cardPickerAvailabilityLabel(card)}
                 </span>
-                {destinationLabel(card) && (
+                {cardPickerDestinationLabel(card) && (
                   <span className="rounded bg-sky-400/15 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-sky-100">
-                    {destinationLabel(card)}
+                    {cardPickerDestinationLabel(card)}
                   </span>
                 )}
                 {card.entersTapped && (
