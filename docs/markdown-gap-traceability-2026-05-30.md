@@ -183,6 +183,8 @@ Additional room moderation verification added after this audit: server-side room
 
 Additional guide-mode verification added after this audit: new-player guidance now filters likely infinite-combo activated abilities in addition to combo-looking spell casts, so those lines stay out of the lightweight first-game suggestion lane.
 
+Additional action-layout verification added after this audit: Undo now lives in the top header controls, while phase movement remains in the lower dock near the hand/play area. This directly reduces lower action-dock crowding without moving turn progression back away from cards.
+
 ## Direct Answer
 
 Yes, relative to the actual size and meaning of these markdown files, I was effectively treating large portions as direction/backlog while reporting progress too broadly. The right status is not "done." The right status is "a verified slice is done; most of the Arena/MTGA parity roadmap remains partial or incomplete."

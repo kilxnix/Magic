@@ -10,7 +10,7 @@ import { useEffect, useState } from 'react';
 import type { DamageAssignmentChoice, LibraryManipulationChoice, OptionalTriggerChoice, PriorityStopKey, PriorityStops, SimpleGameState, SimpleLegalAction, SimpleCard, LastPlayedCard, TaxPaymentChoice, TriggerOrderChoiceState } from '../hooks/useShelectorGame';
 import type { DamageAssignmentOrder } from 'commander-engine';
 import type { EnginePrompt, EngineStateUpdate } from 'commander-engine';
-import { Loader2, ChevronDown, ChevronRight, Search, X, Lightbulb, Menu } from 'lucide-react';
+import { Loader2, ChevronDown, ChevronRight, Search, X, Lightbulb, Menu, Undo2 } from 'lucide-react';
 import { CardPickerModal } from './CardPickerModal';
 import { CardImage } from './CardImage';
 import { CARD_TILE_LAYOUT, FLOATING_TABLE_LAYOUT } from '../lib/gameBoardLayout';
@@ -2870,6 +2870,17 @@ export function GameBoard({
           }`}>
             {isHumanTurn ? 'Your Priority' : `${priorityOwnerName} Priority`}
           </span>
+          {canUndo && (
+            <button
+              type="button"
+              onClick={onUndo}
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded border border-red-500/45 bg-red-950/80 text-red-200 transition-colors hover:border-red-300 hover:bg-red-900"
+              aria-label={`Undo last action (${undosRemaining} remaining)`}
+              title={`Undo (${undosRemaining})`}
+            >
+              <Undo2 className="h-4 w-4" />
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setShowUtilityMenu(true)}
@@ -3693,18 +3704,6 @@ export function GameBoard({
                     {action.label || action.cardName}
                   </button>
                 ))}
-              </>
-            )}
-            {/* Undo button */}
-            {canUndo && (
-              <>
-                <div className="h-px bg-stone-700/80 sm:col-span-2" />
-                <button
-                  onClick={onUndo}
-	                  className="min-h-10 w-full rounded border border-red-600/30 bg-red-900/50 px-3 py-1.5 text-left text-xs font-semibold leading-snug text-red-300 transition-colors hover:bg-red-800/60"
-                >
-                  Undo ({undosRemaining})
-                </button>
               </>
             )}
           </div>
