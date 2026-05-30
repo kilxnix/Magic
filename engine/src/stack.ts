@@ -11,6 +11,7 @@ import { findCastZoneRestriction, getCommanderTaxForCast } from './casting-restr
 import { getCostReduction, registerContinuousEffect } from './effects/continuous';
 import { getCommanderDestinationZone } from './commander';
 import { buildBattlefieldEntryPlan } from './permanent-entry';
+import { applyWardForStackItem } from './ward';
 
 const MAIN_PHASES: Phase[] = ['precombat_main', 'postcombat_main'];
 const PERMANENT_TYPES = ['creature', 'artifact', 'enchantment', 'planeswalker', 'battle'];
@@ -1015,6 +1016,8 @@ export function castSpell(
   }
 
   resultState = applyCascadeForSpell(resultState, playerId, def, stackItem);
+
+  resultState = applyWardForStackItem(resultState, stackItem, playerId, targets);
 
   return resultState;
 }

@@ -76,6 +76,21 @@ function makeCounterspell(): CardDefinition {
   };
 }
 
+function makeDestroyCreatureSpell(): CardDefinition {
+  return {
+    id: 'destroy-creature-1',
+    name: 'Clean Kill',
+    type_line: 'Instant',
+    oracle_text: 'Destroy target creature.',
+    mana_cost: '{G}',
+    cmc: 1,
+    colors: ['G'],
+    color_identity: ['G'],
+    keywords: [],
+    card_types: ['instant'],
+  };
+}
+
 function makePinger(): CardDefinition {
   return {
     id: 'pinger-1',
@@ -437,6 +452,60 @@ describe('Stack', () => {
       const next = castSpell(state, 'p1', spell.instanceId);
       expect(helpers.every(card => next.cards.get(card.instanceId)?.tapped)).toBe(true);
       expect(next.cards.get(spell.instanceId)?.zone).toBe('stack');
+    });
+
+    it('counters targeted spells with unpaid Ward costs', () => {
+      const killSpell = makeDestroyCreatureSpell();
+      const wardCreature: CardDefinition = {
+        ...makeCreature(),
+        id: 'ward-bear',
+        name: 'Ward Bear',
+        oracle_text: 'Ward {2}',
+        keywords: ['Ward'],
+      };
+      const decks = [
+        { playerId: 'p1', name: 'Alice', cards: [killSpell], commanderId: 'cmd1' },
+        { playerId: 'p2', name: 'Bob', cards: [wardCreature], commanderId: 'cmd2' },
+      ];
+      let state = initGameState(decks);
+      const spell = getCardsInZone(state, 'p1', 'library')[0];
+      const target = getCardsInZone(state, 'p2', 'library')[0];
+      state.cards.set(spell.instanceId, { ...spell, zone: 'hand' });
+      state.cards.set(target.instanceId, { ...target, zone: 'battlefield' });
+      state.players[0].manaPool = { W: 0, U: 0, B: 0, R: 0, G: 1, C: 0 };
+      state = { ...state, phase: 'precombat_main' as any };
+
+      const next = castSpell(state, 'p1', spell.instanceId, [target.instanceId]);
+      expect(next.stack).toHaveLength(0);
+      expect(next.cards.get(spell.instanceId)?.zone).toBe('graveyard');
+      expect(next.cards.get(target.instanceId)?.zone).toBe('battlefield');
+    });
+
+    it('auto-pays simple Ward costs when mana is available', () => {
+      const killSpell = makeDestroyCreatureSpell();
+      const wardCreature: CardDefinition = {
+        ...makeCreature(),
+        id: 'ward-bear-paid',
+        name: 'Ward Bear Paid',
+        oracle_text: 'Ward {2}',
+        keywords: ['Ward'],
+      };
+      const decks = [
+        { playerId: 'p1', name: 'Alice', cards: [killSpell], commanderId: 'cmd1' },
+        { playerId: 'p2', name: 'Bob', cards: [wardCreature], commanderId: 'cmd2' },
+      ];
+      let state = initGameState(decks);
+      const spell = getCardsInZone(state, 'p1', 'library')[0];
+      const target = getCardsInZone(state, 'p2', 'library')[0];
+      state.cards.set(spell.instanceId, { ...spell, zone: 'hand' });
+      state.cards.set(target.instanceId, { ...target, zone: 'battlefield' });
+      state.players[0].manaPool = { W: 0, U: 0, B: 0, R: 0, G: 1, C: 2 };
+      state = { ...state, phase: 'precombat_main' as any };
+
+      const next = castSpell(state, 'p1', spell.instanceId, [target.instanceId]);
+      expect(next.stack).toHaveLength(1);
+      expect(next.cards.get(spell.instanceId)?.zone).toBe('stack');
+      expect(next.players[0].manaPool.C).toBe(0);
     });
 
     it('charges and resolves selected X values for X spells', () => {

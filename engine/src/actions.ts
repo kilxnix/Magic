@@ -23,6 +23,7 @@ import {
 } from './permanent-entry';
 import type { ActivatedAbility, Effect } from './effects/ast';
 import type { TargetSpec } from './effects/targets';
+import { applyWardForStackItem } from './ward';
 
 const MAIN_PHASES: Phase[] = ['precombat_main', 'postcombat_main'];
 
@@ -565,6 +566,7 @@ export function activateAbility(
       hasPriorityPassed: new Array(newState.players.length).fill(false),
       priorityPlayerIndex: newState.activePlayerIndex,
     };
+    newState = applyWardForStackItem(newState, stackItem, playerId, targets);
   }
 
   return newState;
