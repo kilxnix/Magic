@@ -323,6 +323,7 @@ export function cleanupDamage(state: GameState): GameState {
         deathtouchDamage: undefined,
         counters,
         grantedKeywords: undefined,
+        lostKeywords: undefined,
       });
     }
   }

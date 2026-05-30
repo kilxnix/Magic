@@ -4,7 +4,7 @@ import { getCardDefinition, getCardsInZone } from './game-state';
 import type { CardLookup, GeneratedDeck } from './cards/deck-loader';
 import { convertGeneratedDeck } from './cards/deck-loader';
 import { getEffectivePower, getEffectiveToughness } from './effects/continuous';
-import { instanceHasKeyword, type Keyword } from './keywords';
+import { getKeywordsForInstance, instanceHasKeyword, type Keyword } from './keywords';
 import { getLegalTargets, getSpellTargetSpecs } from './ai/legal-actions';
 import { hasPlayerDeclaredBlockers } from './combat';
 import type { TargetSpec } from './effects/targets';
@@ -288,7 +288,7 @@ function toScopedCard(state: GameState, instance: CardInstance): PlayerScopedCar
     cardTypes: definition.card_types,
     power: definition.power,
     toughness: definition.toughness,
-    keywords: [...(definition.keywords || []), ...(instance.grantedKeywords || [])],
+    keywords: [...getKeywordsForInstance(state, instance.instanceId)],
     tapped: instance.tapped,
     summoningSick: instance.summoningSick,
     counters: { ...instance.counters },

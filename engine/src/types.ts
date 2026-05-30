@@ -67,6 +67,7 @@ export interface CardInstance {
   isCommander: boolean;
   phasedOut?: boolean; // Phase 16: true when phased out (treated as not existing)
   grantedKeywords?: string[]; // Phase 16: temporarily granted keywords (e.g. "until end of turn")
+  lostKeywords?: string[]; // Phase 18: temporarily removed keywords (e.g. "loses flying until end of turn")
   isToken?: boolean; // Phase 16: true for token copies / token creatures
   copiedFromDefinitionId?: string; // Phase 16: original definition for copy tokens
   fromSideboard?: boolean; // True when an outside-the-game effect brought this card in.

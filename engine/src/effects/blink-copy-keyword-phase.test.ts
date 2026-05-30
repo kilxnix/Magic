@@ -3,6 +3,7 @@
 import { describe, it, expect } from 'vitest';
 import { parseOracleText } from './parser';
 import { executeEffects } from './executor';
+import { instanceHasKeyword } from '../keywords';
 import type { Effect } from './ast';
 import type { GameState, CardInstance, CardDefinition } from '../types';
 
@@ -463,6 +464,19 @@ describe('Grant Keyword', () => {
       const creature = newState.cards.get('creature-1')!;
       expect(creature.grantedKeywords).toContain('Hexproof');
       expect(creature.grantedKeywords).toContain('Indestructible');
+    });
+
+    it('can remove an existing keyword temporarily', () => {
+      const state = createTestState();
+      expect(instanceHasKeyword(state, 'creature-1', 'Flying')).toBe(true);
+
+      const effects: Effect[] = [
+        { kind: 'LoseKeyword', target: { kind: 'Chosen', targetId: 'target_1' }, keyword: 'Flying', untilEndOfTurn: true },
+      ];
+
+      const newState = executeEffects(state, effects, 'player-1', ['creature-1'], [{ id: 'target_1' }]);
+      expect(newState.cards.get('creature-1')!.lostKeywords).toContain('Flying');
+      expect(instanceHasKeyword(newState, 'creature-1', 'Flying')).toBe(false);
     });
 
     it('does nothing for card not on battlefield', () => {

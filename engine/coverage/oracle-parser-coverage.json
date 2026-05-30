@@ -1,17 +1,17 @@
 {
-  "generatedAt": "2026-05-30T12:25:35.062Z",
+  "generatedAt": "2026-05-30T12:32:02.394Z",
   "source": "mtg_data/cards_min.jsonl",
   "commanderLegalOnly": true,
   "includedCards": 30969,
   "totalOracleFaces": 31420,
-  "parsedFaces": 15551,
-  "unparsedFaces": 15869,
-  "parsedPercent": 49.49,
+  "parsedFaces": 15552,
+  "unparsedFaces": 15868,
+  "parsedPercent": 49.5,
   "parsedKindCounts": {
-    "Unparsed": 15869,
+    "Unparsed": 15868,
     "Spell": 10488,
     "ETB": 2045,
-    "Triggered": 1178,
+    "Triggered": 1179,
     "KeywordOnly": 887,
     "EntryCounters": 362,
     "StaticAbility": 340,
@@ -29,7 +29,7 @@
     },
     {
       "reason": "Could not parse trigger effect clause",
-      "count": 1161
+      "count": 1160
     },
     {
       "reason": "Could not parse dies effect clause",
@@ -40,7 +40,7 @@
     {
       "id": "trigger-timing",
       "reason": "Triggered or delayed triggered abilities need event registration and APNAP ordering.",
-      "count": 6835,
+      "count": 6834,
       "samples": [
         {
           "name": "Coalition Relic",
@@ -67,12 +67,6 @@
           "text": "First strike Whenever this creature attacks, you may cast target instant or sorcery card from your graveyard by paying {R}{R} in addition to its other costs. If that spell would be put into a graveyard, exile it instead. When you cast that spell, this creature gets +X/+0 until end of turn, where X is that spell's mana value."
         },
         {
-          "name": "Fear of Falling",
-          "set": "dsk",
-          "reason": "Could not parse trigger effect clause",
-          "text": "Flying Whenever this creature attacks, target creature defending player controls gets -2/-0 and loses flying until your next turn."
-        },
-        {
           "name": "Hot Pursuit",
           "set": "mkc",
           "reason": "Could not parse ETB effect clause",
@@ -89,6 +83,12 @@
           "set": "rvr",
           "reason": "No recognized pattern",
           "text": "Enchant Forest As this Aura enters, choose a color. Whenever enchanted Forest is tapped for mana, its controller adds an additional one mana of the chosen color."
+        },
+        {
+          "name": "Puppeteer Clique",
+          "set": "ecc",
+          "reason": "Could not parse ETB effect clause",
+          "text": "Flying When this creature enters, put target creature card from an opponent's graveyard onto the battlefield under your control. It gains haste. At the beginning of your next end step, exile it. Persist (When this creature dies, if it had no -1/-1 counters on it, return it to the battlefield under its owner's control with a -1/-1 counter on it.)"
         }
       ]
     },
@@ -150,7 +150,7 @@
     {
       "id": "continuous-layers",
       "reason": "Continuous effects need layer/timestamp/dependency handling.",
-      "count": 3291,
+      "count": 3290,
       "samples": [
         {
           "name": "Sensory Deprivation",
@@ -189,23 +189,23 @@
           "text": "Target green creature you control gets +2/+2 until end of turn. It fights target green creature an opponent controls."
         },
         {
-          "name": "Fear of Falling",
-          "set": "dsk",
-          "reason": "Could not parse trigger effect clause",
-          "text": "Flying Whenever this creature attacks, target creature defending player controls gets -2/-0 and loses flying until your next turn."
-        },
-        {
           "name": "Hot Pursuit",
           "set": "mkc",
           "reason": "Could not parse ETB effect clause",
           "text": "When this enchantment enters, suspect target creature an opponent controls. As long as this enchantment remains on the battlefield, that creature is also goaded. At the beginning of combat on your turn, if two or more players have lost the game, gain control of all goaded and/or suspected creatures until end of turn. Untap them. They gain haste until end of "
+        },
+        {
+          "name": "Guul Draz Vampire",
+          "set": "zen",
+          "reason": "No recognized pattern",
+          "text": "As long as an opponent has 10 or less life, this creature gets +2/+1 and has intimidate. (It can't be blocked except by artifact creatures and/or creatures that share a color with it.)"
         }
       ]
     },
     {
       "id": "combat-multiplayer",
       "reason": "Combat or multiplayer-defender text needs combat/defender-aware execution.",
-      "count": 2424,
+      "count": 2423,
       "samples": [
         {
           "name": "Marang River Prowler",
@@ -218,12 +218,6 @@
           "set": "acr",
           "reason": "No recognized pattern",
           "text": "Trample (This creature can deal excess combat damage to the player it's attacking.) Whenever you attack, you may pay {1}{R}. When you do, target creature can't block this turn."
-        },
-        {
-          "name": "Fear of Falling",
-          "set": "dsk",
-          "reason": "Could not parse trigger effect clause",
-          "text": "Flying Whenever this creature attacks, target creature defending player controls gets -2/-0 and loses flying until your next turn."
         },
         {
           "name": "Dazzling Sphinx",
@@ -254,6 +248,12 @@
           "set": "fem",
           "reason": "No recognized pattern",
           "text": "Islandwalk (This creature can't be blocked as long as defending player controls an Island.) At the beginning of each combat, unless you pay {R}, whenever this creature blocks or becomes blocked by a creature this combat, that creature gains first strike until end of turn."
+        },
+        {
+          "name": "Quilled Greatwurm",
+          "set": "fdn",
+          "reason": "No recognized pattern",
+          "text": "Trample Whenever a creature you control deals combat damage during your turn, put that many +1/+1 counters on it. (It must survive to get the counters.) You may cast this card from your graveyard by removing six counters from among creatures you control in addition to paying its other costs."
         }
       ]
     },

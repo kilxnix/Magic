@@ -3089,6 +3089,84 @@ const GRANTABLE_KEYWORDS: Record<string, string> = {
   'first strike': 'First Strike',
 };
 
+function readGrantableKeyword(tokens: string[], index: number): { keyword: string; consumed: number } | null {
+  const twoWordKey = tokens[index] + ' ' + tokens[index + 1];
+  if (GRANTABLE_KEYWORDS[twoWordKey]) {
+    return { keyword: GRANTABLE_KEYWORDS[twoWordKey], consumed: 2 };
+  }
+  if (GRANTABLE_KEYWORDS[tokens[index]]) {
+    return { keyword: GRANTABLE_KEYWORDS[tokens[index]], consumed: 1 };
+  }
+  return null;
+}
+
+/**
+ * Match: "target creature gets -2/-0 and loses flying until end of turn"
+ * Match: "target creature defending player controls gets -2/-0 and loses flying until your next turn"
+ */
+function matchModifyPTAndLoseKeyword(tokens: string[], startIndex: number): PatternResult {
+  const slice = tokens.slice(startIndex);
+  if (slice.length < 10) return null;
+  if (slice[0] !== 'target' || slice[1] !== 'creature') return null;
+
+  let idx = 2;
+  if (slice[idx] === 'defending' && slice[idx + 1] === 'player' && slice[idx + 2] === 'controls') {
+    idx += 3;
+  } else if (slice[idx] === 'an' && slice[idx + 1] === 'opponent' && slice[idx + 2] === 'controls') {
+    idx += 3;
+  } else if (slice[idx] === 'you' && slice[idx + 1] === 'control') {
+    idx += 2;
+  }
+
+  if (slice[idx] !== 'gets') return null;
+  const ptMatch = slice[idx + 1]?.match(/^([+-]\d+)\/([+-]\d+)$/);
+  if (!ptMatch) return null;
+  idx += 2;
+
+  if (slice[idx] !== 'and' || slice[idx + 1] !== 'loses') return null;
+  idx += 2;
+
+  const keywordResult = readGrantableKeyword(slice, idx);
+  if (!keywordResult) return null;
+  idx += keywordResult.consumed;
+
+  let untilEndOfTurn = false;
+  if (slice[idx] === 'until') {
+    if (slice[idx + 1] === 'end' && slice[idx + 2] === 'of' && slice[idx + 3] === 'turn') {
+      untilEndOfTurn = true;
+      idx += 4;
+    } else if (slice[idx + 1] === 'your' && slice[idx + 2] === 'next' && slice[idx + 3] === 'turn') {
+      untilEndOfTurn = true;
+      idx += 4;
+    } else {
+      return null;
+    }
+  }
+
+  if (slice[idx] === '.') idx++;
+
+  const spec = makeTargetSpec('Creature');
+  return {
+    effects: [
+      {
+        kind: 'ModifyPT',
+        target: makeChosenRef(spec),
+        power: parseInt(ptMatch[1], 10),
+        toughness: parseInt(ptMatch[2], 10),
+        untilEndOfTurn,
+      },
+      {
+        kind: 'LoseKeyword',
+        target: makeChosenRef(spec),
+        keyword: keywordResult.keyword,
+        untilEndOfTurn,
+      },
+    ],
+    targets: [spec],
+    consumed: idx,
+  };
+}
+
 /**
  * Match: "exile target creature, then return it to the battlefield under its owner's control"
  * Match: "exile target creature you control, then return it to the battlefield"
@@ -3800,7 +3878,7 @@ function parseEffectClauseInternal(tokens: string[], startIndex: number): Patter
 
   const patterns = [
     matchWinGame, matchLoseGame,
-    matchBlink, matchCopyThatSpell, matchCopySpell, matchCopyCreature, matchGrantKeywordAndDynamicPT, matchGrantKeyword, matchPhaseOut,
+    matchBlink, matchCopyThatSpell, matchCopySpell, matchCopyCreature, matchModifyPTAndLoseKeyword, matchGrantKeywordAndDynamicPT, matchGrantKeyword, matchPhaseOut,
     matchPreventDamage, matchDealDamageGreatestManaValue, matchDealDamageForEach, matchForEachDraw, matchCreateTokenForEach,
     matchExileFromLibraryTop, matchSearchLibraryGeneric, matchSacrificeSelfUnlessTargetOpponentSacrifices, matchEachOpponentSacrifice,
     matchEachPlayerEffect, matchTargetPlayerSacrifice, matchSacrificeAsEffect,
@@ -3849,6 +3927,7 @@ function parseEffectClause(tokens: string[], startIndex: number): PatternResult 
     matchCopyThatSpell,           // "copy that spell"
     matchCopySpell,               // "copy target instant or sorcery spell"
     matchCopyCreature,            // "create a token that's a copy of target creature"
+    matchModifyPTAndLoseKeyword,
     matchGrantKeywordAndDynamicPT,
     matchGrantKeyword,            // "target creature gains hexproof until end of turn"
     matchPhaseOut,                // "target permanent phases out"

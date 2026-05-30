@@ -204,6 +204,13 @@ export function getKeywordsForInstance(state: GameState, instanceId: string): Se
     }
   }
 
+  for (const lost of card.lostKeywords || []) {
+    const canonical = KEYWORD_MAP[normalizeKeyword(lost)];
+    if (canonical) {
+      keywords.delete(canonical);
+    }
+  }
+
   return keywords;
 }
 
@@ -212,6 +219,11 @@ export function getKeywordsForInstance(state: GameState, instanceId: string): Se
  * Includes keywords from the card definition, continuous effects, and attached equipment.
  */
 export function instanceHasKeyword(state: GameState, instanceId: string, keyword: Keyword): boolean {
+  const card = state.cards.get(instanceId);
+  if (card?.lostKeywords?.some(lost => normalizeKeyword(lost) === normalizeKeyword(keyword))) {
+    return false;
+  }
+
   if (getKeywordsForInstance(state, instanceId).has(keyword)) {
     return true;
   }

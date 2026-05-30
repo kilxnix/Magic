@@ -1746,6 +1746,7 @@ function executeBlink(state: GameState, targetId: string): GameState {
     counters: {},
     summoningSick: true,
     grantedKeywords: undefined,
+    lostKeywords: undefined,
     phasedOut: undefined,
   });
 
@@ -1800,6 +1801,28 @@ function executeGrantKeyword(state: GameState, targetId: string, keyword: string
     });
   } else {
     // Already has the keyword, no-op
+    return state;
+  }
+
+  return { ...state, cards: newCards };
+}
+
+/**
+ * Temporarily remove a keyword ability from a creature.
+ * For "until end of turn" effects, cleanup clears lostKeywords.
+ */
+function executeLoseKeyword(state: GameState, targetId: string, keyword: string): GameState {
+  const card = state.cards.get(targetId);
+  if (!card || card.zone !== 'battlefield') return state;
+
+  const newCards = new Map(state.cards);
+  const currentLost = card.lostKeywords || [];
+  if (!currentLost.includes(keyword)) {
+    newCards.set(targetId, {
+      ...card,
+      lostKeywords: [...currentLost, keyword],
+    });
+  } else {
     return state;
   }
 
@@ -2294,6 +2317,10 @@ function executeEffect(
       }
       const gkTargetId = resolveTargetRef(effect.target, casterId, chosenTargets);
       return executeGrantKeyword(state, gkTargetId, effect.keyword);
+    }
+    case 'LoseKeyword': {
+      const lkTargetId = resolveTargetRef(effect.target, casterId, chosenTargets, state, eventContext);
+      return executeLoseKeyword(state, lkTargetId, effect.keyword);
     }
     // Phase 16: PhaseOut
     case 'PhaseOut': {

@@ -809,6 +809,24 @@ describe('parseOracleText', () => {
       expect(result.effects[0].toughness).toBe(-3);
     });
 
+    it('parses temporary power loss plus keyword loss on an attacking trigger', () => {
+      const result = parseOracleText('Whenever this creature attacks, target creature defending player controls gets -2/-0 and loses flying until your next turn.');
+      expect(result.kind).toBe('Triggered');
+      if (result.kind !== 'Triggered') return;
+      expect(result.ability.trigger).toEqual({ kind: 'Attacks', who: 'self' });
+      expect(result.ability.effects).toHaveLength(2);
+      expect(result.ability.effects[0]).toMatchObject({
+        kind: 'ModifyPT',
+        power: -2,
+        toughness: -0,
+      });
+      expect(result.ability.effects[1]).toMatchObject({
+        kind: 'LoseKeyword',
+        keyword: 'Flying',
+      });
+      expect(result.targets[0].type).toBe('Creature');
+    });
+
     it('parses "Creatures you control get +1/+1 until end of turn."', () => {
       const result = parseOracleText('Creatures you control get +1/+1 until end of turn.');
       expect(result.kind).toBe('Spell');

@@ -42,6 +42,7 @@ export type Effect =
   | CopyEffect
   | CopySpellEffect
   | GrantKeywordEffect
+  | LoseKeywordEffect
   | PhaseOutEffect
   | WinGameEffect
   | LoseGameEffect
@@ -329,6 +330,13 @@ export interface CopySpellEffect {
 // Grant a keyword to a creature (one-shot, not static)
 export interface GrantKeywordEffect {
   kind: 'GrantKeyword';
+  target: TargetRef;
+  keyword: string;
+  untilEndOfTurn: boolean;
+}
+
+export interface LoseKeywordEffect {
+  kind: 'LoseKeyword';
   target: TargetRef;
   keyword: string;
   untilEndOfTurn: boolean;
