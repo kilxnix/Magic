@@ -49,6 +49,7 @@ import {
   type ManaPool,
   type TriggeredAbilityStackItem,
   getCostReduction,
+  getIntrinsicCostReduction,
   getOverride,
   resetLoopDetector,
   type Effect,
@@ -1400,7 +1401,10 @@ function reducedSpellCost(state: GameState, playerId: string, def: CardDefinitio
     generic: baseCost.generic + extraGeneric + xCost,
     hybrid: baseCost.hybrid?.map(options => [...options]),
   };
-  const reduction = Math.min(totalCost.generic, getCostReduction(state, playerId, def));
+  const reduction = Math.min(
+    totalCost.generic,
+    getCostReduction(state, playerId, def) + getIntrinsicCostReduction(state, playerId, def),
+  );
   return reduction > 0
     ? { ...totalCost, generic: totalCost.generic - reduction }
     : totalCost;

@@ -41,7 +41,7 @@ Source files audited:
 | 9. Target selection | partial | Targeting tests exist. Complex multiplayer target selection/fizzle/revalidation is not complete. |
 | 10. Turn/phase/event feed projection | partial | Public phase label polishing, validated manual turn/phase correction, and UI tests exist. Full state-id event consistency/replay is not done. |
 | 11. Mandatory choices separate from priority | partial | Search/scry/surveil choices exist, and Brainstorm now pauses for mandatory hand-to-library-top selection after draw resolution. Universal mandatory-choice handling is not complete. |
-| 12. Auto-pay as proposal | partial | Auto-pay preview and Sisay auto-pay are browser-proven. Full trust UI for every special mana case is incomplete. |
+| 12. Auto-pay as proposal | partial | Auto-pay preview and Sisay auto-pay are browser-proven. `/play` synthetic auto-pay action generation now includes both registered battlefield cost reducers and intrinsic reducers printed on the spell itself, matching the engine cast path for cards such as Blasphemous Act/Cavern-Hoard Dragon. Full trust UI for every special mana case is incomplete. |
 | 13. Continuous effects/derived characteristics | partial | Sisay power and some layers/effective types work. Full CR-style layer/dependency system is not complete. |
 | 14. AI uses same engine contract | partial | AI action tests pass and AI uses try paths in slices. Full 4p politics/hidden-info safe AI is not complete. |
 | 15. Deterministic scenario testing | partial | Many scenarios exist; not the whole listed minimum bar. |
@@ -119,7 +119,7 @@ Minimum acceptance bar from that file:
 | 6.2 "Legal" Label Is Not Trustworthy | partial |
 | 6.3 Destination Labels Are Too Broad | partial |
 | 6.4 Hidden Information Is Not Communicated Cleanly | partial |
-| 7.1 Auto-Pay Exists But Needs Trust Layer | partial |
+| 7.1 Auto-Pay Exists But Needs Trust Layer | partial; `/play` auto-pay now applies intrinsic spell cost reducers in its visible action/payment preview path as well as the engine transaction path |
 | 7.2 Floating Mana Handling | partial |
 | 7.3 Special Mana Rules | partial |
 | 8.1 Combat Still Too Compressed | partial |
