@@ -16,6 +16,7 @@ export type Effect =
   | GainLifeEffect
   | LoseLifeEffect
   | ExileEffect
+  | ExileAllGraveyardsEffect
   | PutIntoLibraryEffect
   | ReturnToHandEffect
   | SacrificeEffect
@@ -137,6 +138,10 @@ export interface LoseLifeEffect {
 export interface ExileEffect {
   kind: 'Exile';
   target: TargetRef;
+}
+
+export interface ExileAllGraveyardsEffect {
+  kind: 'ExileAllGraveyards';
 }
 
 export interface PutIntoLibraryEffect {

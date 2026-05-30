@@ -1640,6 +1640,27 @@ describe('parseOracleText', () => {
       expect(result.effects[0].target).toEqual({ kind: 'AllOfType', filter: { types: ['enchantment'] } });
     });
 
+    it('parses "Exile all graveyards."', () => {
+      const result = parseOracleText('Exile all graveyards.');
+      expect(result.kind).toBe('Spell');
+      if (result.kind !== 'Spell') return;
+      expect(result.effects).toEqual([{ kind: 'ExileAllGraveyards' }]);
+    });
+
+    it('parses Farewell-style choose-one-or-more modes without collapsing to one mode', () => {
+      const result = parseOracleText('Choose one or more — • Exile all artifacts. • Exile all creatures. • Exile all enchantments. • Exile all graveyards.');
+      expect(result.kind).toBe('Modal');
+      if (result.kind !== 'Modal') return;
+      expect(result.modal.chooseCount).toBe(4);
+      expect(result.modal.upTo).toBe(true);
+      expect(result.modal.choices.map(choice => choice.effects[0]?.kind)).toEqual([
+        'Exile',
+        'Exile',
+        'Exile',
+        'ExileAllGraveyards',
+      ]);
+    });
+
     it('parses "Exile all multicolored permanents."', () => {
       const result = parseOracleText('Exile all multicolored permanents.');
       expect(result.kind).toBe('Spell');

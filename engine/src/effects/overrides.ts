@@ -323,19 +323,6 @@ registerOverrideByName('Chaos Warp', {
 // Commander Staples — Board Wipes
 // =============================================================================
 
-// Farewell — "Choose one or more: Exile all artifacts / creatures / enchantments /
-// graveyards." → Simplified: exile all creatures
-registerOverrideByName('Farewell', {
-  kind: 'Spell',
-  effects: [
-    {
-      kind: 'Exile',
-      target: { kind: 'AllCreatures' },
-    },
-  ],
-  targets: [],
-});
-
 // Wrath of God — "Destroy all creatures. They can't be regenerated."
 // Parser should handle this, but register as safety net.
 registerOverrideByName('Wrath of God', {

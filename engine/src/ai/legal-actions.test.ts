@@ -1392,6 +1392,36 @@ describe('Modal spell actions', () => {
     expect(modeSets).toEqual([[0, 1], [0, 2], [1, 2]]);
   });
 
+  it('generates every non-empty mode set for "Choose one or more" spells', () => {
+    const state = createTestState({
+      priorityPlayerIndex: 0,
+      activePlayerIndex: 0,
+      phase: 'precombat_main',
+    });
+
+    state.players[0].manaPool = { W: 2, U: 0, B: 0, R: 0, G: 0, C: 4 };
+
+    addCard(state, 'farewell', 'p1', 'hand', {
+      name: 'Farewell',
+      type_line: 'Sorcery',
+      oracle_text: 'Choose one or more - \u2022 Exile all artifacts. \u2022 Exile all creatures. \u2022 Exile all enchantments. \u2022 Exile all graveyards.',
+      mana_cost: '{4}{W}{W}',
+      cmc: 6,
+      colors: ['W'],
+      color_identity: ['W'],
+      card_types: ['sorcery'],
+    });
+
+    const castActions = getLegalActions(state, 'p1')
+      .filter((action): action is import('./types').CastSpellAction =>
+        action.kind === 'CastSpell' && action.cardInstanceId === 'farewell',
+      );
+
+    expect(castActions).toHaveLength(15);
+    expect(castActions.some(action => JSON.stringify(action.chosenModes) === JSON.stringify([0]))).toBe(true);
+    expect(castActions.some(action => JSON.stringify(action.chosenModes) === JSON.stringify([0, 1, 2, 3]))).toBe(true);
+  });
+
   it('generates paired modes for "Choose two" spells when one selected mode needs a target', () => {
     const state = createTestState({
       priorityPlayerIndex: 0,

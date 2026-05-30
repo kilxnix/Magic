@@ -541,6 +541,35 @@ describe('Phase 10 effects', () => {
       expect(newState.cards.get('gold-1')?.zone).toBe('exile');
       expect(newState.cards.get('mono-1')?.zone).toBe('battlefield');
     });
+
+    it('exiles all creatures through AllCreatures targets', () => {
+      const state = createTestState();
+      const effects: Effect[] = [
+        { kind: 'Exile', target: { kind: 'AllCreatures' } },
+      ];
+
+      const newState = executeEffects(state, effects, 'player-1', [], []);
+
+      expect(newState.cards.get('creature-1')?.zone).toBe('exile');
+      expect(newState.cards.get('lib-card-1')?.zone).toBe('library');
+    });
+
+    it('exiles every graveyard without touching battlefield or libraries', () => {
+      const state = createTestState();
+      const cards = new Map(state.cards);
+      cards.set('creature-1', { ...cards.get('creature-1')!, zone: 'graveyard' });
+      cards.set('lib-card-1', { ...cards.get('lib-card-1')!, zone: 'graveyard' });
+      cards.set('lib-card-2', { ...cards.get('lib-card-2')!, zone: 'battlefield' });
+      const modifiedState = { ...state, cards };
+      const effects: Effect[] = [{ kind: 'ExileAllGraveyards' }];
+
+      const newState = executeEffects(modifiedState, effects, 'player-1', [], []);
+
+      expect(newState.cards.get('creature-1')?.zone).toBe('exile');
+      expect(newState.cards.get('lib-card-1')?.zone).toBe('exile');
+      expect(newState.cards.get('lib-card-2')?.zone).toBe('battlefield');
+      expect(newState.cards.get('lib-card-3')?.zone).toBe('library');
+    });
   });
 
   describe('ReturnToHand effect', () => {

@@ -271,24 +271,26 @@ function generateModalActions(
   const modal = parsed.modal;
 
   if (modal.upTo) {
-    for (let i = 0; i < modal.choices.length; i++) {
-      const choice = modal.choices[i];
-      const specs: TargetSpec[] = choice.targets.map(t => ({
-        id: t.id,
-        type: t.type as any,
-        count: 1,
-        constraints: (t as TargetSpec).constraints,
-      }));
+    for (const modeIndices of generateIndexCombinations(modal.choices.length, 1, modal.chooseCount)) {
+      const specs: TargetSpec[] = modeIndices.flatMap(modeIndex =>
+        modal.choices[modeIndex].targets.map(t => ({
+          id: t.id,
+          type: t.type as any,
+          count: 1,
+          constraints: (t as TargetSpec).constraints,
+        }))
+      );
       for (const targets of generateTargetCombinations(state, playerId, specs, card.instanceId)) {
         actions.push({
           kind: 'CastSpell',
           cardInstanceId: card.instanceId,
           targets,
-          chosenModes: [i],
+          chosenModes: modeIndices,
           ...baseOptions,
         });
       }
     }
+    return actions.length > startingActionCount;
   }
 
   if (modal.chooseCount === 1) {
@@ -348,6 +350,28 @@ function generateModalActions(
   }
 
   return actions.length > startingActionCount;
+}
+
+function generateIndexCombinations(length: number, minSize: number, maxSize: number): number[][] {
+  const results: number[][] = [];
+  const cappedMax = Math.min(Math.max(maxSize, minSize), length);
+
+  const visit = (start: number, combo: number[], targetSize: number) => {
+    if (combo.length === targetSize) {
+      results.push([...combo]);
+      return;
+    }
+    for (let i = start; i < length; i++) {
+      combo.push(i);
+      visit(i + 1, combo, targetSize);
+      combo.pop();
+    }
+  };
+
+  for (let size = minSize; size <= cappedMax; size++) {
+    visit(0, [], size);
+  }
+  return results;
 }
 
 function generateTargetCombinations(

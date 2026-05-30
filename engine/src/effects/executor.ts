@@ -2645,6 +2645,16 @@ function executeEffect(
       return executeLoseLife(state, llPlayerId, llAmt);
     }
     case 'Exile': {
+      if (effect.target.kind === 'AllCreatures') {
+        let s = state;
+        for (const [, card] of state.cards) {
+          if (card.zone !== 'battlefield') continue;
+          if (isEffectiveCreature(s, card.instanceId)) {
+            s = executeExile(s, card.instanceId);
+          }
+        }
+        return s;
+      }
       // AllOfType: exile all permanents matching filter
       if (effect.target.kind === 'AllOfType') {
         let s = state;
@@ -2660,6 +2670,15 @@ function executeEffect(
       }
       const exileTargetId = resolveTargetRef(effect.target, casterId, chosenTargets);
       return executeExile(state, exileTargetId);
+    }
+    case 'ExileAllGraveyards': {
+      let s = state;
+      for (const [cardId, card] of state.cards) {
+        if (card.zone === 'graveyard') {
+          s = executeExile(s, cardId);
+        }
+      }
+      return s;
     }
     case 'PutIntoLibrary': {
       const libraryTargetId = resolveTargetRef(effect.target, casterId, chosenTargets);

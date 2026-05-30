@@ -3142,7 +3142,8 @@ function matchReturnAllToHand(tokens: string[], startIndex: number): PatternResu
 }
 
 /**
- * Match: "exile all artifacts" / "exile all enchantments" / "exile all creatures"
+ * Match: "exile all artifacts" / "exile all enchantments" / "exile all creatures" /
+ * "exile all graveyards"
  */
 function matchExileAll(tokens: string[], startIndex: number): PatternResult {
   const slice = tokens.slice(startIndex);
@@ -3170,6 +3171,10 @@ function matchExileAll(tokens: string[], startIndex: number): PatternResult {
     idx += 2;
   } else if (slice[idx] === 'permanents') {
     idx++;
+  } else if (slice[idx] === 'graveyards') {
+    idx++;
+    if (slice[idx] === '.') idx++;
+    return { effects: [{ kind: 'ExileAllGraveyards' }], targets: [], consumed: idx };
   } else {
     return null;
   }
@@ -5451,10 +5456,16 @@ function parseModalSpell(tokens: string[]): ModalSpell | null {
   let chooseCount: number;
   let upTo = false;
 
+  let chooseOneOrMore = false;
+
   if (tokens[1] === 'one' && tokens[2] === 'or' && tokens[3] === 'both') {
     // "choose one or both"
     chooseCount = 2;
     upTo = true;
+  } else if (tokens[1] === 'one' && tokens[2] === 'or' && tokens[3] === 'more') {
+    chooseCount = 0;
+    upTo = true;
+    chooseOneOrMore = true;
   } else if (tokens[1] === 'one') {
     chooseCount = 1;
   } else if (tokens[1] === 'two') {
@@ -5512,7 +5523,7 @@ function parseModalSpell(tokens: string[]): ModalSpell | null {
 
   return {
     kind: 'Modal',
-    chooseCount,
+    chooseCount: chooseOneOrMore ? choices.length : chooseCount,
     upTo: upTo || undefined,
     choices,
   };
