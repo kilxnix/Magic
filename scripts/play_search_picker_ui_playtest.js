@@ -222,7 +222,7 @@ async function assertSearchPicker(page) {
   const hasAvailability = /\b(Selectable|Unavailable)\b/i.test(normalized);
   const hasDestination = /\b(To (hand|battlefield|graveyard|top of library|bottom of library|exile|command zone)|Destination choice)\b/i.test(normalized);
   const hasRevealState = /\b(Reveal|Hidden pick)\b/i.test(normalized);
-  const hasReason = /\b(Matches|Legal library choice)\b/i.test(normalized);
+  const hasReason = /\b(Matches|Selectable library choice)\b/i.test(normalized);
 
   await screenshot(page, 'search-picker-open.png');
 

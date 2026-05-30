@@ -1115,7 +1115,7 @@ function humanizeSearchFilter(filter?: SearchFilterSpec, fallback?: string): str
 function searchPickerMetadata(search: StackSearchInfo): Pick<TutorCardOption, 'legal' | 'reason' | 'destination' | 'entersTapped' | 'mustReveal'> {
   const reason = search.filter
     ? `Matches ${search.filter}`
-    : 'Legal library choice';
+    : 'Selectable library choice';
   return {
     legal: true,
     reason,
@@ -5878,7 +5878,7 @@ export function useShelectorGame() {
       );
       const pickerMetadata: Pick<TutorCardOption, 'legal' | 'reason' | 'destination' | 'entersTapped' | 'mustReveal'> = {
         legal: true,
-        reason: activeFilter ? `Matches ${activeFilter}` : 'Legal library choice',
+        reason: activeFilter ? `Matches ${activeFilter}` : 'Selectable library choice',
         destination: tutorDestinationRef.current,
         entersTapped: tutorDestinationRef.current === 'battlefield' ? tutorTappedRef.current : undefined,
         mustReveal: Boolean(activeFilter || activeFilterSpec),
@@ -6796,7 +6796,7 @@ export function useShelectorGame() {
             colors: def?.colors,
             cmc: def?.cmc,
             legal: true,
-            reason: 'Legal target from the current engine prompt',
+            reason: 'Selectable target from the current engine prompt',
             destination: 'choice' as const,
           };
         }));
