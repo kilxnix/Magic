@@ -67,6 +67,10 @@ import {
   applySearchLibraryPromptResponse,
   createSelectTargetPromptRequest,
   applySelectTargetPromptResponse,
+  createBattlefieldEntryReplacementPromptRequest,
+  applyChooseReplacementPromptResponse,
+  createPayCostsPromptRequest,
+  applyPayCostsPromptResponse,
   type ActionPromptChoice,
   type ClientActionResponse,
   type EnginePrompt,
@@ -1121,8 +1125,8 @@ function findLandsToTap(
   state: GameState,
   playerId: string,
   manaCost: ManaCost,
-  manaActions: AIAction[],
-): AIAction[] | null {
+  manaActions: Extract<AIAction, { kind: 'ActivateManaAbility' }>[],
+): Extract<AIAction, { kind: 'ActivateManaAbility' }>[] | null {
   const player = state.players.find(p => p.id === playerId);
   if (!player) return null;
 
@@ -1167,15 +1171,14 @@ function findLandsToTap(
   if (totalNeeded === 0) return []; // Already have enough in pool
 
   // Group mana actions by card instance (a dual land might produce multiple colors)
-  const actionsByCard = new Map<string, AIAction[]>();
+  const actionsByCard = new Map<string, Extract<AIAction, { kind: 'ActivateManaAbility' }>[]>();
   for (const action of manaActions) {
-    if (action.kind !== 'ActivateManaAbility') continue;
     const list = actionsByCard.get(action.cardInstanceId) || [];
     list.push(action);
     actionsByCard.set(action.cardInstanceId, list);
   }
 
-  const result: AIAction[] = [];
+  const result: Extract<AIAction, { kind: 'ActivateManaAbility' }>[] = [];
   const usedCards = new Set<string>();
 
   // First pass: tap lands for specific colored mana needs
@@ -3844,6 +3847,32 @@ export function useShelectorGame() {
 
       const pendingEngineAction = pendingLandChoice.action._engineAction;
       if (pendingEngineAction.kind === 'PlayLand') {
+        if (pendingLandChoice.kind === 'payLife') {
+          const engineForReplacement = engineRef.current;
+          if (!engineForReplacement) return;
+          const replacementRequest = createBattlefieldEntryReplacementPromptRequest(
+            engineForReplacement,
+            humanIdRef.current,
+            pendingEngineAction.cardInstanceId,
+            {
+              sourceInstanceId: pendingEngineAction.cardInstanceId,
+            },
+          );
+          const replacementResponse = applyChooseReplacementPromptResponse(engineForReplacement, replacementRequest, {
+            requestId: replacementRequest.id,
+            kind: 'ChooseReplacement',
+            playerId: humanIdRef.current,
+            selectedOptionId: cardInstanceId === 'pay-life'
+              ? 'pay_life_enter_untapped'
+              : 'enter_tapped',
+          });
+          recordAuthorityUpdate(replacementResponse.update);
+          if (!replacementResponse.ok) {
+            addMessage('system', replacementResponse.message || 'That replacement choice is not legal right now.');
+            syncState();
+            return;
+          }
+        }
         submitActionRef.current?.({
           ...pendingLandChoice.action,
           _engineAction: {
@@ -3876,6 +3905,29 @@ export function useShelectorGame() {
     if (!card) return;
     const def = engine.cardDefinitions.get(card.definitionId);
     const cardName = def?.name || 'a card';
+    if (payLifeForSearchEntry !== undefined) {
+      const replacementRequest = createBattlefieldEntryReplacementPromptRequest(
+        engine,
+        humanIdRef.current,
+        selectedCardInstanceId,
+        {
+          sourceInstanceId: tutorSourceInstanceIdRef.current,
+          forceTapped: tutorTappedRef.current,
+        },
+      );
+      const replacementResponse = applyChooseReplacementPromptResponse(engine, replacementRequest, {
+        requestId: replacementRequest.id,
+        kind: 'ChooseReplacement',
+        playerId: humanIdRef.current,
+        selectedOptionId: payLifeForSearchEntry ? 'pay_life_enter_untapped' : 'enter_tapped',
+      });
+      recordAuthorityUpdate(replacementResponse.update);
+      if (!replacementResponse.ok) {
+        addMessage('system', replacementResponse.message || 'That replacement choice is not legal right now.');
+        syncState();
+        return;
+      }
+    }
 
     // Determine destination from the tutor's oracle text
     const dest = tutorDestinationRef.current;
@@ -4823,37 +4875,58 @@ export function useShelectorGame() {
           return response.state;
         };
 
-        const applyAuthoritativeManaTap = (
+        const applyAuthoritativePaymentPrompt = (
           state: GameState,
-          manaAction: Extract<AIAction, { kind: 'ActivateManaAbility' }>,
+          manaCost: ManaCost,
+          manaActions: Extract<AIAction, { kind: 'ActivateManaAbility' }>[],
+          sourceInstanceId: string | undefined,
+          label: string,
         ): GameState | null => {
-          const beforePool = state.players.find(p => p.id === humanIdRef.current)?.manaPool;
-          const tappedCard = state.cards.get(manaAction.cardInstanceId);
-          const tappedDef = tappedCard ? getCardDefinition(state, tappedCard) : undefined;
-          const next = applyAuthoritativeAction(
+          const paymentRequest = createPayCostsPromptRequest(
             state,
             humanIdRef.current,
+            manaCost,
             {
-              kind: 'ActivateManaAbility',
-              cardInstanceId: manaAction.cardInstanceId,
-              cardName: tappedDef?.name,
-              label: `Tap ${tappedDef?.name || 'a permanent'} for ${manaAction.color}`,
-              _engineAction: manaAction,
+              sourceInstanceId,
+              proposedManaActions: manaActions,
             },
-            { rejectionPrefix: 'Cannot auto-tap for mana' },
           );
-          if (!next) return null;
-
-          const afterPool = next.players.find(p => p.id === humanIdRef.current)?.manaPool;
-          const gained: string[] = [];
-          if (afterPool && beforePool) {
-            for (const c of ['W', 'U', 'B', 'R', 'G', 'C'] as const) {
-              const diff = afterPool[c] - beforePool[c];
-              if (diff > 0) gained.push(`+${diff}${c}`);
-            }
+          const paymentResponse = applyPayCostsPromptResponse(state, paymentRequest, {
+            requestId: paymentRequest.id,
+            kind: 'PayCosts',
+            playerId: humanIdRef.current,
+            selectedManaActions: manaActions,
+          });
+          recordAuthorityUpdate(paymentResponse.update);
+          if (!paymentResponse.ok || !paymentResponse.state) {
+            appendLog({
+              ...captureLogEntry(
+                state,
+                humanIdRef.current,
+                aiIdsRef.current,
+                'human',
+                `Rejected mana payment for ${label}`,
+                0,
+                humanIdRef.current,
+              ),
+              playByPlay: `Mana payment for ${label} was rejected by the rules validator.`,
+              rulesAudit: {
+                severity: 'error',
+                reason: paymentResponse.message || 'The selected mana payment is not legal in the current game state.',
+              },
+            });
+            setActionError({
+              reason: paymentResponse.reason || 'illegal_response',
+              message: paymentResponse.message || 'The selected mana payment is not legal in the current game state.',
+            });
+            addMessage('system', `Cannot pay costs: ${paymentResponse.message || 'That mana payment is not legal.'}`);
+            syncState();
+            return null;
           }
-          addMessage('system', `Auto-tapped ${tappedDef?.name || 'a permanent'} (${gained.join(' ') || '+mana'}).`);
-          return next;
+
+          authorityUpdateRecorded = true;
+          addMessage('system', `Auto-pay accepted for ${label}: ${describeManaPaymentPlan(state, humanIdRef.current, manaActions)}.`);
+          return paymentResponse.state as GameState;
         };
 
         const validateTargetPromptResponse = (
@@ -4955,16 +5028,14 @@ export function useShelectorGame() {
               const landsToTap = findLandsToTap(engine, humanId, totalCost, manaActions);
 
               if (landsToTap && landsToTap.length > 0) {
-                // Apply each auto-tap through the same authority path as a manual tap.
-                let tapState: GameState = engine as GameState;
-                for (const manaAction of landsToTap) {
-                  if (manaAction.kind !== 'ActivateManaAbility') continue;
-                  const nextTapState = applyAuthoritativeManaTap(tapState, manaAction);
-                  if (!nextTapState) {
-                    continue;
-                  }
-                  tapState = nextTapState;
-                }
+                const tapState = applyAuthoritativePaymentPrompt(
+                  engine as GameState,
+                  totalCost,
+                  landsToTap,
+                  engineAction.cardInstanceId,
+                  action.label,
+                );
+                if (!tapState) return;
                 const poolBeforeCast = tapState.players.find(p => p.id === humanId)?.manaPool;
                 addMessage('system', `Mana available: ${poolBeforeCast ? formatManaPool(poolBeforeCast) : '?'}`);
                 precastState = tapState;
@@ -5040,15 +5111,14 @@ export function useShelectorGame() {
               );
               const landsToTap = findLandsToTap(preActivateState, humanIdRef.current, abilityCost, manaActions);
               if (landsToTap && landsToTap.length > 0) {
-                let tapState = preActivateState;
-                for (const manaAction of landsToTap) {
-                  if (manaAction.kind !== 'ActivateManaAbility') continue;
-                  const nextTapState = applyAuthoritativeManaTap(tapState, manaAction);
-                  if (!nextTapState) {
-                    continue;
-                  }
-                  tapState = nextTapState;
-                }
+                const tapState = applyAuthoritativePaymentPrompt(
+                  preActivateState,
+                  abilityCost,
+                  landsToTap,
+                  engineAction.cardInstanceId,
+                  action.label,
+                );
+                if (!tapState) return;
                 const poolBeforeAbility = tapState.players.find(p => p.id === humanIdRef.current)?.manaPool;
                 addMessage('system', `Mana available: ${poolBeforeAbility ? formatManaPool(poolBeforeAbility) : '?'}`);
                 preActivateState = tapState;
@@ -5125,13 +5195,14 @@ export function useShelectorGame() {
               );
               const landsToTap = findLandsToTap(preEquipState, humanIdRef.current, equipCost, manaActions);
               if (landsToTap && landsToTap.length > 0) {
-                let tapState = preEquipState;
-                for (const manaAction of landsToTap) {
-                  if (manaAction.kind !== 'ActivateManaAbility') continue;
-                  const nextTapState = applyAuthoritativeManaTap(tapState, manaAction);
-                  if (!nextTapState) continue;
-                  tapState = nextTapState;
-                }
+                const tapState = applyAuthoritativePaymentPrompt(
+                  preEquipState,
+                  equipCost,
+                  landsToTap,
+                  engineAction.equipmentInstanceId,
+                  action.label,
+                );
+                if (!tapState) return;
                 const poolBeforeEquip = tapState.players.find(p => p.id === humanIdRef.current)?.manaPool;
                 addMessage('system', `Mana available: ${poolBeforeEquip ? formatManaPool(poolBeforeEquip) : '?'}`);
                 preEquipState = tapState;

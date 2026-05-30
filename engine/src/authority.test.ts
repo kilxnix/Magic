@@ -1,14 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import {
   applyClientActionRequest,
+  applyChooseReplacementPromptResponse,
+  applyPayCostsPromptResponse,
   applySearchLibraryPromptResponse,
   applySelectTargetPromptResponse,
   auditActionReplay,
+  auditPromptReplay,
   auditSearchPromptReplay,
   buildActionPrompt,
   createClientActionRequest,
+  createBattlefieldEntryReplacementPromptRequest,
   createSearchLibraryPromptRequest,
   createSelectTargetPromptRequest,
+  createPayCostsPromptRequest,
   diffGameStates,
   labelForAction,
   stateFingerprint,
@@ -297,6 +302,25 @@ function stateWithTargetChoices(): GameState {
   };
 }
 
+function stateWithManaSource(): GameState {
+  const state = stateWithForestInHand();
+  const forest = [...state.cards.values()].find(card => card.definitionId === 'forest' && card.ownerId === 'p1');
+  if (!forest) throw new Error('Forest not found');
+  state.cards.set(forest.instanceId, { ...forest, zone: 'battlefield', tapped: false });
+  const forestDef = state.cardDefinitions.get('forest');
+  if (!forestDef) throw new Error('Forest definition not found');
+  state.cardDefinitions.set('forest', {
+    ...forestDef,
+    manaProduction: {
+      colors: ['G'],
+      amounts: { G: 1 },
+      isTapAbility: true,
+      requiresSacrifice: false,
+    },
+  });
+  return state;
+}
+
 describe('authority action boundary', () => {
   it('builds typed prompts from canonical legal actions', () => {
     const state = stateWithForestInHand();
@@ -537,6 +561,61 @@ describe('authority action boundary', () => {
     expect(state.cards.get('temple_garden_1')?.zone).toBe('library');
   });
 
+  it('creates typed replacement prompts and rejects unavailable replacement choices', () => {
+    const state = stateWithSearchedShockLand();
+    const request = createBattlefieldEntryReplacementPromptRequest(state, 'p1', 'temple_garden_1', {
+      id: 'prompt-entry-shock',
+      createdAt: 17,
+    });
+
+    expect(request.kind).toBe('ChooseReplacement');
+    expect(request.expectedStateId).toBe(stateFingerprint(state));
+    expect(request.legalChoices.map(choice => choice.optionId)).toEqual([
+      'pay_life_enter_untapped',
+      'enter_tapped',
+    ]);
+
+    const accepted = applyChooseReplacementPromptResponse(state, request, {
+      requestId: request.id,
+      kind: 'ChooseReplacement',
+      playerId: 'p1',
+      selectedOptionId: 'pay_life_enter_untapped',
+    });
+    expect(accepted.ok).toBe(true);
+    expect(accepted.state).toBe(state);
+    expect(accepted.selectedReplacementOptionId).toBe('pay_life_enter_untapped');
+    expect(accepted.update?.rulesEvents).toEqual([{
+      kind: 'PromptResponseAccepted',
+      requestId: request.id,
+      playerId: 'p1',
+      promptKind: 'ChooseReplacement',
+      selectedReplacementOptionId: 'pay_life_enter_untapped',
+    }]);
+
+    const forcedTappedRequest = createBattlefieldEntryReplacementPromptRequest(state, 'p1', 'temple_garden_1', {
+      id: 'prompt-entry-forced-tapped',
+      forceTapped: true,
+      createdAt: 18,
+    });
+    expect(forcedTappedRequest.invalidChoices).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        optionId: 'pay_life_enter_untapped',
+        legal: false,
+        reason: 'This effect forces the permanent to enter tapped',
+      }),
+    ]));
+
+    const rejected = applyChooseReplacementPromptResponse(state, forcedTappedRequest, {
+      requestId: forcedTappedRequest.id,
+      kind: 'ChooseReplacement',
+      playerId: 'p1',
+      selectedOptionId: 'pay_life_enter_untapped',
+    });
+    expect(rejected.ok).toBe(false);
+    expect(rejected.reason).toBe('illegal_response');
+    expect(rejected.message).toContain('forces the permanent to enter tapped');
+  });
+
   it('creates typed target prompts and rejects illegal target ids without mutation', () => {
     const state = stateWithTargetChoices();
     const spec: TargetSpec = { id: 'target-permanent', type: 'Permanent', count: 1 };
@@ -580,6 +659,149 @@ describe('authority action boundary', () => {
       promptKind: 'SelectTarget',
       selectedTargetIds: ['bear_1'],
     }]);
+  });
+
+  it('audits typed target prompt responses by replaying legality without mutation', () => {
+    const state = stateWithTargetChoices();
+    const spec: TargetSpec = { id: 'target-permanent', type: 'Permanent', count: 1 };
+    const request = createSelectTargetPromptRequest(state, 'p1', spec, {
+      id: 'prompt-audit-target',
+      createdAt: 18,
+    });
+
+    const report = auditPromptReplay(state, [{
+      request,
+      response: {
+        requestId: request.id,
+        kind: 'SelectTarget',
+        playerId: 'p1',
+        selectedTargetIds: ['bear_1'],
+      },
+    }]);
+
+    expect(report.ok).toBe(true);
+    expect(report.finalState).toBe(state);
+    expect(report.steps).toEqual([expect.objectContaining({
+      requestId: request.id,
+      playerId: 'p1',
+      promptKind: 'SelectTarget',
+      ok: true,
+    })]);
+
+    const illegalReport = auditPromptReplay(state, [{
+      request,
+      response: {
+        requestId: request.id,
+        kind: 'SelectTarget',
+        playerId: 'p1',
+        selectedTargetIds: ['p2'],
+      },
+    }]);
+
+    expect(illegalReport.ok).toBe(false);
+    expect(illegalReport.steps).toEqual([expect.objectContaining({
+      requestId: request.id,
+      promptKind: 'SelectTarget',
+      ok: false,
+      reason: 'illegal_response',
+    })]);
+  });
+
+  it('audits typed replacement prompt responses with the same prompt replay path', () => {
+    const state = stateWithSearchedShockLand();
+    const request = createBattlefieldEntryReplacementPromptRequest(state, 'p1', 'temple_garden_1', {
+      id: 'prompt-audit-replacement',
+      createdAt: 19,
+    });
+
+    const report = auditPromptReplay(state, [{
+      request,
+      response: {
+        requestId: request.id,
+        kind: 'ChooseReplacement',
+        playerId: 'p1',
+        selectedOptionId: 'enter_tapped',
+      },
+    }]);
+
+    expect(report.ok).toBe(true);
+    expect(report.finalState).toBe(state);
+    expect(report.steps).toEqual([expect.objectContaining({
+      requestId: request.id,
+      promptKind: 'ChooseReplacement',
+      ok: true,
+    })]);
+
+    const forcedTapped = createBattlefieldEntryReplacementPromptRequest(state, 'p1', 'temple_garden_1', {
+      id: 'prompt-audit-forced-replacement',
+      forceTapped: true,
+      createdAt: 20,
+    });
+    const illegalReport = auditPromptReplay(state, [{
+      request: forcedTapped,
+      response: {
+        requestId: forcedTapped.id,
+        kind: 'ChooseReplacement',
+        playerId: 'p1',
+        selectedOptionId: 'pay_life_enter_untapped',
+      },
+    }]);
+
+    expect(illegalReport.ok).toBe(false);
+    expect(illegalReport.steps).toEqual([expect.objectContaining({
+      promptKind: 'ChooseReplacement',
+      ok: false,
+      reason: 'illegal_response',
+    })]);
+  });
+
+  it('validates pay-cost prompt responses and applies mana taps through authority', () => {
+    const state = stateWithManaSource();
+    const manaAction = buildActionPrompt(state, 'p1')?.legalChoices
+      .find(choice => choice.kind === 'ActivateManaAbility')?.action as Extract<AIAction, { kind: 'ActivateManaAbility' }> | undefined;
+    expect(manaAction).toBeDefined();
+
+    const request = createPayCostsPromptRequest(state, 'p1', {
+      W: 0,
+      U: 0,
+      B: 0,
+      R: 0,
+      G: 1,
+      C: 0,
+      generic: 0,
+    }, {
+      id: 'prompt-pay-green',
+      proposedManaActions: [manaAction!],
+      createdAt: 21,
+    });
+
+    expect(request.legalChoices).toHaveLength(1);
+    const accepted = applyPayCostsPromptResponse(state, request, {
+      requestId: request.id,
+      kind: 'PayCosts',
+      playerId: 'p1',
+      selectedManaActions: [manaAction!],
+    });
+
+    expect(accepted.ok).toBe(true);
+    expect(accepted.state?.cards.get(manaAction!.cardInstanceId)?.tapped).toBe(true);
+    expect(accepted.state?.players.find(player => player.id === 'p1')?.manaPool.G).toBe(1);
+    expect(accepted.update?.rulesEvents).toEqual(expect.arrayContaining([expect.objectContaining({
+      kind: 'PromptResponseAccepted',
+      requestId: request.id,
+      playerId: 'p1',
+      promptKind: 'PayCosts',
+    })]));
+
+    const insufficient = applyPayCostsPromptResponse(state, request, {
+      requestId: request.id,
+      kind: 'PayCosts',
+      playerId: 'p1',
+      selectedManaActions: [],
+    });
+    expect(insufficient.ok).toBe(false);
+    expect(insufficient.reason).toBe('illegal_response');
+    expect(insufficient.message).toContain('do not produce enough mana');
   });
 
   it('includes selected target names in command labels', () => {

@@ -2,6 +2,7 @@ import type {
   CardDefinition,
   CardInstance,
   GameState,
+  ManaCost,
   ManaColor,
   ManaPool,
   Phase,
@@ -13,6 +14,7 @@ import { getLegalActions } from './ai/legal-actions';
 import { getLegalTargets } from './ai/legal-actions';
 import { dispatchAIAction } from './ai/agent';
 import { canPlayLandDetailed } from './actions';
+import { canPayCost } from './mana';
 import { executeSearchLibrary, executeShuffleLibrary, matchesCardFilter } from './effects/executor';
 import { getEffectivePower } from './effects/continuous';
 import { getOptionalUntappedLifeCost } from './permanent-entry';
@@ -46,7 +48,7 @@ export interface ClientActionResponse {
   update?: EngineStateUpdate;
 }
 
-export type EnginePromptKind = 'SearchLibrary' | 'SelectTarget';
+export type EnginePromptKind = 'SearchLibrary' | 'SelectTarget' | 'ChooseReplacement' | 'PayCosts';
 
 export type ClientPromptFailure =
   | 'invalid_request'
@@ -112,6 +114,8 @@ export interface ClientPromptResponse {
   state?: GameState;
   update?: EngineStateUpdate;
   selectedTargetIds?: string[];
+  selectedReplacementOptionId?: ReplacementOptionId;
+  selectedManaActions?: ManaPaymentAction[];
 }
 
 export interface TargetChoice {
@@ -150,6 +154,87 @@ export interface SelectTargetPromptResponse {
   selectedTargetIds: string[];
 }
 
+export type ReplacementPromptSubject = 'BattlefieldEntry';
+
+export type ReplacementOptionId = 'enter_tapped' | 'pay_life_enter_untapped' | 'enter_default';
+
+export interface ReplacementChoice {
+  optionId: ReplacementOptionId;
+  label: string;
+  legal: boolean;
+  reason?: string;
+  effects: {
+    tapped?: boolean;
+    lifePayment?: number;
+  };
+}
+
+export interface ChooseReplacementPromptRequest {
+  id: string;
+  kind: 'ChooseReplacement';
+  playerId: string;
+  expectedStateId: string;
+  sourceInstanceId?: string;
+  cardInstanceId: string;
+  subject: ReplacementPromptSubject;
+  forceTapped?: boolean;
+  defaultTapped?: boolean;
+  legalChoices: ReplacementChoice[];
+  invalidChoices: ReplacementChoice[];
+  createdAt: number;
+}
+
+export interface CreateBattlefieldEntryReplacementPromptOptions {
+  id?: string;
+  sourceInstanceId?: string;
+  forceTapped?: boolean;
+  defaultTapped?: boolean;
+  createdAt?: number;
+}
+
+export interface ChooseReplacementPromptResponse {
+  requestId: string;
+  kind: 'ChooseReplacement';
+  playerId: string;
+  selectedOptionId: ReplacementOptionId;
+}
+
+export type ManaPaymentAction = Extract<AIAction, { kind: 'ActivateManaAbility' }>;
+
+export interface ManaPaymentChoice {
+  action: ManaPaymentAction;
+  label: string;
+  legal: boolean;
+  reason?: string;
+}
+
+export interface PayCostsPromptRequest {
+  id: string;
+  kind: 'PayCosts';
+  playerId: string;
+  expectedStateId: string;
+  sourceInstanceId?: string;
+  manaCost: ManaCost;
+  legalChoices: ManaPaymentChoice[];
+  invalidChoices: ManaPaymentChoice[];
+  proposedManaActions: ManaPaymentAction[];
+  createdAt: number;
+}
+
+export interface CreatePayCostsPromptOptions {
+  id?: string;
+  sourceInstanceId?: string;
+  proposedManaActions?: ManaPaymentAction[];
+  createdAt?: number;
+}
+
+export interface PayCostsPromptResponse {
+  requestId: string;
+  kind: 'PayCosts';
+  playerId: string;
+  selectedManaActions: ManaPaymentAction[];
+}
+
 export interface ActionReplayAuditStep {
   index: number;
   requestId: string;
@@ -172,6 +257,27 @@ export interface SearchPromptReplayRecord {
   request: SearchLibraryPromptRequest;
   response: SearchLibraryPromptResponse;
 }
+
+export interface TargetPromptReplayRecord {
+  request: SelectTargetPromptRequest;
+  response: SelectTargetPromptResponse;
+}
+
+export interface ReplacementPromptReplayRecord {
+  request: ChooseReplacementPromptRequest;
+  response: ChooseReplacementPromptResponse;
+}
+
+export interface PayCostsPromptReplayRecord {
+  request: PayCostsPromptRequest;
+  response: PayCostsPromptResponse;
+}
+
+export type PromptReplayRecord =
+  | SearchPromptReplayRecord
+  | TargetPromptReplayRecord
+  | ReplacementPromptReplayRecord
+  | PayCostsPromptReplayRecord;
 
 export interface PromptReplayAuditStep {
   index: number;
@@ -403,6 +509,8 @@ export type EngineEvent =
       promptKind: EnginePromptKind;
       selectedCardInstanceIds?: string[];
       selectedTargetIds?: string[];
+      selectedReplacementOptionId?: ReplacementOptionId;
+      selectedManaActions?: ManaPaymentAction[];
       destination?: SearchLibraryDestination;
     }
   | {
@@ -414,6 +522,8 @@ export type EngineEvent =
       message: string;
       selectedCardInstanceIds?: string[];
       selectedTargetIds?: string[];
+      selectedReplacementOptionId?: ReplacementOptionId;
+      selectedManaActions?: ManaPaymentAction[];
     }
   | {
       kind: 'RulesEvent';
@@ -1497,6 +1607,410 @@ export function applySelectTargetPromptResponse(
   };
 }
 
+export function createBattlefieldEntryReplacementPromptRequest(
+  state: GameState,
+  playerId: string,
+  cardInstanceId: string,
+  options: CreateBattlefieldEntryReplacementPromptOptions = {},
+): ChooseReplacementPromptRequest {
+  const expectedStateId = stateFingerprint(state);
+  const createdAt = options.createdAt ?? Date.now();
+  const card = state.cards.get(cardInstanceId);
+  const def = card ? state.cardDefinitions.get(card.definitionId) : undefined;
+  const player = state.players.find(candidate => candidate.id === playerId);
+  const cardLabel = def?.name || cardInstanceId;
+  const optionalLifeCost = def ? getOptionalUntappedLifeCost(def.oracle_text) : undefined;
+  const choices: ReplacementChoice[] = [];
+
+  if (!card || card.ownerId !== playerId) {
+    choices.push({
+      optionId: 'enter_default',
+      label: `Resolve ${cardLabel} entry`,
+      legal: false,
+      reason: 'Card is missing or not controlled by this player',
+      effects: {},
+    });
+  } else if (optionalLifeCost === undefined) {
+    choices.push({
+      optionId: 'enter_default',
+      label: `${cardLabel} enters normally`,
+      legal: true,
+      effects: {
+        tapped: options.forceTapped || options.defaultTapped,
+      },
+    });
+  } else {
+    choices.push({
+      optionId: 'pay_life_enter_untapped',
+      label: `Pay ${optionalLifeCost} life so ${cardLabel} enters untapped`,
+      legal: !options.forceTapped && Boolean(player && player.life >= optionalLifeCost),
+      reason: options.forceTapped
+        ? 'This effect forces the permanent to enter tapped'
+        : !player || player.life < optionalLifeCost
+          ? `Cannot pay ${optionalLifeCost} life`
+          : undefined,
+      effects: {
+        tapped: false,
+        lifePayment: optionalLifeCost,
+      },
+    });
+    choices.push({
+      optionId: 'enter_tapped',
+      label: `${cardLabel} enters tapped`,
+      legal: true,
+      effects: {
+        tapped: true,
+        lifePayment: 0,
+      },
+    });
+  }
+
+  return {
+    id: options.id || `replacement_${expectedStateId}_${hashText(`${playerId}:${cardInstanceId}:BattlefieldEntry:${createdAt}`)}`,
+    kind: 'ChooseReplacement',
+    playerId,
+    expectedStateId,
+    sourceInstanceId: options.sourceInstanceId,
+    cardInstanceId,
+    subject: 'BattlefieldEntry',
+    forceTapped: options.forceTapped,
+    defaultTapped: options.defaultTapped,
+    legalChoices: choices.filter(choice => choice.legal),
+    invalidChoices: choices.filter(choice => !choice.legal),
+    createdAt,
+  };
+}
+
+function replacementPromptRejectUpdate(
+  state: GameState,
+  request: ChooseReplacementPromptRequest,
+  response: ChooseReplacementPromptResponse,
+  reason: ClientPromptFailure,
+  message: string,
+): EngineStateUpdate {
+  const currentStateId = stateFingerprint(state);
+  return {
+    oldStateId: request.expectedStateId,
+    newStateId: currentStateId,
+    activePlayerId: activePlayerId(state),
+    priorityPlayerId: priorityPlayerId(state),
+    phase: state.phase,
+    step: state.step,
+    turnNumber: state.turnNumber,
+    priority: prioritySnapshot(state),
+    visibleDiffs: [],
+    rulesEvents: [{
+      kind: 'PromptResponseRejected',
+      requestId: response.requestId,
+      playerId: response.playerId,
+      promptKind: request.kind,
+      reason,
+      message,
+      selectedReplacementOptionId: response.selectedOptionId,
+    }],
+    prompt: buildActionPrompt(state),
+  };
+}
+
+export function applyChooseReplacementPromptResponse(
+  state: GameState,
+  request: ChooseReplacementPromptRequest,
+  response: ChooseReplacementPromptResponse,
+): ClientPromptResponse {
+  if (request.kind !== 'ChooseReplacement' || response.kind !== 'ChooseReplacement' || request.id !== response.requestId) {
+    const message = 'Prompt response does not match the active replacement request.';
+    return {
+      requestId: response.requestId,
+      ok: false,
+      reason: 'invalid_request',
+      message,
+      update: replacementPromptRejectUpdate(state, request, response, 'invalid_request', message),
+    };
+  }
+
+  if (request.playerId !== response.playerId) {
+    const message = 'This replacement prompt belongs to another player.';
+    return {
+      requestId: response.requestId,
+      ok: false,
+      reason: 'wrong_player',
+      message,
+      update: replacementPromptRejectUpdate(state, request, response, 'wrong_player', message),
+    };
+  }
+
+  const currentStateId = stateFingerprint(state);
+  if (request.expectedStateId !== currentStateId) {
+    const message = 'The game state changed before this replacement response reached the engine.';
+    return {
+      requestId: response.requestId,
+      ok: false,
+      reason: 'stale_state',
+      message,
+      update: replacementPromptRejectUpdate(state, request, response, 'stale_state', message),
+    };
+  }
+
+  const rebuilt = createBattlefieldEntryReplacementPromptRequest(
+    state,
+    request.playerId,
+    request.cardInstanceId,
+    {
+      id: request.id,
+      sourceInstanceId: request.sourceInstanceId,
+      forceTapped: request.forceTapped,
+      defaultTapped: request.defaultTapped,
+      createdAt: request.createdAt,
+    },
+  );
+  const currentChoice = rebuilt.legalChoices.find(choice => choice.optionId === response.selectedOptionId);
+  if (!currentChoice) {
+    const rejectedChoice = rebuilt.invalidChoices.find(choice => choice.optionId === response.selectedOptionId);
+    const message = `Illegal replacement choice: ${rejectedChoice?.reason || 'choice is not available'}`;
+    return {
+      requestId: response.requestId,
+      ok: false,
+      reason: 'illegal_response',
+      message,
+      update: replacementPromptRejectUpdate(state, request, response, 'illegal_response', message),
+    };
+  }
+
+  const update: EngineStateUpdate = {
+    oldStateId: currentStateId,
+    newStateId: currentStateId,
+    activePlayerId: activePlayerId(state),
+    priorityPlayerId: priorityPlayerId(state),
+    phase: state.phase,
+    step: state.step,
+    turnNumber: state.turnNumber,
+    priority: prioritySnapshot(state),
+    visibleDiffs: [],
+    rulesEvents: [{
+      kind: 'PromptResponseAccepted',
+      requestId: response.requestId,
+      playerId: response.playerId,
+      promptKind: 'ChooseReplacement',
+      selectedReplacementOptionId: response.selectedOptionId,
+    }],
+    prompt: buildActionPrompt(state),
+  };
+
+  return {
+    requestId: response.requestId,
+    ok: true,
+    state,
+    update,
+    selectedReplacementOptionId: response.selectedOptionId,
+  };
+}
+
+function manaActionChoice(state: GameState, action: ManaPaymentAction, legalActionKeys: Set<string>): ManaPaymentChoice {
+  const legal = legalActionKeys.has(actionKey(action));
+  return {
+    action,
+    label: labelForAction(state, action),
+    legal,
+    reason: legal ? undefined : 'Mana action is not legal in the current game state',
+  };
+}
+
+export function createPayCostsPromptRequest(
+  state: GameState,
+  playerId: string,
+  manaCost: ManaCost,
+  options: CreatePayCostsPromptOptions = {},
+): PayCostsPromptRequest {
+  const expectedStateId = stateFingerprint(state);
+  const createdAt = options.createdAt ?? Date.now();
+  const legalManaActions = getLegalActions(state, playerId)
+    .filter((action): action is ManaPaymentAction => action.kind === 'ActivateManaAbility');
+  const legalKeys = new Set(legalManaActions.map(action => actionKey(action)));
+  const proposed = options.proposedManaActions || legalManaActions;
+  const choices = proposed.map(action => manaActionChoice(state, action, legalKeys));
+
+  return {
+    id: options.id || `pay_${expectedStateId}_${hashText(`${playerId}:${stableJson(manaCost)}:${createdAt}`)}`,
+    kind: 'PayCosts',
+    playerId,
+    expectedStateId,
+    sourceInstanceId: options.sourceInstanceId,
+    manaCost,
+    legalChoices: choices.filter(choice => choice.legal),
+    invalidChoices: choices.filter(choice => !choice.legal),
+    proposedManaActions: proposed,
+    createdAt,
+  };
+}
+
+function payCostsRejectUpdate(
+  state: GameState,
+  request: PayCostsPromptRequest,
+  response: PayCostsPromptResponse,
+  reason: ClientPromptFailure,
+  message: string,
+): EngineStateUpdate {
+  const currentStateId = stateFingerprint(state);
+  return {
+    oldStateId: request.expectedStateId,
+    newStateId: currentStateId,
+    activePlayerId: activePlayerId(state),
+    priorityPlayerId: priorityPlayerId(state),
+    phase: state.phase,
+    step: state.step,
+    turnNumber: state.turnNumber,
+    priority: prioritySnapshot(state),
+    visibleDiffs: [],
+    rulesEvents: [{
+      kind: 'PromptResponseRejected',
+      requestId: response.requestId,
+      playerId: response.playerId,
+      promptKind: request.kind,
+      reason,
+      message,
+      selectedManaActions: response.selectedManaActions,
+    }],
+    prompt: buildActionPrompt(state),
+  };
+}
+
+export function applyPayCostsPromptResponse(
+  state: GameState,
+  request: PayCostsPromptRequest,
+  response: PayCostsPromptResponse,
+): ClientPromptResponse {
+  if (request.kind !== 'PayCosts' || response.kind !== 'PayCosts' || request.id !== response.requestId) {
+    const message = 'Prompt response does not match the active payment request.';
+    return {
+      requestId: response.requestId,
+      ok: false,
+      reason: 'invalid_request',
+      message,
+      update: payCostsRejectUpdate(state, request, response, 'invalid_request', message),
+    };
+  }
+
+  if (request.playerId !== response.playerId) {
+    const message = 'This payment prompt belongs to another player.';
+    return {
+      requestId: response.requestId,
+      ok: false,
+      reason: 'wrong_player',
+      message,
+      update: payCostsRejectUpdate(state, request, response, 'wrong_player', message),
+    };
+  }
+
+  const currentStateId = stateFingerprint(state);
+  if (request.expectedStateId !== currentStateId) {
+    const message = 'The game state changed before this payment response reached the engine.';
+    return {
+      requestId: response.requestId,
+      ok: false,
+      reason: 'stale_state',
+      message,
+      update: payCostsRejectUpdate(state, request, response, 'stale_state', message),
+    };
+  }
+
+  let nextState = state;
+  const nestedEvents: EngineEvent[] = [];
+  for (const selectedAction of response.selectedManaActions) {
+    if (selectedAction.kind !== 'ActivateManaAbility') {
+      const message = 'Payment responses may only activate mana abilities.';
+      return {
+        requestId: response.requestId,
+        ok: false,
+        reason: 'illegal_response',
+        message,
+        update: payCostsRejectUpdate(state, request, response, 'illegal_response', message),
+      };
+    }
+
+    const legalKeys = new Set(
+      getLegalActions(nextState, request.playerId)
+        .filter((action): action is ManaPaymentAction => action.kind === 'ActivateManaAbility')
+        .map(action => actionKey(action)),
+    );
+    if (!legalKeys.has(actionKey(selectedAction))) {
+      const message = `Illegal mana payment action: ${labelForAction(nextState, selectedAction)}`;
+      return {
+        requestId: response.requestId,
+        ok: false,
+        reason: 'illegal_response',
+        message,
+        update: payCostsRejectUpdate(state, request, response, 'illegal_response', message),
+      };
+    }
+
+    const nestedRequest = createClientActionRequest(nextState, request.playerId, selectedAction, {
+      id: `${response.requestId}:mana:${nestedEvents.length}`,
+      source: 'ui',
+      label: labelForAction(nextState, selectedAction),
+    });
+    const nestedResponse = applyClientActionRequest(nextState, nestedRequest);
+    if (!nestedResponse.ok || !nestedResponse.state) {
+      const message = nestedResponse.message || 'Mana action was rejected while paying costs.';
+      return {
+        requestId: response.requestId,
+        ok: false,
+        reason: nestedResponse.reason === 'invariant_violation' ? 'invariant_violation' : 'illegal_response',
+        message,
+        update: payCostsRejectUpdate(
+          state,
+          request,
+          response,
+          nestedResponse.reason === 'invariant_violation' ? 'invariant_violation' : 'illegal_response',
+          message,
+        ),
+      };
+    }
+    if (nestedResponse.update) nestedEvents.push(...nestedResponse.update.rulesEvents);
+    nextState = nestedResponse.state;
+  }
+
+  const player = nextState.players.find(candidate => candidate.id === request.playerId);
+  if (!player || !canPayCost(player.manaPool, request.manaCost)) {
+    const message = 'Selected mana actions do not produce enough mana to pay this cost.';
+    return {
+      requestId: response.requestId,
+      ok: false,
+      reason: 'illegal_response',
+      message,
+      update: payCostsRejectUpdate(state, request, response, 'illegal_response', message),
+    };
+  }
+
+  const invariantReport = validateStateInvariants(nextState);
+  if (!invariantReport.ok) {
+    const message = `Engine invariant failed: ${invariantReport.violations[0]?.message || 'invalid state'}`;
+    return {
+      requestId: response.requestId,
+      ok: false,
+      reason: 'invariant_violation',
+      message,
+      update: payCostsRejectUpdate(state, request, response, 'invariant_violation', message),
+    };
+  }
+
+  return {
+    requestId: response.requestId,
+    ok: true,
+    state: nextState,
+    update: {
+      ...buildStateUpdate(state, nextState),
+      rulesEvents: [{
+        kind: 'PromptResponseAccepted',
+        requestId: response.requestId,
+        playerId: response.playerId,
+        promptKind: 'PayCosts',
+        selectedManaActions: response.selectedManaActions,
+      }, ...nestedEvents],
+    },
+    selectedManaActions: response.selectedManaActions,
+  };
+}
+
 function manaPoolDiffs(before: ManaPool, after: ManaPool, playerId: string): VisibleDiff[] {
   const diffs: VisibleDiff[] = [];
   for (const color of MANA_COLORS) {
@@ -2023,13 +2537,26 @@ export function auditSearchPromptReplay(
   initialState: GameState,
   records: SearchPromptReplayRecord[],
 ): PromptReplayAuditReport {
+  return auditPromptReplay(initialState, records);
+}
+
+export function auditPromptReplay(
+  initialState: GameState,
+  records: PromptReplayRecord[],
+): PromptReplayAuditReport {
   let state = initialState;
   const steps: PromptReplayAuditStep[] = [];
 
   for (let index = 0; index < records.length; index += 1) {
     const { request, response } = records[index];
     const stateBeforeId = stateFingerprint(state);
-    const result = applySearchLibraryPromptResponse(state, request, response);
+    const result = request.kind === 'SearchLibrary'
+      ? applySearchLibraryPromptResponse(state, request, response as SearchLibraryPromptResponse)
+      : request.kind === 'SelectTarget'
+        ? applySelectTargetPromptResponse(state, request, response as SelectTargetPromptResponse)
+        : request.kind === 'ChooseReplacement'
+          ? applyChooseReplacementPromptResponse(state, request, response as ChooseReplacementPromptResponse)
+          : applyPayCostsPromptResponse(state, request, response as PayCostsPromptResponse);
     const step: PromptReplayAuditStep = {
       index,
       requestId: request.id,
