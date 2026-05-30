@@ -17,6 +17,7 @@ Scope: recent `game-reliability-refactor` work from `88e54bb..597d918`, with Sis
 | Solo engine preflight | `cd frontend && npm.cmd test -- --run tests/enginePreflight.test.ts` | 2 passed; `/play` deck-start preflight reports hard unsupported cards such as Chaos Orb/Falling Star/Shahrazad with deck labels and reasons before engine initialization. |
 | Target disambiguation | `cd engine && npm.cmd test -- --run src/authority.test.ts`; `cd engine && npm.cmd run build`; `cd frontend && npm.cmd run build` | 61 passed plus both builds passed; typed target prompts and `/play` target labels now identify duplicate names by controller, zone, and ordinal instead of presenting indistinguishable duplicate Forest/Bear choices. |
 | Room deck parser + decorated unsupported names | `cd frontend && npm.cmd test -- --run tests/roomDeckParser.test.ts tests/enginePreflight.test.ts`; `pytest backend/tests/test_multiplayer.py -q`; `cd frontend && npm.cmd run build` | 4 frontend tests, 17 backend room tests, and frontend build passed; room deck locking now ignores partner commanders/sideboards and strips repeated `*tags*`, set codes, collector numbers, MTGO-style prefixes, and quantity prefixes before card comparison/preflight. |
+| Room moderation obfuscation | `pytest backend/tests/test_multiplayer.py -q` | 17 passed; chat moderation now rejects spaced/leetspeak sexual probes and self-harm/slur probes in addition to links, plain sexual content, harassment, and spam while preserving normal MTG phrases. |
 | Mobile typecheck | `cd mobile && npm.cmd run typecheck` | Passed |
 | Mobile lint | `cd mobile && npm.cmd run lint` | Initially broken because ESLint was not installed/configured; fixed during this audit and now passes |
 | Mobile dependency audit | `cd mobile && npm.cmd audit --omit=dev --json` | Fails with 28 production dependency advisories, mostly Expo/Metro transitive packages; the available bundled fix is a semver-major Expo upgrade and was not applied in this audit |
@@ -51,6 +52,7 @@ Scope: recent `game-reliability-refactor` work from `88e54bb..597d918`, with Sis
 - Added shared solo `/play` engine preflight helpers and start guards so hard unsupported cards fail with explicit reasons before the local practice engine starts.
 - Disambiguated target-choice prompts and collapsed `/play` targeted action choices with controller, zone, and duplicate ordinals so multiple same-name permanents are not presented as identical targets.
 - Moved the room deck-list parser into a tested shared frontend helper and hardened both room and solo preflight name normalization against decorated exports (`1x`, set codes, collector numbers, MTGO prefixes, and repeated `*F*` / `*CMDR*` tags).
+- Expanded server-side room chat moderation to catch common spaced/leetspeak sexual and harassment probes before messages enter room history.
 
 ## What This Does Not Prove
 

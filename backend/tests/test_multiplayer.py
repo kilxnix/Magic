@@ -426,7 +426,10 @@ def test_room_chat_accepts_safe_and_rejects_unsafe_messages(monkeypatch):
 
     unsafe_messages = [
         "send nudes",
+        "send n u d e s",
+        "p0rn spam",
         "kill yourself",
+        "k y s",
         "you are worthless",
         "you are a faggot",
         "aaaaaaaaaaaaaa",

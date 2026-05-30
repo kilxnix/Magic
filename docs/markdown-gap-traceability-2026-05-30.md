@@ -179,6 +179,8 @@ Additional named-card verification added after this audit: AI-sourced ExileUntil
 
 Additional solo preflight verification added after this audit: `/play` now shares a hard unsupported-card preflight helper with tests for Chaos Orb, Falling Star, and Shahrazad-style failures before engine initialization.
 
+Additional room moderation verification added after this audit: server-side room chat moderation now rejects common spaced/leetspeak sexual and harassment probes before they enter room history, while backend tests continue to verify safe MTG table phrases are accepted.
+
 ## Direct Answer
 
 Yes, relative to the actual size and meaning of these markdown files, I was effectively treating large portions as direction/backlog while reporting progress too broadly. The right status is not "done." The right status is "a verified slice is done; most of the Arena/MTGA parity roadmap remains partial or incomplete."

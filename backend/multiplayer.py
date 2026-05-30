@@ -135,6 +135,26 @@ HARASSMENT_RE = re.compile(
     r")"
 )
 REPEATED_CHARACTER_RE = re.compile(r"(.)\1{11,}")
+SEXUAL_OBFUSCATED_RE = re.compile(
+    r"(?i)("
+    r"s[\W_]*[e3][\W_]*x(?:[\W_]*u[\W_]*a[\W_]*l)?|"
+    r"p[\W_]*[o0][\W_]*r[\W_]*n|"
+    r"n[\W_]*u[\W_]*d[\W_]*e[\W_]*s?|"
+    r"n[\W_]*a[\W_]*k[\W_]*e[\W_]*d|"
+    r"c[\W_]*u[\W_]*m|"
+    r"r[\W_]*a[\W_]*p[\W_]*e|"
+    r"b[\W_]*l[\W_]*o[\W_]*w[\W_]*j[\W_]*o[\W_]*b"
+    r")"
+)
+HARASSMENT_OBFUSCATED_RE = re.compile(
+    r"(?i)("
+    r"k[\W_]*y[\W_]*s|"
+    r"k[\W_]*i[\W_]*l[\W_]*l[\W_]*y[\W_]*o[\W_]*u[\W_]*r[\W_]*s[\W_]*e[\W_]*l[\W_]*f|"
+    r"f[\W_]*a[\W_]*g(?:[\W_]*g[\W_]*o[\W_]*t)?|"
+    r"n[\W_]*i[\W_]*g[\W_]*g[\W_]*(?:e[\W_]*r|a)|"
+    r"r[\W_]*e[\W_]*t[\W_]*a[\W_]*r[\W_]*d(?:[\W_]*e[\W_]*d)?"
+    r")"
+)
 
 _rooms: dict[str, dict] = {}
 _events: dict[str, dict] = {}
@@ -309,7 +329,11 @@ def _reject_room_chat_for_moderation(message: str) -> None:
         raise HTTPException(status_code=400, detail=ROOM_MODERATION_MESSAGE)
     if SEXUAL_CONTENT_RE.search(message):
         raise HTTPException(status_code=400, detail=ROOM_MODERATION_MESSAGE)
+    if SEXUAL_OBFUSCATED_RE.search(message):
+        raise HTTPException(status_code=400, detail=ROOM_MODERATION_MESSAGE)
     if HARASSMENT_RE.search(message):
+        raise HTTPException(status_code=400, detail=ROOM_MODERATION_MESSAGE)
+    if HARASSMENT_OBFUSCATED_RE.search(message):
         raise HTTPException(status_code=400, detail=ROOM_MODERATION_MESSAGE)
     compact = re.sub(r"\s+", "", message.lower())
     if REPEATED_CHARACTER_RE.search(compact):
