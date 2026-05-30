@@ -30,9 +30,11 @@ export interface ClientActionRequest {
   id: string;
   playerId: string;
   action: AIAction;
+  actionId?: string;
   source: ClientActionSource;
   label?: string;
   expectedStateId?: string;
+  expectedPromptId?: string;
   createdAt: number;
 }
 
@@ -548,7 +550,9 @@ export interface CreateActionRequestOptions {
   id?: string;
   source?: ClientActionSource;
   label?: string;
+  actionId?: string;
   expectedStateId?: string;
+  expectedPromptId?: string;
   createdAt?: number;
 }
 
@@ -943,13 +947,16 @@ export function createClientActionRequest(
 ): ClientActionRequest {
   const expectedStateId = options.expectedStateId || stateFingerprint(state);
   const createdAt = options.createdAt ?? Date.now();
+  const prompt = buildActionPrompt(state, playerId);
   return {
     id: options.id || `req_${expectedStateId}_${hashText(`${playerId}:${actionKey(action)}:${createdAt}`)}`,
     playerId,
     action,
+    actionId: options.actionId || actionKey(action),
     source: options.source || 'ui',
     label: options.label || labelForAction(state, action),
     expectedStateId,
+    expectedPromptId: options.expectedPromptId || prompt?.id,
     createdAt,
   };
 }
@@ -2368,6 +2375,40 @@ export function applyClientActionRequest(
     };
   }
 
+  const currentPrompt = buildActionPrompt(state, request.playerId);
+  if (
+    request.expectedPromptId
+    && (!currentPrompt || currentPrompt.id !== request.expectedPromptId)
+  ) {
+    const message = 'The available-action prompt changed before this action reached the engine.';
+    return {
+      requestId: request.id,
+      ok: false,
+      reason: 'stale_state',
+      message,
+      update: {
+        oldStateId: request.expectedStateId || currentStateId,
+        newStateId: currentStateId,
+        activePlayerId: activePlayerId(state),
+        priorityPlayerId: priorityPlayerId(state),
+        phase: state.phase,
+        step: state.step,
+        turnNumber: state.turnNumber,
+        priority: prioritySnapshot(state),
+        visibleDiffs: [],
+        rulesEvents: [{
+          kind: 'ActionRejected',
+          requestId: request.id,
+          playerId: request.playerId,
+          actionKind: request.action.kind,
+          reason: 'stale_state',
+          message,
+        }],
+        prompt: currentPrompt || buildActionPrompt(state),
+      },
+    };
+  }
+
   if (!isLegalRequestedAction(state, request.playerId, request.action)) {
     const message = illegalActionMessage(state, request.playerId, request.action);
     return {
@@ -2394,6 +2435,39 @@ export function applyClientActionRequest(
           message,
         }],
         prompt: buildActionPrompt(state),
+      },
+    };
+  }
+
+  if (
+    request.actionId
+    && (!currentPrompt || !currentPrompt.legalChoices.some(choice => choice.id === request.actionId))
+  ) {
+    const message = 'That action was not offered by the current engine prompt.';
+    return {
+      requestId: request.id,
+      ok: false,
+      reason: 'illegal_action',
+      message,
+      update: {
+        oldStateId: currentStateId,
+        newStateId: currentStateId,
+        activePlayerId: activePlayerId(state),
+        priorityPlayerId: priorityPlayerId(state),
+        phase: state.phase,
+        step: state.step,
+        turnNumber: state.turnNumber,
+        priority: prioritySnapshot(state),
+        visibleDiffs: [],
+        rulesEvents: [{
+          kind: 'ActionRejected',
+          requestId: request.id,
+          playerId: request.playerId,
+          actionKind: request.action.kind,
+          reason: 'illegal_action',
+          message,
+        }],
+        prompt: currentPrompt || buildActionPrompt(state),
       },
     };
   }

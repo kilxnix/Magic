@@ -859,6 +859,27 @@ describe('authority action boundary', () => {
     expect(response.update?.prompt?.playerId).toBe('p1');
   });
 
+  it('rejects actions that were not issued by the current engine prompt', () => {
+    const state = stateWithForestInHand();
+    const prompt = buildActionPrompt(state, 'p1');
+    const playLand = prompt?.legalChoices.find(choice => choice.kind === 'PlayLand')?.action;
+    expect(playLand).toBeDefined();
+
+    const forged = createClientActionRequest(state, 'p1', playLand as AIAction, {
+      id: 'req-forged-action-id',
+      actionId: 'not-a-current-prompt-choice',
+      createdAt: 2,
+    });
+    const response = applyClientActionRequest(state, forged);
+
+    expect(response.ok).toBe(false);
+    expect(response.reason).toBe('illegal_action');
+    expect(response.message).toBe('That action was not offered by the current engine prompt.');
+    expect(response.state).toBeUndefined();
+    expect(state.cards.get((playLand as Extract<AIAction, { kind: 'PlayLand' }>).cardInstanceId)?.zone)
+      .toBe('hand');
+  });
+
   it('rejects stale and illegal action requests without mutating state', () => {
     const state = stateWithForestInHand();
     const prompt = buildActionPrompt(state, 'p1');
