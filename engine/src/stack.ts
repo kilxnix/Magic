@@ -6,7 +6,7 @@ import { parseOracleText } from './effects/parser';
 import { executeEffectsWithSBA } from './effects/executor';
 import { validateTargetChoices, TargetSpec, TargetType } from './effects/targets';
 import { checkStateBasedActions } from './state-based';
-import type { Effect, StaticAbilityEffect } from './effects/ast';
+import type { Effect, ModalSpell, StaticAbilityEffect } from './effects/ast';
 import { findCastZoneRestriction, getCommanderTaxForCast } from './casting-restrictions';
 import { getCostIncrease, getCostReduction, getIntrinsicCostReduction, registerContinuousEffect } from './effects/continuous';
 import { getCommanderDestinationZone } from './commander';
@@ -38,6 +38,23 @@ function normalizeCastOptions(options?: number[] | CastSpellOptions): CastSpellO
 
 function normalizedXValue(options: CastSpellOptions): number {
   return Math.max(0, Math.floor(options.xValue ?? 0));
+}
+
+function validateModalModeSelection(modal: ModalSpell, modes: number[]): void {
+  const minSelections = modal.upTo ? 1 : modal.chooseCount;
+  const maxSelections = modal.chooseCount;
+  const uniqueModes = new Set(modes);
+  if (uniqueModes.size !== modes.length || modes.length < minSelections || modes.length > maxSelections) {
+    const requirement = minSelections === maxSelections
+      ? `${maxSelections}`
+      : `${minSelections} to ${maxSelections}`;
+    throw new Error(`Modal spell requires ${requirement} mode(s), got ${modes.length}`);
+  }
+  for (const modeIndex of modes) {
+    if (!Number.isInteger(modeIndex) || modeIndex < 0 || modeIndex >= modal.choices.length) {
+      throw new Error(`Invalid modal choice ${modeIndex}`);
+    }
+  }
 }
 
 function hasAdditionalXLifeCost(def: CardDefinition): boolean {
@@ -285,15 +302,10 @@ function getCastTargetSpecs(def: CardDefinition, castOptions: CastSpellOptions):
   if (parsed.kind === 'Modal') {
     if (!castOptions.chosenModes) return null;
     const modes = castOptions.chosenModes;
-    if (modes.length !== parsed.modal.chooseCount) {
-      throw new Error(`Modal spell requires ${parsed.modal.chooseCount} mode(s), got ${modes.length}`);
-    }
+    validateModalModeSelection(parsed.modal, modes);
     const specs: TargetSpec[] = [];
     for (const modeIndex of modes) {
       const choice = parsed.modal.choices[modeIndex];
-      if (!choice) {
-        throw new Error(`Invalid modal choice ${modeIndex}`);
-      }
       for (const target of choice.targets) {
         specs.push({ id: target.id, type: target.type as TargetType, count: 1 });
       }
@@ -1515,21 +1527,16 @@ export function resolveTopOfStack(state: GameState): GameState {
         // Modal spell: collect effects and targets from chosen modes
         const modal = parsed.modal;
 
-        // Validate mode count matches spell requirement
-        if (spellItem.chosenModes.length !== modal.chooseCount) {
-          throw new Error(`Modal spell requires ${modal.chooseCount} mode(s), got ${spellItem.chosenModes.length}`);
-        }
+        validateModalModeSelection(modal, spellItem.chosenModes);
         const allEffects: Effect[] = [];
         const allTargetSpecs: TargetSpec[] = [];
 
         for (const modeIndex of spellItem.chosenModes) {
-          if (modeIndex >= 0 && modeIndex < modal.choices.length) {
-            const choice = modal.choices[modeIndex];
-            allEffects.push(...choice.effects);
-            // Convert ModalChoice targets to TargetSpecs
-            for (const t of choice.targets) {
-              allTargetSpecs.push({ id: t.id, type: t.type as TargetType, count: 1 });
-            }
+          const choice = modal.choices[modeIndex];
+          allEffects.push(...choice.effects);
+          // Convert ModalChoice targets to TargetSpecs
+          for (const t of choice.targets) {
+            allTargetSpecs.push({ id: t.id, type: t.type as TargetType, count: 1 });
           }
         }
 

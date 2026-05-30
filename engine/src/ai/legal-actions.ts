@@ -78,7 +78,12 @@ export function getSpellTargetSpecs(
   }
   if (parsed.kind === 'Modal') {
     const chosenModes = options.chosenModes ?? [];
-    if (chosenModes.length !== parsed.modal.chooseCount) return [];
+    const minSelections = parsed.modal.upTo ? 1 : parsed.modal.chooseCount;
+    if (
+      new Set(chosenModes).size !== chosenModes.length
+      || chosenModes.length < minSelections
+      || chosenModes.length > parsed.modal.chooseCount
+    ) return [];
     const specs: TargetSpec[] = [];
     for (const modeIndex of chosenModes) {
       const choice = parsed.modal.choices[modeIndex];
@@ -264,6 +269,27 @@ function generateModalActions(
   const startingActionCount = actions.length;
 
   const modal = parsed.modal;
+
+  if (modal.upTo) {
+    for (let i = 0; i < modal.choices.length; i++) {
+      const choice = modal.choices[i];
+      const specs: TargetSpec[] = choice.targets.map(t => ({
+        id: t.id,
+        type: t.type as any,
+        count: 1,
+        constraints: (t as TargetSpec).constraints,
+      }));
+      for (const targets of generateTargetCombinations(state, playerId, specs, card.instanceId)) {
+        actions.push({
+          kind: 'CastSpell',
+          cardInstanceId: card.instanceId,
+          targets,
+          chosenModes: [i],
+          ...baseOptions,
+        });
+      }
+    }
+  }
 
   if (modal.chooseCount === 1) {
     for (let i = 0; i < modal.choices.length; i++) {

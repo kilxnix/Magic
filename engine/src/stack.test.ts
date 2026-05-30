@@ -1211,6 +1211,25 @@ describe('Modal spell resolution', () => {
     };
   }
 
+  function makeChooseOneOrBothInstant(): CardDefinition {
+    return {
+      id: 'choose-one-or-both-1', name: 'Flexible Charm', type_line: 'Instant',
+      oracle_text: 'Choose one or both — • Draw a card. • Gain 3 life.',
+      mana_cost: '{G}', cmc: 1,
+      colors: ['G'], color_identity: ['G'], keywords: [],
+      card_types: ['instant'],
+    };
+  }
+
+  function makeFillerCard(id: string): CardDefinition {
+    return {
+      id, name: `Filler ${id}`, type_line: 'Creature â€” Bear',
+      oracle_text: '', mana_cost: '{1}{G}', cmc: 2,
+      colors: ['G'], color_identity: ['G'], keywords: [],
+      card_types: ['creature'], power: 2, toughness: 2,
+    };
+  }
+
   function makeTargetCreature(): CardDefinition {
     return {
       id: 'target-bear-1', name: 'Target Bear', type_line: 'Creature — Bear',
@@ -1324,6 +1343,72 @@ describe('Modal spell resolution', () => {
     const handAfter = getCardsInZone(state, 'p1', 'hand').length;
     expect(libraryAfter).toBe(libraryBefore - 1);
     expect(handAfter).toBe(1); // drew 1 card (filler card)
+  });
+
+  it('allows one selected mode for choose-one-or-both spells', () => {
+    const flexibleCard = makeChooseOneOrBothInstant();
+    const fillerCard = makeFillerCard('flexible-filler-1');
+    const decks = [
+      { playerId: 'p1', name: 'Alice', cards: [flexibleCard, fillerCard], commanderId: 'cmd1' },
+      { playerId: 'p2', name: 'Bob', cards: [], commanderId: 'cmd2' },
+    ];
+    let state = initGameState(decks);
+    const charmInstance = getCardsInZone(state, 'p1', 'library')
+      .find(card => state.cardDefinitions.get(card.definitionId)?.name === 'Flexible Charm')!;
+    state.cards.set(charmInstance.instanceId, { ...charmInstance, zone: 'hand' });
+    state.players[0].manaPool = { W: 0, U: 0, B: 0, R: 0, G: 5, C: 0 };
+    state = { ...state, phase: 'precombat_main' as any };
+
+    const lifeBefore = state.players[0].life;
+    state = castSpell(state, 'p1', charmInstance.instanceId, [], { chosenModes: [0] });
+    state = resolveTopOfStack(state);
+
+    expect(state.cards.get(charmInstance.instanceId)?.zone).toBe('graveyard');
+    expect(state.players[0].life).toBe(lifeBefore);
+    expect(getCardsInZone(state, 'p1', 'hand')).toHaveLength(1);
+    expect(getCardsInZone(state, 'p1', 'library')).toHaveLength(0);
+  });
+
+  it('allows both selected modes for choose-one-or-both spells', () => {
+    const flexibleCard = makeChooseOneOrBothInstant();
+    const fillerCard = makeFillerCard('flexible-filler-2');
+    const decks = [
+      { playerId: 'p1', name: 'Alice', cards: [flexibleCard, fillerCard], commanderId: 'cmd1' },
+      { playerId: 'p2', name: 'Bob', cards: [], commanderId: 'cmd2' },
+    ];
+    let state = initGameState(decks);
+    const charmInstance = getCardsInZone(state, 'p1', 'library')
+      .find(card => state.cardDefinitions.get(card.definitionId)?.name === 'Flexible Charm')!;
+    state.cards.set(charmInstance.instanceId, { ...charmInstance, zone: 'hand' });
+    state.players[0].manaPool = { W: 0, U: 0, B: 0, R: 0, G: 5, C: 0 };
+    state = { ...state, phase: 'precombat_main' as any };
+
+    const lifeBefore = state.players[0].life;
+    state = castSpell(state, 'p1', charmInstance.instanceId, [], { chosenModes: [0, 1] });
+    state = resolveTopOfStack(state);
+
+    expect(state.cards.get(charmInstance.instanceId)?.zone).toBe('graveyard');
+    expect(state.players[0].life).toBe(lifeBefore + 3);
+    expect(getCardsInZone(state, 'p1', 'hand')).toHaveLength(1);
+    expect(getCardsInZone(state, 'p1', 'library')).toHaveLength(0);
+  });
+
+  it('rejects empty or duplicate selections for choose-one-or-both spells', () => {
+    const flexibleCard = makeChooseOneOrBothInstant();
+    const decks = [
+      { playerId: 'p1', name: 'Alice', cards: [flexibleCard], commanderId: 'cmd1' },
+      { playerId: 'p2', name: 'Bob', cards: [], commanderId: 'cmd2' },
+    ];
+    let state = initGameState(decks);
+    const charmInstance = getCardsInZone(state, 'p1', 'library')[0];
+    state.cards.set(charmInstance.instanceId, { ...charmInstance, zone: 'hand' });
+    state.players[0].manaPool = { W: 0, U: 0, B: 0, R: 0, G: 5, C: 0 };
+    state = { ...state, phase: 'precombat_main' as any };
+
+    expect(() => castSpell(state, 'p1', charmInstance.instanceId, [], { chosenModes: [] }))
+      .toThrow(/requires 1 to 2 mode/);
+    expect(() => castSpell(state, 'p1', charmInstance.instanceId, [], { chosenModes: [0, 0] }))
+      .toThrow(/requires 1 to 2 mode/);
   });
 
   it('falls through to unparsed when no chosenModes provided for modal spell', () => {

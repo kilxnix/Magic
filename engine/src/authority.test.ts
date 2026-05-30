@@ -2291,6 +2291,45 @@ describe('authority action boundary', () => {
     expect(state.cards.get('strict_charm_in_hand')?.zone).toBe('hand');
   });
 
+  it('allows one or both selections for choose-one-or-both modal actions', () => {
+    const state = stateWithForestInHand();
+    const charm = def(
+      'flexible_charm',
+      'Flexible Charm',
+      'Instant',
+      '{G}',
+      'Choose one or both —\n• Draw a card.\n• Gain 3 life.',
+    );
+    state.cardDefinitions.set(charm.id, charm);
+    state.cards.set('flexible_charm_in_hand', cardInstance('flexible_charm_in_hand', charm.id, 'p1', 'hand'));
+    state.players = state.players.map(player =>
+      player.id === 'p1'
+        ? { ...player, manaPool: { ...player.manaPool, G: 1 } }
+        : player,
+    );
+
+    const modeRequest = createChooseModePromptRequest(state, 'p1', 'flexible_charm_in_hand', {
+      id: 'prompt-flexible-mode-choice',
+      createdAt: 27,
+    });
+    expect(modeRequest.minSelections).toBe(1);
+    expect(modeRequest.maxSelections).toBe(2);
+
+    const acceptedSingle = applyChooseModePromptResponse(state, modeRequest, {
+      requestId: modeRequest.id,
+      kind: 'ChooseMode',
+      playerId: 'p1',
+      selectedModeIndices: [0],
+    });
+    expect(acceptedSingle.ok).toBe(true);
+
+    const prompt = buildActionPrompt(state, 'p1');
+    const legalModePayloads = prompt?.legalChoices
+      .filter(choice => choice.kind === 'CastSpell')
+      .map(choice => (choice.action as Extract<AIAction, { kind: 'CastSpell' }>).chosenModes);
+    expect(legalModePayloads).toEqual([[0], [1], [0, 1]]);
+  });
+
   it('includes selected target names in command labels', () => {
     const state = stateWithForestInHand();
     const source = [...state.cards.values()].find(card => card.ownerId === 'p1' && card.definitionId === 'commander');
