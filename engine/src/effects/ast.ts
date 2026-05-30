@@ -56,6 +56,7 @@ export type AmountRef =
   | { kind: 'EventSpellManaValue' }
   | { kind: 'TargetPower'; target: TargetRef }
   | GreatestPowerAmount
+  | GreatestManaValueAmount
   | ForEachAmount;
 
 // Dynamic count: "for each [condition]" — evaluated at resolution time
@@ -68,6 +69,13 @@ export interface ForEachAmount {
 
 export interface GreatestPowerAmount {
   kind: 'GreatestPower';
+  zone: 'battlefield';
+  filter?: CardFilter;
+  controller: 'you' | 'opponent' | 'each';
+}
+
+export interface GreatestManaValueAmount {
+  kind: 'GreatestManaValue';
   zone: 'battlefield';
   filter?: CardFilter;
   controller: 'you' | 'opponent' | 'each';

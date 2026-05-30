@@ -2782,6 +2782,77 @@ function matchDealDamageForEach(tokens: string[], startIndex: number): PatternRe
   return { effects: [effect], targets: [spec], consumed: idx };
 }
 
+/**
+ * Match: "~ deals damage to any target equal to the greatest mana value among permanents you control"
+ * Also accepts card-name subjects before "deals".
+ */
+function matchDealDamageGreatestManaValue(tokens: string[], startIndex: number): PatternResult {
+  const slice = tokens.slice(startIndex);
+  const dealsIdx = slice.findIndex((token, index) => index <= 5 && token === 'deals');
+  if (dealsIdx < 0) return null;
+
+  let idx = dealsIdx + 1;
+  if (slice[idx] !== 'damage') return null;
+  idx++;
+  if (slice[idx] !== 'to') return null;
+  idx++;
+
+  let targetType: TargetType;
+  if (slice[idx] === 'any' && slice[idx + 1] === 'target') {
+    targetType = 'Any';
+    idx += 2;
+  } else if (slice[idx] === 'target' && slice[idx + 1] === 'creature') {
+    targetType = 'Creature';
+    idx += 2;
+  } else if (slice[idx] === 'target' && slice[idx + 1] === 'player') {
+    targetType = 'Player';
+    idx += 2;
+  } else {
+    return null;
+  }
+
+  if (
+    slice[idx] !== 'equal'
+    || slice[idx + 1] !== 'to'
+    || slice[idx + 2] !== 'the'
+    || slice[idx + 3] !== 'greatest'
+    || slice[idx + 4] !== 'mana'
+    || slice[idx + 5] !== 'value'
+    || slice[idx + 6] !== 'among'
+  ) {
+    return null;
+  }
+  idx += 7;
+
+  let filter: CardFilter = { permanent: true };
+  if (slice[idx] === 'permanents') {
+    idx++;
+  } else {
+    const parsedFilter = parseStaticFilterType(slice[idx]);
+    if (!parsedFilter) return null;
+    filter = parsedFilter;
+    idx++;
+  }
+
+  if (slice[idx] !== 'you' || slice[idx + 1] !== 'control') return null;
+  idx += 2;
+  if (slice[idx] === '.') idx++;
+
+  const spec = makeTargetSpec(targetType);
+  const effect: Effect = {
+    kind: 'DealDamage',
+    source: { kind: 'ThisSpell' },
+    target: makeChosenRef(spec),
+    amount: {
+      kind: 'GreatestManaValue',
+      zone: 'battlefield',
+      filter,
+      controller: 'you',
+    },
+  };
+  return { effects: [effect], targets: [spec], consumed: idx };
+}
+
 // ============================================================================
 // Phase 16: Blink/flicker, copy, keyword granting, phasing patterns
 // ============================================================================
@@ -3519,7 +3590,7 @@ function parseEffectClauseInternal(tokens: string[], startIndex: number): Patter
   const patterns = [
     matchWinGame, matchLoseGame,
     matchBlink, matchCopyThatSpell, matchCopySpell, matchCopyCreature, matchGrantKeywordAndDynamicPT, matchGrantKeyword, matchPhaseOut,
-    matchPreventDamage, matchDealDamageForEach, matchForEachDraw, matchCreateTokenForEach,
+    matchPreventDamage, matchDealDamageGreatestManaValue, matchDealDamageForEach, matchForEachDraw, matchCreateTokenForEach,
     matchExileFromLibraryTop, matchSearchLibraryGeneric, matchSacrificeSelfUnlessTargetOpponentSacrifices, matchEachOpponentSacrifice,
     matchEachPlayerEffect, matchTargetPlayerSacrifice, matchSacrificeAsEffect,
     matchGainControl, matchReturnAllToHand, matchExileAll, matchDestroyAllExpanded,
@@ -3573,6 +3644,7 @@ function parseEffectClause(tokens: string[], startIndex: number): PatternResult 
 
     // Phase 14: New complex patterns (must come before simpler versions)
     matchPreventDamage,           // "prevent all combat damage that would be dealt this turn"
+    matchDealDamageGreatestManaValue, // "~ deals damage to any target equal to the greatest mana value..."
     matchDealDamageForEach,       // "~ deals damage equal to the number of..."
     matchForEachDraw,             // "draw a card for each creature you control"
     matchCreateTokenForEach,      // "create a 1/1 ... token for each ..."

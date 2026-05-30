@@ -71,6 +71,9 @@ function resolveAmount(
   if (amount.kind === 'GreatestPower') {
     return resolveGreatestPower(amount, state, casterId);
   }
+  if (amount.kind === 'GreatestManaValue') {
+    return resolveGreatestManaValue(amount, state, casterId);
+  }
   if (amount.kind === 'TargetPower') {
     if (!state || !casterId) return 0;
     const resolvedTargetId = targetId ?? resolveTargetRef(amount.target, casterId, chosenTargets, state);
@@ -147,6 +150,25 @@ function resolveGreatestPower(
     const def = getCardDefinition(state, card);
     if (amount.filter && !matchesCardFilter(def, amount.filter)) continue;
     greatest = Math.max(greatest, getEffectivePower(state, card.instanceId));
+  }
+  return greatest;
+}
+
+function resolveGreatestManaValue(
+  amount: Extract<AmountRef, { kind: 'GreatestManaValue' }>,
+  state?: GameState,
+  casterId?: string,
+): number {
+  if (!state || !casterId) return 0;
+
+  let greatest = 0;
+  const playerIds = resolveControllerIds(state, casterId, amount.controller);
+  for (const [, card] of state.cards) {
+    if (card.zone !== amount.zone) continue;
+    if (!playerIds.includes(card.ownerId)) continue;
+    const def = getCardDefinition(state, card);
+    if (amount.filter && !matchesCardFilter(def, amount.filter)) continue;
+    greatest = Math.max(greatest, def.cmc ?? 0);
   }
   return greatest;
 }

@@ -1,15 +1,15 @@
 {
-  "generatedAt": "2026-05-30T11:40:44.107Z",
+  "generatedAt": "2026-05-30T11:43:14.835Z",
   "source": "mtg_data/cards_min.jsonl",
   "commanderLegalOnly": true,
   "includedCards": 30969,
   "totalOracleFaces": 31420,
-  "parsedFaces": 15259,
-  "unparsedFaces": 16161,
-  "parsedPercent": 48.56,
+  "parsedFaces": 15260,
+  "unparsedFaces": 16160,
+  "parsedPercent": 48.57,
   "parsedKindCounts": {
-    "Unparsed": 16161,
-    "Spell": 11570,
+    "Unparsed": 16160,
+    "Spell": 11571,
     "ETB": 1217,
     "KeywordOnly": 887,
     "Triggered": 652,
@@ -20,7 +20,7 @@
   "unparsedReasons": [
     {
       "reason": "No recognized pattern",
-      "count": 14719
+      "count": 14718
     },
     {
       "reason": "Could not parse ETB effect clause",
@@ -90,7 +90,7 @@
     {
       "id": "unclassified",
       "reason": "Unparsed text did not match a known syntax cluster; inspect manually.",
-      "count": 3512,
+      "count": 3511,
       "samples": [
         {
           "name": "Static Orb",
@@ -103,12 +103,6 @@
           "set": "ulg",
           "reason": "No recognized pattern",
           "text": "{T}: Target creature loses your choice of flying, first strike, or trample until end of turn."
-        },
-        {
-          "name": "Torrent of Fire",
-          "set": "scg",
-          "reason": "No recognized pattern",
-          "text": "Torrent of Fire deals damage to any target equal to the greatest mana value among permanents you control."
         },
         {
           "name": "Nantuko Elder",
@@ -139,6 +133,12 @@
           "set": "moc",
           "reason": "No recognized pattern",
           "text": "Trample As long as this card is in your graveyard and you control a Forest, creatures you control have trample."
+        },
+        {
+          "name": "Magma Sliver",
+          "set": "lgn",
+          "reason": "No recognized pattern",
+          "text": "All Slivers have \"{T}: Target Sliver creature gets +X/+0 until end of turn, where X is the number of Slivers on the battlefield.\""
         }
       ]
     },
@@ -792,6 +792,11 @@
       "text": "When Greta enters, create a Food token. (It's an artifact with \"{2}, {T}, Sacrifice this token: You gain 3 life.\") {G}, Sacrifice a Food: Put a +1/+1 counter on target creature. Activate only as a sorcery. {1}{B}, Sacrifice a Food: You draw"
     },
     {
+      "name": "Torrent of Fire",
+      "kind": "Spell",
+      "text": "Torrent of Fire deals damage to any target equal to the greatest mana value among permanents you control."
+    },
+    {
       "name": "Wyluli Wolf",
       "kind": "Spell",
       "text": "{T}: Target creature gets +1/+1 until end of turn."
@@ -810,11 +815,6 @@
       "name": "Palinchron",
       "kind": "Spell",
       "text": "Flying When this creature enters, untap up to seven lands. {2}{U}{U}: Return this creature to its owner's hand."
-    },
-    {
-      "name": "Veil of Summer",
-      "kind": "Spell",
-      "text": "Draw a card if an opponent has cast a blue or black spell this turn. Spells you control can't be countered this turn. You and permanents you control gain hexproof from blue and from black until end of turn. (You and they can't be the target"
     }
   ],
   "unparsedSamples": [
@@ -849,12 +849,6 @@
       "text": "{T}: Target creature loses your choice of flying, first strike, or trample until end of turn."
     },
     {
-      "name": "Torrent of Fire",
-      "set": "scg",
-      "reason": "No recognized pattern",
-      "text": "Torrent of Fire deals damage to any target equal to the greatest mana value among permanents you control."
-    },
-    {
       "name": "Pteramander",
       "set": "otc",
       "reason": "No recognized pattern",
@@ -865,6 +859,12 @@
       "set": "ody",
       "reason": "No recognized pattern",
       "text": "{T}: Add {C}{G}."
+    },
+    {
+      "name": "Waterknot",
+      "set": "jmp",
+      "reason": "No recognized pattern",
+      "text": "Enchant creature When this Aura enters, tap enchanted creature. Enchanted creature doesn't untap during its controller's untap step."
     }
   ]
 }

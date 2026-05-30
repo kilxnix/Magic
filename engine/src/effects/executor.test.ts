@@ -272,6 +272,46 @@ describe('executeEffects', () => {
 
       expect(newState.cards.get('creature-1')?.damage).toBe(2);
     });
+
+    it('deals damage equal to greatest mana value among permanents you control', () => {
+      const state = createTestState();
+      const cards = new Map(state.cards);
+      cards.set('gold-1', {
+        instanceId: 'gold-1',
+        definitionId: 'def-gold-permanent',
+        ownerId: 'player-1',
+        zone: 'battlefield',
+        tapped: false,
+        summoningSick: false,
+        counters: {},
+        damage: 0,
+        isCommander: false,
+      });
+
+      const effects: Effect[] = [
+        {
+          kind: 'DealDamage',
+          source: { kind: 'ThisSpell' },
+          target: { kind: 'Chosen', targetId: 'target_1' },
+          amount: {
+            kind: 'GreatestManaValue',
+            zone: 'battlefield',
+            filter: { permanent: true },
+            controller: 'you',
+          },
+        },
+      ];
+
+      const newState = executeEffects(
+        { ...state, cards },
+        effects,
+        'player-1',
+        ['player-2'],
+        [{ id: 'target_1' }],
+      );
+
+      expect(newState.players[1].life).toBe(37);
+    });
   });
 
   describe('GainLife effect', () => {

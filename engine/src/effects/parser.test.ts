@@ -958,6 +958,21 @@ describe('parseOracleText', () => {
       expect(result.targets).toHaveLength(1);
       expect(result.targets[0].type).toBe('Any');
     });
+
+    it('parses named-source damage equal to greatest mana value among permanents you control', () => {
+      const result = parseOracleText('Torrent of Fire deals damage to any target equal to the greatest mana value among permanents you control.');
+      expect(result.kind).toBe('Spell');
+      if (result.kind !== 'Spell') return;
+      expect(result.effects[0].kind).toBe('DealDamage');
+      if (result.effects[0].kind !== 'DealDamage') return;
+      expect(result.effects[0].amount).toEqual({
+        kind: 'GreatestManaValue',
+        zone: 'battlefield',
+        filter: { permanent: true },
+        controller: 'you',
+      });
+      expect(result.targets[0].type).toBe('Any');
+    });
   });
 
   // 2. "Exile top N cards of your library"
