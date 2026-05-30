@@ -3141,12 +3141,37 @@ export function applyLibraryManipulationPromptResponse(
     response.topCardInstanceIds,
     response.movedCardInstanceIds,
   );
+  let nextState = state;
+  if (request.stackItemId) {
+    const stackIndex = state.stack.findIndex(item => item.id === request.stackItemId);
+    if (stackIndex < 0) {
+      const message = 'The stack item for this library-manipulation prompt is no longer available.';
+      return {
+        requestId: response.requestId,
+        ok: false,
+        reason: 'stale_state',
+        message,
+        update: libraryManipulationRejectUpdate(state, request, response, 'stale_state', message),
+      };
+    }
+    const stackItem = state.stack[stackIndex] as StackItem & { namedCardChoices?: Record<string, string> };
+    const stack = [...state.stack];
+    stack[stackIndex] = {
+      ...stackItem,
+      namedCardChoices: {
+        ...(stackItem.namedCardChoices || {}),
+        ...choiceKeys,
+      },
+    } as StackItem;
+    nextState = { ...state, stack };
+  }
+
   return {
     requestId: response.requestId,
     ok: true,
-    state,
+    state: nextState,
     update: {
-      ...buildStateUpdate(state, state),
+      ...buildStateUpdate(state, nextState),
       rulesEvents: [{
         kind: 'PromptResponseAccepted',
         requestId: response.requestId,

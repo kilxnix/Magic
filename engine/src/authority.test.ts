@@ -35,7 +35,7 @@ import {
 } from './authority';
 import { resolveCombatDamage } from './combat';
 import { initGameState } from './game-state';
-import type { CardDefinition, CardInstance, GameState } from './types';
+import type { CardDefinition, CardInstance, GameState, StackItem } from './types';
 import type { AIAction } from './ai/types';
 import type { CardFilter } from './effects/ast';
 import type { TargetSpec } from './effects/targets';
@@ -1466,6 +1466,13 @@ describe('authority action boundary', () => {
 
   it('validates scry and surveil library manipulation responses against the revealed card set', () => {
     const state = stateWithSisaySearchChoices();
+    state.stack = [{
+      kind: 'Spell',
+      id: 'stack-surveil',
+      cardInstanceId: 'sisay_1',
+      casterId: 'p1',
+      targets: [],
+    }];
     const request = createLibraryManipulationPromptRequest(state, 'p1', 'surveil', 3, {
       id: 'prompt-surveil-three',
       stackItemId: 'stack-surveil',
@@ -1482,11 +1489,13 @@ describe('authority action boundary', () => {
       movedCardInstanceIds: [revealedIds[0], revealedIds[2]],
     });
     expect(accepted.ok).toBe(true);
-    expect(accepted.state).toBe(state);
+    expect(accepted.state).not.toBe(state);
     expect(accepted.libraryManipulationChoices).toEqual({
       surveilTopIds: revealedIds[1],
       surveilGraveyardIds: `${revealedIds[0]},${revealedIds[2]}`,
     });
+    expect((accepted.state?.stack[0] as StackItem & { namedCardChoices?: Record<string, string> }).namedCardChoices)
+      .toEqual(accepted.libraryManipulationChoices);
 
     const illegal = applyLibraryManipulationPromptResponse(state, request, {
       requestId: request.id,

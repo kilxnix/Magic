@@ -3450,15 +3450,7 @@ export function useShelectorGame() {
       return;
     }
 
-    const namedCardChoices: Record<string, string> = {
-      ...(top.namedCardChoices || {}),
-      ...promptResponse.libraryManipulationChoices,
-    };
-    const stack = [
-      ...engine.stack.slice(0, -1),
-      { ...top, namedCardChoices } as StackItem,
-    ];
-    let state: GameState = { ...engine, stack };
+    let state = promptResponse.state as GameState;
 
     setLibraryChoice(null);
     pendingLibraryChoiceRef.current = null;
