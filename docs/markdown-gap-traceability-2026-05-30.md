@@ -103,7 +103,7 @@ Minimum acceptance bar from that file:
 | 2.7 Replacement And Prevention Effects | partial |
 | 2.8 State-Based Actions | partial/test-proven |
 | 2.9 Target Legality | partial; duplicate same-name target choices are now disambiguated by controller/zone/ordinal in typed prompts and `/play` pickers |
-| 2.10 Cost Payment Rules | partial |
+| 2.10 Cost Payment Rules | partial; dynamic mana production now supports AmountRef-backed AddMana entries and a threshold-style zone count condition, with regressions for Cabal Ritual, Rite of Flame, and Songs of the Damned replacing fixed shortcut mana amounts. |
 | 2.11 Timing Permissions | partial |
 | 2.12 Modal And Optional Choices | partial; Brainstorm now has prompt-backed hand-to-library-top ordering |
 | 3.1 Priority Is Visible But Not Central | partial |

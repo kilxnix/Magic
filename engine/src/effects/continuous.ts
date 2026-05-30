@@ -517,6 +517,26 @@ export function evaluateCondition(
       return opponentCount > yourCount;
     }
 
+    case 'CardsInZoneAtLeast': {
+      const playerIds = condition.controller === 'you'
+        ? [controllerId]
+        : condition.controller === 'opponent'
+          ? state.players.filter(p => p.id !== controllerId && !p.hasLost).map(p => p.id)
+          : state.players.filter(p => !p.hasLost).map(p => p.id);
+      let count = 0;
+      for (const [, card] of state.cards) {
+        if (card.zone !== condition.zone) continue;
+        if (!playerIds.includes(card.ownerId)) continue;
+        if (condition.filter) {
+          const def = getCardDefinition(state, card);
+          if (!matchesCardFilter(def, condition.filter)) continue;
+        }
+        count++;
+        if (count >= condition.count) return true;
+      }
+      return false;
+    }
+
     case 'LifeAtOrBelow': {
       const player = condition.controller === 'you'
         ? state.players.find(p => p.id === controllerId)

@@ -2065,6 +2065,21 @@ function evaluateCondition(state: GameState, condition: Condition, casterId: str
       }
       return opponentCount > yourCount;
     }
+    case 'CardsInZoneAtLeast': {
+      const playerIds = resolveControllerIds(state, casterId, condition.controller);
+      let count = 0;
+      for (const [, card] of state.cards) {
+        if (card.zone !== condition.zone) continue;
+        if (!playerIds.includes(card.ownerId)) continue;
+        if (condition.filter) {
+          const def = getCardDefinition(state, card);
+          if (!matchesCardFilter(def, condition.filter)) continue;
+        }
+        count++;
+        if (count >= condition.count) return true;
+      }
+      return false;
+    }
     case 'LifeAtOrBelow': {
       const player = condition.controller === 'you'
         ? state.players.find(p => p.id === casterId)
@@ -2735,8 +2750,11 @@ function executeEffect(
       const player = state.players[playerIdx];
       const newPool = { ...player.manaPool };
       for (const [color, amount] of Object.entries(effect.mana)) {
-        if (amount && amount > 0) {
-          newPool[color as keyof typeof newPool] += amount;
+        const resolvedAmount = amount === undefined
+          ? 0
+          : resolveAmount(amount, xValue, state, casterId, chosenTargets, undefined, eventContext?.cardInstanceId);
+        if (resolvedAmount > 0) {
+          newPool[color as keyof typeof newPool] += resolvedAmount;
         }
       }
       const newPlayers = state.players.map((p, i) =>

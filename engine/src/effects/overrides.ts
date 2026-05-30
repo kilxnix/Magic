@@ -1134,10 +1134,22 @@ registerOverrideByName('Dark Ritual', {
   targets: [],
 });
 
-// Cabal Ritual — Add {B}{B}{B} (threshold: {B}{B}{B}{B}{B}, simplified to base)
+// Cabal Ritual — Add {B}{B}{B}; threshold adds two more black mana.
 registerOverrideByName('Cabal Ritual', {
   kind: 'Spell',
-  effects: [{ kind: 'AddMana', player: { kind: 'Controller' }, mana: { B: 3 } }],
+  effects: [
+    { kind: 'AddMana', player: { kind: 'Controller' }, mana: { B: 3 } },
+    {
+      kind: 'Conditional',
+      condition: {
+        kind: 'CardsInZoneAtLeast',
+        controller: 'you',
+        zone: 'graveyard',
+        count: 7,
+      },
+      effect: { kind: 'AddMana', player: { kind: 'Controller' }, mana: { B: 2 } },
+    },
+  ],
   targets: [],
 });
 
@@ -1162,17 +1174,44 @@ registerOverrideByName('Seething Song', {
   targets: [],
 });
 
-// Rite of Flame — Add {R}{R} (simplified from scaling)
+// Rite of Flame — Add {R}{R}, then {R} for each card named Rite of Flame in each graveyard.
 registerOverrideByName('Rite of Flame', {
   kind: 'Spell',
-  effects: [{ kind: 'AddMana', player: { kind: 'Controller' }, mana: { R: 2 } }],
+  effects: [
+    { kind: 'AddMana', player: { kind: 'Controller' }, mana: { R: 2 } },
+    {
+      kind: 'AddMana',
+      player: { kind: 'Controller' },
+      mana: {
+        R: {
+          kind: 'ForEach',
+          zone: 'graveyard',
+          filter: { names: ['Rite of Flame'] },
+          controller: 'each',
+        },
+      },
+    },
+  ],
   targets: [],
 });
 
-// Songs of the Damned — Add {B} for each creature in graveyard (simplified: add {B}{B}{B})
+// Songs of the Damned — Add {B} for each creature card in your graveyard.
 registerOverrideByName('Songs of the Damned', {
   kind: 'Spell',
-  effects: [{ kind: 'AddMana', player: { kind: 'Controller' }, mana: { B: 3 } }],
+  effects: [
+    {
+      kind: 'AddMana',
+      player: { kind: 'Controller' },
+      mana: {
+        B: {
+          kind: 'ForEach',
+          zone: 'graveyard',
+          filter: { types: ['creature'] },
+          controller: 'you',
+        },
+      },
+    },
+  ],
   targets: [],
 });
 

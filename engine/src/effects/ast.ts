@@ -375,7 +375,7 @@ export interface LoseGameEffect {
 export interface AddManaEffect {
   kind: 'AddMana';
   player: TargetRef;
-  mana: { W?: number; U?: number; B?: number; R?: number; G?: number; C?: number };
+  mana: { W?: AmountRef; U?: AmountRef; B?: AmountRef; R?: AmountRef; G?: AmountRef; C?: AmountRef };
 }
 
 export interface PutLandFromHandOntoBattlefieldEffect {
@@ -547,6 +547,7 @@ export interface StaticAbilityEffect {
 export type Condition =
   | { kind: 'ControlsType'; controller: 'you' | 'opponent'; filter: CardFilter }
   | { kind: 'ControlsMoreThan'; who: 'opponent'; what: CardFilter; thanWho: 'you' }
+  | { kind: 'CardsInZoneAtLeast'; controller: 'you' | 'opponent' | 'each'; zone: 'battlefield' | 'hand' | 'graveyard' | 'library'; count: number; filter?: CardFilter }
   | { kind: 'LifeAtOrBelow'; controller: 'you' | 'opponent'; amount: number }
   | { kind: 'LifeAtOrAbove'; controller: 'you' | 'opponent'; amount: number };
 
