@@ -79,7 +79,7 @@ Minimum acceptance bar from that file:
 | Fix 11: Continuous Effects And Layers | partial | Practical layer slices exist; not full Arena-like layer fidelity. |
 | Fix 12: Presentation Events | partial | Feed/last-played/modal polish exists, d20 rolls now persist through the engine authority update as DiceRolled events with a playfield toast, and attachment corrections emit validated manual events. This is still not a full animation/event pipeline. |
 | Fix 13: AI Must Use Same Engine | partial | Better action wrappers, source-aware authority dispatch, and AI-only named-card fallback for ExileUntilNamed spells; not full AI legality/hidden-info proof. |
-| Fix 14: Unsupported Rules Handling | partial | Unsupported actions fail clearly, manual override entries expose metadata for reason/owner/fixture reporting, room Engine Beta has a server-side deck preflight with user-visible unsupported-card reasons, and solo `/play` starts now preflight hard unsupported cards before engine initialization; full card support/fallback coverage is still incomplete. |
+| Fix 14: Unsupported Rules Handling | partial | Unsupported actions fail clearly, manual override entries expose metadata for reason/owner/fixture reporting, room Engine Beta has a server-side deck preflight with user-visible unsupported-card reasons, and solo `/play` starts now preflight hard unsupported cards before engine initialization. The room and solo preflight normalizers now handle decorated export names with quantities, set codes, collector numbers, MTGO prefixes, and repeated `*tags*`; full card support/fallback coverage is still incomplete. |
 | Fix 15: Test Plan | partial | Many tests added; listed golden tests are not all fully browser-proven. |
 | Fix 16: Development Roadmap | partial | Phase 1-ish slices landed; phases 2-6 are not complete. |
 | Fix 17: UI Changes | partial | Hamburger/action dock/search prompt improved; full Arena-like UI not done. |
@@ -94,7 +94,7 @@ Minimum acceptance bar from that file:
 | 1.3 No Clear Separation Between Legal Actions, Suggested Actions, And Coach Actions | partial |
 | 1.4 No Proven Canonical Event-Sourced State | partial/test-proven for engine event-log replay records and `/play` saved-game audit fields |
 | 2.1 Sisay Legal Choice Filtering | browser-proven for tested flow |
-| 2.2 Search Legality In General | partial; top-N search prompts now limit choices to the looked-at cards and bottom unselected cards for Impulse-style effects, and ExileUntilNamed effects now prompt through a typed live named-card choice in `/play` with arbitrary card-name entry instead of forcing a hard-coded Oracle line |
+| 2.2 Search Legality In General | partial; top-N search prompts now limit choices to the looked-at cards and bottom unselected cards for Impulse-style effects, and ExileUntilNamed effects now prompt through a typed live named-card choice in `/play` with arbitrary card-name entry instead of forcing a hard-coded Oracle line. Room deck locking now has tested partner-commander/sideboard exclusion and decorated export cleanup before deck cards are sent to room state. |
 | 2.3 Card Type Constraints | partial |
 | 2.4 Mana Value Constraints | partial |
 | 2.5 Continuous Effects And Layers | partial |

@@ -869,7 +869,7 @@ def test_engine_beta_blocks_known_unsupported_cards(monkeypatch):
     guest = client.post(f"/api/multiplayer/rooms/{room_id}/join", json={"player_name": "Guest"}).json()
     guest_id = guest["player_id"]
 
-    host_deck = {"commander": "Xenagos, God of Revels", "list": ["Forest"] * 98 + ["Chaos Orb"], "colors": ["R", "G"]}
+    host_deck = {"commander": "Xenagos, God of Revels", "list": ["Forest"] * 98 + ["1x Chaos Orb (2ED) 233 *F*"], "colors": ["R", "G"]}
     guest_deck = {"commander": "Talrand, Sky Summoner", "list": ["Island"] * 99, "colors": ["U"]}
     client.post(
         f"/api/multiplayer/rooms/{room_id}/seat",

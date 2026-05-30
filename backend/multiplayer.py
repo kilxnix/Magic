@@ -88,6 +88,25 @@ ENGINE_UNSUPPORTED_CARD_REASONS = {
     "Shahrazad": "Subgame creation is not automated.",
 }
 ENGINE_UNSUPPORTED_CARD_NAMES = set(ENGINE_UNSUPPORTED_CARD_REASONS)
+
+
+def _normalize_engine_card_name(raw: Any) -> str:
+    name = str(raw or "").strip()
+    name = re.sub(r"\s+#.*$", "", name).strip()
+    name = re.sub(r"^[*\-]\s*", "", name).strip()
+    match = re.match(r"^(\d+)\s*[xX]?\s*(?:\[[^\]]+\]\s*)?(.+)$", name)
+    if match:
+        name = match.group(2).strip()
+    while True:
+        cleaned = re.sub(r"\s+\*[^*]+\*\s*$", "", name).strip()
+        if cleaned == name:
+            break
+        name = cleaned
+    name = re.sub(r"\s+\[[^\]]+\](?:\s+\S+)?$", "", name).strip()
+    name = re.sub(r"\s+\([^)]+\).*$", "", name).strip()
+    return re.sub(r"\s+", " ", name)
+
+
 ROOM_LINK_RE = re.compile(
     r"(?i)(?:"
     r"https?://|"
@@ -805,7 +824,7 @@ def _engine_unsupported_card_reports(deck: dict) -> list[dict[str, str]]:
     found: list[dict[str, str]] = []
     seen: set[str] = set()
     for name in names:
-        clean = str(name).strip()
+        clean = _normalize_engine_card_name(name)
         reason = ENGINE_UNSUPPORTED_CARD_REASONS.get(clean)
         if reason and clean not in seen:
             found.append({"name": clean, "reason": reason})

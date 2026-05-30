@@ -19,10 +19,20 @@ export const ENGINE_UNSUPPORTED_CARD_REASONS: Record<string, string> = {
 };
 
 function normalizeCardNameForPreflight(raw: string | undefined): string {
-  return (raw || '')
-    .replace(/^\s*\d+x?\s+/i, '')
-    .replace(/\s+\([A-Z0-9]{2,8}\)\s*$/i, '')
-    .replace(/\s+\*[a-z0-9_\-\s]+\*\s*$/i, '')
+  let name = (raw || '')
+    .replace(/\s+#.*$/, '')
+    .replace(/^[*\-]\s*/, '')
+    .trim();
+  const quantityMatch = name.match(/^\s*\d+\s*x?\s*(?:\[[^\]]+\]\s*)?(.+)$/i);
+  if (quantityMatch) name = quantityMatch[1].trim();
+  while (true) {
+    const cleaned = name.replace(/\s+\*[^*]+\*\s*$/g, '').trim();
+    if (cleaned === name) break;
+    name = cleaned;
+  }
+  return name
+    .replace(/\s+\[[^\]]+\](?:\s+\S+)?$/i, '')
+    .replace(/\s+\([^)]+\).*$/i, '')
     .trim()
     .replace(/\s+/g, ' ');
 }

@@ -37,7 +37,7 @@ describe('engine preflight', () => {
     const unsupported = findUnsupportedEngineCards([
       {
         label: 'Your deck',
-        cards: ['Chaos Orb', 'Chaos Orb', 'Falling Star'],
+        cards: ['Chaos Orb', '1x Chaos Orb (2ED) 233 *F* *CMDR*', 'Falling Star'],
       },
     ]);
 

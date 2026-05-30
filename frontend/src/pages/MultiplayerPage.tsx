@@ -56,6 +56,7 @@ import {
   type ReplaySummary,
 } from '../lib/multiplayer';
 import { BEGINNER_DECKS } from '../lib/beginnerDecks';
+import { parseRoomDeckList } from '../lib/deckListParser';
 import {
   applyPendingRoomAction,
   createRoomEngineState,
@@ -230,30 +231,6 @@ function splitTags(value: string) {
     .map((tag) => tag.trim())
     .filter(Boolean)
     .slice(0, 5);
-}
-
-function parseRoomDeckList(value: string, commanderName: string) {
-  const cards: string[] = [];
-  for (const rawLine of value.split(/\r?\n/)) {
-    const line = rawLine
-      .replace(/\s+#.*$/, '')
-      .replace(/^[*-]\s*/, '')
-      .trim();
-    if (!line) continue;
-    const header = line.replace(/:$/, '').toLowerCase();
-    if (['commander', 'deck', 'main', 'main deck', 'sideboard', 'maybeboard'].includes(header)) continue;
-    const match = line.match(/^(\d+)\s*[xX]?\s+(.+)$/);
-    const quantity = match ? Number(match[1]) : 1;
-    const name = (match ? match[2] : line)
-      .replace(/\s+\[[^\]]+\].*$/, '')
-      .replace(/\s+\([^)]+\).*$/, '')
-      .trim();
-    if (!name || name.toLowerCase() === commanderName.trim().toLowerCase()) continue;
-    for (let i = 0; i < Math.min(quantity, 120); i += 1) {
-      cards.push(name);
-    }
-  }
-  return cards.slice(0, 120);
 }
 
 function inferDeckColors(cards: string[], fallback: string[] = []) {
