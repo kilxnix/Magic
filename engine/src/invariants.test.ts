@@ -51,4 +51,47 @@ describe('validateStateInvariants', () => {
       code: 'missing_stack_spell_card',
     }));
   });
+
+  it('rejects cards stranded in the stack zone without a stack object', () => {
+    const cmd = commander();
+    const state = initGameState([
+      { playerId: 'p1', name: 'Alice', cards: [cmd], commanderId: cmd.id },
+      { playerId: 'p2', name: 'Bob', cards: [cmd], commanderId: cmd.id },
+    ]);
+    const stranded = [...state.cards.values()].find(card => card.ownerId === 'p1');
+    expect(stranded).toBeDefined();
+    state.cards.set(stranded!.instanceId, { ...stranded!, zone: 'stack' });
+
+    const report = validateStateInvariants(state);
+    expect(report.ok).toBe(false);
+    expect(report.violations).toContainEqual(expect.objectContaining({
+      code: 'stack_zone_without_stack_object',
+    }));
+  });
+
+  it('rejects tokens that still exist outside the battlefield', () => {
+    const cmd = commander();
+    const state = initGameState([
+      { playerId: 'p1', name: 'Alice', cards: [cmd], commanderId: cmd.id },
+      { playerId: 'p2', name: 'Bob', cards: [cmd], commanderId: cmd.id },
+    ]);
+    state.cards.set('dead-token', {
+      instanceId: 'dead-token',
+      definitionId: cmd.id,
+      ownerId: 'p1',
+      zone: 'graveyard',
+      tapped: false,
+      summoningSick: false,
+      counters: {},
+      damage: 0,
+      isCommander: false,
+      isToken: true,
+    });
+
+    const report = validateStateInvariants(state);
+    expect(report.ok).toBe(false);
+    expect(report.violations).toContainEqual(expect.objectContaining({
+      code: 'token_outside_battlefield',
+    }));
+  });
 });

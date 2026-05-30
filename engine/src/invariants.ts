@@ -18,6 +18,11 @@ function stackItemId(item: StackItem): string {
 
 export function validateStateInvariants(state: GameState): StateInvariantReport {
   const violations: StateInvariantViolation[] = [];
+  const spellStackCardIds = new Set(
+    state.stack
+      .filter((item): item is Extract<StackItem, { kind: 'Spell' }> => item.kind === 'Spell')
+      .map(item => item.cardInstanceId),
+  );
 
   state.cards.forEach((card, id) => {
     if (id !== card.instanceId) {
@@ -42,6 +47,18 @@ export function validateStateInvariants(state: GameState): StateInvariantReport 
       violations.push({
         code: 'missing_definition',
         message: `${card.instanceId} references missing definition ${card.definitionId}.`,
+      });
+    }
+    if (card.zone === 'stack' && !spellStackCardIds.has(card.instanceId)) {
+      violations.push({
+        code: 'stack_zone_without_stack_object',
+        message: `${card.instanceId} is in the stack zone without a matching spell stack object.`,
+      });
+    }
+    if (card.isToken && card.zone !== 'battlefield') {
+      violations.push({
+        code: 'token_outside_battlefield',
+        message: `Token ${card.instanceId} exists in ${card.zone}; tokens should cease to exist outside the battlefield.`,
       });
     }
   });
