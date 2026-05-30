@@ -578,6 +578,31 @@ function applyCopySpellEffects(
   return resultState;
 }
 
+function checkCardDrawTriggersForTransition(before: GameState, after: GameState): GameState {
+  const drawnByPlayer = new Map<string, string[]>();
+  after.cards.forEach((afterCard, instanceId) => {
+    const beforeCard = before.cards.get(instanceId);
+    if (!beforeCard) return;
+    if (beforeCard.zone !== 'library' || afterCard.zone !== 'hand') return;
+    if (beforeCard.ownerId !== afterCard.ownerId) return;
+    const drawn = drawnByPlayer.get(afterCard.ownerId) || [];
+    drawn.push(instanceId);
+    drawnByPlayer.set(afterCard.ownerId, drawn);
+  });
+
+  let resultState = after;
+  for (const [playerId, cardInstanceIds] of drawnByPlayer) {
+    if (cardInstanceIds.length === 0) continue;
+    resultState = checkTriggersForEvent(resultState, {
+      kind: 'CardDrawn',
+      playerId,
+      count: cardInstanceIds.length,
+      cardInstanceIds,
+    });
+  }
+  return resultState;
+}
+
 function executeSpellEffectsWithCopySupport(
   state: GameState,
   effects: Effect[],
@@ -593,6 +618,7 @@ function executeSpellEffectsWithCopySupport(
   let resultState = state;
 
   if (executableEffects.length > 0) {
+    const beforeEffects = resultState;
     resultState = executeEffectsWithSBA(
       resultState,
       executableEffects,
@@ -602,6 +628,7 @@ function executeSpellEffectsWithCopySupport(
       xValue,
       { namedCardChoices, sourceInstanceId, eventContext },
     );
+    resultState = checkCardDrawTriggersForTransition(beforeEffects, resultState);
   }
 
   resultState = applyCopySpellEffects(resultState, effects, casterId, targets, targetSpecs, eventContext);
@@ -1034,9 +1061,23 @@ export function registerBattlefieldAbilities(state: GameState, instanceId: strin
   // Register tax triggers from cached data (Rhystic Study, Mystic Remora, etc.)
   if (def.unlessTax) {
     const trigger = { kind: def.unlessTax.triggerKind as 'OpponentCastSpell' | 'CardDrawn' };
-    const taxEffects = def.unlessTax.effect === 'draw'
+    const taxEffects: Effect[] = def.unlessTax.effect === 'draw'
       ? [{ kind: 'Draw' as const, player: { kind: 'Controller' as const }, count: def.unlessTax.effectCount }]
-      : [];
+      : def.unlessTax.effect === 'treasure'
+        ? [{
+            kind: 'CreateToken' as const,
+            controller: { kind: 'Controller' as const },
+            token: {
+              name: 'Treasure',
+              colors: [],
+              types: ['artifact'],
+              subtypes: ['Treasure'],
+              power: 0,
+              toughness: 0,
+            },
+            count: def.unlessTax.effectCount,
+          }]
+        : [];
     abilitiesToAdd.push({
       kind: 'TriggeredAbility' as const,
       trigger,
@@ -1210,6 +1251,7 @@ export function resolveTopOfStack(state: GameState): GameState {
       return checkStateBasedActions(resultState);
     }
 
+    const beforeEffects = resultState;
     resultState = executeEffectsWithSBA(
       resultState,
       effects,
@@ -1219,6 +1261,7 @@ export function resolveTopOfStack(state: GameState): GameState {
       0,
       { namedCardChoices: topItem.namedCardChoices, sourceInstanceId: topItem.sourceInstanceId },
     );
+    resultState = checkCardDrawTriggersForTransition(beforeEffects, resultState);
 
     return resultState;
   }
@@ -1490,6 +1533,7 @@ export function putPendingTriggerOnStack(
 export type GameEvent =
   | { kind: 'SpellCast'; casterId: string; cardInstanceId: string }
   | { kind: 'SpellCopied'; controllerId: string; cardInstanceId: string }
+  | { kind: 'CardDrawn'; playerId: string; count: number; cardInstanceIds?: string[] }
   | { kind: 'CreatureETB'; instanceId: string; controllerId: string }
   | { kind: 'Attacks'; attackerInstanceId: string; controllerId: string }
   | { kind: 'CombatDamageToPlayer'; sourceInstanceId: string; controllerId: string; damagedPlayerId: string; damage: number }
@@ -1663,6 +1707,13 @@ export function checkTriggersForEvent(state: GameState, event: GameEvent): GameS
                 shouldFire = true;
               }
             }
+          }
+          break;
+        }
+
+        case 'CardDrawn': {
+          if (trigger.kind === 'CardDrawn' && event.playerId !== controllerId) {
+            shouldFire = true;
           }
           break;
         }

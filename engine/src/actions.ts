@@ -393,12 +393,22 @@ export function drawCards(state: GameState, playerId: string, count: number): Ga
   const toDraw = Math.min(count, library.length);
 
   const newCards = new Map(state.cards);
+  const drawnIds: string[] = [];
   for (let i = 0; i < toDraw; i++) {
     const card = library[i];
     newCards.set(card.instanceId, { ...card, zone: 'hand' });
+    drawnIds.push(card.instanceId);
   }
 
-  return { ...state, cards: newCards };
+  const drawnState = { ...state, cards: newCards };
+  return drawnIds.length > 0
+    ? checkTriggersForEvent(drawnState, {
+        kind: 'CardDrawn',
+        playerId,
+        count: drawnIds.length,
+        cardInstanceIds: drawnIds,
+      })
+    : drawnState;
 }
 
 // ============================================================================

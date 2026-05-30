@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { CardDefinition, CardInstance, GameState, ManaPool, Zone } from './types';
 import { createPlayer, emptyManaPool } from './types';
 import { initGameState, getCardsInZone } from './game-state';
-import { canCastSpell, castSpell, putTriggersOnStack, registerBattlefieldAbilities } from './stack';
+import { canCastSpell, castSpell, putTriggersOnStack, registerBattlefieldAbilities, resolveTopOfStack } from './stack';
 import { tryCastSpell } from './actions-public';
 import { executeEffects } from './effects/executor';
 import { parseOracleText } from './effects/parser';
@@ -345,5 +345,49 @@ describe('Rhystic-style trigger ordering', () => {
       'p3',
       'p1',
     ]);
+  });
+
+  it('fires card-draw tax triggers and creates real Treasure tokens when unpaid', () => {
+    const smotheringTithe: CardDefinition = {
+      ...card(
+        'smothering-tithe',
+        'Smothering Tithe',
+        'Enchantment',
+        '{3}{W}',
+        ['enchantment'],
+        "Whenever an opponent draws a card, that player may pay {2}. If the player doesn't, you create a Treasure token.",
+      ),
+      unlessTax: { triggerKind: 'CardDrawn', taxAmount: 2, effect: 'treasure', effectCount: 1 },
+    };
+    const drawSpell = card('draw-spell', 'Test Draw Spell', 'Instant', '{U}', ['instant'], 'Draw a card.');
+    const drawCard = card('drawn-card', 'Drawn Card', 'Creature - Bear', '{1}{G}', ['creature']);
+
+    let state = initGameState([
+      { playerId: 'p1', name: 'Tax Player', cards: [commander('cmd1', 'Tax Commander'), smotheringTithe], commanderId: 'cmd1' },
+      { playerId: 'p2', name: 'Drawer', cards: [commander('cmd2', 'Draw Commander'), drawSpell, drawCard], commanderId: 'cmd2' },
+    ]);
+    state = moveFirstCardNamed(state, 'Smothering Tithe', 'battlefield');
+    state = registerNamedPermanent(state, 'Smothering Tithe');
+    state = moveFirstCardNamed(state, 'Test Draw Spell', 'hand');
+    state = setTurn(state, 'p2');
+    state = setPlayerMana(state, 'p2', { U: 1 });
+
+    const drawSpellInstance = [...state.cards.values()].find(instance =>
+      state.cardDefinitions.get(instance.definitionId)?.name === 'Test Draw Spell'
+    )!;
+
+    state = castSpell(state, 'p2', drawSpellInstance.instanceId);
+    state = resolveTopOfStack(state);
+
+    expect(state.pendingTriggers).toHaveLength(1);
+
+    state = putTriggersOnStack(state);
+    state = resolveTopOfStack(state);
+
+    const treasures = [...state.cards.values()].filter(instance => {
+      const def = state.cardDefinitions.get(instance.definitionId);
+      return instance.ownerId === 'p1' && instance.zone === 'battlefield' && instance.isToken && def?.name === 'Treasure';
+    });
+    expect(treasures).toHaveLength(1);
   });
 });

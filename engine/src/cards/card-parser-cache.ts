@@ -330,7 +330,7 @@ function parseSearchAbility(oracle: string): SearchAbilityInfo | undefined {
 // ========== Tax Triggers ==========
 
 function parseUnlessTax(oracle: string): UnlessTaxInfo | undefined {
-  if (!/\bunless\b/i.test(oracle) || !/\bpays?\b/i.test(oracle)) return undefined;
+  if (!(/\bunless\b/i.test(oracle) || /\bdoesn['’]?t\b/i.test(oracle)) || !/\bpays?\b/i.test(oracle)) return undefined;
 
   let triggerKind = '';
   if (/whenever an opponent casts a spell/i.test(oracle)) triggerKind = 'OpponentCastSpell';

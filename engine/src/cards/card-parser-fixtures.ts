@@ -159,6 +159,14 @@ export const PARSER_FIXTURES: ParserFixture[] = [
       unlessTax: { triggerKind: 'OpponentCastSpell', taxAmount: 1, effect: 'draw', effectCount: 1 },
     },
   },
+  {
+    name: 'Smothering Tithe',
+    oracleText: 'Whenever an opponent draws a card, that player may pay {2}. If the player doesn\'t, you create a Treasure token.',
+    typeLine: 'Enchantment',
+    expected: {
+      unlessTax: { triggerKind: 'CardDrawn', taxAmount: 2, effect: 'treasure', effectCount: 1 },
+    },
+  },
 ];
 
 export function fixturesFor(field: keyof ParserFixture['expected']): ParserFixture[] {
