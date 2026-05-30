@@ -14,6 +14,7 @@ import {
   tryPlayLand,
   tryTapLandForMana,
   tryUntapManaSource,
+  tryAdjustCounters,
   tryCastSpell,
   tryActivateAbility,
   tryPassPriority,
@@ -60,6 +61,9 @@ export function dispatchAIAction(
 
     case 'ManualUntapManaSource':
       return tryUntapManaSource(state, playerId, action.cardInstanceId, action.color, action.amount);
+
+    case 'ManualAdjustCounters':
+      return tryAdjustCounters(state, playerId, action.cardInstanceId, action.counterType, action.delta);
 
     case 'CastSpell':
       // CastSpell in the AIAction doesn't carry a manaPayment — the mana pool

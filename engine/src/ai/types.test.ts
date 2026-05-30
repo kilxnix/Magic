@@ -5,6 +5,7 @@ import type {
   PlayLandAction,
   ActivateManaAbilityAction,
   ManualUntapManaSourceAction,
+  ManualAdjustCountersAction,
   DeclareAttackersAction,
   DeclareBlockersAction,
   PassPriorityAction,
@@ -62,6 +63,20 @@ describe('AI Types', () => {
     expect(action.amount).toBe(1);
   });
 
+  it('creates ManualAdjustCountersAction correctly', () => {
+    const action: ManualAdjustCountersAction = {
+      kind: 'ManualAdjustCounters',
+      cardInstanceId: 'creature_1',
+      counterType: '+1/+1',
+      delta: 1,
+    };
+
+    expect(action.kind).toBe('ManualAdjustCounters');
+    expect(action.cardInstanceId).toBe('creature_1');
+    expect(action.counterType).toBe('+1/+1');
+    expect(action.delta).toBe(1);
+  });
+
   it('creates DeclareAttackersAction correctly', () => {
     const action: DeclareAttackersAction = {
       kind: 'DeclareAttackers',
@@ -104,17 +119,19 @@ describe('AI Types', () => {
       { kind: 'PlayLand', cardInstanceId: 'l1' },
       { kind: 'ActivateManaAbility', cardInstanceId: 'l1', color: 'U' },
       { kind: 'ManualUntapManaSource', cardInstanceId: 'l1', color: 'U', amount: 1 },
+      { kind: 'ManualAdjustCounters', cardInstanceId: 'c1', counterType: '+1/+1', delta: 1 },
       { kind: 'DeclareAttackers', attacks: [] },
       { kind: 'DeclareBlockers', blocks: [] },
       { kind: 'PassPriority' },
     ];
 
-    expect(actions).toHaveLength(7);
+    expect(actions).toHaveLength(8);
     expect(actions.map(a => a.kind)).toEqual([
       'CastSpell',
       'PlayLand',
       'ActivateManaAbility',
       'ManualUntapManaSource',
+      'ManualAdjustCounters',
       'DeclareAttackers',
       'DeclareBlockers',
       'PassPriority',

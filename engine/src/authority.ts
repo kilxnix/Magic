@@ -1095,6 +1095,11 @@ function actionReferencesSameObject(legal: AIAction, requested: AIAction): boole
         && legal.cardInstanceId === requested.cardInstanceId
         && legal.color === requested.color
         && legal.amount === requested.amount;
+    case 'ManualAdjustCounters':
+      return requested.kind === 'ManualAdjustCounters'
+        && legal.cardInstanceId === requested.cardInstanceId
+        && legal.counterType === requested.counterType
+        && legal.delta === requested.delta;
     case 'CastSpell':
       return requested.kind === 'CastSpell'
         && legal.cardInstanceId === requested.cardInstanceId
@@ -1124,7 +1129,7 @@ function actionReferencesSameObject(legal: AIAction, requested: AIAction): boole
 }
 
 function isLegalRequestedAction(state: GameState, playerId: string, action: AIAction): boolean {
-  if (action.kind === 'ManualUntapManaSource') {
+  if (isValidatedOutOfBandAction(action)) {
     return dispatchAIAction(state, playerId, action).ok;
   }
   const requestedKey = actionKey(action);
@@ -1144,11 +1149,15 @@ function illegalActionMessage(state: GameState, playerId: string, action: AIActi
     const result = dispatchAIAction(state, playerId, action);
     return result.ok ? 'That mana correction is not available now.' : result.message;
   }
+  if (action.kind === 'ManualAdjustCounters') {
+    const result = dispatchAIAction(state, playerId, action);
+    return result.ok ? 'That counter correction is not available now.' : result.message;
+  }
   return 'That action is not legal in the current game state.';
 }
 
 function isValidatedOutOfBandAction(action: AIAction): boolean {
-  return action.kind === 'ManualUntapManaSource';
+  return action.kind === 'ManualUntapManaSource' || action.kind === 'ManualAdjustCounters';
 }
 
 export function labelForAction(state: GameState, action: AIAction): string {
@@ -1161,6 +1170,8 @@ export function labelForAction(state: GameState, action: AIAction): string {
       return `Tap ${cardName(state, state.cards.get(action.cardInstanceId)) || 'source'} for ${action.color}`;
     case 'ManualUntapManaSource':
       return `Undo mana tap for ${cardName(state, state.cards.get(action.cardInstanceId)) || 'source'}`;
+    case 'ManualAdjustCounters':
+      return `Adjust ${cardName(state, state.cards.get(action.cardInstanceId)) || 'permanent'} counters`;
     case 'ActivateAbility':
       return `Activate ${cardName(state, state.cards.get(action.cardInstanceId)) || 'ability'}${targetSuffix(state, action.targets)}`;
     case 'DeclareAttackers':
@@ -1219,6 +1230,7 @@ const ACTION_KIND_LABELS: Record<AIAction['kind'], string> = {
   PlayLand: 'Land',
   ActivateManaAbility: 'Mana',
   ManualUntapManaSource: 'Undo Mana',
+  ManualAdjustCounters: 'Counters',
   ActivateAbility: 'Ability',
   DeclareAttackers: 'Attack',
   DeclareBlockers: 'Block',

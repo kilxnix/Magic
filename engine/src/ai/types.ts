@@ -50,6 +50,18 @@ export interface ManualUntapManaSourceAction {
 }
 
 /**
+ * A manual correction that adjusts counters on a battlefield permanent. This is
+ * not generated as a normal strategic action; it lets correction UI use the
+ * same validated authority/replay path as ordinary game actions.
+ */
+export interface ManualAdjustCountersAction {
+  kind: 'ManualAdjustCounters';
+  cardInstanceId: string;
+  counterType: string;
+  delta: number;
+}
+
+/**
  * An action to declare attackers during the declare attackers step.
  */
 export interface DeclareAttackersAction {
@@ -99,6 +111,7 @@ export type AIAction =
   | PlayLandAction
   | ActivateManaAbilityAction
   | ManualUntapManaSourceAction
+  | ManualAdjustCountersAction
   | ActivateAbilityAction
   | DeclareAttackersAction
   | DeclareBlockersAction

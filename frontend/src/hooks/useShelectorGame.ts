@@ -44,7 +44,6 @@ import {
   type ManaCost,
   type ManaPool,
   type TriggeredAbilityStackItem,
-  tryAdjustCounters,
   getCostReduction,
   getOverride,
   getEffectivePower,
@@ -265,6 +264,7 @@ function isMeaningfulAutoSkipAction(action: AIAction): boolean {
     case 'PassPriority':
     case 'ActivateManaAbility':
     case 'ManualUntapManaSource':
+    case 'ManualAdjustCounters':
       return false;
     case 'DeclareAttackers':
       return action.attacks.length > 0;
@@ -1672,6 +1672,18 @@ function toSimpleLegalAction(action: AIAction, engineState: GameState): SimpleLe
         cardInstanceId: action.cardInstanceId,
         cardName: def?.name,
         label: `Untap ${def?.name || 'mana source'}`,
+        _engineAction: action,
+      };
+    }
+    case 'ManualAdjustCounters': {
+      const inst = engineState.cards.get(action.cardInstanceId);
+      const def = inst ? engineState.cardDefinitions.get(inst.definitionId) : undefined;
+      const sign = action.delta > 0 ? '+' : '';
+      return {
+        kind: 'ManualAdjustCounters',
+        cardInstanceId: action.cardInstanceId,
+        cardName: def?.name,
+        label: `${sign}${action.delta} ${action.counterType} counter on ${def?.name || 'permanent'}`,
         _engineAction: action,
       };
     }
@@ -4806,16 +4818,26 @@ export function useShelectorGame() {
 
     const card = engine.cards.get(cardInstanceId);
     const def = card ? engine.cardDefinitions.get(card.definitionId) : undefined;
-    const result = tryAdjustCounters(engine, humanIdRef.current, cardInstanceId, counterType, delta);
-    if (!result.ok) {
-      setActionError({ reason: result.reason, message: result.message });
-      addMessage('system', `Cannot adjust counters: ${result.message}`);
+    const action: AIAction = {
+      kind: 'ManualAdjustCounters',
+      cardInstanceId,
+      counterType,
+      delta,
+    };
+    const response = applyActionThroughAuthority(engine, humanIdRef.current, action, {
+      source: 'system',
+      label: toSimpleLegalAction(action, engine).label,
+    });
+    if (!response.ok || !response.state) {
+      const message = response.message || 'That counter correction was rejected.';
+      setActionError({ reason: response.reason || 'illegal_action', message });
+      addMessage('system', `Cannot adjust counters: ${message}`);
       syncState();
       return;
     }
 
-    engineRef.current = result.state as GameStateWithAI;
-    applyEvents(result.events, result.state);
+    engineRef.current = response.state as GameStateWithAI;
+    applyEvents(response.events || [], response.state);
 
     const cleanCounterType = counterType.trim().replace(/\s+/g, ' ');
     const sign = delta > 0 ? '+' : '';
@@ -4824,7 +4846,7 @@ export function useShelectorGame() {
       `Manual correction: ${def?.name || 'Permanent'} ${sign}${delta} ${cleanCounterType} counter${Math.abs(delta) === 1 ? '' : 's'}.`,
     );
     syncState();
-  }, [addMessage, applyEvents, syncState]);
+  }, [addMessage, applyActionThroughAuthority, applyEvents, syncState]);
 
   // Deep-clone engine state for undo snapshots (Maps need special handling)
   const cloneEngineState = useCallback((s: GameStateWithAI): GameStateWithAI => {

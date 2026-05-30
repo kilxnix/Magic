@@ -1732,6 +1732,28 @@ describe('authority action boundary', () => {
     expect(report.finalState?.cards.get(forest!.instanceId)?.tapped).toBe(false);
   });
 
+  it('replays validated manual counter corrections through the authority boundary', () => {
+    const state = stateWithSisaySearchChoices();
+    const request = createClientActionRequest(state, 'p1', {
+      kind: 'ManualAdjustCounters',
+      cardInstanceId: 'sisay_1',
+      counterType: '+1/+1',
+      delta: 2,
+    }, {
+      id: 'req-replay-manual-counters',
+      source: 'system',
+      createdAt: 37,
+    });
+
+    const adjusted = applyClientActionRequest(state, request);
+    expect(adjusted.ok).toBe(true);
+    expect(adjusted.state?.cards.get('sisay_1')?.counters['+1/+1']).toBe(2);
+
+    const report = auditActionReplay(state, [request]);
+    expect(report.ok).toBe(true);
+    expect(report.finalState?.cards.get('sisay_1')?.counters['+1/+1']).toBe(2);
+  });
+
   it('fails replay audit when a committed request no longer matches the previous state', () => {
     const state = stateWithForestInHand();
     const prompt = buildActionPrompt(state, 'p1');
