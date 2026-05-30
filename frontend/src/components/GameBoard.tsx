@@ -2673,6 +2673,12 @@ export function GameBoard({
           destination: 'choice' as const,
         }))
     : [];
+  const tutorCancelLabel = (() => {
+    const title = (tutorTitle || '').toLowerCase();
+    if (title.includes('decline')) return 'Decline sacrifice';
+    if (title.includes('up to') || title.includes('cancel to stop here')) return 'Done searching';
+    return undefined;
+  })();
 
   return (
     <div className="relative h-full min-h-0 overflow-hidden bg-neutral-950 text-stone-200">
@@ -2683,7 +2689,7 @@ export function GameBoard({
           cards={tutorCards}
           onPick={onTutorPick}
           onCancel={onTutorCancel}
-          cancelLabel={tutorTitle?.toLowerCase().includes('decline') ? 'Decline sacrifice' : undefined}
+          cancelLabel={tutorCancelLabel}
         />
       )}
       {libraryChoice && onResolveLibraryChoice && (

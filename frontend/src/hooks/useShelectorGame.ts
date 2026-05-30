@@ -2182,6 +2182,7 @@ export function useShelectorGame() {
   const tutorSourceNameRef = useRef<string>('Search');
   const tutorSourceInstanceIdRef = useRef<string | undefined>(undefined);
   const tutorPromptRequestRef = useRef<SearchLibraryPromptRequest | null>(null);
+  const tutorSelectedIdsRef = useRef<string[]>([]);
   const pendingCastChoiceActionRef = useRef<SimpleLegalAction | null>(null);
   const pendingCastChoiceModeRef = useRef<PendingCastChoiceMode | null>(null);
   const pendingCastSelectCardsPromptRef = useRef<SelectCardsPromptRequest | null>(null);
@@ -3291,8 +3292,6 @@ export function useShelectorGame() {
         const resolvedSearch = resolveTopStackSearchPrompt(state, {
           id: `search-${top.id}`,
           playerId: humanIdRef.current,
-          minSelections: 0,
-          maxSelections: 1,
         });
         if (!resolvedSearch.ok) {
           return false;
@@ -3340,13 +3339,19 @@ export function useShelectorGame() {
         tutorShuffleRef.current = search.shuffle;
         // For "up to N" searches: track how many additional picks remain after this one.
         const totalCount = Math.max(1, search.count ?? 1);
-        tutorRemainingRef.current = totalCount - 1;
+        const promptCount = promptRequest.destinationBySelectionIndex?.length || totalCount;
+        tutorRemainingRef.current = promptRequest.destinationBySelectionIndex?.length ? 0 : totalCount - 1;
         tutorFilterRef.current = search.filter;
         tutorSourceNameRef.current = resolvedSearch.sourceName;
         tutorSourceInstanceIdRef.current = promptRequest.sourceInstanceId;
         tutorPromptRequestRef.current = promptRequest;
+        tutorSelectedIdsRef.current = [];
         const filterDesc = search.filter ? ` for ${search.filter}` : '';
-        const countSuffix = totalCount > 1 ? ` (pick 1 of up to ${totalCount})` : '';
+        const countSuffix = promptCount > 1
+          ? promptRequest.minSelections === 0
+            ? ` (pick up to ${promptCount})`
+            : ` (pick 1 of ${promptCount})`
+          : '';
         const scopeLabel = promptRequest.topCount
           ? `look at the top ${promptRequest.topCount} card${promptRequest.topCount === 1 ? '' : 's'}`
           : `search your library${filterDesc}`;
@@ -4330,6 +4335,7 @@ export function useShelectorGame() {
       pendingHandTopLibraryChoiceRef.current = null;
       tutorSourceInstanceIdRef.current = undefined;
       tutorPromptRequestRef.current = null;
+      tutorSelectedIdsRef.current = [];
       libraryManipulationPromptRequestRef.current = null;
       optionalTriggerPromptRequestRef.current = null;
       damageAssignmentPromptRequestRef.current = null;
@@ -5120,11 +5126,26 @@ export function useShelectorGame() {
     }
 
     const activePrompt = promptRequest;
+    const multiDestinationCount = activePrompt.destinationBySelectionIndex?.length || 0;
+    const selectedSearchIds = multiDestinationCount > 1
+      ? [...tutorSelectedIdsRef.current, selectedCardInstanceId]
+      : [selectedCardInstanceId];
+    if (multiDestinationCount > 1 && selectedSearchIds.length < Math.min(multiDestinationCount, activePrompt.legalChoices.length)) {
+      tutorSelectedIdsRef.current = selectedSearchIds;
+      const selectedSet = new Set(selectedSearchIds);
+      const nextPick = selectedSearchIds.length + 1;
+      setTutorCards(prev => prev.filter(option => !selectedSet.has(option.instanceId)));
+      setTutorTitle(`${tutorSourceNameRef.current}: choose card ${nextPick} of up to ${multiDestinationCount}`);
+      addMessage('player', `Selected ${selectedSearchIds.length} of ${multiDestinationCount} for ${tutorSourceNameRef.current}.`);
+      syncState();
+      return;
+    }
+
     const promptResponse = applySearchLibraryPromptResponse(engine, activePrompt, {
       requestId: activePrompt.id,
       kind: 'SearchLibrary',
       playerId: humanIdRef.current,
-      selectedCardInstanceIds: [selectedCardInstanceId],
+      selectedCardInstanceIds: selectedSearchIds,
       payLifeToEnterUntapped: payLifeForSearchEntry,
     });
     if (!promptResponse.ok || !promptResponse.state) {
@@ -5137,6 +5158,7 @@ export function useShelectorGame() {
     recordAuthorityUpdate(promptResponse.update);
     const resolvedEngine = promptResponse.state as GameStateWithAI;
     engineRef.current = resolvedEngine;
+    tutorSelectedIdsRef.current = [];
 
     const movedCard = resolvedEngine.cards.get(selectedCardInstanceId);
     const playerBefore = engine.players.find(p => p.id === humanIdRef.current);
@@ -5247,6 +5269,7 @@ export function useShelectorGame() {
     tutorShuffleRef.current = true;
     tutorSourceInstanceIdRef.current = undefined;
     tutorPromptRequestRef.current = null;
+    tutorSelectedIdsRef.current = [];
     libraryManipulationPromptRequestRef.current = null;
 
     const loopMessages: { role: ChatMessage['role']; text: string }[] = [];
@@ -5275,10 +5298,17 @@ export function useShelectorGame() {
     const choiceMode = pendingCastChoiceModeRef.current;
     const activeSearchPrompt = tutorPromptRequestRef.current;
     const activeSearchSourceName = tutorSourceNameRef.current;
+    const activeSearchSelectedIds = [...tutorSelectedIdsRef.current];
+    if (activeSearchPrompt && activeSearchSelectedIds.length < activeSearchPrompt.minSelections) {
+      addMessage('system', `${activeSearchSourceName} requires ${activeSearchPrompt.minSelections} selection${activeSearchPrompt.minSelections === 1 ? '' : 's'} before it can finish.`);
+      syncState();
+      return;
+    }
     setTutorPhase(false);
     setTutorCards([]);
     setTutorTitle('');
     tutorRemainingRef.current = 0;
+    tutorSelectedIdsRef.current = [];
     tutorFilterRef.current = undefined;
     tutorFilterSpecRef.current = undefined;
     tutorTappedRef.current = false;
@@ -5331,13 +5361,20 @@ export function useShelectorGame() {
         requestId: activeSearchPrompt.id,
         kind: 'SearchLibrary',
         playerId: humanIdRef.current,
-        selectedCardInstanceIds: [],
+        selectedCardInstanceIds: activeSearchSelectedIds,
       });
       if (promptResponse.ok && promptResponse.state) {
         recordAuthorityUpdate(promptResponse.update);
         engineRef.current = promptResponse.state as GameStateWithAI;
+        const selectedText = activeSearchSelectedIds.length > 0
+          ? ` with ${activeSearchSelectedIds.length} selected card${activeSearchSelectedIds.length === 1 ? '' : 's'}`
+          : '';
+        addMessage('player', `Finished ${activeSearchSourceName}${selectedText}.`);
       } else {
         recordAuthorityUpdate(promptResponse.update);
+        tutorPromptRequestRef.current = activeSearchPrompt;
+        tutorSelectedIdsRef.current = activeSearchSelectedIds;
+        setTutorPhase(true);
         addMessage('system', promptResponse.message || 'Could not stop this search cleanly.');
         syncState();
         return;

@@ -1786,6 +1786,45 @@ describe('authority action boundary', () => {
     expect(illegal.reason).toBe('illegal_response');
   });
 
+  it('rejects forged modal cast requests whose chosen modes were not generated as legal actions', () => {
+    const state = stateWithForestInHand();
+    const charm = def(
+      'strict_charm',
+      'Strict Charm',
+      'Instant',
+      '{U}',
+      'Choose one —\n• Draw a card.\n• Gain 3 life.',
+    );
+    state.cardDefinitions.set(charm.id, charm);
+    state.cards.set('strict_charm_in_hand', cardInstance('strict_charm_in_hand', charm.id, 'p1', 'hand'));
+    state.players = state.players.map(player =>
+      player.id === 'p1'
+        ? { ...player, manaPool: { ...player.manaPool, U: 1 } }
+        : player,
+    );
+
+    const prompt = buildActionPrompt(state, 'p1');
+    const legalModePayloads = prompt?.legalChoices
+      .filter(choice => choice.kind === 'CastSpell')
+      .map(choice => (choice.action as Extract<AIAction, { kind: 'CastSpell' }>).chosenModes);
+    expect(legalModePayloads).toEqual([[0], [1]]);
+
+    const forged = applyClientActionRequest(state, createClientActionRequest(state, 'p1', {
+      kind: 'CastSpell',
+      cardInstanceId: 'strict_charm_in_hand',
+      targets: [],
+      chosenModes: [0, 1],
+    }, {
+      id: 'req-forged-modal-choice',
+      createdAt: 26,
+    }));
+
+    expect(forged.ok).toBe(false);
+    expect(forged.reason).toBe('illegal_action');
+    expect(forged.state).toBeUndefined();
+    expect(state.cards.get('strict_charm_in_hand')?.zone).toBe('hand');
+  });
+
   it('includes selected target names in command labels', () => {
     const state = stateWithForestInHand();
     const source = [...state.cards.values()].find(card => card.ownerId === 'p1' && card.definitionId === 'commander');
@@ -2308,6 +2347,163 @@ describe('authority action boundary', () => {
         message: 'The stack must be empty',
       },
     ]);
+  });
+
+  it('does not create a Sisay search prompt while Sisay is still a permanent spell on the stack', () => {
+    const base = stateWithSisaySearchChoices();
+    const sisay = base.cards.get('sisay_1')!;
+    const sisayDef = base.cardDefinitions.get('sisay')!;
+    const cardDefinitions = new Map(base.cardDefinitions);
+    cardDefinitions.set('sisay', {
+      ...sisayDef,
+      oracle_text: "{W}{U}{B}{R}{G}, {T}: Search your library for a legendary permanent card with mana value less than Sisay, Weatherlight Captain's power, put that card onto the battlefield, then shuffle.",
+    });
+    const cards = new Map(base.cards);
+    cards.set('sisay_1', { ...sisay, zone: 'stack' });
+    const state: GameState = {
+      ...base,
+      cardDefinitions,
+      cards,
+      stack: [{
+        kind: 'Spell',
+        id: 'stack-sisay-spell',
+        cardInstanceId: 'sisay_1',
+        casterId: 'p1',
+        targets: [],
+      }],
+      hasPriorityPassed: [true, true],
+    };
+
+    const result = resolveTopStackSearchPrompt(state, {
+      playerId: 'p1',
+      createdAt: 99,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.reason).toBe('no_search_effect');
+    expect(state.stack).toHaveLength(1);
+    expect(state.cards.get('sisay_1')?.zone).toBe('stack');
+    expect(state.cards.get('arcane_signet_1')?.zone).toBe('library');
+  });
+
+  it('creates a Rampant Growth search prompt only after the spell resolves off the stack', () => {
+    const base = stateWithForestInHand();
+    const forest = [...base.cards.values()].find(card => card.definitionId === 'forest' && card.ownerId === 'p1')!;
+    const rampantGrowth = def(
+      'rampant_growth',
+      'Rampant Growth',
+      'Sorcery',
+      '{1}{G}',
+      'Search your library for a basic land card, put that card onto the battlefield tapped, then shuffle.',
+    );
+    const cards = new Map(base.cards);
+    cards.set(forest.instanceId, { ...forest, zone: 'library' });
+    cards.set('rampant_growth_1', cardInstance('rampant_growth_1', 'rampant_growth', 'p1', 'stack'));
+    const state: GameState = {
+      ...base,
+      cardDefinitions: new Map(base.cardDefinitions).set('rampant_growth', rampantGrowth),
+      cards,
+      stack: [{
+        kind: 'Spell',
+        id: 'stack-rampant-growth',
+        cardInstanceId: 'rampant_growth_1',
+        casterId: 'p1',
+        targets: [],
+      }],
+      hasPriorityPassed: [true, true],
+    };
+
+    const result = resolveTopStackSearchPrompt(state, {
+      playerId: 'p1',
+      createdAt: 100,
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.stack).toHaveLength(0);
+    expect(result.state.cards.get('rampant_growth_1')?.zone).toBe('graveyard');
+    expect(result.state.cards.get(forest.instanceId)?.zone).toBe('library');
+    expect(result.request.kind).toBe('SearchLibrary');
+    expect(result.request.legalChoices.map(choice => choice.cardInstanceId)).toContain(forest.instanceId);
+
+    const response = applySearchLibraryPromptResponse(result.state, result.request, {
+      requestId: result.request.id,
+      kind: 'SearchLibrary',
+      playerId: 'p1',
+      selectedCardInstanceIds: [forest.instanceId],
+    });
+
+    expect(response.ok).toBe(true);
+    expect(response.state?.cards.get(forest.instanceId)?.zone).toBe('battlefield');
+    expect(response.state?.cards.get(forest.instanceId)?.tapped).toBe(true);
+  });
+
+  it('keeps Cultivate multi-destination searches in one typed prompt', () => {
+    const base = stateWithForestInHand();
+    const forest = [...base.cards.values()].find(card => card.definitionId === 'forest' && card.ownerId === 'p1')!;
+    const islandDef = base.cardDefinitions.get('island')!;
+    const cultivate = def(
+      'cultivate',
+      'Cultivate',
+      'Sorcery',
+      '{2}{G}',
+      'Search your library for up to two basic land cards, reveal those cards, put one onto the battlefield tapped and the other into your hand, then shuffle.',
+    );
+    const cards = new Map(base.cards);
+    cards.set(forest.instanceId, { ...forest, zone: 'library' });
+    cards.set('cultivate_1', cardInstance('cultivate_1', 'cultivate', 'p1', 'stack'));
+    cards.set('p1_extra_island', cardInstance('p1_extra_island', islandDef.id, 'p1', 'library'));
+    const state: GameState = {
+      ...base,
+      cardDefinitions: new Map(base.cardDefinitions).set('cultivate', cultivate),
+      cards,
+      stack: [{
+        kind: 'Spell',
+        id: 'stack-cultivate',
+        cardInstanceId: 'cultivate_1',
+        casterId: 'p1',
+        targets: [],
+      }],
+      hasPriorityPassed: [true, true],
+    };
+
+    const result = resolveTopStackSearchPrompt(state, {
+      playerId: 'p1',
+      createdAt: 101,
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.request.minSelections).toBe(0);
+    expect(result.request.maxSelections).toBe(2);
+    expect(result.request.destinationBySelectionIndex).toEqual(['battlefield', 'hand']);
+    expect(result.request.tappedBySelectionIndex).toEqual([true, false]);
+    expect(result.request.legalChoices.map(choice => choice.cardInstanceId))
+      .toEqual(expect.arrayContaining([forest.instanceId, 'p1_extra_island']));
+
+    const partialResponse = applySearchLibraryPromptResponse(result.state, result.request, {
+      requestId: result.request.id,
+      kind: 'SearchLibrary',
+      playerId: 'p1',
+      selectedCardInstanceIds: [forest.instanceId],
+    });
+
+    expect(partialResponse.ok).toBe(true);
+    expect(partialResponse.state?.cards.get(forest.instanceId)?.zone).toBe('battlefield');
+    expect(partialResponse.state?.cards.get(forest.instanceId)?.tapped).toBe(true);
+    expect(partialResponse.state?.cards.get('p1_extra_island')?.zone).toBe('library');
+
+    const response = applySearchLibraryPromptResponse(result.state, result.request, {
+      requestId: result.request.id,
+      kind: 'SearchLibrary',
+      playerId: 'p1',
+      selectedCardInstanceIds: [forest.instanceId, 'p1_extra_island'],
+    });
+
+    expect(response.ok).toBe(true);
+    expect(response.state?.cards.get(forest.instanceId)?.zone).toBe('battlefield');
+    expect(response.state?.cards.get(forest.instanceId)?.tapped).toBe(true);
+    expect(response.state?.cards.get('p1_extra_island')?.zone).toBe('hand');
   });
 
   it('emits granular diffs for combat, commander, and visible card state changes', () => {

@@ -24,6 +24,7 @@ import {
   putTriggersOnStack,
   registerBattlefieldAbilities,
   registerContinuousAbilitiesForPermanent,
+  getCastSpellDefinition,
 } from './stack';
 import { executeSearchLibrary, executeShuffleLibrary, matchesCardFilter } from './effects/executor';
 import { getEffectivePower, getEffectiveToughness } from './effects/continuous';
@@ -37,6 +38,8 @@ import type { ActionFailure, GameEvent as ActionGameEvent } from './actions-publ
 import type { CardFilter, Effect, SearchLibraryEffect, TargetRef } from './effects/ast';
 import type { TargetSpec } from './effects/targets';
 import { getCardDefinition } from './game-state';
+
+const PROMPT_BLOCKED_PERMANENT_TYPES = ['creature', 'artifact', 'enchantment', 'planeswalker', 'battle'];
 
 export type ClientActionSource = 'ui' | 'ai' | 'system';
 
@@ -103,7 +106,9 @@ export interface SearchLibraryPromptRequest {
   expectedStateId: string;
   filter: CardFilter;
   destination: SearchLibraryDestination;
+  destinationBySelectionIndex?: SearchLibraryDestination[];
   tapped?: boolean;
+  tappedBySelectionIndex?: boolean[];
   shuffle: boolean;
   revealPolicy: PromptRevealPolicy;
   minSelections: number;
@@ -119,6 +124,8 @@ export interface CreateSearchLibraryPromptOptions {
   id?: string;
   sourceInstanceId?: string;
   tapped?: boolean;
+  destinationBySelectionIndex?: SearchLibraryDestination[];
+  tappedBySelectionIndex?: boolean[];
   shuffle?: boolean;
   revealPolicy?: PromptRevealPolicy;
   minSelections?: number;
@@ -1212,7 +1219,13 @@ function actionReferencesSameObject(legal: AIAction, requested: AIAction): boole
     case 'CastSpell':
       return requested.kind === 'CastSpell'
         && legal.cardInstanceId === requested.cardInstanceId
-        && stableJson(legal.targets) === stableJson(requested.targets);
+        && stableJson(legal.targets) === stableJson(requested.targets)
+        && stableJson(legal.chosenModes ?? []) === stableJson(requested.chosenModes ?? [])
+        && (legal.faceName ?? '') === (requested.faceName ?? '')
+        && (legal.xValue ?? 0) === (requested.xValue ?? 0)
+        && stableJson(legal.delveCardIds ?? []) === stableJson(requested.delveCardIds ?? [])
+        && stableJson(legal.convokeCreatureIds ?? []) === stableJson(requested.convokeCreatureIds ?? [])
+        && stableJson(legal.improviseArtifactIds ?? []) === stableJson(requested.improviseArtifactIds ?? []);
     case 'ActivateAbility':
       return requested.kind === 'ActivateAbility'
         && legal.cardInstanceId === requested.cardInstanceId
@@ -1715,7 +1728,9 @@ export function createSearchLibraryPromptRequest(
     expectedStateId,
     filter,
     destination,
+    destinationBySelectionIndex: options.destinationBySelectionIndex,
     tapped: options.tapped,
+    tappedBySelectionIndex: options.tappedBySelectionIndex,
     shuffle: options.shuffle ?? false,
     revealPolicy: options.revealPolicy || 'hidden',
     minSelections,
@@ -1730,6 +1745,10 @@ export function createSearchLibraryPromptRequest(
 
 function isSearchLibraryEffect(effect: unknown): effect is SearchLibraryEffect {
   return Boolean(effect && typeof effect === 'object' && (effect as { kind?: unknown }).kind === 'SearchLibrary');
+}
+
+function isShuffleLibraryEffect(effect: unknown): boolean {
+  return Boolean(effect && typeof effect === 'object' && (effect as { kind?: unknown }).kind === 'ShuffleLibrary');
 }
 
 function searchPlayerFromTargetRef(
@@ -1752,8 +1771,9 @@ function searchPlayerFromTargetRef(
 
 function spellEffectsFromStackItem(state: GameState, item: Extract<StackItem, { kind: 'Spell' }>): Effect[] {
   const card = state.cards.get(item.cardInstanceId);
-  const def = card ? getCardDefinition(state, card) : undefined;
+  const def = card ? getCastSpellDefinition(state, item.cardInstanceId, { faceName: item.faceName }) ?? getCardDefinition(state, card) : undefined;
   if (!def) return [];
+  if (def.card_types.some(type => PROMPT_BLOCKED_PERMANENT_TYPES.includes(type))) return [];
 
   const override = getOverride(def.id, def.name);
   if (override?.kind === 'Spell') return override.effects as Effect[];
@@ -1771,13 +1791,67 @@ function spellEffectsFromStackItem(state: GameState, item: Extract<StackItem, { 
   return [];
 }
 
-function stackItemSearchEffect(state: GameState, item: StackItem): SearchLibraryEffect | null {
+interface StackSearchPromptPlan {
+  effect: SearchLibraryEffect;
+  playerId: string;
+  destinationBySelectionIndex?: SearchLibraryDestination[];
+  tappedBySelectionIndex?: boolean[];
+  minSelections?: number;
+  maxSelections?: number;
+  shuffle: boolean;
+}
+
+function sameSearchFilter(a: CardFilter, b: CardFilter): boolean {
+  return stableJson(a) === stableJson(b);
+}
+
+function stackItemSearchPromptPlan(state: GameState, item: StackItem): StackSearchPromptPlan | null {
   const effects = item.kind === 'Spell'
     ? spellEffectsFromStackItem(state, item)
     : item.kind === 'ActivatedAbility' || item.kind === 'TriggeredAbility'
       ? item.ability.effects as Effect[]
       : [];
-  return effects.find(isSearchLibraryEffect) ?? null;
+  const firstSearchIndex = effects.findIndex(isSearchLibraryEffect);
+  if (firstSearchIndex < 0) return null;
+
+  const controllerId = stackItemControllerId(item);
+  const targets = 'targets' in item ? item.targets : [];
+  const first = effects[firstSearchIndex] as SearchLibraryEffect;
+  const playerId = searchPlayerFromTargetRef(first.player, controllerId, targets);
+  if (!playerId) return null;
+
+  const combined: SearchLibraryEffect[] = [first];
+  for (let index = firstSearchIndex + 1; index < effects.length; index += 1) {
+    const next = effects[index];
+    if (!isSearchLibraryEffect(next)) break;
+    const nextPlayerId = searchPlayerFromTargetRef(next.player, controllerId, targets);
+    if (nextPlayerId !== playerId) break;
+    if (!sameSearchFilter(first.filter, next.filter)) break;
+    combined.push(next);
+  }
+
+  const trailingEffects = effects.slice(firstSearchIndex + combined.length);
+  const shuffle = combined.some(effect => effect.shuffle) || trailingEffects.some(isShuffleLibraryEffect);
+  const destinationBySelectionIndex = combined.length > 1
+    ? combined.map(effect => effect.destination as SearchLibraryDestination)
+    : undefined;
+  const tappedBySelectionIndex = combined.length > 1
+    ? combined.map(effect => Boolean(effect.tapped))
+    : undefined;
+  const maxSelections = combined.reduce((total, effect) => total + (effect.maxSelections ?? 1), 0);
+  const minSelections = combined.some(effect => (effect.minSelections ?? 0) === 0)
+    ? 0
+    : combined.reduce((total, effect) => total + (effect.minSelections ?? 1), 0);
+
+  return {
+    effect: first,
+    playerId,
+    destinationBySelectionIndex,
+    tappedBySelectionIndex,
+    minSelections,
+    maxSelections,
+    shuffle,
+  };
 }
 
 function stackItemControllerId(item: StackItem): string {
@@ -1838,40 +1912,38 @@ export function resolveTopStackSearchPrompt(
     };
   }
 
-  const effect = stackItemSearchEffect(state, item);
-  if (!effect) {
+  const plan = stackItemSearchPromptPlan(state, item);
+  if (!plan) {
     return { ok: false, reason: 'no_search_effect', message: 'Top stack item has no search effect' };
-  }
-
-  const playerId = searchPlayerFromTargetRef(effect.player, controllerId, 'targets' in item ? item.targets : []);
-  if (!playerId) {
-    return {
-      ok: false,
-      reason: 'unsupported_search_player',
-      message: 'This search effect does not target a single searchable player',
-    };
   }
 
   const nextState = removeTopStackItemForPrompt(state, item);
   const sourceInstanceId = stackItemSourceInstanceId(item);
   const createdAt = options.createdAt ?? Date.now();
   const revealPolicy = options.revealPolicy
-    || (Object.keys(effect.filter || {}).length > 0 ? 'reveal' : 'hidden');
+    || (Object.keys(plan.effect.filter || {}).length > 0 ? 'reveal' : 'hidden');
+  const multipleSearchSelections = (plan.maxSelections ?? 1) > 1;
   const request = createSearchLibraryPromptRequest(
     nextState,
-    playerId,
-    effect.filter,
-    effect.destination,
+    plan.playerId,
+    plan.effect.filter,
+    plan.effect.destination,
     {
       ...options,
       id: options.id || `search-${item.id}`,
       sourceInstanceId,
-      tapped: options.tapped ?? effect.tapped,
-      shuffle: options.shuffle ?? effect.shuffle,
-      minSelections: options.minSelections ?? effect.minSelections,
-      maxSelections: options.maxSelections ?? effect.maxSelections,
-      topCount: options.topCount ?? effect.topCount,
-      putUnselectedTopCardsOnBottom: options.putUnselectedTopCardsOnBottom ?? effect.putUnselectedTopCardsOnBottom,
+      destinationBySelectionIndex: options.destinationBySelectionIndex ?? plan.destinationBySelectionIndex,
+      tapped: options.tapped ?? plan.effect.tapped,
+      tappedBySelectionIndex: options.tappedBySelectionIndex ?? plan.tappedBySelectionIndex,
+      shuffle: options.shuffle ?? plan.shuffle,
+      minSelections: multipleSearchSelections
+        ? plan.minSelections
+        : (options.minSelections ?? plan.effect.minSelections),
+      maxSelections: multipleSearchSelections
+        ? plan.maxSelections
+        : (options.maxSelections ?? plan.effect.maxSelections),
+      topCount: options.topCount ?? plan.effect.topCount,
+      putUnselectedTopCardsOnBottom: options.putUnselectedTopCardsOnBottom ?? plan.effect.putUnselectedTopCardsOnBottom,
       revealPolicy,
       createdAt,
     },
@@ -1936,13 +2008,30 @@ function selectedPromptChoiceReason(
   ).reason || 'Selection is not legal for this search';
 }
 
+function destinationForSearchSelection(
+  request: SearchLibraryPromptRequest,
+  selectionIndex: number,
+): SearchLibraryDestination {
+  return request.destinationBySelectionIndex?.[selectionIndex] ?? request.destination;
+}
+
+function tappedForSearchSelection(
+  request: SearchLibraryPromptRequest,
+  selectionIndex: number,
+): boolean | undefined {
+  return request.tappedBySelectionIndex?.[selectionIndex] ?? request.tapped;
+}
+
 function validateBattlefieldEntryReplacementResponse(
   state: GameState,
   request: SearchLibraryPromptRequest,
   response: SearchLibraryPromptResponse,
   selectedCardInstanceId: string,
+  selectionIndex = 0,
 ): string | undefined {
-  if (request.destination !== 'battlefield') return undefined;
+  const destination = destinationForSearchSelection(request, selectionIndex);
+  const tapped = tappedForSearchSelection(request, selectionIndex);
+  if (destination !== 'battlefield') return undefined;
   if (response.payLifeToEnterUntapped === undefined) return undefined;
 
   const card = state.cards.get(selectedCardInstanceId);
@@ -1950,7 +2039,7 @@ function validateBattlefieldEntryReplacementResponse(
   if (!card || !def) return 'Selected card is no longer available';
 
   const optionalLifeCost = getOptionalUntappedLifeCost(def.oracle_text);
-  if (request.tapped) {
+  if (tapped) {
     return 'This effect puts the card onto the battlefield tapped, so an untapped replacement choice is not available';
   }
   if (optionalLifeCost === undefined) {
@@ -2070,7 +2159,8 @@ export function applySearchLibraryPromptResponse(
   }
 
   const legalChoiceIds = new Set(request.legalChoices.map(choice => choice.cardInstanceId));
-  for (const selectedId of selectedIds) {
+  for (let selectionIndex = 0; selectionIndex < selectedIds.length; selectionIndex += 1) {
+    const selectedId = selectedIds[selectionIndex];
     if (!legalChoiceIds.has(selectedId)) {
       const message = `Illegal search selection: ${selectedPromptChoiceReason(state, request, selectedId)}`;
       return {
@@ -2097,7 +2187,7 @@ export function applySearchLibraryPromptResponse(
       state,
       request.playerId,
       request.filter,
-      request.destination,
+      destinationForSearchSelection(request, selectionIndex),
       currentCard,
       request.sourceInstanceId,
     );
@@ -2117,6 +2207,7 @@ export function applySearchLibraryPromptResponse(
       request,
       response,
       selectedId,
+      selectionIndex,
     );
     if (replacementFailure) {
       const message = `Illegal replacement response: ${replacementFailure}`;
@@ -2134,13 +2225,16 @@ export function applySearchLibraryPromptResponse(
   if (selectedIds.length === 0) {
     nextState = request.shuffle ? executeShuffleLibrary(state, request.playerId) : state;
   } else {
-    for (const selectedId of selectedIds) {
+    for (let selectionIndex = 0; selectionIndex < selectedIds.length; selectionIndex += 1) {
+      const selectedId = selectedIds[selectionIndex];
+      const destination = destinationForSearchSelection(request, selectionIndex);
+      const tapped = tappedForSearchSelection(request, selectionIndex);
       nextState = executeSearchLibrary(
         nextState,
         request.playerId,
         request.filter,
-        request.destination,
-        request.tapped,
+        destination,
+        tapped,
         false,
         {
           selectedCardInstanceId: selectedId,
@@ -2148,7 +2242,7 @@ export function applySearchLibraryPromptResponse(
           payLifeToEnterUntapped: response.payLifeToEnterUntapped,
         },
       );
-      if (request.destination === 'battlefield') {
+      if (destination === 'battlefield') {
         nextState = applyBattlefieldEntryFromSearch(nextState, selectedId);
       }
     }
