@@ -50,7 +50,12 @@ export interface ClientActionResponse {
   update?: EngineStateUpdate;
 }
 
-export type EnginePromptKind = 'SearchLibrary' | 'SelectTarget' | 'ChooseReplacement' | 'PayCosts';
+export type EnginePromptKind =
+  | 'SearchLibrary'
+  | 'SelectTarget'
+  | 'ChooseReplacement'
+  | 'PayCosts'
+  | 'SelectCards';
 
 export type ClientPromptFailure =
   | 'invalid_request'
@@ -118,6 +123,7 @@ export interface ClientPromptResponse {
   selectedTargetIds?: string[];
   selectedReplacementOptionId?: ReplacementOptionId;
   selectedManaActions?: ManaPaymentAction[];
+  selectedCardInstanceIds?: string[];
 }
 
 export interface TargetChoice {
@@ -237,6 +243,48 @@ export interface PayCostsPromptResponse {
   selectedManaActions: ManaPaymentAction[];
 }
 
+export type SelectCardsSubject = 'DiscardToHandSize' | 'ManualDiscard' | 'AdditionalCost';
+
+export interface SelectCardsChoice {
+  cardInstanceId: string;
+  cardName: string;
+  zone: Zone;
+  legal: boolean;
+  reason?: string;
+}
+
+export interface SelectCardsPromptRequest {
+  id: string;
+  kind: 'SelectCards';
+  playerId: string;
+  expectedStateId: string;
+  subject: SelectCardsSubject;
+  zone: Zone;
+  destination: Zone;
+  minSelections: number;
+  maxSelections: number;
+  legalChoices: SelectCardsChoice[];
+  invalidChoices: SelectCardsChoice[];
+  createdAt: number;
+}
+
+export interface CreateSelectCardsPromptOptions {
+  id?: string;
+  subject?: SelectCardsSubject;
+  zone?: Zone;
+  destination?: Zone;
+  minSelections?: number;
+  maxSelections?: number;
+  createdAt?: number;
+}
+
+export interface SelectCardsPromptResponse {
+  requestId: string;
+  kind: 'SelectCards';
+  playerId: string;
+  selectedCardInstanceIds: string[];
+}
+
 export interface ActionReplayAuditStep {
   index: number;
   requestId: string;
@@ -275,11 +323,17 @@ export interface PayCostsPromptReplayRecord {
   response: PayCostsPromptResponse;
 }
 
+export interface SelectCardsPromptReplayRecord {
+  request: SelectCardsPromptRequest;
+  response: SelectCardsPromptResponse;
+}
+
 export type PromptReplayRecord =
   | SearchPromptReplayRecord
   | TargetPromptReplayRecord
   | ReplacementPromptReplayRecord
-  | PayCostsPromptReplayRecord;
+  | PayCostsPromptReplayRecord
+  | SelectCardsPromptReplayRecord;
 
 export interface PromptReplayAuditStep {
   index: number;
@@ -2018,6 +2072,196 @@ export function applyPayCostsPromptResponse(
   };
 }
 
+export function createSelectCardsPromptRequest(
+  state: GameState,
+  playerId: string,
+  options: CreateSelectCardsPromptOptions = {},
+): SelectCardsPromptRequest {
+  const expectedStateId = stateFingerprint(state);
+  const createdAt = options.createdAt ?? Date.now();
+  const zone = options.zone || 'hand';
+  const destination = options.destination || 'graveyard';
+  const subject = options.subject || 'ManualDiscard';
+  const minSelections = options.minSelections ?? 1;
+  const maxSelections = options.maxSelections ?? minSelections;
+  const choices = [...state.cards.values()]
+    .filter(card => card.ownerId === playerId)
+    .map(card => {
+      const def = state.cardDefinitions.get(card.definitionId);
+      const inZone = card.zone === zone;
+      return {
+        cardInstanceId: card.instanceId,
+        cardName: def?.name || card.instanceId,
+        zone: card.zone,
+        legal: inZone,
+        reason: inZone ? undefined : `Card is not in ${zone}`,
+      };
+    })
+    .sort((a, b) => {
+      if (a.legal !== b.legal) return a.legal ? -1 : 1;
+      return a.cardName.localeCompare(b.cardName);
+    });
+
+  return {
+    id: options.id || `select_cards_${expectedStateId}_${hashText(`${playerId}:${subject}:${zone}:${destination}:${createdAt}`)}`,
+    kind: 'SelectCards',
+    playerId,
+    expectedStateId,
+    subject,
+    zone,
+    destination,
+    minSelections,
+    maxSelections,
+    legalChoices: choices.filter(choice => choice.legal),
+    invalidChoices: choices.filter(choice => !choice.legal),
+    createdAt,
+  };
+}
+
+function selectCardsRejectUpdate(
+  state: GameState,
+  request: SelectCardsPromptRequest,
+  response: SelectCardsPromptResponse,
+  reason: ClientPromptFailure,
+  message: string,
+): EngineStateUpdate {
+  const currentStateId = stateFingerprint(state);
+  return {
+    oldStateId: request.expectedStateId,
+    newStateId: currentStateId,
+    activePlayerId: activePlayerId(state),
+    priorityPlayerId: priorityPlayerId(state),
+    phase: state.phase,
+    step: state.step,
+    turnNumber: state.turnNumber,
+    priority: prioritySnapshot(state),
+    visibleDiffs: [],
+    rulesEvents: [{
+      kind: 'PromptResponseRejected',
+      requestId: response.requestId,
+      playerId: response.playerId,
+      promptKind: request.kind,
+      reason,
+      message,
+      selectedCardInstanceIds: response.selectedCardInstanceIds,
+    }],
+    prompt: buildActionPrompt(state),
+  };
+}
+
+export function applySelectCardsPromptResponse(
+  state: GameState,
+  request: SelectCardsPromptRequest,
+  response: SelectCardsPromptResponse,
+): ClientPromptResponse {
+  if (request.kind !== 'SelectCards' || response.kind !== 'SelectCards' || request.id !== response.requestId) {
+    const message = 'Prompt response does not match the active card-selection request.';
+    return {
+      requestId: response.requestId,
+      ok: false,
+      reason: 'invalid_request',
+      message,
+      update: selectCardsRejectUpdate(state, request, response, 'invalid_request', message),
+    };
+  }
+
+  if (request.playerId !== response.playerId) {
+    const message = 'This card-selection prompt belongs to another player.';
+    return {
+      requestId: response.requestId,
+      ok: false,
+      reason: 'wrong_player',
+      message,
+      update: selectCardsRejectUpdate(state, request, response, 'wrong_player', message),
+    };
+  }
+
+  const currentStateId = stateFingerprint(state);
+  if (request.expectedStateId !== currentStateId) {
+    const message = 'The game state changed before this card-selection response reached the engine.';
+    return {
+      requestId: response.requestId,
+      ok: false,
+      reason: 'stale_state',
+      message,
+      update: selectCardsRejectUpdate(state, request, response, 'stale_state', message),
+    };
+  }
+
+  const selectedIds = [...new Set(response.selectedCardInstanceIds)];
+  if (
+    selectedIds.length !== response.selectedCardInstanceIds.length
+    || selectedIds.length < request.minSelections
+    || selectedIds.length > request.maxSelections
+  ) {
+    const message = `Card-selection response must choose between ${request.minSelections} and ${request.maxSelections} card(s).`;
+    return {
+      requestId: response.requestId,
+      ok: false,
+      reason: 'illegal_response',
+      message,
+      update: selectCardsRejectUpdate(state, request, response, 'illegal_response', message),
+    };
+  }
+
+  const legalIds = new Set(request.legalChoices.map(choice => choice.cardInstanceId));
+  for (const selectedId of selectedIds) {
+    const card = state.cards.get(selectedId);
+    if (!legalIds.has(selectedId) || !card || card.ownerId !== request.playerId || card.zone !== request.zone) {
+      const message = `Illegal card selection: ${cardName(state, card) || selectedId} is not in ${request.zone}.`;
+      return {
+        requestId: response.requestId,
+        ok: false,
+        reason: 'illegal_response',
+        message,
+        update: selectCardsRejectUpdate(state, request, response, 'illegal_response', message),
+      };
+    }
+  }
+
+  const newCards = new Map(state.cards);
+  for (const selectedId of selectedIds) {
+    const card = newCards.get(selectedId);
+    if (!card) continue;
+    newCards.set(selectedId, {
+      ...card,
+      zone: request.destination,
+      tapped: request.destination === 'battlefield' ? card.tapped : false,
+      damage: request.destination === 'battlefield' ? card.damage : 0,
+      counters: request.destination === 'battlefield' ? card.counters : {},
+    });
+  }
+  const nextState: GameState = { ...state, cards: newCards };
+  const invariantReport = validateStateInvariants(nextState);
+  if (!invariantReport.ok) {
+    const message = `Engine invariant failed: ${invariantReport.violations[0]?.message || 'invalid state'}`;
+    return {
+      requestId: response.requestId,
+      ok: false,
+      reason: 'invariant_violation',
+      message,
+      update: selectCardsRejectUpdate(state, request, response, 'invariant_violation', message),
+    };
+  }
+
+  return {
+    requestId: response.requestId,
+    ok: true,
+    state: nextState,
+    update: {
+      ...buildStateUpdate(state, nextState),
+      rulesEvents: [{
+        kind: 'PromptResponseAccepted',
+        requestId: response.requestId,
+        playerId: response.playerId,
+        promptKind: 'SelectCards',
+        selectedCardInstanceIds: selectedIds,
+      }],
+    },
+    selectedCardInstanceIds: selectedIds,
+  };
+}
+
 function manaPoolDiffs(before: ManaPool, after: ManaPool, playerId: string): VisibleDiff[] {
   const diffs: VisibleDiff[] = [];
   for (const color of MANA_COLORS) {
@@ -2628,9 +2872,11 @@ export function auditPromptReplay(
       ? applySearchLibraryPromptResponse(state, request, response as SearchLibraryPromptResponse)
       : request.kind === 'SelectTarget'
         ? applySelectTargetPromptResponse(state, request, response as SelectTargetPromptResponse)
-        : request.kind === 'ChooseReplacement'
-          ? applyChooseReplacementPromptResponse(state, request, response as ChooseReplacementPromptResponse)
-          : applyPayCostsPromptResponse(state, request, response as PayCostsPromptResponse);
+      : request.kind === 'ChooseReplacement'
+        ? applyChooseReplacementPromptResponse(state, request, response as ChooseReplacementPromptResponse)
+        : request.kind === 'PayCosts'
+          ? applyPayCostsPromptResponse(state, request, response as PayCostsPromptResponse)
+          : applySelectCardsPromptResponse(state, request, response as SelectCardsPromptResponse);
     const step: PromptReplayAuditStep = {
       index,
       requestId: request.id,

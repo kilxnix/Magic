@@ -4,6 +4,7 @@ import {
   applyChooseReplacementPromptResponse,
   applyPayCostsPromptResponse,
   applySearchLibraryPromptResponse,
+  applySelectCardsPromptResponse,
   applySelectTargetPromptResponse,
   auditActionReplay,
   auditPromptReplay,
@@ -12,6 +13,7 @@ import {
   createClientActionRequest,
   createBattlefieldEntryReplacementPromptRequest,
   createSearchLibraryPromptRequest,
+  createSelectCardsPromptRequest,
   createSelectTargetPromptRequest,
   createPayCostsPromptRequest,
   diffGameStates,
@@ -802,6 +804,50 @@ describe('authority action boundary', () => {
     expect(insufficient.ok).toBe(false);
     expect(insufficient.reason).toBe('illegal_response');
     expect(insufficient.message).toContain('do not produce enough mana');
+  });
+
+  it('validates mandatory card-selection prompts for cleanup discard', () => {
+    const state = stateWithForestInHand();
+    const forest = [...state.cards.values()].find(card => card.definitionId === 'forest' && card.ownerId === 'p1');
+    expect(forest).toBeDefined();
+    const request = createSelectCardsPromptRequest(state, 'p1', {
+      id: 'prompt-cleanup-discard',
+      subject: 'DiscardToHandSize',
+      zone: 'hand',
+      destination: 'graveyard',
+      minSelections: 1,
+      maxSelections: 1,
+      createdAt: 22,
+    });
+
+    expect(request.kind).toBe('SelectCards');
+    expect(request.legalChoices.map(choice => choice.cardInstanceId)).toContain(forest!.instanceId);
+
+    const accepted = applySelectCardsPromptResponse(state, request, {
+      requestId: request.id,
+      kind: 'SelectCards',
+      playerId: 'p1',
+      selectedCardInstanceIds: [forest!.instanceId],
+    });
+    expect(accepted.ok).toBe(true);
+    expect(accepted.state?.cards.get(forest!.instanceId)?.zone).toBe('graveyard');
+    expect(accepted.update?.rulesEvents).toEqual([{
+      kind: 'PromptResponseAccepted',
+      requestId: request.id,
+      playerId: 'p1',
+      promptKind: 'SelectCards',
+      selectedCardInstanceIds: [forest!.instanceId],
+    }]);
+
+    const illegal = applySelectCardsPromptResponse(state, request, {
+      requestId: request.id,
+      kind: 'SelectCards',
+      playerId: 'p1',
+      selectedCardInstanceIds: ['missing-card'],
+    });
+    expect(illegal.ok).toBe(false);
+    expect(illegal.reason).toBe('illegal_response');
+    expect(illegal.state).toBeUndefined();
   });
 
   it('includes selected target names in command labels', () => {

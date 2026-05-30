@@ -71,6 +71,8 @@ import {
   applyChooseReplacementPromptResponse,
   createPayCostsPromptRequest,
   applyPayCostsPromptResponse,
+  createSelectCardsPromptRequest,
+  applySelectCardsPromptResponse,
   type ActionPromptChoice,
   type ClientActionResponse,
   type EnginePrompt,
@@ -3865,9 +3867,26 @@ export function useShelectorGame() {
       if (!card || card.zone !== 'hand' || card.ownerId !== humanIdRef.current) return;
 
       const def = getCardDefinition(engine, card);
-      const newCards = new Map(engine.cards);
-      newCards.set(cardInstanceId, { ...card, zone: 'graveyard' as Zone });
-      const newEngine = { ...engine, cards: newCards } as GameStateWithAI;
+      const discardRequest = createSelectCardsPromptRequest(engine, humanIdRef.current, {
+        subject: discardPhase ? 'DiscardToHandSize' : 'ManualDiscard',
+        zone: 'hand',
+        destination: 'graveyard',
+        minSelections: 1,
+        maxSelections: 1,
+      });
+      const discardResponse = applySelectCardsPromptResponse(engine, discardRequest, {
+        requestId: discardRequest.id,
+        kind: 'SelectCards',
+        playerId: humanIdRef.current,
+        selectedCardInstanceIds: [cardInstanceId],
+      });
+      recordAuthorityUpdate(discardResponse.update);
+      if (!discardResponse.ok || !discardResponse.state) {
+        addMessage('system', discardResponse.message || 'That discard is not legal right now.');
+        syncState();
+        return;
+      }
+      const newEngine = discardResponse.state as GameStateWithAI;
       engineRef.current = newEngine;
 
       addMessage('player', `Discarded ${def.name}.`);
@@ -3916,7 +3935,7 @@ export function useShelectorGame() {
 
       syncState();
     },
-    [discardPhase, addMessage, syncState, advanceGameLoop],
+    [discardPhase, addMessage, syncState, advanceGameLoop, recordAuthorityUpdate],
   );
 
   const resolveTutor = useCallback((cardInstanceId: string) => {
