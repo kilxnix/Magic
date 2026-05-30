@@ -1,17 +1,17 @@
 {
-  "generatedAt": "2026-05-30T12:39:19.021Z",
+  "generatedAt": "2026-05-30T12:43:43.195Z",
   "source": "mtg_data/cards_min.jsonl",
   "commanderLegalOnly": true,
   "includedCards": 30969,
   "totalOracleFaces": 31420,
-  "parsedFaces": 16069,
-  "unparsedFaces": 15351,
-  "parsedPercent": 51.14,
+  "parsedFaces": 16094,
+  "unparsedFaces": 15326,
+  "parsedPercent": 51.22,
   "parsedKindCounts": {
-    "Unparsed": 15351,
-    "Spell": 10856,
-    "ETB": 2091,
-    "Triggered": 1317,
+    "Unparsed": 15326,
+    "Spell": 10450,
+    "ETB": 2532,
+    "Triggered": 1307,
     "KeywordOnly": 876,
     "StaticAbility": 340,
     "EntryCounters": 338,
@@ -21,15 +21,15 @@
   "unparsedReasons": [
     {
       "reason": "No recognized pattern",
-      "count": 12924
+      "count": 12903
     },
     {
       "reason": "Could not parse ETB effect clause",
-      "count": 1362
+      "count": 1360
     },
     {
       "reason": "Could not parse trigger effect clause",
-      "count": 1034
+      "count": 1032
     },
     {
       "reason": "Could not parse dies effect clause",
@@ -40,7 +40,7 @@
     {
       "id": "trigger-timing",
       "reason": "Triggered or delayed triggered abilities need event registration and APNAP ordering.",
-      "count": 6417,
+      "count": 6398,
       "samples": [
         {
           "name": "Mindlink Mech",
@@ -85,17 +85,17 @@
           "text": "Flying Whenever this creature deals combat damage to a player, that player exiles cards from the top of their library until they exile an instant or sorcery card. You may cast that card without paying its mana cost. Then that player puts the exiled cards that weren't cast this way on the bottom of their library in a random order."
         },
         {
-          "name": "Selesnya Sanctuary",
-          "set": "clu",
-          "reason": "No recognized pattern",
-          "text": "This land enters tapped. When this land enters, return a land you control to its owner's hand. {T}: Add {G}{W}."
+          "name": "Dakmor Lancer",
+          "set": "7ed",
+          "reason": "Could not parse ETB effect clause",
+          "text": "When this creature enters, destroy target nonblack creature."
         }
       ]
     },
     {
       "id": "unclassified",
       "reason": "Unparsed text did not match a known syntax cluster; inspect manually.",
-      "count": 3468,
+      "count": 3465,
       "samples": [
         {
           "name": "Static Orb",
@@ -150,7 +150,7 @@
     {
       "id": "continuous-layers",
       "reason": "Continuous effects need layer/timestamp/dependency handling.",
-      "count": 3258,
+      "count": 3254,
       "samples": [
         {
           "name": "Sensory Deprivation",
@@ -205,7 +205,7 @@
     {
       "id": "combat-multiplayer",
       "reason": "Combat or multiplayer-defender text needs combat/defender-aware execution.",
-      "count": 2379,
+      "count": 2377,
       "samples": [
         {
           "name": "Marang River Prowler",
@@ -315,7 +315,7 @@
     {
       "id": "replacement-prevention",
       "reason": "Replacement/prevention effects require replacement-layer handling.",
-      "count": 1599,
+      "count": 1587,
       "samples": [
         {
           "name": "Sodden Verdure",
@@ -354,16 +354,16 @@
           "text": "As this land enters, you may reveal a Mountain or Forest card from your hand. If you don't, this land enters tapped. {T}: Add {R} or {G}."
         },
         {
-          "name": "Selesnya Sanctuary",
-          "set": "clu",
-          "reason": "No recognized pattern",
-          "text": "This land enters tapped. When this land enters, return a land you control to its owner's hand. {T}: Add {G}{W}."
-        },
-        {
           "name": "Long List of the Ents",
           "set": "ltr",
           "reason": "No recognized pattern",
           "text": "(As this Saga enters and after your draw step, add a lore counter. Sacrifice after VI.) I, II, III, IV, V, VI — Note a creature type that hasn't been noted for this Saga. When you next cast a creature spell of that type this turn, that creature enters with an additional +1/+1 counter on it."
+        },
+        {
+          "name": "Deny the Divine",
+          "set": "thb",
+          "reason": "No recognized pattern",
+          "text": "Counter target creature or enchantment spell. If that spell is countered this way, exile it instead of putting it into its owner's graveyard."
         }
       ]
     },
@@ -425,7 +425,7 @@
     {
       "id": "cost-system",
       "reason": "Alternative/additional/reduced costs need prompt-backed payment and legality.",
-      "count": 1221,
+      "count": 1219,
       "samples": [
         {
           "name": "Pteramander",

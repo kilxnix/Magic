@@ -894,6 +894,32 @@ function matchReturnToHand(tokens: string[], startIndex: number): PatternResult 
 }
 
 /**
+ * Match: "return a land you control to its owner's hand"
+ */
+function matchReturnLandYouControlToHand(tokens: string[], startIndex: number): PatternResult {
+  const slice = tokens.slice(startIndex);
+
+  if (slice.length < 9) return null;
+  if (slice[0] !== 'return') return null;
+  if (slice[1] !== 'a' || slice[2] !== 'land' || slice[3] !== 'you' || slice[4] !== 'control') return null;
+  if (slice[5] !== 'to') return null;
+  if (slice[6] !== 'its') return null;
+  if (slice[7] !== "owner's" && slice[7] !== 'owners') return null;
+  if (slice[8] !== 'hand') return null;
+
+  let consumed = 9;
+  if (tokens[startIndex + consumed] === '.') consumed++;
+
+  const spec = makeTargetSpec('Land');
+  const effect: Effect = {
+    kind: 'ReturnToHand',
+    target: makeChosenRef(spec),
+  };
+
+  return { effects: [effect], targets: [spec], consumed };
+}
+
+/**
  * Match: "target player mills N cards"
  * Match: "mill N cards" (controller mills)
  */
@@ -3939,7 +3965,7 @@ function parseEffectClauseInternal(tokens: string[], startIndex: number): Patter
     matchEachOpponentDiscardsCard, matchDestroyAll, matchDealDamage, matchDestroy,
     matchLookAtTargetPlayerHand, matchLookAtTopPutOneIntoHand, matchPutLandFromHandOntoBattlefield, matchThatPlayerDraw, matchTargetPlayerDraw, matchDraw,
     matchGainLife, matchLoseLife, matchExile, matchPutCreatureCardFromOpponentGraveyardOntoBattlefield, matchReturnFromGraveyard, matchReturnThatCardToHand,
-    matchReturnToHand, matchMill, matchGainEnergy, matchAddCounters, matchModifyPT, matchTap,
+    matchReturnLandYouControlToHand, matchReturnToHand, matchMill, matchGainEnergy, matchAddCounters, matchModifyPT, matchTap,
     matchUntap, matchRollD20, matchThatPlayerCreatesToken, matchCreateToken, matchDiscard, matchDiscardSelf, matchScry,
     matchSurveil, matchCounterSpell,
   ];
@@ -4026,6 +4052,7 @@ function parseEffectClause(tokens: string[], startIndex: number): PatternResult 
     matchPutCreatureCardFromOpponentGraveyardOntoBattlefield,
     matchReturnFromGraveyard, // before ReturnToHand — "return target creature card from..."
     matchReturnThatCardToHand,
+    matchReturnLandYouControlToHand,
     matchReturnToHand,
     matchMill,
     matchGainEnergy,
@@ -4989,7 +5016,7 @@ export function parseOracleText(oracleText: string, manaCost?: string): ParsedOr
     }
   }
 
-  // Check for ETB trigger
+  // Check for ETB trigger.
   const etbIndex = matchETBPrefix(tokens);
   if (etbIndex > 0) {
     const optional = isOptionalEffectClause(tokens, etbIndex);
@@ -5008,6 +5035,31 @@ export function parseOracleText(oracleText: string, manaCost?: string): ParsedOr
       };
     }
     return { kind: 'Unparsed', reason: 'Could not parse ETB effect clause' };
+  }
+
+  // Some permanents carry non-trigger entry text before the ETB sentence, e.g.
+  // "This land enters tapped. When this land enters...". Only claim ETB if the
+  // nested trigger's effect clause is parseable; otherwise let later matchers
+  // keep any simpler first-clause coverage instead of downgrading the card.
+  for (let i = 1; i < tokens.length; i++) {
+    if (tokens[i] !== 'when' && tokens[i] !== 'whenever') continue;
+    const nestedIndex = matchETBPrefix(tokens.slice(i));
+    if (nestedIndex <= 0) continue;
+    const effectIndex = i + nestedIndex;
+    const optional = isOptionalEffectClause(tokens, effectIndex);
+    const effectResult = parseMultipleEffects(tokens, effectIndex);
+    if (!effectResult) continue;
+    const ability: TriggeredAbility = {
+      kind: 'TriggeredAbility',
+      trigger: { kind: 'ETB', who: 'self' },
+      effects: effectResult.effects,
+      ...(optional ? { optional: true } : {}),
+    };
+    return {
+      kind: 'ETB',
+      ability,
+      targets: effectResult.targets,
+    };
   }
 
   // Check for dies trigger

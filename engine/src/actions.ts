@@ -11,7 +11,7 @@ import {
 import { getOverride } from './effects/overrides';
 import { parseActivatedAbilities } from './effects/parser';
 import { executeSacrificeSpecific, executeSearchLibrary, executeShuffleLibrary, executeEffectsWithSBA, matchesCardFilter } from './effects/executor';
-import { checkTriggersForEvent, registerBattlefieldAbilities } from './stack';
+import { checkTriggersForEvent, createETBTriggers, registerBattlefieldAbilities } from './stack';
 import { instanceHasKeyword } from './keywords';
 import { populateParsedCache } from './cards/card-parser-cache';
 import { isEffectiveCreature } from './effective-types';
@@ -249,6 +249,7 @@ export function playLand(
 
   // Register any triggered abilities the land might have (e.g., ETB triggers on lands)
   resultState = registerBattlefieldAbilities(resultState, cardInstanceId);
+  resultState = createETBTriggers(resultState, cardInstanceId);
 
   // Fire landfall triggers ("Whenever a land enters the battlefield under your control")
   resultState = checkTriggersForEvent(resultState, {

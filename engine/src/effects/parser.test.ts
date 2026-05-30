@@ -221,6 +221,14 @@ describe('parseOracleText', () => {
       expect(result.targets[0].constraints).toEqual({ opponentControls: true });
     });
 
+    it('parses bounce-land ETBs that return a land you control', () => {
+      const result = parseOracleText("This land enters tapped. When this land enters, return a land you control to its owner's hand. {T}: Add {G}{W}.");
+      expect(result.kind).toBe('ETB');
+      if (result.kind !== 'ETB') return;
+      expect(result.ability.effects[0]).toMatchObject({ kind: 'ReturnToHand' });
+      expect(result.targets[0].type).toBe('Land');
+    });
+
     it('parses enchanted-creature dies triggers after enchant preamble text', () => {
       const result = parseOracleText("Enchant creature Enchanted creature gets +1/+1. When enchanted creature dies, return that card to its owner's hand.");
       expect(result.kind).toBe('Dies');

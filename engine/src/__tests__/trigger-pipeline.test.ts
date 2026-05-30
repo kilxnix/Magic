@@ -597,6 +597,46 @@ describe('ETB Trigger Pipeline', () => {
     expect(instanceHasKeyword(state, targetInst.instanceId, 'Haste')).toBe(true);
   });
 
+  it('playing a bounce land creates and resolves its return-a-land ETB trigger', () => {
+    const sanctuary: CardDefinition = {
+      ...makeLand('selesnya-sanctuary', 'Selesnya Sanctuary'),
+      type_line: 'Land',
+      oracle_text: "This land enters tapped. When this land enters, return a land you control to its owner's hand. {T}: Add {G}{W}.",
+      color_identity: ['G', 'W'],
+    };
+    const forest: CardDefinition = {
+      ...makeLand('forest', 'Forest'),
+      type_line: 'Basic Land - Forest',
+      oracle_text: '{T}: Add {G}.',
+      color_identity: ['G'],
+    };
+
+    let state = createTestGame(
+      [sanctuary, forest],
+      [makeLand('island', 'Island')],
+    );
+
+    const sanctuaryInst = findCard(state, 'selesnya-sanctuary')!;
+    const forestInst = findCard(state, 'forest')!;
+    state = moveToZone(state, sanctuaryInst.instanceId, 'hand');
+    state = moveToZone(state, forestInst.instanceId, 'battlefield');
+    state = { ...state, activePlayerIndex: 0, priorityPlayerIndex: 0, phase: 'precombat_main' as any, step: 'upkeep' as any };
+
+    state = playLand(state, 'p1', sanctuaryInst.instanceId);
+
+    expect(state.cards.get(sanctuaryInst.instanceId)!.zone).toBe('battlefield');
+    expect(state.cards.get(sanctuaryInst.instanceId)!.tapped).toBe(true);
+    expect(state.pendingTriggers).toHaveLength(1);
+    expect(state.pendingTriggers[0].requiredTargets).toMatchObject([{ type: 'Land' }]);
+
+    const triggerId = state.pendingTriggers[0].id;
+    state = putTriggersOnStack(state, { [triggerId]: [forestInst.instanceId] });
+    state = resolveTopOfStack(state);
+
+    expect(state.cards.get(forestInst.instanceId)!.zone).toBe('hand');
+    expect(state.cards.get(sanctuaryInst.instanceId)!.zone).toBe('battlefield');
+  });
+
   it('Krenko tap ability creates one token for each Goblin you control', () => {
     const krenko: CardDefinition = {
       id: 'krenko',
