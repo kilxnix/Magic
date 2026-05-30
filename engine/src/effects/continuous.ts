@@ -100,11 +100,15 @@ function isAffectedBy(
 ): boolean {
   const ability = effect.ability;
 
-  // Check controller filter
-  if (ability.controller === 'you' && card.ownerId !== effect.controllerId) {
+  if (ability.selfOnly && card.instanceId !== effect.sourceInstanceId) {
     return false;
   }
-  if (ability.controller === 'opponent' && card.ownerId === effect.controllerId) {
+
+  // Check controller filter
+  if (!ability.selfOnly && ability.controller === 'you' && card.ownerId !== effect.controllerId) {
+    return false;
+  }
+  if (!ability.selfOnly && ability.controller === 'opponent' && card.ownerId === effect.controllerId) {
     return false;
   }
 
@@ -125,6 +129,38 @@ function isAffectedBy(
 
   // No filter = matches all permanents
   return true;
+}
+
+function isLegendaryPermanentDefinition(def: CardDefinition): boolean {
+  const typeLine = def.type_line.toLowerCase();
+  const isPermanent = ['artifact', 'battle', 'creature', 'enchantment', 'land', 'planeswalker']
+    .some(type => def.card_types.includes(type as CardDefinition['card_types'][number]) || typeLine.includes(type));
+  return isPermanent && typeLine.includes('legendary');
+}
+
+function uniqueColorsAmongOtherLegendaryPermanentsYouControl(
+  state: GameState,
+  controllerId: string,
+  sourceInstanceId: string,
+): number {
+  const colors = new Set(['W', 'U', 'B', 'R', 'G'] as const);
+  const seen = new Set<string>();
+
+  for (const [, card] of state.cards) {
+    if (card.instanceId === sourceInstanceId) continue;
+    if (card.ownerId !== controllerId || card.zone !== 'battlefield') continue;
+
+    const def = state.cardDefinitions.get(card.definitionId);
+    if (!def || !isLegendaryPermanentDefinition(def)) continue;
+
+    for (const color of def.colors) {
+      if (colors.has(color as 'W' | 'U' | 'B' | 'R' | 'G')) {
+        seen.add(color);
+      }
+    }
+  }
+
+  return seen.size;
 }
 
 /**
@@ -153,15 +189,23 @@ export function getContinuousPTModification(
   const sorted = [...effects].sort((a, b) => a.timestamp - b.timestamp);
 
   for (const effect of sorted) {
-    if (effect.ability.modifier.kind !== 'ModifyPT') continue;
-
     // Check that the source is still on the battlefield
     const source = state.cards.get(effect.sourceInstanceId);
     if (!source || source.zone !== 'battlefield') continue;
 
     if (isAffectedBy(effect, card, def, state)) {
-      powerMod += effect.ability.modifier.power;
-      toughnessMod += effect.ability.modifier.toughness;
+      if (effect.ability.modifier.kind === 'ModifyPT') {
+        powerMod += effect.ability.modifier.power;
+        toughnessMod += effect.ability.modifier.toughness;
+      } else if (effect.ability.modifier.kind === 'ModifyPTByUniqueColorsAmongOtherLegendaryPermanentsYouControl') {
+        const colorCount = uniqueColorsAmongOtherLegendaryPermanentsYouControl(
+          state,
+          effect.controllerId,
+          effect.sourceInstanceId,
+        );
+        powerMod += colorCount * effect.ability.modifier.powerPerColor;
+        toughnessMod += colorCount * effect.ability.modifier.toughnessPerColor;
+      }
     }
   }
 

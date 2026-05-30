@@ -3784,10 +3784,26 @@ export function useShelectorGame() {
         return;
       }
 
-      for (const cardId of selectedIds) {
-        const card = engine.cards.get(cardId);
-        if (card) card.zone = 'library';
+      const bottomRequest = createSelectCardsPromptRequest(engine, humanIdRef.current, {
+        subject: 'OpeningMulliganBottom',
+        zone: 'hand',
+        destination: 'library',
+        minSelections: cardsToBottom,
+        maxSelections: cardsToBottom,
+      });
+      const bottomResponse = applySelectCardsPromptResponse(engine, bottomRequest, {
+        requestId: bottomRequest.id,
+        kind: 'SelectCards',
+        playerId: humanIdRef.current,
+        selectedCardInstanceIds: selectedIds,
+      });
+      recordAuthorityUpdate(bottomResponse.update);
+      if (!bottomResponse.ok || !bottomResponse.state) {
+        addMessage('system', bottomResponse.message || 'Those mulligan bottom choices are not legal.');
+        syncState();
+        return;
       }
+      engineRef.current = bottomResponse.state as GameStateWithAI;
       addMessage(
         'player',
         `Keeping ${handCards.length - cardsToBottom} cards (mulliganed ${cardsToBottom} time${cardsToBottom > 1 ? 's' : ''}).`,
@@ -3803,7 +3819,7 @@ export function useShelectorGame() {
     addMessage('system', `Turn 1 \u2014 Your precombat main phase.`);
 
     // Advance engine to precombat main
-    const advanced = advanceToPrecombatMain(engine);
+    const advanced = advanceToPrecombatMain(engineRef.current || engine);
     engineRef.current = advanced as GameStateWithAI;
 
     syncState();
@@ -3823,6 +3839,27 @@ export function useShelectorGame() {
       const validIds = selectedIds.filter(id => handIds.has(id));
       if (validIds.length === 0) {
         addMessage('system', 'Select at least one card from your hand to mulligan.');
+        syncState();
+        return;
+      }
+
+      const mulliganRequest = createSelectCardsPromptRequest(engine, humanIdRef.current, {
+        subject: 'OpeningMulligan',
+        zone: 'hand',
+        destination: 'library',
+        minSelections: 1,
+        maxSelections: handIds.size,
+        commitSelection: false,
+      });
+      const mulliganResponse = applySelectCardsPromptResponse(engine, mulliganRequest, {
+        requestId: mulliganRequest.id,
+        kind: 'SelectCards',
+        playerId: humanIdRef.current,
+        selectedCardInstanceIds: validIds,
+      });
+      recordAuthorityUpdate(mulliganResponse.update);
+      if (!mulliganResponse.ok) {
+        addMessage('system', mulliganResponse.message || 'Those mulligan choices are not legal.');
         syncState();
         return;
       }

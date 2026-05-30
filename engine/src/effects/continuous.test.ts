@@ -249,6 +249,19 @@ describe('Static Ability Parsing', () => {
     expect(result.ability.modifier).toEqual({ kind: 'ModifyPT', power: 1, toughness: 1 });
     expect(result.ability.filter).toEqual({ types: ['creature'], subtypes: ['zombie'] });
   });
+
+  it('parses Sisay-style self boost from colors among other legendary permanents', () => {
+    const result = parseOracleText('~ gets +1/+1 for each color among other legendary permanents you control.');
+    expect(result.kind).toBe('StaticAbility');
+    if (result.kind !== 'StaticAbility') return;
+
+    expect(result.ability.selfOnly).toBe(true);
+    expect(result.ability.modifier).toEqual({
+      kind: 'ModifyPTByUniqueColorsAmongOtherLegendaryPermanentsYouControl',
+      powerPerColor: 1,
+      toughnessPerColor: 1,
+    });
+  });
 });
 
 describe('Continuous Effect Registration', () => {
@@ -440,6 +453,64 @@ describe('Continuous P/T Modifications', () => {
 
     // Creature gets +2/+2 total
     expect(getContinuousPTModification(state, 'creature_1')).toEqual({ power: 2, toughness: 2 });
+  });
+
+  it('Sisay-style dynamic boost counts unique colors among other legendary permanents', () => {
+    const cards = new Map<string, CardInstance>();
+    cards.set('sisay_1', makeCard('sisay_1', 'sisay_def', 'p1'));
+    cards.set('legend_wu', makeCard('legend_wu', 'legend_wu_def', 'p1'));
+    cards.set('legend_r', makeCard('legend_r', 'legend_r_def', 'p1'));
+    cards.set('nonlegend_g', makeCard('nonlegend_g', 'nonlegend_g_def', 'p1'));
+    cards.set('opp_legend_b', makeCard('opp_legend_b', 'opp_legend_b_def', 'p2'));
+
+    const defs = new Map<string, CardDefinition>();
+    defs.set('sisay_def', makeDef('sisay_def', {
+      name: 'Sisay, Weatherlight Captain',
+      type_line: 'Legendary Creature - Human Soldier',
+      colors: ['W'],
+      power: 2,
+      toughness: 2,
+    }));
+    defs.set('legend_wu_def', makeDef('legend_wu_def', {
+      name: 'Two-Color Legend',
+      type_line: 'Legendary Creature - Advisor',
+      colors: ['W', 'U'],
+    }));
+    defs.set('legend_r_def', makeDef('legend_r_def', {
+      name: 'Red Legend',
+      type_line: 'Legendary Artifact Creature - Construct',
+      colors: ['R'],
+    }));
+    defs.set('nonlegend_g_def', makeDef('nonlegend_g_def', {
+      name: 'Green Nonlegend',
+      type_line: 'Creature - Elf',
+      colors: ['G'],
+    }));
+    defs.set('opp_legend_b_def', makeDef('opp_legend_b_def', {
+      name: 'Opponent Legend',
+      type_line: 'Legendary Creature - Rogue',
+      colors: ['B'],
+    }));
+
+    const ability: StaticAbilityEffect = {
+      kind: 'StaticAbility',
+      modifier: {
+        kind: 'ModifyPTByUniqueColorsAmongOtherLegendaryPermanentsYouControl',
+        powerPerColor: 1,
+        toughnessPerColor: 1,
+      },
+      filter: {},
+      controller: 'any',
+      excludeSelf: false,
+      selfOnly: true,
+    };
+
+    let state = makeState({ cards, cardDefinitions: defs });
+    state = registerContinuousEffect(state, 'sisay_1', 'p1', ability);
+
+    expect(getEffectivePower(state, 'sisay_1')).toBe(5);
+    expect(getEffectiveToughness(state, 'sisay_1')).toBe(5);
+    expect(getEffectivePower(state, 'legend_wu')).toBe(2);
   });
 
   it('buff stops when lord leaves the battlefield', () => {

@@ -449,6 +449,11 @@ export interface ActivatedAbility {
  */
 export type StaticModifier =
   | { kind: 'ModifyPT'; power: number; toughness: number }
+  | {
+      kind: 'ModifyPTByUniqueColorsAmongOtherLegendaryPermanentsYouControl';
+      powerPerColor: number;
+      toughnessPerColor: number;
+    }
   | { kind: 'GrantKeyword'; keyword: string }
   | { kind: 'ReduceCost'; amount: number };
 
@@ -466,6 +471,7 @@ export interface StaticAbilityEffect {
   filter: CardFilter;
   controller: 'you' | 'opponent' | 'any';
   excludeSelf: boolean; // true for "Other creatures you control..."
+  selfOnly?: boolean; // true for "~ gets..." / named-card self modifiers
 }
 
 // ============================================================================

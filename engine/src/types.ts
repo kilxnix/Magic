@@ -1,4 +1,4 @@
-import type { CardFilter, EquipCostInfo, EquipmentBonusInfo, ManaProductionInfo, SearchAbilityInfo, UnlessTaxInfo } from './effects/ast';
+import type { CardFilter, EquipCostInfo, EquipmentBonusInfo, ManaProductionInfo, SearchAbilityInfo, StaticAbilityEffect, UnlessTaxInfo } from './effects/ast';
 
 export type ManaColor = 'W' | 'U' | 'B' | 'R' | 'G' | 'C';
 
@@ -255,13 +255,7 @@ export interface ContinuousEffectRef {
   controllerId: string;
   ability: {
     kind: 'StaticAbility';
-    modifier: { kind: 'ModifyPT'; power: number; toughness: number }
-      | { kind: 'GrantKeyword'; keyword: string }
-      | { kind: 'ReduceCost'; amount: number };
-    filter: CardFilter;
-    controller: 'you' | 'opponent' | 'any';
-    excludeSelf: boolean;
-  };
+  } & StaticAbilityEffect;
   timestamp: number;
 }
 

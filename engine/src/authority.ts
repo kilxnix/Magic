@@ -248,7 +248,12 @@ export interface PayCostsPromptResponse {
   selectedManaActions: ManaPaymentAction[];
 }
 
-export type SelectCardsSubject = 'DiscardToHandSize' | 'ManualDiscard' | 'AdditionalCost';
+export type SelectCardsSubject =
+  | 'DiscardToHandSize'
+  | 'ManualDiscard'
+  | 'AdditionalCost'
+  | 'OpeningMulligan'
+  | 'OpeningMulliganBottom';
 
 export interface SelectCardsChoice {
   cardInstanceId: string;

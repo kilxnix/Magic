@@ -3157,17 +3157,26 @@ function parseStaticSubject(tokens: string[], startIndex: number): { filter: Car
 function matchStaticAbility(tokens: string[]): StaticAbilityEffect | null {
   let idx = 0;
   let excludeSelf = false;
-  if (tokens[idx] === 'other') { excludeSelf = true; idx++; }
-  const subject = parseStaticSubject(tokens, idx);
-  if (!subject) return null;
-  const filter = subject.filter;
-  idx = subject.nextIndex;
-
+  let selfOnly = false;
+  let filter: CardFilter = {};
   let controller: 'you' | 'opponent' | 'any' = 'you';
-  if (tokens[idx] === 'you' && tokens[idx + 1] === 'control') { controller = 'you'; idx += 2; }
-  else if (tokens[idx] === 'an' && tokens[idx + 1] === 'opponent' && tokens[idx + 2] === 'controls') { controller = 'opponent'; idx += 3; }
-  else if (tokens[idx] === 'you' && tokens[idx + 1] === 'cast') { controller = 'you'; idx += 2; }
-  else return null;
+
+  if (tokens[idx] === 'other') { excludeSelf = true; idx++; }
+  if (tokens[idx] === '~') {
+    selfOnly = true;
+    controller = 'any';
+    idx++;
+  } else {
+    const subject = parseStaticSubject(tokens, idx);
+    if (!subject) return null;
+    filter = subject.filter;
+    idx = subject.nextIndex;
+
+    if (tokens[idx] === 'you' && tokens[idx + 1] === 'control') { controller = 'you'; idx += 2; }
+    else if (tokens[idx] === 'an' && tokens[idx + 1] === 'opponent' && tokens[idx + 2] === 'controls') { controller = 'opponent'; idx += 3; }
+    else if (tokens[idx] === 'you' && tokens[idx + 1] === 'cast') { controller = 'you'; idx += 2; }
+    else return null;
+  }
 
   if (tokens[idx] === 'with' && tokens[idx + 1] === 'power') {
     const power = parseInt(tokens[idx + 2], 10);
@@ -3196,8 +3205,34 @@ function matchStaticAbility(tokens: string[]): StaticAbilityEffect | null {
     idx++;
     // "until end of turn" means this is a temporary effect, NOT a static ability
     if (tokens[idx] === 'until') return null;
+    if (
+      tokens[idx] === 'for'
+      && tokens[idx + 1] === 'each'
+      && tokens[idx + 2] === 'color'
+      && tokens[idx + 3] === 'among'
+      && tokens[idx + 4] === 'other'
+      && tokens[idx + 5] === 'legendary'
+      && tokens[idx + 6] === 'permanents'
+      && tokens[idx + 7] === 'you'
+      && tokens[idx + 8] === 'control'
+    ) {
+      idx += 9;
+      if (tokens[idx] === '.') idx++;
+      return {
+        kind: 'StaticAbility',
+        modifier: {
+          kind: 'ModifyPTByUniqueColorsAmongOtherLegendaryPermanentsYouControl',
+          powerPerColor: parseInt(ptMatch[1], 10),
+          toughnessPerColor: parseInt(ptMatch[2], 10),
+        },
+        filter,
+        controller,
+        excludeSelf,
+        selfOnly,
+      };
+    }
     if (tokens[idx] === '.') idx++;
-    return { kind: 'StaticAbility', modifier: { kind: 'ModifyPT', power: parseInt(ptMatch[1], 10), toughness: parseInt(ptMatch[2], 10) }, filter, controller, excludeSelf };
+    return { kind: 'StaticAbility', modifier: { kind: 'ModifyPT', power: parseInt(ptMatch[1], 10), toughness: parseInt(ptMatch[2], 10) }, filter, controller, excludeSelf, selfOnly };
   }
   if (tokens[idx] === 'have' || tokens[idx] === 'has') {
     idx++;
@@ -3210,7 +3245,7 @@ function matchStaticAbility(tokens: string[]): StaticAbilityEffect | null {
       idx++;
     }
     if (tokens[idx] === '.') idx++;
-    return { kind: 'StaticAbility', modifier: { kind: 'GrantKeyword', keyword }, filter, controller, excludeSelf };
+    return { kind: 'StaticAbility', modifier: { kind: 'GrantKeyword', keyword }, filter, controller, excludeSelf, selfOnly };
   }
   if (tokens[idx] === 'cost') {
     idx++;
@@ -3221,7 +3256,7 @@ function matchStaticAbility(tokens: string[]): StaticAbilityEffect | null {
     idx++;
     if (tokens[idx] === 'to' && tokens[idx + 1] === 'cast') idx += 2;
     if (tokens[idx] === '.') idx++;
-    return { kind: 'StaticAbility', modifier: { kind: 'ReduceCost', amount: parseInt(costMatch[1], 10) }, filter, controller, excludeSelf };
+    return { kind: 'StaticAbility', modifier: { kind: 'ReduceCost', amount: parseInt(costMatch[1], 10) }, filter, controller, excludeSelf, selfOnly };
   }
   return null;
 }

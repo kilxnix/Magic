@@ -30,6 +30,7 @@ import type { CardDefinition, CardInstance, GameState } from './types';
 import type { AIAction } from './ai/types';
 import type { CardFilter } from './effects/ast';
 import type { TargetSpec } from './effects/targets';
+import { getEffectivePower, registerContinuousEffect } from './effects/continuous';
 
 function def(
   id: string,
@@ -436,6 +437,108 @@ describe('authority action boundary', () => {
       selectedCardInstanceIds: ['yoshimaru_1'],
       destination: 'battlefield',
     }]);
+  });
+
+  it('uses Sisay current dynamic power when validating search prompt choices', () => {
+    const sisay: CardDefinition = {
+      ...def('sisay', 'Sisay, Weatherlight Captain', 'Legendary Creature - Human Soldier', '{2}{W}'),
+      cmc: 3,
+      colors: ['W'],
+      power: 2,
+      toughness: 2,
+    };
+    const legendWU: CardDefinition = {
+      ...def('legend_wu', 'Two-Color Legend', 'Legendary Creature - Advisor', '{W}{U}'),
+      cmc: 2,
+      colors: ['W', 'U'],
+      power: 2,
+      toughness: 2,
+    };
+    const legendR: CardDefinition = {
+      ...def('legend_r', 'Red Legend', 'Legendary Creature - Shaman', '{R}'),
+      cmc: 1,
+      colors: ['R'],
+      power: 1,
+      toughness: 1,
+    };
+    const legalFourDrop: CardDefinition = {
+      ...def('legal_four', 'Four-Mana Legend', 'Legendary Creature - Time Lord', '{3}{U}'),
+      cmc: 4,
+      colors: ['U'],
+      power: 4,
+      toughness: 4,
+    };
+    const illegalFiveDrop: CardDefinition = {
+      ...def('illegal_five', 'Five-Mana Legend', 'Legendary Creature - Avatar', '{4}{G}'),
+      cmc: 5,
+      colors: ['G'],
+      power: 5,
+      toughness: 5,
+    };
+
+    let state: GameState = {
+      ...stateWithSisaySearchChoices(),
+      cards: new Map<string, CardInstance>([
+        ['sisay_1', cardInstance('sisay_1', sisay.id, 'p1', 'battlefield')],
+        ['legend_wu_1', cardInstance('legend_wu_1', legendWU.id, 'p1', 'battlefield')],
+        ['legend_r_1', cardInstance('legend_r_1', legendR.id, 'p1', 'battlefield')],
+        ['legal_four_1', cardInstance('legal_four_1', legalFourDrop.id, 'p1', 'library')],
+        ['illegal_five_1', cardInstance('illegal_five_1', illegalFiveDrop.id, 'p1', 'library')],
+      ]),
+      cardDefinitions: new Map<string, CardDefinition>([
+        [sisay.id, sisay],
+        [legendWU.id, legendWU],
+        [legendR.id, legendR],
+        [legalFourDrop.id, legalFourDrop],
+        [illegalFiveDrop.id, illegalFiveDrop],
+      ]),
+    };
+
+    state = registerContinuousEffect(state, 'sisay_1', 'p1', {
+      kind: 'StaticAbility',
+      modifier: {
+        kind: 'ModifyPTByUniqueColorsAmongOtherLegendaryPermanentsYouControl',
+        powerPerColor: 1,
+        toughnessPerColor: 1,
+      },
+      filter: {},
+      controller: 'any',
+      excludeSelf: false,
+      selfOnly: true,
+    });
+
+    expect(getEffectivePower(state, 'sisay_1')).toBe(5);
+
+    const request = createSearchLibraryPromptRequest(
+      state,
+      'p1',
+      { supertypes: ['Legendary'], permanent: true, manaValueLessThanSourcePower: true },
+      'battlefield',
+      {
+        id: 'prompt-boosted-sisay',
+        sourceInstanceId: 'sisay_1',
+        minSelections: 1,
+        maxSelections: 1,
+        createdAt: 13,
+      },
+    );
+
+    expect(request.legalChoices.map(choice => choice.cardName)).toEqual(['Four-Mana Legend']);
+    expect(request.invalidChoices).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        cardInstanceId: 'illegal_five_1',
+        reason: 'Mana value 5 is not less than source power 5',
+      }),
+    ]));
+
+    const accepted = applySearchLibraryPromptResponse(state, request, {
+      requestId: request.id,
+      kind: 'SearchLibrary',
+      playerId: 'p1',
+      selectedCardInstanceIds: ['legal_four_1'],
+    });
+    expect(accepted.ok).toBe(true);
+    expect(accepted.state?.cards.get('legal_four_1')?.zone).toBe('battlefield');
   });
 
   it('rejects stale typed search responses after canonical state changes', () => {
@@ -896,6 +999,52 @@ describe('authority action boundary', () => {
     expect(illegal.ok).toBe(false);
     expect(illegal.reason).toBe('illegal_response');
     expect(illegal.state).toBeUndefined();
+  });
+
+  it('validates opening mulligan card selections before redraw and bottom decisions', () => {
+    const state = stateWithForestInHand();
+    const forest = [...state.cards.values()].find(card => card.definitionId === 'forest' && card.ownerId === 'p1');
+    expect(forest).toBeDefined();
+
+    const mulliganRequest = createSelectCardsPromptRequest(state, 'p1', {
+      id: 'prompt-opening-mulligan',
+      subject: 'OpeningMulligan',
+      zone: 'hand',
+      destination: 'library',
+      commitSelection: false,
+      minSelections: 1,
+      maxSelections: 7,
+      createdAt: 223,
+    });
+    const mulliganAccepted = applySelectCardsPromptResponse(state, mulliganRequest, {
+      requestId: mulliganRequest.id,
+      kind: 'SelectCards',
+      playerId: 'p1',
+      selectedCardInstanceIds: [forest!.instanceId],
+    });
+
+    expect(mulliganAccepted.ok).toBe(true);
+    expect(mulliganAccepted.state).toBe(state);
+    expect(state.cards.get(forest!.instanceId)?.zone).toBe('hand');
+
+    const bottomRequest = createSelectCardsPromptRequest(state, 'p1', {
+      id: 'prompt-opening-mulligan-bottom',
+      subject: 'OpeningMulliganBottom',
+      zone: 'hand',
+      destination: 'library',
+      minSelections: 1,
+      maxSelections: 1,
+      createdAt: 224,
+    });
+    const bottomAccepted = applySelectCardsPromptResponse(state, bottomRequest, {
+      requestId: bottomRequest.id,
+      kind: 'SelectCards',
+      playerId: 'p1',
+      selectedCardInstanceIds: [forest!.instanceId],
+    });
+
+    expect(bottomAccepted.ok).toBe(true);
+    expect(bottomAccepted.state?.cards.get(forest!.instanceId)?.zone).toBe('library');
   });
 
   it('validates additional-cost land selections without committing the discard early', () => {
