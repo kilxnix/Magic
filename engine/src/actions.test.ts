@@ -65,6 +65,21 @@ function makeStompingGround(): CardDefinition {
   };
 }
 
+function makeRejuvenatingSprings(): CardDefinition {
+  return {
+    id: 'rejuvenating-springs-1',
+    name: 'Rejuvenating Springs',
+    type_line: 'Land',
+    oracle_text: 'Rejuvenating Springs enters the battlefield tapped unless you have two or more opponents.\n{T}: Add {G} or {U}.',
+    mana_cost: '',
+    cmc: 0,
+    colors: [],
+    color_identity: ['G', 'U'],
+    keywords: [],
+    card_types: ['land'],
+  };
+}
+
 function makeCreature(): CardDefinition {
   return {
     id: 'bear-1',
@@ -269,6 +284,42 @@ describe('Land Actions', () => {
       const paid = playLand(state, 'p1', secondCard.instanceId, { payLifeToEnterUntapped: true });
       expect(paid.cards.get(secondCard.instanceId)?.tapped).toBe(false);
       expect(paid.players[0].life).toBe(38);
+    });
+
+    it('evaluates two-or-more-opponents lands from the actual table size', () => {
+      let state = initGameState([{
+        playerId: 'p1', name: 'Alice',
+        cards: [makeRejuvenatingSprings()], commanderId: 'cmd1',
+      }, {
+        playerId: 'p2', name: 'Bob',
+        cards: [], commanderId: 'cmd2',
+      }]);
+      const duelCard = getCardsInZone(state, 'p1', 'library')[0];
+      state.cards.set(duelCard.instanceId, { ...duelCard, zone: 'hand' });
+      state = { ...state, phase: 'precombat_main' };
+
+      const duelEntry = playLand(state, 'p1', duelCard.instanceId);
+      expect(duelEntry.cards.get(duelCard.instanceId)?.tapped).toBe(true);
+
+      state = initGameState([{
+        playerId: 'p1', name: 'Alice',
+        cards: [makeRejuvenatingSprings()], commanderId: 'cmd1',
+      }, {
+        playerId: 'p2', name: 'Bob',
+        cards: [], commanderId: 'cmd2',
+      }, {
+        playerId: 'p3', name: 'Cara',
+        cards: [], commanderId: 'cmd3',
+      }, {
+        playerId: 'p4', name: 'Drew',
+        cards: [], commanderId: 'cmd4',
+      }]);
+      const podCard = getCardsInZone(state, 'p1', 'library')[0];
+      state.cards.set(podCard.instanceId, { ...podCard, zone: 'hand' });
+      state = { ...state, phase: 'precombat_main' };
+
+      const podEntry = playLand(state, 'p1', podCard.instanceId);
+      expect(podEntry.cards.get(podCard.instanceId)?.tapped).toBe(false);
     });
   });
 
