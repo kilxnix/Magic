@@ -2265,6 +2265,7 @@ export function applySearchLibraryPromptResponse(
           selectedCardInstanceId: selectedId,
           sourceInstanceId: request.sourceInstanceId,
           payLifeToEnterUntapped: response.payLifeToEnterUntapped,
+          applyEntrySideEffects: false,
         },
       );
       if (destination === 'battlefield') {

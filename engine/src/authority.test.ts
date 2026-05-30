@@ -37,7 +37,7 @@ import {
 } from './authority';
 import { resolveCombatDamage } from './combat';
 import { initGameState } from './game-state';
-import type { CardDefinition, CardInstance, GameState, StackItem } from './types';
+import type { CardDefinition, CardInstance, GameState, StackItem, TriggeredAbilityRef } from './types';
 import type { AIAction } from './ai/types';
 import type { CardFilter } from './effects/ast';
 import type { TargetSpec } from './effects/targets';
@@ -804,6 +804,53 @@ describe('authority action boundary', () => {
     });
     expect(rejected.ok).toBe(false);
     expect(rejected.message).toBe('Illegal search selection: Not Legendary');
+  });
+
+  it('search prompt resolution queues battlefield-entry triggers exactly once', () => {
+    const state = stateWithSisaySearchChoices();
+    const cards = new Map(state.cards);
+    const cardDefinitions = new Map(state.cardDefinitions);
+    cardDefinitions.set('landfall_source', def(
+      'landfall_source',
+      'Landfall Watcher',
+      'Creature - Elemental',
+      '{2}{G}',
+      'Landfall - Whenever a land enters the battlefield under your control, you gain 1 life.',
+    ));
+    cardDefinitions.set('fetchable_forest', def('fetchable_forest', 'Fetchable Forest', 'Basic Land - Forest'));
+    cards.set('landfall_source_1', {
+      ...cardInstance('landfall_source_1', 'landfall_source', 'p1', 'battlefield'),
+      summoningSick: false,
+    });
+    cards.set('fetchable_forest_1', cardInstance('fetchable_forest_1', 'fetchable_forest', 'p1', 'library'));
+    const landfallAbility: TriggeredAbilityRef = {
+      kind: 'TriggeredAbility',
+      trigger: { kind: 'Landfall' },
+      effects: [{ kind: 'GainLife', player: { kind: 'Controller' }, amount: 1 }],
+    };
+    const preparedState = {
+      ...state,
+      cards,
+      cardDefinitions,
+      battlefieldAbilities: new Map(state.battlefieldAbilities).set('landfall_source_1', [landfallAbility]),
+    };
+    const request = createSearchLibraryPromptRequest(preparedState, 'p1', { types: ['land'] }, 'battlefield', {
+      id: 'prompt-landfall-once',
+      minSelections: 1,
+      maxSelections: 1,
+      createdAt: 51,
+    });
+
+    const response = applySearchLibraryPromptResponse(preparedState, request, {
+      requestId: request.id,
+      kind: 'SearchLibrary',
+      playerId: 'p1',
+      selectedCardInstanceIds: ['fetchable_forest_1'],
+    });
+
+    expect(response.ok).toBe(true);
+    expect(response.state?.cards.get('fetchable_forest_1')?.zone).toBe('battlefield');
+    expect(response.state?.pendingTriggers.filter(trigger => trigger.sourceInstanceId === 'landfall_source_1')).toHaveLength(1);
   });
 
   it('validates replacement responses for searched shock lands', () => {

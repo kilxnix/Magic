@@ -1463,6 +1463,7 @@ export function executeSearchLibrary(
     selectedCardInstanceId?: string;
     sourceInstanceId?: string;
     payLifeToEnterUntapped?: boolean;
+    applyEntrySideEffects?: boolean;
   } = {},
 ): GameState {
   const candidates: CardInstance[] = [];
@@ -1568,7 +1569,7 @@ export function executeSearchLibrary(
 
   const movedState = { ...state, cards: newCards, players };
   let finalState = movedState;
-  if (destination === 'battlefield') {
+  if (destination === 'battlefield' && choices.applyEntrySideEffects !== false) {
     finalState = applyDirectBattlefieldEntrySideEffects(finalState, matchedCard.instanceId);
   }
 
