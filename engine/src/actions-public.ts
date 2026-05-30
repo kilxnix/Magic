@@ -142,6 +142,22 @@ export function success(state: GameState, events: GameEvent[] = []): ActionResul
 
 const globalDetector = new LoopDetector();
 
+function failureFromCaughtError(error: unknown): ActionResult {
+  const message = (error as Error).message || String(error);
+  if (
+    message.startsWith('Invalid target')
+    || /^Expected \d+ target choice\(s\)/.test(message)
+    || /target/i.test(message) && /missing|illegal|invalid|expected/i.test(message)
+  ) {
+    return fail('illegal_target', message);
+  }
+  if (/summoning sick/i.test(message)) return fail('summoning_sick', message);
+  if (/already tapped/i.test(message)) return fail('already_tapped', message);
+  if (/cannot pay life|insufficient life/i.test(message)) return fail('insufficient_life', message);
+  if (/cannot pay|insufficient mana/i.test(message)) return fail('insufficient_mana', message);
+  return fail('internal_error', message);
+}
+
 const PHASE_STEPS: Record<Phase, Step[]> = {
   beginning: ['untap', 'upkeep', 'draw'],
   precombat_main: ['begin_combat'],
@@ -358,7 +374,7 @@ export function tryCastSpell(
     const next = castSpell(state, playerId, cardInstanceId, targets, options);
     return success(next, [{ kind: 'SpellCast', playerId, cardId: cardInstanceId }, ...runWinCheck(next)]);
   } catch (e) {
-    return fail('internal_error', (e as Error).message);
+    return failureFromCaughtError(e);
   }
 }
 
@@ -397,7 +413,7 @@ export function tryActivateAbility(
     const next = activateAbility(state, playerId, cardInstanceId, abilityIndex, targets);
     return success(next, [{ kind: 'AbilityActivated', playerId, cardId: cardInstanceId, abilityIndex }, ...runWinCheck(next)]);
   } catch (e) {
-    return fail('internal_error', (e as Error).message);
+    return failureFromCaughtError(e);
   }
 }
 

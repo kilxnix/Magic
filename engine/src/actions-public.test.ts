@@ -52,13 +52,14 @@ function addHandSpell(
     cardTypes: CardDefinition['card_types'];
     isCommander?: boolean;
     zone?: 'hand' | 'command';
+    oracleText?: string;
   },
 ): string {
   const def: CardDefinition = {
     id: `def_${options.instanceId}`,
     name: options.name,
     type_line: options.typeLine,
-    oracle_text: '',
+    oracle_text: options.oracleText ?? '',
     mana_cost: options.manaCost,
     cmc: (options.manaCost.match(/\{[^}]+\}/g) || []).length,
     colors: [],
@@ -830,6 +831,34 @@ describe('tryCastSpell', () => {
     if (!result.ok) expect(result.reason).toBe('insufficient_mana');
   });
 
+  it('returns illegal_target instead of internal_error for invalid spell targets', () => {
+    const state = makeTestState({ battlefieldCreature: true, manaPool: { G: 1 } });
+    const spellId = addHandSpell(state, {
+      instanceId: 'targeted_destroy',
+      name: 'Targeted Destroy',
+      typeLine: 'Instant',
+      manaCost: '{G}',
+      cardTypes: ['instant'],
+      oracleText: 'Destroy target creature.',
+    });
+
+    const result = tryCastSpell(state, 'human', spellId, ['ai1'], {
+      W: 0,
+      U: 0,
+      B: 0,
+      R: 0,
+      G: 1,
+      C: 0,
+      generic: 0,
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toBe('illegal_target');
+      expect(result.message).toContain('expected creature');
+    }
+  });
+
   it('requires one legal color for two-color hybrid mana on commanders', () => {
     let state = makeTestState({ manaPool: { W: 1, U: 1 } });
     let commanderId = addHandSpell(state, {
@@ -1018,6 +1047,18 @@ describe('tryActivateAbility', () => {
     const creature = [...state.cards.values()].find(c => c.zone === 'battlefield')!;
     const result = tryActivateAbility(state, 'human', creature.instanceId, 0, ['ai1']);
     expect(result.ok).toBe(true);
+  });
+
+  it('returns illegal_target instead of internal_error for missing activated ability targets', () => {
+    const state = makeTestState({ battlefieldCreatureWithAbility: true });
+    const creature = [...state.cards.values()].find(c => c.zone === 'battlefield')!;
+    const result = tryActivateAbility(state, 'human', creature.instanceId, 0, []);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toBe('illegal_target');
+      expect(result.message).toContain('Expected 1 target choice');
+    }
   });
 
   it('returns already_tapped for tap-cost ability when already tapped', () => {
