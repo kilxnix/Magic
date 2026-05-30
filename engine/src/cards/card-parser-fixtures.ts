@@ -124,6 +124,35 @@ export const PARSER_FIXTURES: ParserFixture[] = [
       },
     },
   },
+  {
+    name: 'Lotus Petal',
+    oracleText: '{T}, Sacrifice this artifact: Add one mana of any color.',
+    typeLine: 'Artifact',
+    expected: {
+      manaProduction: {
+        colors: ['W', 'U', 'B', 'R', 'G'],
+        amounts: { W: 1, U: 1, B: 1, R: 1, G: 1 },
+        isTapAbility: true,
+        requiresSacrifice: true,
+        activationZone: 'battlefield',
+      },
+    },
+  },
+  {
+    name: "Lion's Eye Diamond",
+    oracleText: "Discard your hand, Sacrifice Lion's Eye Diamond: Add three mana of any one color. Activate only as an instant.",
+    typeLine: 'Artifact',
+    expected: {
+      manaProduction: {
+        colors: ['W', 'U', 'B', 'R', 'G'],
+        amounts: { W: 3, U: 3, B: 3, R: 3, G: 3 },
+        isTapAbility: false,
+        requiresSacrifice: true,
+        activationZone: 'battlefield',
+        requiresDiscardHand: true,
+      },
+    },
+  },
   // --- Search ability ---
   {
     name: 'Cultivate',

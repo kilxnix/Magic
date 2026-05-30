@@ -53,4 +53,69 @@ describe('Lotus Petal-style sacrifice mana abilities', () => {
     expect(next.players[0].manaPool.G).toBe(1);
     expect(next.cards.get(petal.instanceId)!.zone).toBe('graveyard');
   });
+
+  it("uses Lion's Eye Diamond as a colored sacrifice mana ability and discards hand", () => {
+    resetInstanceCounter();
+
+    const cards: ScryfallCard[] = [
+      { id: 'cmd', name: 'Cmd', type_line: 'Legendary Creature - Goblin', oracle_text: '', mana_cost: '{4}{R}', cmc: 5, colors: ['R'], color_identity: ['R'], keywords: [], power: '3', toughness: '3' },
+      {
+        id: 'led',
+        name: "Lion's Eye Diamond",
+        type_line: 'Artifact',
+        oracle_text: "Discard your hand, Sacrifice Lion's Eye Diamond: Add three mana of any one color. Activate only as an instant.",
+        mana_cost: '{0}',
+        cmc: 0,
+        colors: [],
+        color_identity: [],
+        keywords: [],
+      },
+    ];
+    for (let i = 0; i < 99; i++) {
+      cards.push({ id: `hm_led_${i}`, name: `HMLed${i}`, type_line: 'Basic Land - Island', oracle_text: '{T}: Add {U}.', mana_cost: '', cmc: 0, colors: [], color_identity: ['U'], keywords: [] });
+      cards.push({ id: `am_led_${i}`, name: `AMLed${i}`, type_line: 'Basic Land - Island', oracle_text: '{T}: Add {U}.', mana_cost: '', cmc: 0, colors: [], color_identity: ['U'], keywords: [] });
+    }
+
+    const lookup = createCardLookup(cards);
+    let s = initGameFromDecks({
+      humanDeck: { id: 'h', commander: 'Cmd', list: ["Lion's Eye Diamond", ...Array.from({ length: 98 }, (_, i) => `HMLed${i}`)], colors: ['U'], bracket: 3, theme: '' },
+      aiDecks: [{ id: 'a', commander: 'Cmd', list: Array.from({ length: 99 }, (_, i) => `AMLed${i}`), colors: ['U'], bracket: 3, theme: '' }],
+      aiDifficulty: 3,
+      cardLookup: lookup,
+      humanGoesFirst: true,
+      startingLife: 40,
+      startingHandSize: 7,
+    });
+
+    const diamond = [...s.cards.values()].find(c => getCardDefinition(s, c).name === "Lion's Eye Diamond");
+    expect(diamond).toBeDefined();
+    const handCards = getCardsInZone(s, 'human', 'hand')
+      .filter(card => card.instanceId !== diamond!.instanceId)
+      .slice(0, 2);
+    expect(handCards.length).toBeGreaterThan(0);
+
+    const newCards = new Map(s.cards);
+    newCards.set(diamond!.instanceId, { ...diamond!, zone: 'battlefield', tapped: false, summoningSick: false });
+    for (const handCard of handCards) {
+      newCards.set(handCard.instanceId, { ...handCard, zone: 'hand' });
+    }
+    s = { ...s, cards: newCards, phase: 'precombat_main', step: 'main', priorityPlayerIndex: 0 };
+
+    const def = getCardDefinition(s, diamond!);
+    expect(def.manaProduction?.requiresDiscardHand).toBe(true);
+    expect(def.manaProduction?.amounts.U).toBe(3);
+
+    const actions = getLegalActions(s, 'human');
+    const blueDiamond = actions.find(a =>
+      a.kind === 'ActivateManaAbility' && a.cardInstanceId === diamond!.instanceId && a.color === 'U'
+    );
+    expect(blueDiamond).toBeDefined();
+
+    const next = tapLandForMana(s, 'human', diamond!.instanceId, 'U');
+    expect(next.players[0].manaPool.U).toBe(3);
+    expect(next.cards.get(diamond!.instanceId)?.zone).toBe('graveyard');
+    for (const discarded of handCards) {
+      expect(next.cards.get(discarded.instanceId)?.zone).toBe('graveyard');
+    }
+  });
 });

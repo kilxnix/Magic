@@ -274,7 +274,20 @@ function parseManaProduction(oracle: string, typeLine: string): ManaProductionIn
     pushTapCandidate(delayedTapAdd[0], delayedTapAdd[1]);
   }
 
-  if (tapCandidates.length === 0) return undefined;
+  if (tapCandidates.length === 0) {
+    const selfSacrificeAdd = oracle.match(/(?:discard\s+your\s+hand,\s*)?sacrifice\s+(?!a\b|an\b)[^:]+:\s*add\s+([^."\n]+)/i);
+    if (selfSacrificeAdd) {
+      return parseAddPart(selfSacrificeAdd[1], {
+        isTapAbility: false,
+        requiresSacrifice: true,
+        activationZone: 'battlefield',
+        ...(/discard\s+your\s+hand/i.test(selfSacrificeAdd[0])
+          ? { requiresDiscardHand: true }
+          : {}),
+      });
+    }
+    return undefined;
+  }
 
   return tapCandidates.sort((a, b) => scoreManaCandidate(b) - scoreManaCandidate(a))[0];
 }

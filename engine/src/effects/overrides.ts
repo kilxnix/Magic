@@ -1215,29 +1215,3 @@ registerOverrideByName('Songs of the Damned', {
   targets: [],
 });
 
-// Lotus Petal — sacrifice: add one mana of any color (simplified: add {C})
-registerOverrideByName('Lotus Petal', {
-  kind: 'Activated',
-  ability: {
-    kind: 'ActivatedAbility',
-    cost: { tap: false, sacrifice: 'self' },
-    effects: [{ kind: 'AddMana', player: { kind: 'Controller' }, mana: { C: 1 } }],
-    targets: [],
-    isManaAbility: true,
-  },
-});
-
-// Lion's Eye Diamond — sacrifice, discard hand: add 3 of any color (simplified: add {C}{C}{C})
-registerOverrideByName("Lion's Eye Diamond", {
-  kind: 'Activated',
-  ability: {
-    kind: 'ActivatedAbility',
-    cost: { tap: false, sacrifice: 'self' },
-    effects: [
-      { kind: 'Discard', player: { kind: 'Controller' }, count: 99, random: false },
-      { kind: 'AddMana', player: { kind: 'Controller' }, mana: { C: 3 } },
-    ],
-    targets: [],
-    isManaAbility: true,
-  },
-});

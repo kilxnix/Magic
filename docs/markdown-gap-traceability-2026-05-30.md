@@ -121,8 +121,8 @@ Minimum acceptance bar from that file:
 | 6.3 Destination Labels Are Too Broad | partial/test-proven; picker destination chips now distinguish `To top of library`, `To bottom of library`, `To command zone`, and `Destination choice` instead of broad top/bottom/command wording. |
 | 6.4 Hidden Information Is Not Communicated Cleanly | partial/test-proven; picker chips now distinguish `Reveal pick` from `Hidden pick` instead of relying on ambiguous/private wording. |
 | 7.1 Auto-Pay Exists But Needs Trust Layer | partial; `/play` auto-pay now applies intrinsic spell cost reducers in its visible action/payment preview path as well as the engine transaction path, and engine legal-action generation now applies generic cost increasers for noncreature/opponent spell tax effects |
-| 7.2 Floating Mana Handling | partial |
-| 7.3 Special Mana Rules | partial |
+| 7.2 Floating Mana Handling | partial; dynamic AddMana amounts and parsed color-choice sacrifice artifacts now keep Cabal Ritual, Rite of Flame, Songs of the Damned, Lotus Petal, and Lion's Eye Diamond from using fixed/colorless shortcut pools. |
+| 7.3 Special Mana Rules | partial; Lotus Petal and Lion's Eye Diamond now use `ActivateManaAbility` color choice parsing, and Lion's Eye Diamond discards hand plus sacrifices itself before adding the selected three mana. |
 | 8.1 Combat Still Too Compressed | partial |
 | 8.2 No Observed Blocker Assignment UI | partial/not fully browser-proven |
 | 8.3 Attack Requirements And Restrictions | partial |

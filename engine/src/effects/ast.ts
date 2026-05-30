@@ -597,6 +597,7 @@ export interface ManaProductionInfo {
   sacrificeFilter?: CardFilter;
   activationZone?: 'battlefield' | 'hand';
   requiresExileFromHand?: boolean;
+  requiresDiscardHand?: boolean;
   amountScale?: 'creaturesYouControl';
   restriction?: 'creatureSpell' | 'creatureTypeSpell' | 'legendarySpell' | 'commanderSpell';
   /** True for fixed bundles such as "{T}: Add {C}{G}" where all listed mana is produced together. */

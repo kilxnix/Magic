@@ -341,6 +341,19 @@ export function tapLandForMana(state: GameState, playerId: string, cardInstanceI
   const sacrificeDestination = def.manaProduction?.exileAfterUse ? 'exile' : 'graveyard';
 
   const newCards = new Map(state.cards);
+  if (def.manaProduction?.requiresDiscardHand) {
+    for (const [id, handCard] of newCards) {
+      if (handCard.ownerId !== playerId || handCard.zone !== 'hand') continue;
+      newCards.set(id, {
+        ...handCard,
+        zone: getCommanderDestinationZone(state, handCard.instanceId, 'graveyard'),
+        tapped: false,
+        damage: 0,
+        counters: {},
+      });
+    }
+  }
+
   const sacrificeFilter = def.manaProduction?.sacrificeFilter;
   if (sacrificeFilter) {
     const candidates = [...newCards.values()]
