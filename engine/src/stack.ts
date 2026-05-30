@@ -1637,6 +1637,7 @@ export type GameEvent =
   | { kind: 'CardDrawn'; playerId: string; count: number; cardInstanceIds?: string[] }
   | { kind: 'CreatureETB'; instanceId: string; controllerId: string }
   | { kind: 'Attacks'; attackerInstanceId: string; controllerId: string }
+  | { kind: 'Unblocked'; attackerInstanceId: string; controllerId: string }
   | { kind: 'PermanentTapped'; instanceId: string; controllerId: string }
   | { kind: 'CombatDamageToPlayer'; sourceInstanceId: string; controllerId: string; damagedPlayerId: string; damage: number }
   | { kind: 'LandETB'; instanceId: string; controllerId: string }
@@ -1859,6 +1860,14 @@ export function checkTriggersForEvent(state: GameState, event: GameEvent): GameS
           break;
         }
 
+        case 'Unblocked': {
+          if (trigger.kind === 'Unblocked' && trigger.who === 'self'
+            && event.attackerInstanceId === instanceId) {
+            shouldFire = true;
+          }
+          break;
+        }
+
         case 'PermanentTapped': {
           if (trigger.kind === 'BecomesTapped' && trigger.who === 'self'
             && event.instanceId === instanceId) {
@@ -1951,7 +1960,7 @@ export function checkTriggersForEvent(state: GameState, event: GameEvent): GameS
           ? { casterId: event.casterId, cardInstanceId: event.cardInstanceId }
           : event.kind === 'SpellCopied'
             ? { casterId: event.controllerId, cardInstanceId: event.cardInstanceId }
-          : event.kind === 'Attacks'
+          : event.kind === 'Attacks' || event.kind === 'Unblocked'
             ? { cardInstanceId: event.attackerInstanceId }
             : event.kind === 'CombatDamageToPlayer'
               ? { cardInstanceId: event.sourceInstanceId }

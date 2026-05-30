@@ -178,12 +178,30 @@ export function declareBlockers(state: GameState, playerId: string, blocks: Bloc
     blockersDeclaredBy,
   };
 
-  return {
+  let resultState: GameState = {
     ...state,
     combat,
     hasPriorityPassed: new Array(state.players.length).fill(false),
     priorityPlayerIndex: nextPriorityIndex,
   };
+
+  if (blockersDeclared) {
+    for (const attacker of combat.attackers) {
+      const hasBlocker = combat.blockers.some(blocker => blocker.blockingAttackerId === attacker.cardInstanceId);
+      if (!hasBlocker) {
+        const attackerCard = resultState.cards.get(attacker.cardInstanceId);
+        if (attackerCard) {
+          resultState = checkTriggersForEvent(resultState, {
+            kind: 'Unblocked',
+            attackerInstanceId: attacker.cardInstanceId,
+            controllerId: attackerCard.ownerId,
+          });
+        }
+      }
+    }
+  }
+
+  return resultState;
 }
 
 /**

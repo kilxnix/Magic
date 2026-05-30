@@ -1835,7 +1835,8 @@ function matchModifyPT(tokens: string[], startIndex: number): PatternResult {
     if (!ptMatch) return null;
     const power = parseInt(ptMatch[1], 10);
     const toughness = parseInt(ptMatch[2], 10);
-    if (slice[ptIndex + 1] !== 'until' || slice[ptIndex + 2] !== 'end' || slice[ptIndex + 3] !== 'of' || slice[ptIndex + 4] !== 'turn') return null;
+    if (slice[ptIndex + 1] !== 'until' || slice[ptIndex + 2] !== 'end' || slice[ptIndex + 3] !== 'of'
+      || (slice[ptIndex + 4] !== 'turn' && slice[ptIndex + 4] !== 'combat')) return null;
 
     let consumed = ptIndex + 5;
     if (tokens[startIndex + consumed] === '.') consumed++;
@@ -1884,7 +1885,8 @@ function matchModifyPT(tokens: string[], startIndex: number): PatternResult {
       return { effects, targets: [], consumed };
     }
 
-    if (slice[5] !== 'until' || slice[6] !== 'end' || slice[7] !== 'of' || slice[8] !== 'turn') return null;
+    if (slice[5] !== 'until' || slice[6] !== 'end' || slice[7] !== 'of'
+      || (slice[8] !== 'turn' && slice[8] !== 'combat')) return null;
 
     let consumed = 9;
     if (tokens[startIndex + consumed] === '.') consumed++;
@@ -1911,7 +1913,8 @@ function matchModifyPT(tokens: string[], startIndex: number): PatternResult {
   const power = parseInt(ptMatch[1], 10);
   const toughness = parseInt(ptMatch[2], 10);
 
-  if (slice[4] !== 'until' || slice[5] !== 'end' || slice[6] !== 'of' || slice[7] !== 'turn') return null;
+  if (slice[4] !== 'until' || slice[5] !== 'end' || slice[6] !== 'of'
+    || (slice[7] !== 'turn' && slice[7] !== 'combat')) return null;
 
   let consumed = 8;
   if (tokens[startIndex + consumed] === '.') consumed++;
@@ -3972,6 +3975,33 @@ function matchAttacksPrefix(tokens: string[]): number {
   return idx;
 }
 
+function matchSelfAttacksAndIsntBlockedPrefix(tokens: string[]): number {
+  if (tokens.length < 8) return -1;
+
+  const first = tokens[0];
+  if (first !== 'when' && first !== 'whenever') return -1;
+  let idx = 1;
+  if (tokens[idx] === '~') {
+    idx++;
+  } else if (tokens[idx] === 'this' && tokens[idx + 1] === 'creature') {
+    idx += 2;
+  } else {
+    return -1;
+  }
+
+  if (tokens[idx] !== 'attacks') return -1;
+  if (tokens[idx + 1] !== 'and') return -1;
+  if (tokens[idx + 2] !== "isn't" && tokens[idx + 2] !== 'isnt' && tokens[idx + 2] !== 'is') return -1;
+  const notOffset = tokens[idx + 2] === 'is' ? 3 : 2;
+  if (tokens[idx + notOffset] !== 'not' && notOffset === 3) return -1;
+  if (tokens[idx + notOffset + 1] !== 'blocked') return -1;
+
+  idx += notOffset + 2;
+  if (tokens[idx] === ',') idx++;
+
+  return idx;
+}
+
 function matchSelfBecomesTappedPrefix(tokens: string[]): number {
   if (tokens.length < 5) return -1;
 
@@ -4499,6 +4529,9 @@ function matchLandfallPrefix(tokens: string[]): number {
  */
 function matchTriggerPrefix(tokens: string[]): { trigger: Trigger; effectStart: number } | null {
   let idx: number;
+
+  idx = matchSelfAttacksAndIsntBlockedPrefix(tokens);
+  if (idx > 0) return { trigger: { kind: 'Unblocked', who: 'self' }, effectStart: idx };
 
   idx = matchAttacksPrefix(tokens);
   if (idx > 0) return { trigger: { kind: 'Attacks', who: 'self' }, effectStart: idx };

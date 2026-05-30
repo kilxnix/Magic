@@ -838,6 +838,19 @@ describe('parseOracleText', () => {
       expect(result.ability.effects[0].kind).toBe('Draw');
     });
 
+    it('parses unblocked attack triggers', () => {
+      const result = parseOracleText("Whenever this creature attacks and isn't blocked, it gets +2/+0 until end of combat.");
+      expect(result.kind).toBe('Triggered');
+      if (result.kind !== 'Triggered') return;
+      expect(result.ability.trigger).toEqual({ kind: 'Unblocked', who: 'self' });
+      expect(result.ability.effects[0]).toMatchObject({
+        kind: 'ModifyPT',
+        target: { kind: 'Source' },
+        power: 2,
+        toughness: 0,
+      });
+    });
+
     it('parses "Whenever this creature becomes tapped" as a self tapped trigger', () => {
       const result = parseOracleText('Whenever this creature becomes tapped, create a 1/1 red Goblin creature token.');
       expect(result.kind).toBe('Triggered');

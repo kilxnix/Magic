@@ -14,7 +14,7 @@ import { initGameState, getCardsInZone, getCardDefinition } from '../game-state'
 import { castSpell, canCastSpell, resolveTopOfStack, putTriggersOnStack, checkTriggersForEvent, registerBattlefieldAbilities } from '../stack';
 import { checkStateBasedActions, cleanupDamage } from '../state-based';
 import { activateAbility, getActivatedAbilities, playLand, tapLandForMana, drawCards } from '../actions';
-import { declareAttackers } from '../combat';
+import { declareAttackers, declareBlockers } from '../combat';
 import { addMana } from '../mana';
 import { getEffectivePower } from '../effects/continuous';
 import { instanceHasKeyword } from '../keywords';
@@ -856,6 +856,42 @@ describe('Attack Trigger Pipeline', () => {
     // Should have drawn a card
     const handAfter = countCardsInZone(state, 'p1', 'hand');
     expect(handAfter).toBe(handBefore + 1);
+  });
+});
+
+describe('Unblocked Trigger Pipeline', () => {
+  it("fires attacks-and-isn't-blocked triggers after blockers are declared", () => {
+    const unblockedCreature = makeCreatureWithAttackTrigger(
+      'unblocked-payoff',
+      'Murk Dwellers Test',
+      "Whenever this creature attacks and isn't blocked, it gets +2/+0 until end of combat.",
+    );
+    const island = makeLand('island-unblocked-trigger', 'Island');
+
+    let state = createTestGame([unblockedCreature, island], [island]);
+    const creatureInst = findCard(state, 'unblocked-payoff')!;
+    state = moveToZone(state, creatureInst.instanceId, 'battlefield');
+    state = registerBattlefieldAbilities(state, creatureInst.instanceId);
+
+    state = { ...state, activePlayerIndex: 0, phase: 'combat' as any, step: 'declare_attackers' as any };
+    state = declareAttackers(state, 'p1', [
+      { cardInstanceId: creatureInst.instanceId, defendingPlayerId: 'p2' },
+    ]);
+    expect(state.pendingTriggers).toHaveLength(0);
+
+    state = {
+      ...state,
+      step: 'declare_blockers' as any,
+    };
+    state = declareBlockers(state, 'p2', []);
+
+    expect(state.pendingTriggers).toHaveLength(1);
+    expect(state.pendingTriggers[0].ability.trigger).toEqual({ kind: 'Unblocked', who: 'self' });
+
+    state = putTriggersOnStack(state);
+    state = resolveTopOfStack(state);
+
+    expect(getEffectivePower(state, creatureInst.instanceId)).toBe(5);
   });
 });
 

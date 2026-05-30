@@ -100,6 +100,7 @@ export interface TriggeredAbilityRef {
   trigger: { kind: 'ETB'; who: 'self' | 'any' | 'controller' }
     | { kind: 'Dies'; who: 'self' | 'any' }
     | { kind: 'Attacks'; who: 'self' }
+    | { kind: 'Unblocked'; who: 'self' }
     | { kind: 'Upkeep'; whose: 'yours' | 'each' }
     | { kind: 'BeginningCombat'; whose: 'yours' | 'each' }
     | { kind: 'EndStep'; whose: 'yours' | 'opponents' }

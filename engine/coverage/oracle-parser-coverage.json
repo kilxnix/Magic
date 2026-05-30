@@ -1,17 +1,17 @@
 {
-  "generatedAt": "2026-05-30T12:10:36.072Z",
+  "generatedAt": "2026-05-30T12:15:51.146Z",
   "source": "mtg_data/cards_min.jsonl",
   "commanderLegalOnly": true,
   "includedCards": 30969,
   "totalOracleFaces": 31420,
-  "parsedFaces": 15535,
-  "unparsedFaces": 15885,
-  "parsedPercent": 49.44,
+  "parsedFaces": 15536,
+  "unparsedFaces": 15884,
+  "parsedPercent": 49.45,
   "parsedKindCounts": {
-    "Unparsed": 15885,
+    "Unparsed": 15884,
     "Spell": 10489,
     "ETB": 2044,
-    "Triggered": 1177,
+    "Triggered": 1178,
     "KeywordOnly": 887,
     "EntryCounters": 362,
     "StaticAbility": 340,
@@ -28,21 +28,15 @@
     },
     {
       "reason": "Could not parse trigger effect clause",
-      "count": 1162
+      "count": 1161
     }
   ],
   "syntaxClusters": [
     {
       "id": "trigger-timing",
       "reason": "Triggered or delayed triggered abilities need event registration and APNAP ordering.",
-      "count": 6850,
+      "count": 6849,
       "samples": [
-        {
-          "name": "Murk Dwellers",
-          "set": "5ed",
-          "reason": "Could not parse trigger effect clause",
-          "text": "Whenever this creature attacks and isn't blocked, it gets +2/+0 until end of combat."
-        },
         {
           "name": "Coalition Relic",
           "set": "dmc",
@@ -84,6 +78,12 @@
           "set": "dom",
           "reason": "No recognized pattern",
           "text": "Enchant creature Enchanted creature gets +1/+1. When enchanted creature dies, return that card to its owner's hand."
+        },
+        {
+          "name": "End-Blaze Epiphany",
+          "set": "ecl",
+          "reason": "No recognized pattern",
+          "text": "End-Blaze Epiphany deals X damage to target creature. When that creature dies this turn, exile a number of cards from the top of your library equal to its power, then choose a card exiled this way. Until the end of your next turn, you may play that card."
         }
       ]
     },
@@ -145,19 +145,13 @@
     {
       "id": "continuous-layers",
       "reason": "Continuous effects need layer/timestamp/dependency handling.",
-      "count": 3295,
+      "count": 3294,
       "samples": [
         {
           "name": "Sensory Deprivation",
           "set": "m14",
           "reason": "No recognized pattern",
           "text": "Enchant creature Enchanted creature gets -3/-0."
-        },
-        {
-          "name": "Murk Dwellers",
-          "set": "5ed",
-          "reason": "Could not parse trigger effect clause",
-          "text": "Whenever this creature attacks and isn't blocked, it gets +2/+0 until end of combat."
         },
         {
           "name": "Behemoth Sledge",
@@ -194,6 +188,12 @@
           "set": "dsk",
           "reason": "Could not parse trigger effect clause",
           "text": "Flying Whenever this creature attacks, target creature defending player controls gets -2/-0 and loses flying until your next turn."
+        },
+        {
+          "name": "Hot Pursuit",
+          "set": "mkc",
+          "reason": "Could not parse ETB effect clause",
+          "text": "When this enchantment enters, suspect target creature an opponent controls. As long as this enchantment remains on the battlefield, that creature is also goaded. At the beginning of combat on your turn, if two or more players have lost the game, gain control of all goaded and/or suspected creatures until end of turn. Untap them. They gain haste until end of "
         }
       ]
     },
