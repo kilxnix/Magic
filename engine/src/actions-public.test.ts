@@ -116,6 +116,34 @@ function addHandCavern(state: GameState, instanceId = 'cavern_0'): string {
   return instanceId;
 }
 
+function addBattlefieldBlackerLotus(state: GameState, instanceId = 'blacker_lotus_0'): string {
+  const def: CardDefinition = populateParsedCache({
+    id: `def_${instanceId}`,
+    name: 'Blacker Lotus',
+    type_line: 'Artifact',
+    oracle_text: '{T}: Tear Blacker Lotus into pieces. Add four mana of any one color. Remove the pieces from the game.',
+    mana_cost: '0',
+    cmc: 0,
+    colors: [],
+    color_identity: [],
+    keywords: [],
+    card_types: ['artifact'],
+  });
+  state.cardDefinitions.set(def.id, def);
+  state.cards.set(instanceId, {
+    instanceId,
+    definitionId: def.id,
+    ownerId: 'human',
+    zone: 'battlefield',
+    tapped: false,
+    summoningSick: false,
+    counters: {},
+    damage: 0,
+    isCommander: false,
+  });
+  return instanceId;
+}
+
 describe('tryPlayLand', () => {
   it('returns ok and LandPlayed event on success', () => {
     const state = makeTestState({ handLands: 1 });
@@ -287,6 +315,18 @@ describe('tryTapLandForMana', () => {
     expect(manaResult.state.players[0].restrictedMana).toEqual([
       { color: 'G', amount: 1, restriction: 'creatureTypeSpell', creatureType: 'Elf', sourceInstanceId: cavernId },
     ]);
+  });
+
+  it('models Blacker Lotus as a one-shot silver-bordered mana source exiled after use', () => {
+    const state = makeTestState({});
+    const lotusId = addBattlefieldBlackerLotus(state);
+
+    const result = tryTapLandForMana(state, 'human', lotusId, 'R');
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.players[0].manaPool.R).toBe(4);
+    expect(result.state.cards.get(lotusId)?.zone).toBe('exile');
   });
 });
 
