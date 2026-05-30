@@ -2256,6 +2256,8 @@ function targetFailureReason(state: GameState, spec: TargetSpec, targetId: strin
     case 'Spell':
     case 'NoncreatureSpell':
     case 'CreatureSpell':
+    case 'CreatureOrEnchantmentSpell':
+    case 'ArtifactOrCreatureSpell':
     case 'InstantOrSorcerySpell':
       return 'Not a matching spell on the stack';
     case 'Any':

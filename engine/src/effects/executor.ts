@@ -1476,7 +1476,12 @@ function queueCreatureTokenETBTriggers(
  * Moves the target spell from the stack to the graveyard.
  * V0: We move the card to the graveyard if it exists on the stack.
  */
-function executeCounterSpell(state: GameState, targetId: string, filter?: 'noncreature' | 'creature'): GameState {
+function executeCounterSpell(
+  state: GameState,
+  targetId: string,
+  filter?: 'noncreature' | 'creature' | 'creatureOrEnchantment' | 'artifactOrCreature' | 'instantOrSorcery',
+  exileInstead: boolean = false,
+): GameState {
   let targetCardInstanceId: string | undefined;
   const targetStackItem = state.stack.find(item => {
     if (!isSpellStackItem(item)) return false;
@@ -1492,11 +1497,14 @@ function executeCounterSpell(state: GameState, targetId: string, filter?: 'noncr
   const def = getCardDefinition(state, card);
   if (filter === 'creature' && !def.card_types.includes('creature')) return state;
   if (filter === 'noncreature' && def.card_types.includes('creature')) return state;
+  if (filter === 'creatureOrEnchantment' && !def.card_types.includes('creature') && !def.card_types.includes('enchantment')) return state;
+  if (filter === 'artifactOrCreature' && !def.card_types.includes('artifact') && !def.card_types.includes('creature')) return state;
+  if (filter === 'instantOrSorcery' && !def.card_types.includes('instant') && !def.card_types.includes('sorcery')) return state;
   if (/\b(?:can'?t|cannot)\s+be\s+countered\b/i.test(def.oracle_text)) {
     return state;
   }
 
-  const destZone = getCommanderDestinationZone(state, cardInstanceId, 'graveyard');
+  const destZone = getCommanderDestinationZone(state, cardInstanceId, exileInstead ? 'exile' : 'graveyard');
   const newCards = new Map(state.cards);
   newCards.set(cardInstanceId, { ...card, zone: destZone });
   const newStack = targetStackItem
@@ -2226,7 +2234,7 @@ function executeEffect(
     }
     case 'CounterSpell': {
       const csTargetId = resolveTargetRef(effect.target, casterId, chosenTargets);
-      return executeCounterSpell(state, csTargetId, effect.filter);
+      return executeCounterSpell(state, csTargetId, effect.filter, effect.exileInstead);
     }
     case 'ReturnFromGraveyard': {
       const rfgTargetId = resolveTargetRef(effect.target, casterId, chosenTargets);

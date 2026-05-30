@@ -120,7 +120,14 @@ export function getLegalTargets(
       if (!isEffectiveCreature(state, card.instanceId)) continue;
       targets.push(card.instanceId);
     }
-  } else if (spec.type === 'Spell' || spec.type === 'NoncreatureSpell' || spec.type === 'CreatureSpell' || spec.type === 'InstantOrSorcerySpell') {
+  } else if (
+    spec.type === 'Spell'
+    || spec.type === 'NoncreatureSpell'
+    || spec.type === 'CreatureSpell'
+    || spec.type === 'CreatureOrEnchantmentSpell'
+    || spec.type === 'ArtifactOrCreatureSpell'
+    || spec.type === 'InstantOrSorcerySpell'
+  ) {
     for (const item of state.stack) {
       if (!isSpellStackItem(item)) continue;
       const card = state.cards.get(item.cardInstanceId);
@@ -128,6 +135,8 @@ export function getLegalTargets(
       if (!card || !def) continue;
       if (spec.type === 'NoncreatureSpell' && def.card_types.includes('creature')) continue;
       if (spec.type === 'CreatureSpell' && !def.card_types.includes('creature')) continue;
+      if (spec.type === 'CreatureOrEnchantmentSpell' && !def.card_types.includes('creature') && !def.card_types.includes('enchantment')) continue;
+      if (spec.type === 'ArtifactOrCreatureSpell' && !def.card_types.includes('artifact') && !def.card_types.includes('creature')) continue;
       if (spec.type === 'InstantOrSorcerySpell' && !def.card_types.includes('instant') && !def.card_types.includes('sorcery')) continue;
       targets.push(card.instanceId);
     }

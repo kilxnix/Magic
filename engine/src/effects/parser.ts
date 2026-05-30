@@ -1736,6 +1736,7 @@ function matchDrawX(tokens: string[], startIndex: number): PatternResult {
  * Match: "counter target spell"
  * Match: "counter target noncreature spell"
  * Match: "counter target creature spell"
+ * Match: "counter target creature or enchantment spell. If that spell is countered this way, exile it instead..."
  */
 function matchCounterSpell(tokens: string[], startIndex: number): PatternResult {
   const slice = tokens.slice(startIndex);
@@ -1746,7 +1747,7 @@ function matchCounterSpell(tokens: string[], startIndex: number): PatternResult 
 
   let targetType: TargetType;
   let consumed: number;
-  let filter: 'noncreature' | 'creature' | undefined;
+  let filter: 'noncreature' | 'creature' | 'creatureOrEnchantment' | 'artifactOrCreature' | 'instantOrSorcery' | undefined;
 
   if (slice[2] === 'noncreature' && slice[3] === 'spell') {
     targetType = 'NoncreatureSpell';
@@ -1756,6 +1757,18 @@ function matchCounterSpell(tokens: string[], startIndex: number): PatternResult 
     targetType = 'CreatureSpell';
     filter = 'creature';
     consumed = 4;
+  } else if (slice[2] === 'creature' && slice[3] === 'or' && slice[4] === 'enchantment' && slice[5] === 'spell') {
+    targetType = 'CreatureOrEnchantmentSpell';
+    filter = 'creatureOrEnchantment';
+    consumed = 6;
+  } else if (slice[2] === 'artifact' && slice[3] === 'or' && slice[4] === 'creature' && slice[5] === 'spell') {
+    targetType = 'ArtifactOrCreatureSpell';
+    filter = 'artifactOrCreature';
+    consumed = 6;
+  } else if (slice[2] === 'instant' && slice[3] === 'or' && slice[4] === 'sorcery' && slice[5] === 'spell') {
+    targetType = 'InstantOrSorcerySpell';
+    filter = 'instantOrSorcery';
+    consumed = 6;
   } else if (slice[2] === 'spell') {
     targetType = 'Spell';
     consumed = 3;
@@ -1763,13 +1776,34 @@ function matchCounterSpell(tokens: string[], startIndex: number): PatternResult 
     return null;
   }
 
+  let exileInstead = false;
   if (tokens[startIndex + consumed] === '.') consumed++;
+  const rider = tokens.slice(startIndex + consumed);
+  if (
+    rider[0] === 'if'
+    && rider[1] === 'that'
+    && rider[2] === 'spell'
+    && rider[3] === 'is'
+    && rider[4] === 'countered'
+    && rider[5] === 'this'
+    && rider[6] === 'way'
+  ) {
+    const exileIndex = rider.indexOf('exile');
+    const insteadIndex = rider.indexOf('instead');
+    if (exileIndex >= 0 && insteadIndex > exileIndex) {
+      exileInstead = true;
+      consumed += insteadIndex + 1;
+      while (tokens[startIndex + consumed] && tokens[startIndex + consumed] !== '.') consumed++;
+      if (tokens[startIndex + consumed] === '.') consumed++;
+    }
+  }
 
   const spec = makeTargetSpec(targetType);
   const effect: Effect = {
     kind: 'CounterSpell',
     target: makeChosenRef(spec),
     filter,
+    ...(exileInstead ? { exileInstead: true } : {}),
   };
 
   return { effects: [effect], targets: [spec], consumed };

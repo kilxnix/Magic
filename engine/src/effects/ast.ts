@@ -261,7 +261,8 @@ export interface ShuffleLibraryEffect {
 export interface CounterSpellEffect {
   kind: 'CounterSpell';
   target: TargetRef;
-  filter?: 'noncreature' | 'creature'; // undefined = any spell
+  filter?: 'noncreature' | 'creature' | 'creatureOrEnchantment' | 'artifactOrCreature' | 'instantOrSorcery'; // undefined = any spell
+  exileInstead?: boolean;
 }
 
 export interface ReturnFromGraveyardEffect {

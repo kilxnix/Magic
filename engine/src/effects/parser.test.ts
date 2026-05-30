@@ -747,6 +747,17 @@ describe('parseOracleText', () => {
       expect(result.effects[0].filter).toBe('creature');
       expect(result.targets[0].type).toBe('CreatureSpell');
     });
+
+    it('parses counter-and-exile riders for creature or enchantment spells', () => {
+      const result = parseOracleText("Counter target creature or enchantment spell. If that spell is countered this way, exile it instead of putting it into its owner's graveyard.");
+      expect(result.kind).toBe('Spell');
+      if (result.kind !== 'Spell') return;
+      expect(result.effects[0].kind).toBe('CounterSpell');
+      if (result.effects[0].kind !== 'CounterSpell') return;
+      expect(result.effects[0].filter).toBe('creatureOrEnchantment');
+      expect(result.effects[0].exileInstead).toBe(true);
+      expect(result.targets[0].type).toBe('CreatureOrEnchantmentSpell');
+    });
   });
 
   describe('graveyard recursion patterns', () => {

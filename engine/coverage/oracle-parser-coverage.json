@@ -1,31 +1,31 @@
 {
-  "generatedAt": "2026-05-30T12:43:43.195Z",
+  "generatedAt": "2026-05-30T12:48:33.307Z",
   "source": "mtg_data/cards_min.jsonl",
   "commanderLegalOnly": true,
   "includedCards": 30969,
   "totalOracleFaces": 31420,
-  "parsedFaces": 16094,
-  "unparsedFaces": 15326,
-  "parsedPercent": 51.22,
+  "parsedFaces": 16111,
+  "unparsedFaces": 15309,
+  "parsedPercent": 51.28,
   "parsedKindCounts": {
-    "Unparsed": 15326,
-    "Spell": 10450,
-    "ETB": 2532,
+    "Unparsed": 15309,
+    "Spell": 10465,
+    "ETB": 2533,
     "Triggered": 1307,
     "KeywordOnly": 876,
     "StaticAbility": 340,
     "EntryCounters": 338,
-    "Modal": 236,
+    "Modal": 237,
     "Dies": 15
   },
   "unparsedReasons": [
     {
       "reason": "No recognized pattern",
-      "count": 12903
+      "count": 12887
     },
     {
       "reason": "Could not parse ETB effect clause",
-      "count": 1360
+      "count": 1359
     },
     {
       "reason": "Could not parse trigger effect clause",
@@ -40,7 +40,7 @@
     {
       "id": "trigger-timing",
       "reason": "Triggered or delayed triggered abilities need event registration and APNAP ordering.",
-      "count": 6398,
+      "count": 6395,
       "samples": [
         {
           "name": "Mindlink Mech",
@@ -260,7 +260,7 @@
     {
       "id": "tokens-counters",
       "reason": "Token/counter wording needs typed objects, counters, and downstream interactions.",
-      "count": 1803,
+      "count": 1786,
       "samples": [
         {
           "name": "Sagu Pummeler",
@@ -281,18 +281,6 @@
           "text": "(As this Saga enters and after your draw step, add a lore counter. Sacrifice after VI.) I, II, III, IV, V, VI — Note a creature type that hasn't been noted for this Saga. When you next cast a creature spell of that type this turn, that creature enters with an additional +1/+1 counter on it."
         },
         {
-          "name": "Deny the Divine",
-          "set": "thb",
-          "reason": "No recognized pattern",
-          "text": "Counter target creature or enchantment spell. If that spell is countered this way, exile it instead of putting it into its owner's graveyard."
-        },
-        {
-          "name": "Hurl into History",
-          "set": "lci",
-          "reason": "No recognized pattern",
-          "text": "Counter target artifact or creature spell. Discover X, where X is that spell's mana value. (Exile cards from the top of your library until you exile a nonland card with that mana value or less. Cast it without paying its mana cost or put it into your hand. Put the rest on the bottom in a random order.)"
-        },
-        {
           "name": "Metamorphosis Fanatic",
           "set": "dsc",
           "reason": "Could not parse ETB effect clause",
@@ -309,13 +297,25 @@
           "set": "clb",
           "reason": "No recognized pattern",
           "text": "{1}: Until end of turn, target token you control becomes a green Bear creature with base power and toughness 4/4 in addition to its other colors and types. Choose a Background (You can have a Background as a second commander.)"
+        },
+        {
+          "name": "Cogwork Assembler",
+          "set": "2xm",
+          "reason": "No recognized pattern",
+          "text": "{7}: Create a token that's a copy of target artifact. That token gains haste. Exile it at the beginning of the next end step."
+        },
+        {
+          "name": "Benevolent Hydra",
+          "set": "soc",
+          "reason": "No recognized pattern",
+          "text": "This creature enters with X +1/+1 counters on it. If one or more +1/+1 counters would be put on another creature you control, that many plus one +1/+1 counters are put on it instead. {T}, Remove a +1/+1 counter from this creature: Put a +1/+1 counter on another target creature you control."
         }
       ]
     },
     {
       "id": "replacement-prevention",
       "reason": "Replacement/prevention effects require replacement-layer handling.",
-      "count": 1587,
+      "count": 1586,
       "samples": [
         {
           "name": "Sodden Verdure",
@@ -360,10 +360,10 @@
           "text": "(As this Saga enters and after your draw step, add a lore counter. Sacrifice after VI.) I, II, III, IV, V, VI — Note a creature type that hasn't been noted for this Saga. When you next cast a creature spell of that type this turn, that creature enters with an additional +1/+1 counter on it."
         },
         {
-          "name": "Deny the Divine",
-          "set": "thb",
+          "name": "Doubling Season",
+          "set": "fdn",
           "reason": "No recognized pattern",
-          "text": "Counter target creature or enchantment spell. If that spell is countered this way, exile it instead of putting it into its owner's graveyard."
+          "text": "If an effect would create one or more tokens under your control, it creates twice that many of those tokens instead. If an effect would put one or more counters on a permanent you control, it puts twice that many of those counters on that permanent instead."
         }
       ]
     },
@@ -425,7 +425,7 @@
     {
       "id": "cost-system",
       "reason": "Alternative/additional/reduced costs need prompt-backed payment and legality.",
-      "count": 1219,
+      "count": 1217,
       "samples": [
         {
           "name": "Pteramander",
@@ -480,7 +480,7 @@
     {
       "id": "choice-modal",
       "reason": "Choice/modal/naming text should be prompt-backed instead of deterministic.",
-      "count": 813,
+      "count": 812,
       "samples": [
         {
           "name": "Road of Return",
@@ -590,7 +590,7 @@
     {
       "id": "copy-stack",
       "reason": "Copy/stack mechanics need stack-object identity and trigger multiplication.",
-      "count": 600,
+      "count": 598,
       "samples": [
         {
           "name": "Mindlink Mech",

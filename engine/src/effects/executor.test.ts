@@ -1310,6 +1310,56 @@ describe('EachOpponent and AllCreatures effects', () => {
       expect(newState.stack).toHaveLength(0);
       expect(newState.cards.get('spell-1')?.zone).toBe('graveyard');
     });
+
+    it('exiles a countered creature-or-enchantment spell when the rider says exile it instead', () => {
+      const state = createTestState();
+      state.cardDefinitions.set('def-enchantment', {
+        id: 'def-enchantment',
+        name: 'Test Enchantment',
+        type_line: 'Enchantment',
+        oracle_text: '',
+        mana_cost: '{1}{W}',
+        cmc: 2,
+        colors: ['W'],
+        color_identity: ['W'],
+        keywords: [],
+        card_types: ['enchantment'],
+      });
+      state.cards.set('spell-2', {
+        instanceId: 'spell-2',
+        definitionId: 'def-enchantment',
+        ownerId: 'player-2',
+        zone: 'stack',
+        tapped: false,
+        summoningSick: false,
+        counters: {},
+        damage: 0,
+        isCommander: false,
+      });
+      state.stack = [{
+        kind: 'Spell',
+        id: 'stack_2',
+        cardInstanceId: 'spell-2',
+        casterId: 'player-2',
+        targets: [],
+      }];
+
+      const newState = executeEffects(
+        state,
+        [{
+          kind: 'CounterSpell',
+          target: { kind: 'Chosen', targetId: 'target_1' },
+          filter: 'creatureOrEnchantment',
+          exileInstead: true,
+        }],
+        'player-1',
+        ['spell-2'],
+        [{ id: 'target_1', type: 'CreatureOrEnchantmentSpell', count: 1 }],
+      );
+
+      expect(newState.stack).toHaveLength(0);
+      expect(newState.cards.get('spell-2')?.zone).toBe('exile');
+    });
   });
 
   describe('EachOpponent Discard', () => {
