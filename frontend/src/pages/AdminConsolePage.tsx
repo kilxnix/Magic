@@ -302,7 +302,7 @@ export function AdminConsolePage() {
                 {practiceSaves.map((record, index) => {
                   const slot = index + 1;
                   const audit = record ? auditPlaySaveSnapshot(record.snapshot) : null;
-                  const canonicalAudit = record ? auditCanonicalPlayEngineSave(record.canonicalEngineSave) : null;
+                  const canonicalAudit = record?.canonicalEngineSave ? auditCanonicalPlayEngineSave(record.canonicalEngineSave) : null;
                   return (
                     <div key={slot} className="rounded-lg border border-stone-800 bg-neutral-950 p-3">
                       <div className="mb-2 flex items-start justify-between gap-2">

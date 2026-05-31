@@ -514,7 +514,7 @@ export function PlayPage() {
           const slot = index + 1;
           const active = activeSaveSlot === slot;
           const audit = record ? auditPlaySaveSnapshot(record.snapshot) : null;
-          const canonicalAudit = record ? auditCanonicalPlayEngineSave(record.canonicalEngineSave) : null;
+          const canonicalAudit = record?.canonicalEngineSave ? auditCanonicalPlayEngineSave(record.canonicalEngineSave) : null;
           const checkpointSequence = record ? latestCheckpointSequence(record) : null;
           return (
             <div
