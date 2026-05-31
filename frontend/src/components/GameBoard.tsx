@@ -166,6 +166,8 @@ interface GameBoardProps {
   authorityUpdates?: EngineStateUpdate[];
   lastStateUpdate?: EngineStateUpdate | null;
   currentPrompt?: EnginePrompt | null;
+  actionError?: { reason: string; message: string } | null;
+  onClearActionError?: () => void;
   menuActions?: { id: string; label: string; detail?: string; onSelect: () => void }[];
 }
 
@@ -194,13 +196,24 @@ function getBattlefieldRowKey(card: SimpleCard): BattlefieldRowKey {
 
 type PlayerNameResolver = (playerId: string | undefined) => string;
 
-function summarizeStateUpdate(
+export function summarizeStateUpdate(
   update: EngineStateUpdate | null | undefined,
   nameForPlayer: PlayerNameResolver = playerId => playerId || 'none',
 ): string {
   if (!update) return '';
   const accepted = update.rulesEvents.find(event => event.kind === 'ActionAccepted');
-  const label = accepted?.kind === 'ActionAccepted' ? accepted.label || accepted.actionKind : 'State update';
+  const actionRejected = update.rulesEvents.find(event => event.kind === 'ActionRejected');
+  const promptAccepted = update.rulesEvents.find(event => event.kind === 'PromptResponseAccepted');
+  const promptRejected = update.rulesEvents.find(event => event.kind === 'PromptResponseRejected');
+  const label = accepted?.kind === 'ActionAccepted'
+    ? accepted.label || accepted.actionKind
+    : actionRejected?.kind === 'ActionRejected'
+    ? `Rejected ${actionRejected.actionKind}`
+    : promptRejected?.kind === 'PromptResponseRejected'
+    ? `Rejected ${promptRejected.promptKind}`
+    : promptAccepted?.kind === 'PromptResponseAccepted'
+    ? `${promptAccepted.promptKind} choice accepted`
+    : 'Engine update';
   const dice = update.rulesEvents
     .filter(event => event.kind === 'DiceRolled')
     .map(event => event.kind === 'DiceRolled'
@@ -208,9 +221,14 @@ function summarizeStateUpdate(
       : '')
     .filter(Boolean)
     .join('; ');
+  const rejection = actionRejected?.kind === 'ActionRejected'
+    ? actionRejected.message
+    : promptRejected?.kind === 'PromptResponseRejected'
+    ? promptRejected.message
+    : '';
   const diffs = summarizeVisibleDiffs(update.visibleDiffs, nameForPlayer);
   const prompt = update.prompt?.title;
-  return [label, dice, diffs, prompt].filter(Boolean).join(' - ');
+  return [label, rejection, dice, diffs, prompt].filter(Boolean).join(' - ');
 }
 
 function stateUpdateActor(update: EngineStateUpdate, gameState: SimpleGameState): string {
@@ -223,7 +241,7 @@ function stateUpdateActor(update: EngineStateUpdate, gameState: SimpleGameState)
 }
 
 function summarizeVisibleDiffs(diffs: EngineStateUpdate['visibleDiffs'], nameForPlayer: PlayerNameResolver): string {
-  if (diffs.length === 0) return 'no visible board change';
+  if (diffs.length === 0) return '';
   const shown = diffs.slice(0, 2).map(diff => describeVisibleDiff(diff, nameForPlayer));
   const extra = diffs.length > shown.length ? ` +${diffs.length - shown.length} more` : '';
   return `${shown.join('; ')}${extra}`;
@@ -2390,6 +2408,8 @@ export function GameBoard({
   authorityUpdates = [],
   lastStateUpdate,
   currentPrompt,
+  actionError,
+  onClearActionError,
   menuActions = [],
 }: GameBoardProps) {
   const [inspectedCard, setInspectedCard] = useState<SimpleCard | null>(null);
@@ -3499,6 +3519,32 @@ export function GameBoard({
             <div className="truncate text-xs font-semibold text-stone-100">
               {summarizeStateUpdate(lastStateUpdate, playerNameForId)}
             </div>
+          </div>
+        </div>
+      )}
+      {actionError && (
+        <div className="relative z-10 flex shrink-0 justify-end border-b border-red-950/70 bg-red-950/35 px-2 py-1 md:px-4">
+          <div className="flex max-w-full items-start gap-2 rounded border border-red-500/45 bg-neutral-950/90 px-3 py-2 text-left shadow-lg shadow-black/25 backdrop-blur sm:max-w-lg">
+            <div className="min-w-0 flex-1">
+              <div className="text-[9px] font-bold uppercase tracking-wider text-red-300/85">Action Rejected</div>
+              <div className="text-xs font-semibold leading-snug text-stone-100">
+                {actionError.message}
+              </div>
+              <div className="mt-0.5 text-[10px] font-semibold uppercase tracking-wider text-red-200/60">
+                {actionError.reason}
+              </div>
+            </div>
+            {onClearActionError && (
+              <button
+                type="button"
+                onClick={onClearActionError}
+                className="rounded border border-red-500/30 bg-red-950/70 p-1 text-red-100 transition-colors hover:bg-red-900"
+                aria-label="Dismiss action error"
+                title="Dismiss"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
           </div>
         </div>
       )}

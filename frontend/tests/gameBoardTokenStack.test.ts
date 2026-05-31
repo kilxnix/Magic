@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { groupBattlefieldCards } from '../src/components/GameBoard';
+import { groupBattlefieldCards, summarizeStateUpdate } from '../src/components/GameBoard';
 import type { SimpleCard } from '../src/hooks/useShelectorGame';
+import type { EngineStateUpdate } from 'commander-engine';
 
 function card(overrides: Partial<SimpleCard>): SimpleCard {
   return {
@@ -48,5 +49,60 @@ describe('groupBattlefieldCards', () => {
 
     expect(groups.creatures).toHaveLength(2);
     expect(groups.creatures.every(group => group.cards.length === 1)).toBe(true);
+  });
+});
+
+describe('summarizeStateUpdate', () => {
+  function update(overrides: Partial<EngineStateUpdate>): EngineStateUpdate {
+    return {
+      oldStateId: 'old',
+      newStateId: 'new',
+      activePlayerId: 'p1',
+      priorityPlayerId: 'p1',
+      phase: 'precombat_main',
+      step: 'main',
+      turnNumber: 1,
+      priority: {
+        activePlayerId: 'p1',
+        priorityPlayerId: 'p1',
+        passedPriorityPlayerIds: [],
+        stackSize: 0,
+      },
+      visibleDiffs: [],
+      rulesEvents: [],
+      ...overrides,
+    };
+  }
+
+  it('shows authoritative rejection messages instead of a vague no-op update', () => {
+    const text = summarizeStateUpdate(update({
+      rulesEvents: [{
+        kind: 'ActionRejected',
+        requestId: 'req',
+        playerId: 'p1',
+        actionKind: 'PlayLand',
+        reason: 'internal_error',
+        message: 'Action resolved without changing authoritative state.',
+      }],
+    }));
+
+    expect(text).toContain('Rejected PlayLand');
+    expect(text).toContain('Action resolved without changing authoritative state.');
+    expect(text).not.toContain('no visible board change');
+  });
+
+  it('describes prompt acceptance without saying the board did not change', () => {
+    const text = summarizeStateUpdate(update({
+      rulesEvents: [{
+        kind: 'PromptResponseAccepted',
+        requestId: 'prompt',
+        playerId: 'p1',
+        promptKind: 'ChooseReplacement',
+        selectedReplacementOptionId: 'enter_tapped',
+      }],
+    }));
+
+    expect(text).toContain('ChooseReplacement choice accepted');
+    expect(text).not.toContain('no visible board change');
   });
 });

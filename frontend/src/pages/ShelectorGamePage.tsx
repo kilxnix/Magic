@@ -90,6 +90,7 @@ export function ShelectorGamePage() {
     engineEventLogInitialState,
     lastStateUpdate,
     currentPrompt,
+    actionError,
     lastPlayedCard,
     spawnOpponent,
     startGame,
@@ -127,6 +128,7 @@ export function ShelectorGamePage() {
     createManualToken,
     attachCardManually,
     setPhaseStepManually,
+    clearActionError,
     untappableCardIds,
     endGame,
     closeEndGame,
@@ -823,6 +825,8 @@ export function ShelectorGamePage() {
           authorityUpdates={authorityUpdates}
           lastStateUpdate={lastStateUpdate}
           currentPrompt={currentPrompt}
+          actionError={actionError}
+          onClearActionError={clearActionError}
         />
       </div>
 

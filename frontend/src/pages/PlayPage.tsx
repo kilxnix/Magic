@@ -112,6 +112,7 @@ export function PlayPage() {
     engineEventLogInitialState,
     lastStateUpdate,
     currentPrompt,
+    actionError,
     lastPlayedCard,
     startGame,
     exportGameSave,
@@ -150,6 +151,7 @@ export function PlayPage() {
     createManualToken,
     attachCardManually,
     setPhaseStepManually,
+    clearActionError,
     untappableCardIds,
     endGame,
     closeEndGame,
@@ -841,6 +843,8 @@ export function PlayPage() {
             authorityUpdates={authorityUpdates}
             lastStateUpdate={lastStateUpdate}
             currentPrompt={currentPrompt}
+            actionError={actionError}
+            onClearActionError={clearActionError}
             menuActions={[
               {
                 id: 'saves',
