@@ -23,6 +23,7 @@ import { populateParsedCache } from './cards/card-parser-cache';
 import { getCostIncrease, getCostReduction, getIntrinsicCostReduction } from './effects/continuous';
 import { executeEffects } from './effects/executor';
 import type { Effect } from './effects/ast';
+import { playerCanPayLife } from './game-outcome';
 
 export type ActionFailure =
   | 'not_your_turn'
@@ -383,7 +384,7 @@ export function tryCastSpell(
     return fail('insufficient_mana', 'Insufficient mana in pool');
   }
   const additionalLifeCost = getAdditionalLifeCostForCast(def, options);
-  if (player.life < additionalLifeCost) return fail('insufficient_life', 'Cannot pay life cost');
+  if (!playerCanPayLife(state, playerId, additionalLifeCost)) return fail('insufficient_life', 'Cannot pay life cost');
 
   try {
     const next = castSpell(state, playerId, cardInstanceId, targets, options);
@@ -420,8 +421,7 @@ export function tryActivateAbility(
     if (!canPayUnrestrictedCost(player, cost)) return fail('insufficient_mana', 'Cannot pay mana cost');
   }
   if (ability.cost.payLife) {
-    const player = state.players.find(p => p.id === playerId)!;
-    if (player.life < ability.cost.payLife) return fail('insufficient_life', 'Cannot pay life cost');
+    if (!playerCanPayLife(state, playerId, ability.cost.payLife)) return fail('insufficient_life', 'Cannot pay life cost');
   }
 
   try {

@@ -24,6 +24,7 @@ import {
 import type { ActivatedAbility, Effect } from './effects/ast';
 import { validateTargetChoices, type TargetSpec } from './effects/targets';
 import { applyWardForStackItem } from './ward';
+import { playerCanPayLife } from './game-outcome';
 
 const MAIN_PHASES: Phase[] = ['precombat_main', 'postcombat_main'];
 
@@ -553,7 +554,7 @@ export function canActivateAbility(
 
   if (ability.cost.payLife) {
     const player = state.players.find(p => p.id === playerId);
-    if (!player || player.life < ability.cost.payLife) return false;
+    if (!player || !playerCanPayLife(state, playerId, ability.cost.payLife)) return false;
   }
 
   return true;
@@ -618,6 +619,9 @@ export function activateAbility(
   // Pay life cost
   if (ability.cost.payLife) {
     const playerIndex = newState.players.findIndex(p => p.id === playerId);
+    if (!playerCanPayLife(newState, playerId, ability.cost.payLife)) {
+      throw new Error('Cannot pay life cost');
+    }
     const newPlayers = newState.players.map((p, i) =>
       i === playerIndex ? { ...p, life: p.life - ability.cost.payLife! } : p
     );

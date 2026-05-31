@@ -1,4 +1,5 @@
 import type { CardDefinition, CardInstance, GameState } from './types';
+import { playerCanPayLife } from './game-outcome';
 
 export interface BattlefieldEntryOptions {
   forceTapped?: boolean;
@@ -67,8 +68,7 @@ export function buildBattlefieldEntryPlan(
     tapped = Boolean(options.defaultTapped) || !hasTwoOrMoreOpponents(state, controllerId);
   } else if (optionalLifeCost !== undefined) {
     if (options.payLifeToEnterUntapped) {
-      const player = state.players.find(p => p.id === controllerId);
-      if (!player || player.life < optionalLifeCost) {
+      if (!playerCanPayLife(state, controllerId, optionalLifeCost)) {
         throw new Error('Cannot pay life for permanent entry');
       }
       tapped = false;

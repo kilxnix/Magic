@@ -12,6 +12,7 @@ import { getCostIncrease, getCostReduction, getIntrinsicCostReduction, registerC
 import { getCommanderDestinationZone } from './commander';
 import { buildBattlefieldEntryPlan } from './permanent-entry';
 import { applyWardForStackItem } from './ward';
+import { playerCanPayLife } from './game-outcome';
 
 const MAIN_PHASES: Phase[] = ['precombat_main', 'postcombat_main'];
 const PERMANENT_TYPES = ['creature', 'artifact', 'enchantment', 'planeswalker', 'battle'];
@@ -1177,6 +1178,9 @@ export function castSpell(
   const taxAmount = isFromCommandZone ? getCommanderTaxForCast(state, playerId, cardInstanceId) : 0;
   const xCost = /\{X\}/i.test(def.mana_cost) ? normalizedXValue(castOptions) : 0;
   const additionalLifeCost = getAdditionalLifeCostForCast(def, castOptions);
+  if (!playerCanPayLife(state, playerId, additionalLifeCost)) {
+    throw new Error('Cannot pay life cost');
+  }
   const reducedCost = reduceGenericCost(state, playerId, { ...cost, generic: cost.generic + taxAmount + xCost }, def);
   const mechanicPlan = buildCostMechanicPlan(state, playerId, card, def, reducedCost, castOptions);
   const totalCost = mechanicPlan.cost;

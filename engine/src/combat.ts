@@ -15,6 +15,7 @@ import { checkTriggersForEvent } from './stack';
 import { checkStateBasedActions } from './state-based';
 import { applyDamageReplacementEffects } from './effects/replacement';
 import { canPayUnrestrictedCost, payUnrestrictedManaCost } from './mana';
+import { playerCantLoseLife } from './game-outcome';
 
 function emptyGenericCost(generic: number): ManaCost {
   return { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0, generic };
@@ -502,7 +503,9 @@ function resolveDamageStep(state: GameState, step: 'first' | 'normal'): GameStat
           );
           replacementState = prevented.state;
           const damageDealt = prevented.amount;
-          newPlayers[defenderIndex].life -= damageDealt;
+          if (!playerCantLoseLife(replacementState, attacker.defendingPlayerId)) {
+            newPlayers[defenderIndex].life -= damageDealt;
+          }
           const lifelinkEvent = applyLifelink(state, newPlayers, attacker.cardInstanceId, damageDealt);
           if (lifelinkEvent) lifeGainEvents.push(lifelinkEvent);
           trackCommanderDamage(state, newPlayers, attacker.cardInstanceId, attacker.defendingPlayerId, damageDealt);
@@ -576,7 +579,9 @@ function resolveDamageStep(state: GameState, step: 'first' | 'normal'): GameStat
             );
             replacementState = prevented.state;
             const damageDealt = prevented.amount;
-            newPlayers[defenderIndex].life -= damageDealt;
+            if (!playerCantLoseLife(replacementState, attacker.defendingPlayerId)) {
+              newPlayers[defenderIndex].life -= damageDealt;
+            }
             const lifelinkEvent = applyLifelink(state, newPlayers, attacker.cardInstanceId, damageDealt);
             if (lifelinkEvent) lifeGainEvents.push(lifelinkEvent);
             trackCommanderDamage(state, newPlayers, attacker.cardInstanceId, attacker.defendingPlayerId, damageDealt);

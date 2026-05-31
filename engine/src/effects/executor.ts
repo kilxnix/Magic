@@ -413,6 +413,7 @@ function executeDealDamage(state: GameState, targetId: string, amount: number, s
   // Check if target is a player
   const playerIndex = replacedState.players.findIndex(p => p.id === targetId);
   if (playerIndex !== -1) {
+    if (playerCantLoseLife(replacedState, targetId)) return replacedState;
     const newPlayers = replacedState.players.map((p, i) =>
       i === playerIndex ? { ...p, life: p.life - finalAmount } : p
     );

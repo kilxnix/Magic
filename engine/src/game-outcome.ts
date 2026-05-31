@@ -61,6 +61,13 @@ export function playerCantLoseLife(state: GameState, playerId: string): boolean 
   );
 }
 
+export function playerCanPayLife(state: GameState, playerId: string, amount: number): boolean {
+  if (amount <= 0) return true;
+  const player = state.players.find(candidate => candidate.id === playerId);
+  if (!player || player.life < amount) return false;
+  return !playerCantLoseLife(state, playerId);
+}
+
 export function registerGameOutcomePrevention(
   state: GameState,
   effect: Omit<GameOutcomePreventionEffectRef, 'id'> & { id?: string },

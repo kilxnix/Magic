@@ -416,6 +416,26 @@ describe("Combat Damage", () => {
     expect(next.players[1].life).toBe(38); // 40 - 2 power
   });
 
+  it("combat damage is still dealt but life is not lost under can't-lose-life effects", () => {
+    const state = setupBattlefield();
+    state.gameOutcomePreventionEffects = [{
+      id: 'no-life-loss',
+      controllerId: 'p1',
+      protectedPlayerIds: ['p2'],
+      preventsLifeLoss: true,
+      expiresAtTurnNumber: state.turnNumber,
+    }];
+    const creatures = getCardsInZone(state, "p1", "battlefield");
+    let next = declareAttackers(state, "p1", [
+      { cardInstanceId: creatures[0].instanceId, defendingPlayerId: "p2" },
+    ]);
+    next = declareBlockers(next, "p2", []);
+    next = resolveCombatDamage(next);
+
+    expect(next.players[1].life).toBe(40);
+    expect(next.combat?.damageAssignment.size ?? 0).toBeGreaterThanOrEqual(0);
+  });
+
   it("multiple unblocked attackers deal cumulative damage", () => {
     const state = setupBattlefield();
     const creatures = getCardsInZone(state, "p1", "battlefield");

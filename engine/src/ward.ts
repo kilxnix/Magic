@@ -2,6 +2,7 @@ import type { CardDefinition, GameState, ManaCost, StackItem } from './types';
 import { getCommanderDestinationZone } from './commander';
 import { getCardDefinition } from './game-state';
 import { canPayUnrestrictedCost, parseManaString, payUnrestrictedManaCost } from './mana';
+import { playerCanPayLife } from './game-outcome';
 
 export type WardCost =
   | { kind: 'mana'; cost: ManaCost }
@@ -23,7 +24,7 @@ export function parseWardCost(def: CardDefinition): WardCost | null {
 function canPayWard(state: GameState, playerId: string, cost: WardCost): boolean {
   const player = state.players.find(candidate => candidate.id === playerId);
   if (!player) return false;
-  if (cost.kind === 'life') return player.life >= cost.amount;
+  if (cost.kind === 'life') return playerCanPayLife(state, playerId, cost.amount);
   return canPayUnrestrictedCost(player, cost.cost);
 }
 
@@ -32,7 +33,9 @@ function payWard(state: GameState, playerId: string, cost: WardCost): GameState 
   if (playerIndex === -1) return state;
 
   const paidPlayer = cost.kind === 'life'
-    ? { ...state.players[playerIndex], life: state.players[playerIndex].life - cost.amount }
+    ? playerCanPayLife(state, playerId, cost.amount)
+      ? { ...state.players[playerIndex], life: state.players[playerIndex].life - cost.amount }
+      : state.players[playerIndex]
     : payUnrestrictedManaCost(state.players[playerIndex], cost.cost);
 
   return {

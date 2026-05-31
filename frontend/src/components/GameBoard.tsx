@@ -307,7 +307,67 @@ function promptChoiceSummaryText(prompt: EnginePrompt | null | undefined): strin
     .join(' / ');
 }
 
-function groupBattlefieldCards(cards: SimpleCard[], stackLands: boolean): Record<BattlefieldRowKey, BattlefieldGroup[]> {
+function sortedCounterKey(counters: Record<string, number>): string {
+  return Object.entries(counters)
+    .filter(([, count]) => count > 0)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([label, count]) => `${label}:${count}`)
+    .join(',');
+}
+
+function battlefieldStackKey(card: SimpleCard, row: BattlefieldRowKey, stackLands: boolean): string | null {
+  if (card.isToken && !card.attachedTo && (!card.attachments || card.attachments.length === 0)) {
+    return [
+      'token',
+      card.name,
+      card.typeLine,
+      card.tapped ? 'tapped' : 'untapped',
+      card.power ?? '',
+      card.toughness ?? '',
+      card.damage || 0,
+      sortedCounterKey(card.counters),
+    ].join('|');
+  }
+
+  if (row === 'lands' && stackLands) {
+    return `land|${card.name}|${card.tapped ? 'tapped' : 'untapped'}`;
+  }
+
+  return null;
+}
+
+function groupRowCards(cards: SimpleCard[], row: BattlefieldRowKey, stackLands: boolean): BattlefieldGroup[] {
+  const buckets = new Map<string, SimpleCard[]>();
+  const order: string[] = [];
+
+  for (const card of cards) {
+    const stackKey = battlefieldStackKey(card, row, stackLands);
+    const key = stackKey || `single|${card.instanceId}`;
+    if (!buckets.has(key)) {
+      buckets.set(key, []);
+      order.push(key);
+    }
+    buckets.get(key)!.push(card);
+  }
+
+  return order.flatMap(key => {
+    const bucket = buckets.get(key) || [];
+    if (bucket.length === 0) return [];
+    if (key.startsWith('token|')) {
+      return bucket.length >= 2
+        ? [{ key, card: bucket[0], cards: bucket }]
+        : [{ key: bucket[0].instanceId, card: bucket[0], cards: [bucket[0]] }];
+    }
+    if (key.startsWith('land|')) {
+      return bucket.length >= 3
+        ? [{ key, card: bucket[0], cards: bucket }]
+        : bucket.map(card => ({ key: card.instanceId, card, cards: [card] }));
+    }
+    return { key: bucket[0].instanceId, card: bucket[0], cards: [bucket[0]] };
+  });
+}
+
+export function groupBattlefieldCards(cards: SimpleCard[], stackLands: boolean): Record<BattlefieldRowKey, BattlefieldGroup[]> {
   const rows: Record<BattlefieldRowKey, SimpleCard[]> = {
     creatures: [],
     artifacts: [],
@@ -321,30 +381,12 @@ function groupBattlefieldCards(cards: SimpleCard[], stackLands: boolean): Record
   }
 
   const groups: Record<BattlefieldRowKey, BattlefieldGroup[]> = {
-    creatures: rows.creatures.map(card => ({ key: card.instanceId, card, cards: [card] })),
-    artifacts: rows.artifacts.map(card => ({ key: card.instanceId, card, cards: [card] })),
-    enchantments: rows.enchantments.map(card => ({ key: card.instanceId, card, cards: [card] })),
-    lands: [],
-    other: rows.other.map(card => ({ key: card.instanceId, card, cards: [card] })),
+    creatures: groupRowCards(rows.creatures, 'creatures', stackLands),
+    artifacts: groupRowCards(rows.artifacts, 'artifacts', stackLands),
+    enchantments: groupRowCards(rows.enchantments, 'enchantments', stackLands),
+    lands: groupRowCards(rows.lands, 'lands', stackLands),
+    other: groupRowCards(rows.other, 'other', stackLands),
   };
-
-  if (!stackLands) {
-    groups.lands = rows.lands.map(card => ({ key: card.instanceId, card, cards: [card] }));
-    return groups;
-  }
-
-  const landStacks = new Map<string, SimpleCard[]>();
-  for (const land of rows.lands) {
-    const stackKey = `${land.name}|${land.tapped ? 'tapped' : 'untapped'}`;
-    landStacks.set(stackKey, [...(landStacks.get(stackKey) || []), land]);
-  }
-
-  groups.lands = [...landStacks.entries()].flatMap(([key, lands]) => {
-    if (lands.length >= 3) {
-      return [{ key, card: lands[0], cards: lands }];
-    }
-    return lands.map(card => ({ key: card.instanceId, card, cards: [card] }));
-  });
 
   return groups;
 }
@@ -2358,6 +2400,7 @@ export function GameBoard({
   const [stackLands, setStackLands] = useState(true);
   const [selectedOpponentId, setSelectedOpponentId] = useState<string | null>(null);
   const [showUtilityMenu, setShowUtilityMenu] = useState(false);
+  const [actionsCollapsed, setActionsCollapsed] = useState(false);
   const [showTokenCreator, setShowTokenCreator] = useState(false);
   const [showPlayerCounters, setShowPlayerCounters] = useState(false);
   const [showPhaseCorrection, setShowPhaseCorrection] = useState(false);
@@ -2486,6 +2529,15 @@ export function GameBoard({
   const guideSuggestion = newPlayerMode && hasAnyAction
     ? getNewPlayerSuggestion(gameState, legalActions)
     : null;
+  const visibleActionCount = castActions.length
+    + playLandActions.length
+    + otherCardActions.length
+    + manaActions.length
+    + combatActions.length
+    + (passAction ? 1 : 0)
+    + (skipRestAction ? 1 : 0)
+    + (skipEmptyAction ? 1 : 0);
+  const actionDockClass = `${FLOATING_TABLE_LAYOUT.actionsDock} ${actionsCollapsed ? 'max-h-[3.25rem] overflow-hidden' : ''}`;
   const recentAuthorityUpdates = authorityUpdates.slice(-4).reverse();
 
   const handleCardClick = (card: SimpleCard) => {
@@ -3588,8 +3640,29 @@ export function GameBoard({
 
       {/* Action chooser: roomy on desktop, capped near the hand on mobile. */}
       {hasTopActions && (
-        <div className={FLOATING_TABLE_LAYOUT.actionsDock} aria-label="Game actions">
-          {currentPrompt && (
+        <div className={actionDockClass} aria-label="Game actions">
+          <div className="mb-2 flex min-h-8 items-center justify-between gap-2">
+            <div className="min-w-0">
+              <div className="text-[10px] font-black uppercase tracking-[0.16em] text-amber-300">
+                Actions
+              </div>
+              <div className="truncate text-[11px] font-semibold text-stone-300">
+                {currentPrompt?.title || `${visibleActionCount} available`}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setActionsCollapsed(value => !value)}
+              className="flex min-h-8 shrink-0 items-center gap-1 rounded border border-neutral-700 bg-neutral-900 px-2 text-[11px] font-black text-stone-100 transition-colors hover:bg-neutral-800"
+              aria-expanded={!actionsCollapsed}
+              aria-label={actionsCollapsed ? 'Expand action menu' : 'Collapse action menu'}
+              title={actionsCollapsed ? 'Expand action menu' : 'Collapse action menu'}
+            >
+              {actionsCollapsed ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5 rotate-90" />}
+              {actionsCollapsed ? 'Open' : 'Collapse'}
+            </button>
+          </div>
+          {!actionsCollapsed && currentPrompt && (
             <div className="mb-2 flex items-start gap-2 rounded border border-sky-500/25 bg-sky-950/30 px-2 py-1.5 text-xs text-stone-100">
               <div className="shrink-0 rounded bg-sky-400/15 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-sky-200">
                 {PROMPT_TYPE_LABELS[currentPrompt.type] || 'Prompt'}
@@ -3612,6 +3685,7 @@ export function GameBoard({
               </div>
             </div>
           )}
+          {!actionsCollapsed && (
           <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2 md:gap-2">
           {guideSuggestion && (
             <>
@@ -3757,6 +3831,7 @@ export function GameBoard({
               </>
             )}
           </div>
+          )}
         </div>
       )}
 

@@ -2292,6 +2292,7 @@ describe('EachOpponent and AllCreatures effects', () => {
       ], 'player-1', [], []);
 
       state = executeEffects(state, [
+        { kind: 'DealDamage', target: { kind: 'Player', playerId: 'player-1' }, amount: 4 },
         { kind: 'LoseLife', player: { kind: 'Player', playerId: 'player-1' }, amount: 9 },
         { kind: 'LoseGame', player: { kind: 'Player', playerId: 'player-1' } },
         { kind: 'WinGame', player: { kind: 'Player', playerId: 'player-2' } },
