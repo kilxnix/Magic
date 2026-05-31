@@ -118,6 +118,45 @@ function cardInstance(
   };
 }
 
+function stateWithOpponentAttackingHumanBlocker(): GameState {
+  const state = stateWithForestInHand();
+  const attacker = {
+    ...def('body_launderer_like', 'Body Launderer Test', 'Creature - Ogre Rogue', '{2}{B}{B}'),
+    power: 3,
+    toughness: 3,
+  };
+  const blocker = {
+    ...def('sisay_like', 'Sisay Blocker Test', 'Legendary Creature - Human Soldier', '{2}{W}'),
+    power: 2,
+    toughness: 2,
+  };
+  const cards = new Map(state.cards);
+  cards.set('p2_attacker', cardInstance('p2_attacker', attacker.id, 'p2', 'battlefield'));
+  cards.set('p1_blocker', cardInstance('p1_blocker', blocker.id, 'p1', 'battlefield'));
+  return {
+    ...state,
+    cards,
+    cardDefinitions: new Map([
+      ...state.cardDefinitions,
+      [attacker.id, attacker],
+      [blocker.id, blocker],
+    ]),
+    activePlayerIndex: 1,
+    priorityPlayerIndex: 1,
+    phase: 'combat',
+    step: 'declare_blockers',
+    hasPriorityPassed: [false, false],
+    combat: {
+      attackers: [{ cardInstanceId: 'p2_attacker', defendingPlayerId: 'p1' }],
+      blockers: [],
+      blockersDeclared: false,
+      blockersDeclaredBy: [],
+      blockerOrder: {},
+      damageAssignment: new Map([['p2_attacker', 0]]),
+    },
+  };
+}
+
 function stateWithSisaySearchChoices(): GameState {
   const sisay: CardDefinition = {
     ...def('sisay', 'Sisay, Weatherlight Captain', 'Legendary Creature - Human Soldier', '{2}{W}'),
@@ -434,6 +473,25 @@ describe('authority action boundary', () => {
     ]));
     expect(prompt?.legalChoices.some(choice => choice.kind === 'PlayLand' && choice.label === 'Play Forest')).toBe(true);
     expect(prompt?.legalChoices.some(choice => choice.kind === 'PassPriority')).toBe(true);
+  });
+
+  it('defaults declare-blockers prompts to the attacked defender, not the attacker priority pointer', () => {
+    const state = stateWithOpponentAttackingHumanBlocker();
+    const prompt = buildActionPrompt(state);
+
+    expect(state.players[state.priorityPlayerIndex]?.id).toBe('p2');
+    expect(prompt?.type).toBe('declare-blockers');
+    expect(prompt?.title).toBe('Choose blockers');
+    expect(prompt?.playerId).toBe('p1');
+    expect(prompt?.priority.priorityPlayerId).toBe('p2');
+    expect(prompt?.legalChoices.some(choice =>
+      choice.kind === 'DeclareBlockers'
+      && choice.label === 'Declare no blockers',
+    )).toBe(true);
+    expect(prompt?.legalChoices.some(choice =>
+      choice.kind === 'DeclareBlockers'
+      && choice.label === 'Declare 1 blocker',
+    )).toBe(true);
   });
 
   it('summarizes action prompts by decision workflow categories', () => {

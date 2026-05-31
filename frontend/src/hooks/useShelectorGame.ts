@@ -3041,9 +3041,12 @@ export function useShelectorGame() {
     );
     setGameState(simple);
 
-    // Compute legal actions for human if they have priority and game not over
-    if (!simple.gameOver && simple.priorityPlayerId === humanIdRef.current) {
-      const engineActions = getLegalActions(engine, humanIdRef.current);
+    // Compute legal actions for the human whenever the engine exposes a human
+    // action window. Combat declarations are mandatory player choices, not
+    // normal priority, so they can be legal even while the priority pointer is
+    // still on the attacking player.
+    const engineActions = simple.gameOver ? [] : getLegalActions(engine, humanIdRef.current);
+    if (!simple.gameOver && engineActions.length > 0) {
       const simpleActions = engineActions.map(a => toSimpleLegalAction(a, engine));
 
       // Add virtual CastSpell actions for cards that could be cast with auto-tap.
@@ -8414,7 +8417,9 @@ export function useShelectorGame() {
     }
   }, [setCoachMode, setHoldPriority, setNewPlayerMode, syncState]);
 
-  const isHumanTurn = gameState?.priorityPlayerId === humanIdRef.current;
+  const isHumanTurn =
+    gameState?.priorityPlayerId === humanIdRef.current
+    || (!!currentPrompt && currentPrompt.playerId === humanIdRef.current && legalActions.length > 0);
   const isGameOver = gameState?.gameOver ?? false;
   const winner = gameState?.winnerId ?? null;
 

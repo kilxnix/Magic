@@ -34,6 +34,7 @@ import { getOptionalUntappedLifeCost } from './permanent-entry';
 import { validateStateInvariants } from './invariants';
 import { instanceHasKeyword } from './keywords';
 import { getCommanderDestinationZone } from './commander';
+import { hasPlayerDeclaredBlockers } from './combat';
 import type { AIAction } from './ai/types';
 import type { ActionFailure, GameEvent as ActionGameEvent } from './actions-public';
 import type { CardFilter, Effect, SearchLibraryEffect, TargetRef } from './effects/ast';
@@ -1131,6 +1132,21 @@ function priorityPlayerId(state: GameState): string | undefined {
   return state.players[state.priorityPlayerIndex]?.id;
 }
 
+function promptPlayerIdForState(state: GameState): string | undefined {
+  if (state.players.some(player => player.hasLost)) return priorityPlayerId(state);
+  if (state.step === 'declare_attackers') return activePlayerId(state);
+  if (state.step === 'declare_blockers' && state.combat) {
+    const attackedDefenders = new Set(state.combat.attackers.map(attack => attack.defendingPlayerId));
+    const nextDefender = state.players.find(player =>
+      !player.hasLost
+      && attackedDefenders.has(player.id)
+      && !hasPlayerDeclaredBlockers(state, player.id),
+    );
+    return nextDefender?.id || priorityPlayerId(state);
+  }
+  return priorityPlayerId(state);
+}
+
 function prioritySnapshot(state: GameState): PrioritySnapshot {
   const passedPriorityPlayerIds = state.players
     .filter((player, index) => state.hasPriorityPassed[index] && !player.hasLost)
@@ -1620,7 +1636,7 @@ function promptGuidanceForState(
   }
 }
 
-export function buildActionPrompt(state: GameState, playerId = priorityPlayerId(state)): EnginePrompt | undefined {
+export function buildActionPrompt(state: GameState, playerId = promptPlayerIdForState(state)): EnginePrompt | undefined {
   if (!playerId) return undefined;
   const player = state.players.find(candidate => candidate.id === playerId);
   if (!player || player.hasLost) return undefined;
