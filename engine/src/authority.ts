@@ -5266,7 +5266,10 @@ export function applyClientActionRequest(
   if (
     request.actionId
     && !isValidatedOutOfBandAction(request.action)
-    && (!currentPrompt || !currentPrompt.legalChoices.some(choice => choice.id === request.actionId))
+    && (!currentPrompt || !currentPrompt.legalChoices.some(choice =>
+      choice.id === request.actionId
+        || (request.actionId === actionKey(request.action) && actionReferencesSameObject(choice.action, request.action)),
+    ))
   ) {
     const message = 'That action was not offered by the current engine prompt.';
     return {

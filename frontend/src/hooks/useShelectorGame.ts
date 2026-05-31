@@ -5958,34 +5958,6 @@ export function useShelectorGame() {
 
       const pendingEngineAction = pendingLandChoice.action._engineAction;
       if (pendingEngineAction.kind === 'PlayLand') {
-        if (pendingLandChoice.kind === 'payLife') {
-          const engineForReplacement = engineRef.current;
-          if (!engineForReplacement) return;
-          const replacementRequest = createBattlefieldEntryReplacementPromptRequest(
-            engineForReplacement,
-            humanIdRef.current,
-            pendingEngineAction.cardInstanceId,
-            {
-              sourceInstanceId: pendingEngineAction.cardInstanceId,
-            },
-          );
-          const replacementSubmission = {
-            requestId: replacementRequest.id,
-            kind: 'ChooseReplacement' as const,
-            playerId: humanIdRef.current,
-            selectedOptionId: (cardInstanceId === 'pay-life'
-              ? 'pay_life_enter_untapped'
-              : 'enter_tapped') as ReplacementOptionId,
-          };
-          const replacementResponse = applyChooseReplacementPromptResponse(engineForReplacement, replacementRequest, replacementSubmission);
-          appendEnginePromptEventLogRecord({ kind: 'Prompt', request: replacementRequest, response: replacementSubmission }, replacementResponse);
-          recordAuthorityUpdate(replacementResponse.update);
-          if (!replacementResponse.ok) {
-            addMessage('system', replacementResponse.message || 'That replacement choice is not legal right now.');
-            syncState();
-            return;
-          }
-        }
         submitActionRef.current?.({
           ...pendingLandChoice.action,
           _engineAction: {

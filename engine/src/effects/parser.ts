@@ -5873,12 +5873,13 @@ function matchSearchLibrary(tokens: string[], startIndex: number): PatternResult
 
   // "search your library for a basic land card"
   // "search your library for a Mountain or Plains card"
+  // "search your library for an Island or Mountain card"
   if (slice.length < 7) return null;
   if (slice[0] !== 'search') return null;
   if (slice[1] !== 'your') return null;
   if (slice[2] !== 'library') return null;
   if (slice[3] !== 'for') return null;
-  if (slice[4] !== 'a') return null;
+  if (slice[4] !== 'a' && slice[4] !== 'an') return null;
 
   let idx = 5;
 

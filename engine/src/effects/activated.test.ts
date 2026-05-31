@@ -151,6 +151,24 @@ describe('parseActivatedAbilities', () => {
     expect(searchEffect.tapped).toBe(false);
   });
 
+  it('parses current fetch wording that sacrifices this land', () => {
+    const text = '{T}, Pay 1 life, Sacrifice this land: Search your library for an Island or Mountain card, put it onto the battlefield, then shuffle.';
+    const abilities = parseActivatedAbilities(text);
+    expect(abilities).toHaveLength(1);
+
+    const ability = abilities[0];
+    expect(ability.cost.tap).toBe(true);
+    expect(ability.cost.payLife).toBe(1);
+    expect(ability.cost.sacrifice).toBe('self');
+
+    const searchEffect = ability.effects[0] as any;
+    expect(searchEffect.kind).toBe('SearchLibrary');
+    expect(searchEffect.filter.types).toEqual(['land']);
+    expect(searchEffect.filter.subtypes).toEqual(['Island', 'Mountain']);
+    expect(searchEffect.destination).toBe('battlefield');
+    expect(searchEffect.shuffle).toBe(true);
+  });
+
   it('parses {T}: effect as tap-only cost', () => {
     const text = '{T}: Draw a card.';
     const abilities = parseActivatedAbilities(text);

@@ -2387,6 +2387,160 @@ describe('authority action boundary', () => {
     expect(response.update?.prompt?.playerId).toBe('p1');
   });
 
+  it('commits shockland choices from hand as the land play instead of a prompt-only no-op', () => {
+    const base = stateWithForestInHand();
+    const stompingGround = def(
+      'stomping_ground_hand',
+      'Stomping Ground',
+      'Land - Mountain Forest',
+      '',
+      "As Stomping Ground enters, you may pay 2 life. If you don't, it enters tapped.",
+    );
+    const withStomping: GameState = {
+      ...base,
+      cards: new Map(base.cards).set(
+        'stomping_ground_hand_1',
+        cardInstance('stomping_ground_hand_1', stompingGround.id, 'p1', 'hand'),
+      ),
+      cardDefinitions: new Map(base.cardDefinitions).set(stompingGround.id, stompingGround),
+      players: base.players.map(player => player.id === 'p1'
+        ? { ...player, hasPlayedLand: false, landsPlayedThisTurn: 0 }
+        : player),
+    };
+
+    const tappedRequest = createClientActionRequest(withStomping, 'p1', {
+      kind: 'PlayLand',
+      cardInstanceId: 'stomping_ground_hand_1',
+      payLifeToEnterUntapped: false,
+    }, {
+      id: 'req-stomping-ground-tapped-from-hand',
+      createdAt: 21,
+      label: 'Play Stomping Ground tapped',
+    });
+    const tappedResponse = applyClientActionRequest(withStomping, tappedRequest);
+
+    expect(tappedResponse.ok).toBe(true);
+    expect(tappedResponse.update?.oldStateId).not.toBe(tappedResponse.update?.newStateId);
+    expect(tappedResponse.update?.visibleDiffs).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        kind: 'CardZoneChanged',
+        cardName: 'Stomping Ground',
+        from: 'hand',
+        to: 'battlefield',
+      }),
+    ]));
+    expect(tappedResponse.state?.cards.get('stomping_ground_hand_1')?.zone).toBe('battlefield');
+    expect(tappedResponse.state?.cards.get('stomping_ground_hand_1')?.tapped).toBe(true);
+    expect(tappedResponse.state?.players.find(player => player.id === 'p1')?.life).toBe(40);
+
+    const paidResponse = applyClientActionRequest(withStomping, createClientActionRequest(withStomping, 'p1', {
+      kind: 'PlayLand',
+      cardInstanceId: 'stomping_ground_hand_1',
+      payLifeToEnterUntapped: true,
+    }, {
+      id: 'req-stomping-ground-untapped-from-hand',
+      createdAt: 22,
+      label: 'Play Stomping Ground untapped',
+    }));
+
+    expect(paidResponse.ok).toBe(true);
+    expect(paidResponse.state?.cards.get('stomping_ground_hand_1')?.zone).toBe('battlefield');
+    expect(paidResponse.state?.cards.get('stomping_ground_hand_1')?.tapped).toBe(false);
+    expect(paidResponse.state?.players.find(player => player.id === 'p1')?.life).toBe(38);
+  });
+
+  it('offers and resolves Scalding Tarn as a typed fetch-land activation', () => {
+    const base = stateWithForestInHand();
+    const scaldingTarn = def(
+      'scalding_tarn_regression',
+      'Scalding Tarn',
+      'Land',
+      '',
+      '{T}, Pay 1 life, Sacrifice this land: Search your library for an Island or Mountain card, put it onto the battlefield, then shuffle.',
+    );
+    const steamVents = def(
+      'steam_vents_regression',
+      'Steam Vents',
+      'Land - Island Mountain',
+      '',
+      "As Steam Vents enters, you may pay 2 life. If you don't, it enters tapped.",
+    );
+    const island = def('island_regression', 'Island', 'Basic Land - Island', '', '{T}: Add {U}.');
+    const forest = def('forest_regression', 'Forest', 'Basic Land - Forest', '', '{T}: Add {G}.');
+    const arcaneSignet = def('arcane_signet_regression', 'Arcane Signet', 'Artifact', '{2}', '{T}: Add one mana of any color in your commander\'s color identity.');
+    const state: GameState = {
+      ...base,
+      cards: new Map<string, CardInstance>([
+        ...base.cards,
+        ['scalding_tarn_regression_1', cardInstance('scalding_tarn_regression_1', scaldingTarn.id, 'p1', 'battlefield')],
+        ['steam_vents_regression_1', cardInstance('steam_vents_regression_1', steamVents.id, 'p1', 'library')],
+        ['island_regression_1', cardInstance('island_regression_1', island.id, 'p1', 'library')],
+        ['forest_regression_1', cardInstance('forest_regression_1', forest.id, 'p1', 'library')],
+        ['arcane_signet_regression_1', cardInstance('arcane_signet_regression_1', arcaneSignet.id, 'p1', 'library')],
+      ]),
+      cardDefinitions: new Map<string, CardDefinition>([
+        ...base.cardDefinitions,
+        [scaldingTarn.id, scaldingTarn],
+        [steamVents.id, steamVents],
+        [island.id, island],
+        [forest.id, forest],
+        [arcaneSignet.id, arcaneSignet],
+      ]),
+    };
+
+    const actionPrompt = buildActionPrompt(state, 'p1');
+    expect(actionPrompt?.legalChoices).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        kind: 'ActivateAbility',
+        label: 'Activate Scalding Tarn',
+      }),
+    ]));
+    const fetchAction = getLegalActions(state, 'p1').find((action): action is Extract<AIAction, { kind: 'ActivateAbility' }> =>
+      action.kind === 'ActivateAbility' && action.cardInstanceId === 'scalding_tarn_regression_1',
+    );
+    expect(fetchAction).toBeDefined();
+
+    const activated = applyClientActionRequest(state, createClientActionRequest(state, 'p1', fetchAction!, {
+      id: 'req-activate-scalding-tarn',
+      createdAt: 23,
+      label: 'Activate Scalding Tarn',
+    }));
+    expect(activated.ok).toBe(true);
+    expect(activated.state?.cards.get('scalding_tarn_regression_1')?.zone).toBe('graveyard');
+    expect(activated.state?.players.find(player => player.id === 'p1')?.life).toBe(39);
+    expect(activated.state?.stack.at(-1)?.kind).toBe('ActivatedAbility');
+
+    const priorityComplete: GameState = {
+      ...activated.state!,
+      hasPriorityPassed: [true, true],
+    };
+    const prompt = resolveTopStackSearchPrompt(priorityComplete, {
+      playerId: 'p1',
+      createdAt: 24,
+    });
+    expect(prompt.ok).toBe(true);
+    if (!prompt.ok) return;
+    expect(prompt.request.legalChoices.map(choice => choice.cardName)).toEqual([
+      'Island',
+      'Steam Vents',
+    ]);
+    expect(prompt.request.invalidChoices).toEqual(expect.arrayContaining([
+      expect.objectContaining({ cardName: 'Forest', reason: 'Missing subtype Island or Mountain' }),
+      expect.objectContaining({ cardName: 'Arcane Signet', reason: 'Not a land card' }),
+    ]));
+
+    const fetched = applySearchLibraryPromptResponse(prompt.state, prompt.request, {
+      requestId: prompt.request.id,
+      kind: 'SearchLibrary',
+      playerId: 'p1',
+      selectedCardInstanceIds: ['steam_vents_regression_1'],
+      payLifeToEnterUntapped: false,
+    });
+    expect(fetched.ok).toBe(true);
+    expect(fetched.state?.cards.get('steam_vents_regression_1')?.zone).toBe('battlefield');
+    expect(fetched.state?.cards.get('steam_vents_regression_1')?.tapped).toBe(true);
+  });
+
   it('can attach review decision metadata to an authoritative state update', () => {
     const before = stateWithForestInHand();
     const after = applyClientActionRequest(
