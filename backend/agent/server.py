@@ -215,6 +215,7 @@ class SpawnRequest(BaseModel):
     mode: str = "random"  # "random", "counter", "pool"
     human_commander: str | None = None  # for counter mode
     human_colors: list[str] | None = None  # for counter mode
+    personality: str | None = None
 
 
 class SpawnResponse(BaseModel):
@@ -278,7 +279,7 @@ def _spawn_from_pool(req: SpawnRequest) -> SpawnResponse:
         )
 
     chosen = random.choice(eligible)
-    personality = random.choice(_AI_PERSONALITIES)
+    personality = req.personality if req.personality in _AI_PERSONALITIES else random.choice(_AI_PERSONALITIES)
 
     return SpawnResponse(
         commander=chosen["commander"],
@@ -333,7 +334,7 @@ def _spawn_random(req: SpawnRequest) -> SpawnResponse:
         return _spawn_from_pool(req)
 
     chosen = random.choice(eligible)
-    personality = random.choice(_AI_PERSONALITIES)
+    personality = req.personality if req.personality in _AI_PERSONALITIES else random.choice(_AI_PERSONALITIES)
     colors = chosen.get("color_identity") or []
     commander_name = chosen.get("name", "Unknown Commander")
 
@@ -408,7 +409,7 @@ def _spawn_counter(req: SpawnRequest) -> SpawnResponse:
     # Use refined list if it has candidates, otherwise fall back to eligible
     pool = refined if refined else eligible
     chosen = random.choice(pool)
-    personality = random.choice(_AI_PERSONALITIES)
+    personality = req.personality if req.personality in _AI_PERSONALITIES else random.choice(_AI_PERSONALITIES)
     colors = chosen.get("color_identity") or []
     commander_name = chosen.get("name", "Unknown Commander")
 

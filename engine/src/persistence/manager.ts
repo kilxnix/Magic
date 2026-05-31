@@ -60,20 +60,20 @@ export class SaveManager {
   /**
    * Save a game to a slot.
    */
-  async saveGame(slotId: string, state: GameState, name?: string): Promise<SaveMetadata> {
+  async saveGame(slotId: string, state: GameState, name?: string, humanPlayerId: string = 'p1'): Promise<SaveMetadata> {
     const existingMeta = await this.getMetadata(slotId);
 
     let save: SaveGameV1;
     if (existingMeta) {
       // Update existing save
-      save = createSaveGame(state, existingMeta.name, 'p1');
+      save = createSaveGame(state, existingMeta.name, humanPlayerId);
       save.metadata = updateSaveMetadata({
         ...existingMeta,
         turnNumber: state.turnNumber,
       });
     } else {
       // New save
-      save = createSaveGame(state, name ?? `Save ${slotId}`, 'p1');
+      save = createSaveGame(state, name ?? `Save ${slotId}`, humanPlayerId);
       save.metadata.id = slotId;
     }
 

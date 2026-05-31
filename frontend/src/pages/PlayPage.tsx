@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, ClipboardPaste, Loader2, Swords, Link as LinkIcon, History, Trash2, Shield, Trophy, Users, Lightbulb, X, Save, FolderOpen, Database } from 'lucide-react';
+import { ArrowLeft, ClipboardPaste, Loader2, Swords, Link as LinkIcon, History, Trash2, Shield, Trophy, Users, Lightbulb, X, Save, FolderOpen, Database, BookmarkPlus, Rocket } from 'lucide-react';
 import { useShelectorGame, type ImportedCards, type ShelectorGameSaveSnapshot } from '../hooks/useShelectorGame';
 import { GameBoard } from '../components/GameBoard';
 import { GameReview } from '../components/GameReview';
@@ -25,7 +25,9 @@ import { findUnsupportedEngineCards, formatUnsupportedEngineCards } from '../lib
 import {
   deletePlaySaveSlot,
   getPlaySaveSlots,
+  loadCanonicalPlaySlotState,
   putPlaySaveSlot,
+  type PlayDrillBookmark,
   type PlaySaveSlotRecord,
 } from '../lib/playSaveStorage';
 
@@ -350,7 +352,12 @@ export function PlayPage() {
     return undefined;
   };
 
-  const buildSaveRecord = (slot: number, snapshot: ShelectorGameSaveSnapshot, autosaved: boolean): PlaySaveSlotRecord => {
+  const buildSaveRecord = (
+    slot: number,
+    snapshot: ShelectorGameSaveSnapshot,
+    autosaved: boolean,
+    drillBookmarks = saveSlots[slot - 1]?.drillBookmarks || [],
+  ): PlaySaveSlotRecord => {
     const savedAt = Date.now();
     const commander = gameState?.humanCommander || importResult?.commander || snapshot.humanCommander || 'Practice Game';
 
@@ -377,6 +384,7 @@ export function PlayPage() {
         serializedState: snapshot.engine,
         createdAt: savedAt,
       }),
+      drillBookmarks,
       snapshot,
       ui: {
         step,
@@ -394,6 +402,25 @@ export function PlayPage() {
         selectedPracticePresetId,
       },
     };
+  };
+
+  const restoreSlotUi = (record: PlaySaveSlotRecord) => {
+    setActiveSaveSlot(record.slot);
+    setImportTab(record.ui.importTab);
+    setDeckUrl(record.ui.deckUrl);
+    setDeckText(record.ui.deckText);
+    setImportResult(record.ui.importResult as DeckImportResult | null);
+    setStandardDeckText(record.ui.standardDeckText);
+    setOpponentCount(record.ui.opponentCount);
+    setSpawnMode(record.ui.spawnMode);
+    setSpawnBracket(record.ui.spawnBracket);
+    setColorFilter(record.ui.colorFilter);
+    setPersonality(record.ui.personality);
+    setSpawnedOpponents(record.ui.spawnedOpponents as SpawnedOpponent[]);
+    setSelectedPracticePresetId(record.ui.selectedPracticePresetId || record.practice?.presetId || null);
+    setStep('game');
+    setShowReview(false);
+    setSavePanelOpen(false);
   };
 
   const saveCurrentGame = async (slot = activeSaveSlot, autosaved = false) => {
@@ -429,7 +456,8 @@ export function PlayPage() {
       return;
     }
 
-    const canonicalEngine = record.canonicalEngineSave ? restoreCanonicalPlayEngineState(record.canonicalEngineSave) : null;
+    const managerEngine = await loadCanonicalPlaySlotState(record.slot);
+    const canonicalEngine = managerEngine || (record.canonicalEngineSave ? restoreCanonicalPlayEngineState(record.canonicalEngineSave) : null);
     const snapshotToRestore: ShelectorGameSaveSnapshot = canonicalEngine
       ? { ...snapshot, engine: canonicalEngine }
       : snapshot;
@@ -438,23 +466,8 @@ export function PlayPage() {
       setSaveError('That save could not be restored.');
       return;
     }
-    setActiveSaveSlot(record.slot);
-    setImportTab(record.ui.importTab);
-    setDeckUrl(record.ui.deckUrl);
-    setDeckText(record.ui.deckText);
-    setImportResult(record.ui.importResult as DeckImportResult | null);
-    setStandardDeckText(record.ui.standardDeckText);
-    setOpponentCount(record.ui.opponentCount);
-    setSpawnMode(record.ui.spawnMode);
-    setSpawnBracket(record.ui.spawnBracket);
-    setColorFilter(record.ui.colorFilter);
-    setPersonality(record.ui.personality);
-    setSpawnedOpponents(record.ui.spawnedOpponents as SpawnedOpponent[]);
-    setSelectedPracticePresetId(record.ui.selectedPracticePresetId || record.practice?.presetId || null);
-    setStep('game');
-    setShowReview(false);
-    setSavePanelOpen(false);
-    setSaveStatus(`Loaded slot ${record.slot}.`);
+    restoreSlotUi(record);
+    setSaveStatus(`Loaded slot ${record.slot}${managerEngine ? ' from canonical engine save' : ''}.`);
   };
 
   const latestCheckpointSequence = (record: PlaySaveSlotRecord): number | null => {
@@ -527,23 +540,98 @@ export function PlayPage() {
       return;
     }
 
-    setActiveSaveSlot(record.slot);
-    setImportTab(record.ui.importTab);
-    setDeckUrl(record.ui.deckUrl);
-    setDeckText(record.ui.deckText);
-    setImportResult(record.ui.importResult as DeckImportResult | null);
-    setStandardDeckText(record.ui.standardDeckText);
-    setOpponentCount(record.ui.opponentCount);
-    setSpawnMode(record.ui.spawnMode);
-    setSpawnBracket(record.ui.spawnBracket);
-    setColorFilter(record.ui.colorFilter);
-    setPersonality(record.ui.personality);
-    setSpawnedOpponents(record.ui.spawnedOpponents as SpawnedOpponent[]);
-    setSelectedPracticePresetId(record.ui.selectedPracticePresetId || record.practice?.presetId || null);
-    setStep('game');
-    setShowReview(false);
-    setSavePanelOpen(false);
+    restoreSlotUi(record);
     setSaveStatus(`Loaded slot ${record.slot} at drill checkpoint ${sequence}.`);
+  };
+
+  const loadDrillBookmark = async (record: PlaySaveSlotRecord, bookmark: PlayDrillBookmark) => {
+    setSaveError(null);
+    const snapshot = record.snapshot as ShelectorGameSaveSnapshot;
+    const drillSnapshot: ShelectorGameSaveSnapshot = {
+      ...snapshot,
+      savedAt: Date.now(),
+      engine: bookmark.engine,
+      authorityUpdates: [],
+      engineEventLog: [],
+      engineEventLogSeeds: {},
+      engineEventLogInitialState: bookmark.engine,
+      lastStateUpdate: null,
+      currentPrompt: null,
+      lastPlayedCard: null,
+      tutorPhase: false,
+      tutorCards: [],
+      tutorTitle: '',
+      tutorPromptRequest: null,
+      tutorRemaining: 0,
+      tutorFilter: undefined,
+      tutorFilterSpec: undefined,
+      tutorTapped: false,
+      tutorShuffle: true,
+      tutorDestination: 'hand',
+      tutorSourceName: 'Drill Bookmark',
+      tutorSourceInstanceId: undefined,
+      pendingSearchEntryChoice: null,
+      pendingTargetChoice: null,
+      libraryChoice: null,
+      libraryManipulationPromptRequest: null,
+      optionalTriggerChoice: null,
+      taxPaymentChoice: null,
+      wardPaymentChoice: null,
+      damageAssignmentChoice: null,
+      triggerOrderChoice: null,
+      discardPhase: false,
+      discardCount: 0,
+      selectedMulliganCardIds: [],
+      selectedMulliganBottomIds: [],
+      actionError: null,
+      lastEvents: [],
+    };
+
+    const restored = restoreGameSave(drillSnapshot);
+    if (!restored) {
+      setSaveError(`Drill bookmark "${bookmark.label}" could not be restored.`);
+      return;
+    }
+
+    restoreSlotUi(record);
+    setSaveStatus(`Loaded drill bookmark "${bookmark.label}".`);
+  };
+
+  const bookmarkCurrentDrill = async () => {
+    const snapshot = exportGameSave();
+    if (!snapshot || !gameState) {
+      setSaveError('No active game to bookmark yet.');
+      return false;
+    }
+
+    const existing = saveSlots[activeSaveSlot - 1];
+    const savedAt = Date.now();
+    const label = `T${gameState.turnNumber} ${gameState.step || gameState.phase}`;
+    const bookmark: PlayDrillBookmark = {
+      id: `${savedAt}-${Math.random().toString(36).slice(2, 8)}`,
+      label,
+      savedAt,
+      turnNumber: gameState.turnNumber,
+      phase: gameState.phase,
+      step: gameState.step,
+      engine: snapshot.engine,
+      source: 'manual',
+      focusTags: resolvePracticeMetadata()?.focusTags || [],
+      note: currentPrompt?.title || lastPlayedCard?.card.name || 'Manual drill bookmark',
+    };
+
+    const drillBookmarks = [...(existing?.drillBookmarks || []), bookmark].slice(-16);
+    try {
+      const record = buildSaveRecord(activeSaveSlot, snapshot, false, drillBookmarks);
+      await putPlaySaveSlot(record);
+      await refreshSaveSlots();
+      setSaveError(null);
+      setSaveStatus(`Bookmarked ${label} in slot ${activeSaveSlot}.`);
+      return true;
+    } catch (err: any) {
+      setSaveError(err.message || 'Could not bookmark this drill.');
+      return false;
+    }
   };
 
   const deleteSave = async (slot: number) => {
@@ -640,8 +728,13 @@ export function PlayPage() {
                       {record.practice.focusTags.length > 0 ? ` - ${record.practice.focusTags.slice(0, 2).join(', ')}` : ''}
                     </span>
                   )}
-                  {(audit || canonicalAudit) && (
+                  {(audit || canonicalAudit || record?.canonicalManager) && (
                     <span className="mt-1 flex flex-wrap gap-1">
+                      {record?.canonicalManager && (
+                        <span className="inline-flex rounded border border-fuchsia-500/40 bg-fuchsia-950/30 px-1.5 py-0.5 text-[11px] font-black uppercase tracking-wide text-fuchsia-200">
+                          SaveManager primary
+                        </span>
+                      )}
                       {audit && (
                         <span className={`inline-flex rounded border px-1.5 py-0.5 text-[11px] font-black uppercase tracking-wide ${
                           audit.ok
@@ -664,6 +757,8 @@ export function PlayPage() {
                   )}
                   {(canonicalAudit?.ok && canonicalAudit.fingerprint) || checkpointSequence !== null ? (
                     <span className="mt-1 block text-[11px] text-stone-500">
+                      {record?.canonicalManager?.fingerprint ? `Manager ${record.canonicalManager.fingerprint.slice(0, 10)}` : ''}
+                      {record?.canonicalManager?.fingerprint && canonicalAudit?.ok && canonicalAudit.fingerprint ? ' / ' : ''}
                       {canonicalAudit?.ok && canonicalAudit.fingerprint ? `State ${canonicalAudit.fingerprint.slice(0, 10)}` : ''}
                       {canonicalAudit?.ok && canonicalAudit.fingerprint && checkpointSequence !== null ? ' / ' : ''}
                       {checkpointSequence !== null ? `Drill checkpoint ${checkpointSequence}` : ''}
@@ -701,6 +796,18 @@ export function PlayPage() {
                     Drill Latest
                   </button>
                 )}
+                {record?.drillBookmarks?.slice(-3).reverse().map(bookmark => (
+                  <button
+                    key={bookmark.id}
+                    type="button"
+                    onClick={() => loadDrillBookmark(record, bookmark)}
+                    className="flex min-h-8 items-center gap-1 rounded border border-fuchsia-500/40 px-2 text-xs font-bold text-fuchsia-100 hover:bg-fuchsia-950/40"
+                    title={bookmark.note || bookmark.label}
+                  >
+                    <BookmarkPlus className="h-3.5 w-3.5" />
+                    {bookmark.label}
+                  </button>
+                ))}
                 {step === 'game' && (
                   <button
                     type="button"
@@ -905,6 +1012,150 @@ export function PlayPage() {
     }
   };
 
+  const handleStartFocusedXenagosRep = async () => {
+    const deck = PRACTICE_DECKS.find(candidate => candidate.id === 'practice-xenagos-dragons');
+    if (!deck) return;
+
+    const focusedPersonality = 'Aggressive';
+    const focusedOpponentCount: OpponentCount = 1;
+    const focusedSpawnMode: 'counter' = 'counter';
+    newGame();
+    setStarterDeckLoadingId(deck.id);
+    setIsImporting(true);
+    setIsSpawning(true);
+    setIsGeneratingAIDeck(false);
+    setImportError(null);
+    setSaveError(null);
+    setSaveStatus(null);
+    setShowReview(false);
+    setSelectedPracticePresetId(deck.id);
+    setDeckText(deck.decklist);
+    setImportTab('text');
+    setNewPlayerMode(false);
+    setCoachMode(true);
+    setOpponentCount(focusedOpponentCount);
+    setSpawnMode(focusedSpawnMode);
+    setSpawnBracket(deck.bracket);
+    setPersonality(focusedPersonality);
+    setSpawnedOpponents([]);
+    setSpawnProgress('Loading Xenagos practice deck...');
+
+    try {
+      const importRes = await fetch(shelectorApiUrl('/import-deck'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          decklist_text: deck.decklist,
+          bracket: deck.bracket,
+          fill_missing: true,
+        }),
+      });
+      if (!importRes.ok) throw new Error(`Xenagos preset import failed (${importRes.status})`);
+      const data: DeckImportResult = await importRes.json();
+      setImportResult(data);
+      if (!data.valid) {
+        throw new Error(data.errors[0] || 'Xenagos preset did not import as a valid Commander deck.');
+      }
+
+      if (data.commander) {
+        addToDeckHistory(data.commander, deck.decklist);
+        cacheSet('last_deck_text', deck.decklist, 30 * 24 * 60 * 60 * 1000);
+        cacheSet('last_deck_result', data, 30 * 24 * 60 * 60 * 1000);
+      }
+
+      const humanCommander = data.commander || '';
+      const humanCommanderFace = humanCommander.split(' // ')[0]?.trim();
+      const humanCommanderData = data.card_data[humanCommander]
+        || (humanCommanderFace ? data.card_data[humanCommanderFace] : undefined);
+
+      setSpawnProgress('Picking an aggressive Shelector opponent...');
+      const spawnRes = await fetch(shelectorApiUrl('/spawn-opponent'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mode: focusedSpawnMode,
+          bracket: deck.bracket,
+          avoid_colors: [],
+          human_commander: humanCommander || null,
+          human_colors: humanCommanderData?.color_identity || [],
+          personality: focusedPersonality,
+        }),
+      });
+      if (!spawnRes.ok) throw new Error(`Failed to spawn practice opponent (${spawnRes.status})`);
+      const opponent: SpawnedOpponent = {
+        ...(await spawnRes.json()),
+        personality: focusedPersonality,
+      };
+      setSpawnedOpponents([opponent]);
+
+      setIsGeneratingAIDeck(true);
+      setSpawnProgress(`Building ${opponent.commander} as ${focusedPersonality}...`);
+      const aiRes = await fetch(shelectorApiUrl('/generate-ai-deck'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          commander: opponent.commander,
+          bracket: deck.bracket,
+        }),
+      });
+      if (!aiRes.ok) throw new Error(`Failed to generate practice opponent (${aiRes.status})`);
+      const aiDeck = await aiRes.json() as AIDeckResponse;
+      const aiDecks: ImportedCards[] = [{
+        commander: aiDeck.commander,
+        cards: aiDeck.cards,
+        lands: aiDeck.lands,
+        cardData: aiDeck.card_data,
+      }];
+
+      const unsupported = findUnsupportedEngineCards([
+        {
+          label: 'Your Xenagos practice deck',
+          commander: humanCommander,
+          cards: data.cards,
+          lands: data.lands,
+          sideboard: data.sideboard || [],
+        },
+        {
+          label: 'Shelector Aggressive',
+          commander: aiDeck.commander,
+          cards: aiDeck.cards,
+          lands: aiDeck.lands,
+          sideboard: [],
+        },
+      ]);
+      if (unsupported.length > 0) {
+        throw new Error(formatUnsupportedEngineCards(unsupported));
+      }
+
+      const started = startGame(
+        {
+          commander: humanCommander,
+          cards: data.cards,
+          lands: data.lands,
+          sideboard: data.sideboard || [],
+          cardData: data.card_data,
+        },
+        aiDecks,
+        { aiDifficulty: deck.bracket },
+      );
+      if (!started) {
+        throw new Error('Failed to initialize the focused Xenagos practice game.');
+      }
+
+      setStep('game');
+      setSaveStatus('Started clean Xenagos rep: Aggressive Shelector, coach mode on, focus tags visible.');
+    } catch (err: any) {
+      setImportError(err.message || 'Failed to start focused Xenagos rep');
+      setStep('import');
+    } finally {
+      setIsImporting(false);
+      setIsSpawning(false);
+      setIsGeneratingAIDeck(false);
+      setStarterDeckLoadingId(null);
+      setSpawnProgress('');
+    }
+  };
+
   const handleSpawnAndStart = async () => {
     if (!importResult?.valid) return;
     setIsSpawning(true);
@@ -1052,6 +1303,8 @@ export function PlayPage() {
 
   // Game view: floating-table board with review available as an overlay.
   if (step === 'game' && gameState) {
+    const activePracticeDeck = PRESET_DECKS.find(deck => deck.id === selectedPracticePresetId);
+    const activePracticeFocusTags = activePracticeDeck?.focusTags || resolvePracticeMetadata()?.focusTags || [];
     return (
       <div className={FLOATING_TABLE_LAYOUT.shell}>
         {savePanelOpen && (
@@ -1132,6 +1385,9 @@ export function PlayPage() {
             currentPrompt={currentPrompt}
             actionError={actionError}
             onClearActionError={clearActionError}
+            onBookmarkDrill={bookmarkCurrentDrill}
+            drillBookmarkLabel="Bookmark Drill"
+            practiceFocusTags={activePracticeFocusTags}
             menuActions={[
               {
                 id: 'saves',
@@ -1346,6 +1602,23 @@ export function PlayPage() {
               </div>
               <p className="mt-1 text-xs text-amber-100/70">
                 Saved decklists with coaching focus and autosave metadata for repeat reps.
+              </p>
+            </div>
+            <div className="border-b border-amber-500/15 p-3">
+              <button
+                type="button"
+                onClick={handleStartFocusedXenagosRep}
+                disabled={isImporting || isSpawning || isGeneratingAIDeck}
+                className="flex w-full min-h-[52px] items-center justify-center gap-2 rounded-lg bg-amber-500 px-4 py-3 text-sm font-black text-stone-950 transition-colors hover:bg-amber-400 disabled:cursor-not-allowed disabled:bg-stone-700 disabled:text-stone-400"
+              >
+                {isImporting || isSpawning || isGeneratingAIDeck ? (
+                  <><Loader2 className="h-4 w-4 animate-spin" />Starting Focused Rep</>
+                ) : (
+                  <><Rocket className="h-4 w-4" />Start Clean Xenagos Rep</>
+                )}
+              </button>
+              <p className="mt-2 text-[11px] leading-5 text-amber-100/65">
+                Loads Xenagos, clears the current table, sets Aggressive Shelector, enables coach mode, and opens the practice focus HUD.
               </p>
             </div>
             <div className="divide-y divide-amber-500/15">

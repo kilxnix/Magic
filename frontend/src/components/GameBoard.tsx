@@ -10,7 +10,7 @@ import { useEffect, useState } from 'react';
 import type { DamageAssignmentChoice, LibraryManipulationChoice, OptionalTriggerChoice, PriorityStopKey, PriorityStops, SimpleGameState, SimpleLegalAction, SimpleCard, LastPlayedCard, TaxPaymentChoice, TriggerOrderChoiceState, WardPaymentChoice } from '../hooks/useShelectorGame';
 import type { DamageAssignmentOrder } from 'commander-engine';
 import type { EnginePrompt, EngineStateUpdate } from 'commander-engine';
-import { Loader2, ChevronDown, ChevronRight, Search, X, Lightbulb, Menu, Undo2 } from 'lucide-react';
+import { Loader2, ChevronDown, ChevronRight, Search, X, Lightbulb, Menu, Undo2, BookmarkPlus } from 'lucide-react';
 import { CardPickerModal } from './CardPickerModal';
 import { CardImage } from './CardImage';
 import { CARD_TILE_LAYOUT, FLOATING_TABLE_LAYOUT } from '../lib/gameBoardLayout';
@@ -168,6 +168,9 @@ interface GameBoardProps {
   currentPrompt?: EnginePrompt | null;
   actionError?: { reason: string; message: string } | null;
   onClearActionError?: () => void;
+  onBookmarkDrill?: () => void;
+  drillBookmarkLabel?: string;
+  practiceFocusTags?: string[];
   menuActions?: { id: string; label: string; detail?: string; onSelect: () => void }[];
 }
 
@@ -327,6 +330,113 @@ function promptChoiceSummaryText(prompt: EnginePrompt | null | undefined): strin
   return summary
     .map(group => `${group.label} ${group.count}`)
     .join(' / ');
+}
+
+type ComplexTurnSignal = {
+  label: string;
+  detail: string;
+  tone: 'amber' | 'sky' | 'fuchsia' | 'emerald';
+};
+
+function buildComplexTurnSignals(input: {
+  gameState: SimpleGameState;
+  legalActions: SimpleLegalAction[];
+  currentPrompt?: EnginePrompt | null;
+  triggerOrderChoice?: TriggerOrderChoiceState | null;
+  optionalTriggerChoice?: OptionalTriggerChoice | null;
+  taxPaymentChoice?: TaxPaymentChoice | null;
+  wardPaymentChoice?: WardPaymentChoice | null;
+  damageAssignmentChoice?: DamageAssignmentChoice | null;
+  libraryChoice?: LibraryManipulationChoice | null;
+  lastStateUpdate?: EngineStateUpdate | null;
+}): ComplexTurnSignal[] {
+  const signals: ComplexTurnSignal[] = [];
+  const stackSize = input.currentPrompt?.priority.stackSize ?? input.gameState.stack.length;
+  const battlefieldCount = input.gameState.humanBattlefield.length
+    + Object.values(input.gameState.aiBattlefields).reduce((total, cards) => total + cards.length, 0);
+  const dragonLineActive = [...input.gameState.humanBattlefield, ...input.gameState.humanHand, ...input.gameState.humanCommandZone]
+    .some(card => /xenagos|dracogenesis|terror of the peaks|twinflame tyrant|anzrag|hellkite|dragon/i.test(card.name));
+
+  if (input.triggerOrderChoice?.triggers.length) {
+    const sources = [...new Set(input.triggerOrderChoice.triggers.map(trigger => trigger.sourceName))].slice(0, 3);
+    signals.push({
+      label: `${input.triggerOrderChoice.triggers.length} triggers waiting`,
+      detail: `Order ${sources.join(', ')}${input.triggerOrderChoice.triggers.length > sources.length ? ', ...' : ''}; earlier damage/draw triggers can change later targets.`,
+      tone: 'fuchsia',
+    });
+  }
+
+  if (stackSize > 0) {
+    const top = input.currentPrompt?.priority.stackTop?.name || input.gameState.stack[input.gameState.stack.length - 1]?.name || 'top object';
+    signals.push({
+      label: `Stack: ${stackSize}`,
+      detail: `${top} is the current pressure point; responses and tax/ward choices still affect resolution.`,
+      tone: 'sky',
+    });
+  }
+
+  if (input.damageAssignmentChoice) {
+    signals.push({
+      label: 'Combat damage branch',
+      detail: `${input.damageAssignmentChoice.groups.length} attacker group${input.damageAssignmentChoice.groups.length === 1 ? '' : 's'} need assignment; trample/deathtouch ordering changes lethal and survival math.`,
+      tone: 'amber',
+    });
+  }
+
+  if (input.optionalTriggerChoice || input.taxPaymentChoice || input.wardPaymentChoice || input.libraryChoice) {
+    const titles = [
+      input.optionalTriggerChoice?.sourceName,
+      input.taxPaymentChoice ? `${input.taxPaymentChoice.sourceName} tax` : '',
+      input.wardPaymentChoice ? `${input.wardPaymentChoice.sourceName} ward` : '',
+      input.libraryChoice?.mode,
+    ].filter(Boolean);
+    signals.push({
+      label: 'Choice checkpoint',
+      detail: `${titles.join(' / ')} asks for a decision now; bookmark before choosing if this is a line you want to drill.`,
+      tone: 'emerald',
+    });
+  }
+
+  if (dragonLineActive && (stackSize > 0 || input.triggerOrderChoice || input.damageAssignmentChoice || battlefieldCount >= 10)) {
+    signals.push({
+      label: 'Xenagos line map',
+      detail: 'Check the damage engine, Xenagos target, extra-combat outlet, and held interaction before clicking through the next prompt.',
+      tone: 'amber',
+    });
+  }
+
+  if ((input.lastStateUpdate?.visibleDiffs.length || 0) >= 4) {
+    signals.push({
+      label: 'Large state swing',
+      detail: summarizeVisibleDiffs(input.lastStateUpdate?.visibleDiffs || [], playerId => playerId || 'player'),
+      tone: 'sky',
+    });
+  }
+
+  if (signals.length === 0 && input.legalActions.length >= 12) {
+    signals.push({
+      label: `${input.legalActions.length} available actions`,
+      detail: 'This is a broad branch. Use coaching and bookmarks to compare the best-looking lines.',
+      tone: 'emerald',
+    });
+  }
+
+  return signals.slice(0, 4);
+}
+
+function complexSignalClass(tone: ComplexTurnSignal['tone']): string {
+  switch (tone) {
+    case 'amber':
+      return 'border-amber-500/30 bg-amber-950/35 text-amber-100';
+    case 'sky':
+      return 'border-sky-500/30 bg-sky-950/35 text-sky-100';
+    case 'fuchsia':
+      return 'border-fuchsia-500/30 bg-fuchsia-950/35 text-fuchsia-100';
+    case 'emerald':
+      return 'border-emerald-500/30 bg-emerald-950/35 text-emerald-100';
+    default:
+      return 'border-neutral-700 bg-neutral-900 text-stone-100';
+  }
 }
 
 function sortedCounterKey(counters: Record<string, number>): string {
@@ -2414,6 +2524,9 @@ export function GameBoard({
   currentPrompt,
   actionError,
   onClearActionError,
+  onBookmarkDrill,
+  drillBookmarkLabel = 'Bookmark Drill',
+  practiceFocusTags = [],
   menuActions = [],
 }: GameBoardProps) {
   const [inspectedCard, setInspectedCard] = useState<SimpleCard | null>(null);
@@ -2563,6 +2676,18 @@ export function GameBoard({
     + (skipEmptyAction ? 1 : 0);
   const actionDockClass = `${FLOATING_TABLE_LAYOUT.actionsDock} ${actionsCollapsed ? 'max-h-[3.25rem] overflow-hidden' : ''}`;
   const recentAuthorityUpdates = authorityUpdates.slice(-4).reverse();
+  const complexTurnSignals = buildComplexTurnSignals({
+    gameState,
+    legalActions,
+    currentPrompt,
+    triggerOrderChoice,
+    optionalTriggerChoice,
+    taxPaymentChoice,
+    wardPaymentChoice,
+    damageAssignmentChoice,
+    libraryChoice,
+    lastStateUpdate,
+  });
 
   const handleCardClick = (card: SimpleCard) => {
     setInspectedCard(card);
@@ -3191,6 +3316,22 @@ export function GameBoard({
                 </button>
               )}
 
+              {onBookmarkDrill && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onBookmarkDrill();
+                    setShowUtilityMenu(false);
+                  }}
+                  className="flex min-h-11 w-full items-center justify-between rounded border border-fuchsia-500/35 bg-fuchsia-950/40 px-3 text-left text-sm font-bold text-fuchsia-100 transition-colors hover:border-fuchsia-300/70 hover:bg-fuchsia-900/50"
+                >
+                  <span className="flex items-center gap-2"><BookmarkPlus className="h-4 w-4" /> {drillBookmarkLabel}</span>
+                  <span className="rounded bg-fuchsia-900/70 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-fuchsia-100">
+                    Drill
+                  </span>
+                </button>
+              )}
+
               {onCreateToken && (
                 <button
                   type="button"
@@ -3297,6 +3438,83 @@ export function GameBoard({
                   {summarizeStateUpdate(update, playerNameForId)}
                 </div>
               </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {(complexTurnSignals.length > 0 || practiceFocusTags.length > 0) && (
+        <div
+          aria-label="Decision map"
+          className="absolute left-2 top-14 z-30 hidden w-[22rem] max-w-[calc(100%-1rem)] rounded-lg border border-amber-500/20 bg-neutral-950/84 p-2 shadow-xl shadow-black/25 backdrop-blur lg:block"
+        >
+          <div className="mb-1 flex items-center justify-between gap-2">
+            <div className="text-[9px] font-black uppercase tracking-wider text-amber-300/85">
+              Decision Map
+            </div>
+            {onBookmarkDrill && (
+              <button
+                type="button"
+                onClick={onBookmarkDrill}
+                className="rounded border border-fuchsia-500/35 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-fuchsia-100 hover:bg-fuchsia-950/50"
+              >
+                Bookmark
+              </button>
+            )}
+          </div>
+          <div className="space-y-1">
+            {practiceFocusTags.length > 0 && (
+              <div className="rounded border border-amber-500/25 bg-amber-950/25 px-2 py-1">
+                <div className="mb-1 text-[10px] font-black uppercase tracking-wider text-amber-200">
+                  Practice Focus
+                </div>
+                <div className="flex flex-wrap gap-1">
+                  {practiceFocusTags.slice(0, 5).map(tag => (
+                    <span key={tag} className="rounded border border-amber-500/30 px-1.5 py-0.5 text-[9px] font-bold text-amber-100">
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+            {complexTurnSignals.map(signal => (
+              <div
+                key={`${signal.label}:${signal.detail}`}
+                className={`rounded border px-2 py-1 ${complexSignalClass(signal.tone)}`}
+              >
+                <div className="text-[10px] font-black uppercase tracking-wider">{signal.label}</div>
+                <div className="text-[10px] leading-snug opacity-85">{signal.detail}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {practiceFocusTags.length > 0 && !hasTopActions && (
+        <div
+          aria-label="Practice focus"
+          className="absolute left-2 right-14 top-14 z-30 rounded-lg border border-amber-500/20 bg-neutral-950/88 p-2 shadow-xl shadow-black/25 backdrop-blur lg:hidden"
+        >
+          <div className="mb-1 flex items-center justify-between gap-2">
+            <div className="text-[9px] font-black uppercase tracking-wider text-amber-300">
+              Practice Focus
+            </div>
+            {onBookmarkDrill && (
+              <button
+                type="button"
+                onClick={onBookmarkDrill}
+                className="flex min-h-7 items-center gap-1 rounded border border-fuchsia-500/40 px-2 text-[10px] font-black text-fuchsia-100"
+              >
+                <BookmarkPlus className="h-3 w-3" />
+                Drill
+              </button>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-1">
+            {practiceFocusTags.slice(0, 4).map(tag => (
+              <span key={tag} className="rounded border border-amber-500/30 px-1.5 py-0.5 text-[9px] font-bold text-amber-100">
+                {tag}
+              </span>
             ))}
           </div>
         </div>
@@ -3706,17 +3924,30 @@ export function GameBoard({
                 {currentPrompt?.title || `${visibleActionCount} available`}
               </div>
             </div>
-            <button
-              type="button"
-              onClick={() => setActionsCollapsed(value => !value)}
-              className="flex min-h-8 shrink-0 items-center gap-1 rounded border border-neutral-700 bg-neutral-900 px-2 text-[11px] font-black text-stone-100 transition-colors hover:bg-neutral-800"
-              aria-expanded={!actionsCollapsed}
-              aria-label={actionsCollapsed ? 'Expand action menu' : 'Collapse action menu'}
-              title={actionsCollapsed ? 'Expand action menu' : 'Collapse action menu'}
-            >
-              {actionsCollapsed ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5 rotate-90" />}
-              {actionsCollapsed ? 'Open' : 'Collapse'}
-            </button>
+            <div className="flex shrink-0 items-center gap-1.5">
+              {onBookmarkDrill && (
+                <button
+                  type="button"
+                  onClick={onBookmarkDrill}
+                  className="flex min-h-8 items-center gap-1 rounded border border-fuchsia-500/40 bg-fuchsia-950/50 px-2 text-[11px] font-black text-fuchsia-100 transition-colors hover:bg-fuchsia-900/60"
+                  title={drillBookmarkLabel}
+                >
+                  <BookmarkPlus className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">Bookmark</span>
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setActionsCollapsed(value => !value)}
+                className="flex min-h-8 items-center gap-1 rounded border border-neutral-700 bg-neutral-900 px-2 text-[11px] font-black text-stone-100 transition-colors hover:bg-neutral-800"
+                aria-expanded={!actionsCollapsed}
+                aria-label={actionsCollapsed ? 'Expand action menu' : 'Collapse action menu'}
+                title={actionsCollapsed ? 'Expand action menu' : 'Collapse action menu'}
+              >
+                {actionsCollapsed ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5 rotate-90" />}
+                {actionsCollapsed ? 'Open' : 'Collapse'}
+              </button>
+            </div>
           </div>
           {!actionsCollapsed && currentPrompt && (
             <div className="mb-2 flex items-start gap-2 rounded border border-sky-500/25 bg-sky-950/30 px-2 py-1.5 text-xs text-stone-100">
@@ -3739,6 +3970,31 @@ export function GameBoard({
                   </div>
                 )}
               </div>
+            </div>
+          )}
+          {!actionsCollapsed && (complexTurnSignals.length > 0 || practiceFocusTags.length > 0) && (
+            <div className="mb-2 grid gap-1.5 lg:hidden">
+              {practiceFocusTags.length > 0 && (
+                <div className="rounded border border-amber-500/25 bg-amber-950/25 px-2 py-1.5">
+                  <div className="mb-1 text-[10px] font-black uppercase tracking-wider text-amber-200">Practice Focus</div>
+                  <div className="flex flex-wrap gap-1">
+                    {practiceFocusTags.slice(0, 4).map(tag => (
+                      <span key={tag} className="rounded border border-amber-500/30 px-1.5 py-0.5 text-[9px] font-bold text-amber-100">
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {complexTurnSignals.slice(0, 2).map(signal => (
+                <div
+                  key={`mobile-${signal.label}:${signal.detail}`}
+                  className={`rounded border px-2 py-1.5 ${complexSignalClass(signal.tone)}`}
+                >
+                  <div className="text-[10px] font-black uppercase tracking-wider">{signal.label}</div>
+                  <div className="text-[10px] leading-snug opacity-85">{signal.detail}</div>
+                </div>
+              ))}
             </div>
           )}
           {!actionsCollapsed && (

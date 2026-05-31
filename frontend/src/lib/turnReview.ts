@@ -34,6 +34,7 @@ export interface DecisionReview {
     reason?: string;
     message?: string;
   };
+  practiceInsights?: string[];
   elapsedMs: number;
 }
 
@@ -232,6 +233,52 @@ export function xenagosPracticeNoteFromDecision(review: DecisionReview): string 
   return null;
 }
 
+function visibleCardNamesForPlayer(state: GameState, playerId: string): string[] {
+  return [...state.cards.values()]
+    .filter(card => card.ownerId === playerId && ['hand', 'battlefield', 'command', 'graveyard', 'exile'].includes(card.zone))
+    .map(card => getCardDefinition(state, card).name || card.definitionId);
+}
+
+function xenagosBoardInsights(state: GameState, playerId: string, labels: string): string[] {
+  const names = visibleCardNamesForPlayer(state, playerId);
+  const joined = names.join('\n').toLowerCase();
+  if (!/xenagos, god of revels|dracogenesis|terror of the peaks|twinflame tyrant|anzrag|dragonhawk|hellkite|gnawbone|ventmaw/.test(joined + '\n' + labels)) {
+    return [];
+  }
+
+  const player = state.players.find(candidate => candidate.id === playerId);
+  const opponents = state.players.filter(candidate => candidate.id !== playerId && !candidate.hasLost);
+  const lowestOpponentLife = opponents.length > 0 ? Math.min(...opponents.map(opponent => opponent.life)) : 40;
+  const manaAvailable = Object.values(player?.manaPool || { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 })
+    .reduce((total, amount) => total + amount, 0);
+  const battlefieldNames = [...state.cards.values()]
+    .filter(card => card.ownerId === playerId && card.zone === 'battlefield')
+    .map(card => getCardDefinition(state, card).name.toLowerCase());
+  const hasXenagos = battlefieldNames.some(name => name.includes('xenagos'));
+  const hasDamageEngine = battlefieldNames.some(name =>
+    name.includes('terror of the peaks')
+    || name.includes('warstorm surge')
+    || name.includes('impact tremors')
+    || name.includes('dragon tempest')
+    || name.includes('dragonhawk')
+  );
+  const insights: string[] = [];
+
+  if (hasXenagos && /declare attackers|attack|anzrag|hellkite charger|savage ventmaw|balefire dragon|chandra's ignition/.test(labels)) {
+    insights.push(`Board-specific Xenagos check: lowest opponent is at ${lowestOpponentLife}; compare doubling the largest trampler against preserving a blocker or interaction.`);
+  }
+
+  if (hasDamageEngine && /dracogenesis|tooth and nail|natural order|twinflame|ghalta|dragon/.test(labels)) {
+    insights.push('Damage-engine branch: ETB order matters more than raw mana here; bookmark before the payoff if targets or trigger order can change lethal.');
+  }
+
+  if (manaAvailable >= 6 && /blacker lotus|jeweled lotus|jeska's will|mana vault|chrome mox|mox diamond|lotus petal|spirit guide/.test(labels)) {
+    insights.push(`Burst-mana branch: ${manaAvailable} floating/pooled mana is enough to pivot from setup into a threat; spend it only if the follow-up beats open interaction.`);
+  }
+
+  return insights.slice(0, 2);
+}
+
 export function buildDecisionReview(
   state: GameState,
   playerId: string,
@@ -314,7 +361,7 @@ export function buildDecisionReview(
       ? 'medium'
     : 'high';
 
-  return {
+  const review: DecisionReview = {
     schemaVersion: 1,
     evaluator: 'engine-heuristic-v1',
     decisionId: `${state.turnNumber}:${state.phase}:${state.step}:${started}`,
@@ -334,13 +381,16 @@ export function buildDecisionReview(
     },
     elapsedMs: Date.now() - started,
   };
+  review.practiceInsights = xenagosBoardInsights(state, playerId, labelsForReview(review));
+  return review;
 }
 
 export function coachMessageFromDecision(review: DecisionReview): string | null {
   if (review.legalActionCount <= 1 || !review.best) return null;
   const selectedIsBest = review.best.label === review.selected.label && review.scoreDelta <= 0.5;
   const xenagosNote = xenagosPracticeNoteFromDecision(review);
-  const suffix = xenagosNote ? ` Xenagos focus: ${xenagosNote}` : '';
+  const insights = review.practiceInsights?.length ? ` ${review.practiceInsights.join(' ')}` : '';
+  const suffix = `${xenagosNote ? ` Xenagos focus: ${xenagosNote}` : ''}${insights}`;
   if (selectedIsBest) return `Strong practice action.${suffix}`;
   if (review.scoreDelta < 1) return `Good practice action (close to the current engine preference).${suffix}`;
   return `Consider: ${review.best.label} (score ${review.best.score.toFixed(1)} vs your ${review.selected.score.toFixed(1)}). ${review.best.reasoning || ''}${suffix}`.trim();
@@ -353,7 +403,8 @@ export function playByPlayFromDecision(action: string, review?: DecisionReview):
 
   const selectedIsBest = review.best.label === review.selected.label && review.scoreDelta <= 0.5;
   const xenagosNote = xenagosPracticeNoteFromDecision(review);
-  const suffix = xenagosNote ? ` Xenagos focus: ${xenagosNote}` : '';
+  const insights = review.practiceInsights?.length ? ` ${review.practiceInsights.join(' ')}` : '';
+  const suffix = `${xenagosNote ? ` Xenagos focus: ${xenagosNote}` : ''}${insights}`;
   if (selectedIsBest) {
     return `${action}. The engine review agreed this was a strong available line.${suffix}`;
   }

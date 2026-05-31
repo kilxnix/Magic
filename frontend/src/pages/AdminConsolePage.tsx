@@ -59,7 +59,7 @@ function statusClass(status: string | undefined | null): string {
 
 function practiceCheckpointCount(record: PlaySaveSlotRecord): number {
   const snapshot = record.snapshot as { engineEventLogSeeds?: Record<number, unknown> } | null | undefined;
-  return Object.keys(snapshot?.engineEventLogSeeds || {}).length;
+  return Object.keys(snapshot?.engineEventLogSeeds || {}).length + (record.drillBookmarks?.length || 0);
 }
 
 export function AdminConsolePage() {
@@ -328,6 +328,11 @@ export function AdminConsolePage() {
                             {canonicalAudit.ok ? 'Engine Save OK' : 'Engine Save Missing'}
                           </span>
                         )}
+                        {record?.canonicalManager && (
+                          <span className="rounded border border-fuchsia-500/40 bg-fuchsia-950/30 px-1.5 py-0.5 text-[10px] font-black uppercase text-fuchsia-200">
+                            SaveManager
+                          </span>
+                        )}
                       </div>
                       {record ? (
                         <>
@@ -360,7 +365,22 @@ export function AdminConsolePage() {
                           )}
                           {practiceCheckpointCount(record) > 0 && (
                             <div className="mt-1 text-xs text-stone-500">
-                              {practiceCheckpointCount(record)} drill checkpoints available
+                              {practiceCheckpointCount(record)} drill checkpoints/bookmarks available
+                            </div>
+                          )}
+                          {record.drillBookmarks && record.drillBookmarks.length > 0 && (
+                            <div className="mt-2 rounded border border-fuchsia-500/20 bg-fuchsia-950/20 p-2 text-xs text-fuchsia-100">
+                              Latest drill: {record.drillBookmarks[record.drillBookmarks.length - 1]?.label}
+                              {record.drillBookmarks[record.drillBookmarks.length - 1]?.note && (
+                                <span className="mt-1 block text-stone-400">
+                                  {record.drillBookmarks[record.drillBookmarks.length - 1]?.note}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                          {record.canonicalManager && (
+                            <div className="mt-2 rounded border border-fuchsia-500/20 bg-fuchsia-950/20 p-2 text-xs text-fuchsia-100">
+                              SaveManager primary: {record.canonicalManager.fingerprint.slice(0, 12)}
                             </div>
                           )}
                           {canonicalAudit?.ok && canonicalAudit.fingerprint && (
