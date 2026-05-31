@@ -272,17 +272,21 @@ export function PlayPage() {
   useEffect(() => {
     if (!import.meta.env.DEV || qaScenarioLoadedRef.current || typeof window === 'undefined') return;
     const params = new URLSearchParams(window.location.search);
-    if (params.get('qa') !== 'sisay-activation') return;
+    const qaScenario = params.get('qa');
+    if (qaScenario !== 'sisay-activation' && qaScenario !== 'sisay-raw-lands') return;
 
     let cancelled = false;
     import('../lib/qaGameScenarios')
-      .then(({ createSisayActivationQaState }) => {
+      .then(({ createSisayActivationQaState, createSisayRawLandsQaState }) => {
         if (cancelled || qaScenarioLoadedRef.current) return;
+        const engine = qaScenario === 'sisay-raw-lands'
+          ? createSisayRawLandsQaState()
+          : createSisayActivationQaState();
         const now = Date.now();
         const snapshot: ShelectorGameSaveSnapshot = {
           version: 1,
           savedAt: now,
-          engine: createSisayActivationQaState(),
+          engine,
           humanDeck: null,
           aiDecks: [],
           humanCommander: 'Sisay, Weatherlight Captain',
@@ -329,7 +333,7 @@ export function PlayPage() {
           setSelectedPracticePresetId(null);
           setStep('game');
           setSavePanelOpen(false);
-          setSaveStatus('Loaded Sisay activation QA scenario.');
+          setSaveStatus(`Loaded ${qaScenario === 'sisay-raw-lands' ? 'Sisay raw lands' : 'Sisay activation'} QA scenario.`);
           setSaveError(null);
         }
       })
@@ -472,7 +476,7 @@ export function PlayPage() {
     }
 
     const audit = auditPlaySaveSnapshot(snapshotToRestore);
-    if (!canonicalAudit && audit.status === 'failed') {
+    if (!managerEngine && !record.canonicalManager && !canonicalAudit && audit.status === 'failed') {
       setSaveError(`Slot ${record.slot} replay audit failed. Open Admin Console for event-level diagnostics or overwrite this slot.`);
       return;
     }
@@ -849,7 +853,7 @@ export function PlayPage() {
           const loadBlocked = Boolean(
             record && (
               (canonicalAudit && !canonicalAudit.ok)
-              || (!canonicalAudit && audit?.status === 'failed')
+              || (!record.canonicalManager && !canonicalAudit && audit?.status === 'failed')
             ),
           );
           return (
@@ -891,9 +895,11 @@ export function PlayPage() {
                         <span className={`inline-flex rounded border px-1.5 py-0.5 text-[11px] font-black uppercase tracking-wide ${
                           audit.ok
                             ? 'border-emerald-500/40 bg-emerald-950/30 text-emerald-200'
-                            : 'border-amber-500/40 bg-amber-950/30 text-amber-100'
+                            : record?.canonicalManager
+                              ? 'border-sky-500/40 bg-sky-950/30 text-sky-100'
+                              : 'border-amber-500/40 bg-amber-950/30 text-amber-100'
                         }`}>
-                          {audit.ok ? audit.message : 'Replay audit needs admin review'}
+                          {audit.ok ? audit.message : record?.canonicalManager ? 'Replay audit warning' : 'Replay audit needs admin review'}
                         </span>
                       )}
                       {canonicalAudit && (

@@ -14,6 +14,7 @@ import { getOverride } from '../effects/overrides';
 import { parseOracleText } from '../effects/parser';
 import { matchesCardFilter } from '../effects/executor';
 import { isEffectiveCreature } from '../effective-types';
+import { populateParsedCache } from '../cards/card-parser-cache';
 import { validateTargetChoices, type TargetSpec } from '../effects/targets';
 import type {
   AIAction,
@@ -562,7 +563,10 @@ function generateManaActions(state: GameState, playerId: string): ActivateManaAb
 
   const battlefield = getCardsInZone(state, playerId, 'battlefield');
   for (const card of battlefield) {
-    const def = getCardDefinition(state, card);
+    let def = getCardDefinition(state, card);
+    if (!def.manaProduction) {
+      def = populateParsedCache(def);
+    }
 
     if (!def.manaProduction) continue;
     if (def.manaProduction.activationZone === 'hand') continue;

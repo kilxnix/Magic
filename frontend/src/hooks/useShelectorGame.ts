@@ -2598,6 +2598,21 @@ export function useShelectorGame() {
   const humanIdRef = useRef('human');
   const aiIdsRef = useRef<string[]>(['ai1']);
   const discardCountRef = useRef(0);
+
+  const hasPendingEngineChoice = useCallback(() => Boolean(
+    tutorPromptRequestRef.current
+    || pendingSearchEntryChoiceRef.current
+    || pendingTargetChoiceRef.current
+    || pendingHandTopLibraryChoiceRef.current
+    || pendingStackTopLibraryChoiceRef.current
+    || pendingStackSacrificeChoiceRef.current
+    || pendingStackNamedCardChoiceRef.current
+    || pendingLibraryChoiceRef.current
+    || libraryManipulationPromptRequestRef.current
+    || optionalTriggerPromptRequestRef.current
+    || damageAssignmentPromptRequestRef.current
+    || triggerOrderPromptRequestRef.current
+  ), []);
   const [newPlayerMode, setNewPlayerModeState] = useState(() => {
     if (typeof window === 'undefined') return false;
     try {
@@ -6838,7 +6853,7 @@ export function useShelectorGame() {
 
   const skipEmptyPhases = useCallback(() => {
     let state = engineRef.current as GameState | null;
-    if (!state || gameState?.gameOver || mulliganPhase || discardPhase || tutorPhase || libraryChoice || optionalTriggerChoice || taxPaymentChoice || wardPaymentChoice || damageAssignmentChoice || triggerOrderChoice) return;
+    if (!state || gameState?.gameOver || mulliganPhase || discardPhase || tutorPhase || libraryChoice || optionalTriggerChoice || taxPaymentChoice || wardPaymentChoice || damageAssignmentChoice || triggerOrderChoice || hasPendingEngineChoice()) return;
 
     const humanId = humanIdRef.current;
     const loopMessages: { role: ChatMessage['role']; text: string }[] = [];
@@ -6865,6 +6880,10 @@ export function useShelectorGame() {
 
       if (state.priorityPlayerIndex !== humanIndex || state.hasPriorityPassed[humanIndex]) {
         const advanced = advanceGameLoop(state, loopMessages, loopLogEntries);
+        if (hasPendingEngineChoice()) {
+          state = advanced;
+          break;
+        }
         if (advanced === state) break;
         state = advanced;
         continue;
@@ -6906,6 +6925,7 @@ export function useShelectorGame() {
 
       skippedWindows += 1;
       state = advanceGameLoop(state, loopMessages, loopLogEntries);
+      if (hasPendingEngineChoice()) break;
     }
 
     if (!state) return;
@@ -6935,6 +6955,7 @@ export function useShelectorGame() {
     taxPaymentChoice,
     wardPaymentChoice,
     triggerOrderChoice,
+    hasPendingEngineChoice,
     syncState,
     tutorPhase,
     applyActionThroughAuthority,
@@ -6942,7 +6963,7 @@ export function useShelectorGame() {
 
   const skipRestOfTurn = useCallback(() => {
     let state = engineRef.current as GameState | null;
-    if (!state || gameState?.gameOver || mulliganPhase || discardPhase || tutorPhase || libraryChoice || optionalTriggerChoice || taxPaymentChoice || wardPaymentChoice || damageAssignmentChoice || triggerOrderChoice) return;
+    if (!state || gameState?.gameOver || mulliganPhase || discardPhase || tutorPhase || libraryChoice || optionalTriggerChoice || taxPaymentChoice || wardPaymentChoice || damageAssignmentChoice || triggerOrderChoice || hasPendingEngineChoice()) return;
 
     const humanId = humanIdRef.current;
     if (state.players[state.activePlayerIndex]?.id !== humanId) {
@@ -7062,12 +7083,20 @@ export function useShelectorGame() {
         skippedWindows += 1;
       } else {
         const advanced = advanceGameLoop(state, loopMessages, loopLogEntries);
+        if (hasPendingEngineChoice()) {
+          state = advanced;
+          break;
+        }
         if (advanced === state) break;
         state = advanced;
         continue;
       }
 
       const advanced = advanceGameLoop(state, loopMessages, loopLogEntries);
+      if (hasPendingEngineChoice()) {
+        state = advanced;
+        break;
+      }
       if (advanced === state) {
         continue;
       }
@@ -7106,6 +7135,7 @@ export function useShelectorGame() {
     syncState,
       tutorPhase,
       applyActionThroughAuthority,
+      hasPendingEngineChoice,
   ]);
 
   // Handle player action

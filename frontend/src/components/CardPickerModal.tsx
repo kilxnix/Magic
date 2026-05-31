@@ -89,7 +89,7 @@ export function CardPickerModal({ title, cards, filter, onPick, onCancel, cancel
   }
 
   return (
-    <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/70">
+    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/70">
       <div className="mx-4 flex max-h-[80vh] w-full max-w-lg flex-col rounded-xl border border-stone-600 bg-stone-800 p-4">
         <div className="mb-2 text-sm font-semibold text-amber-400">{title}</div>
         <input

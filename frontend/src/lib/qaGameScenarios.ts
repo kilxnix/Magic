@@ -204,3 +204,123 @@ export function createSisayActivationQaState(): SerializedGameStateV1 {
 
   return serializeGameState(stateWithSisayStaticEffect);
 }
+
+export function createSisayRawLandsQaState(): SerializedGameStateV1 {
+  const sisay = def(
+    'sisay',
+    'Sisay, Weatherlight Captain',
+    'Legendary Creature - Human Soldier',
+    '{2}{W}',
+    "Sisay, Weatherlight Captain gets +1/+1 for each color among other legendary permanents you control.\n{W}{U}{B}{R}{G}, {T}: Search your library for a legendary permanent card with mana value less than Sisay, Weatherlight Captain's power, put that card onto the battlefield, then shuffle.",
+    { cmc: 3, colors: ['W'], color_identity: ['W', 'U', 'B', 'R', 'G'], power: 2, toughness: 2 },
+  );
+  const mahadi = def(
+    'mahadi',
+    'Mahadi, Emporium Master',
+    'Legendary Creature - Cat Devil',
+    '{1}{B}{R}',
+    'At the beginning of your end step, create a Treasure token for each creature that died this turn.',
+    { cmc: 3, colors: ['B', 'R'], color_identity: ['B', 'R'], power: 3, toughness: 3 },
+  );
+  const templeGarden = def('temple_garden', 'Temple Garden', 'Land - Forest Plains');
+  const rejuvenatingSprings = def('rejuvenating_springs', 'Rejuvenating Springs', 'Land - Forest Island');
+  const undergrowthStadium = def('undergrowth_stadium', 'Undergrowth Stadium', 'Land - Swamp Forest');
+  const stompingGround = def('stomping_ground', 'Stomping Ground', 'Land - Mountain Forest');
+  const steamVents = def('steam_vents', 'Steam Vents', 'Land - Island Mountain');
+  const yoshimaru = def(
+    'yoshimaru',
+    'Yoshimaru, Ever Faithful',
+    'Legendary Creature - Dog',
+    '{W}',
+    'Whenever another legendary permanent enters the battlefield under your control, put a +1/+1 counter on Yoshimaru, Ever Faithful.',
+    { cmc: 1, colors: ['W'], color_identity: ['W'], power: 1, toughness: 1 },
+  );
+  const jodah = def(
+    'jodah',
+    'Jodah, the Unifier',
+    'Legendary Creature - Human Wizard',
+    '{W}{U}{B}{R}{G}',
+    'Legendary creatures you control get +X/+X, where X is the number of legendary creatures you control.',
+    { cmc: 5, colors: ['W', 'U', 'B', 'R', 'G'], color_identity: ['W', 'U', 'B', 'R', 'G'], power: 5, toughness: 5 },
+  );
+
+  const state: GameState = {
+    players: [
+      {
+        id: 'human',
+        name: 'Sisay Raw Lands QA Pilot',
+        life: 40,
+        poisonCounters: 0,
+        commanderDamage: {},
+        commanderTax: 0,
+        commanderInstanceId: 'sisay_1',
+        commanderCastCount: 1,
+        manaPool: pool(),
+        hasPlayedLand: false,
+        hasPriority: true,
+        hasLost: false,
+      },
+      {
+        id: 'ai-1',
+        name: 'QA Opponent',
+        life: 40,
+        poisonCounters: 0,
+        commanderDamage: {},
+        commanderTax: 0,
+        commanderInstanceId: null,
+        commanderCastCount: 0,
+        manaPool: pool(),
+        hasPlayedLand: false,
+        hasPriority: false,
+        hasLost: false,
+      },
+    ],
+    cards: new Map<string, CardInstance>([
+      ['sisay_1', instance('sisay_1', sisay.id, 'human', 'battlefield', { isCommander: true })],
+      ['mahadi_1', instance('mahadi_1', mahadi.id, 'human', 'battlefield')],
+      ['temple_garden_1', instance('temple_garden_1', templeGarden.id, 'human', 'battlefield')],
+      ['rejuvenating_springs_1', instance('rejuvenating_springs_1', rejuvenatingSprings.id, 'human', 'battlefield')],
+      ['undergrowth_stadium_1', instance('undergrowth_stadium_1', undergrowthStadium.id, 'human', 'battlefield')],
+      ['stomping_ground_1', instance('stomping_ground_1', stompingGround.id, 'human', 'battlefield')],
+      ['steam_vents_1', instance('steam_vents_1', steamVents.id, 'human', 'battlefield')],
+      ['yoshimaru_1', instance('yoshimaru_1', yoshimaru.id, 'human', 'library')],
+      ['jodah_1', instance('jodah_1', jodah.id, 'human', 'library')],
+    ]),
+    cardDefinitions: new Map<string, CardDefinition>([
+      [sisay.id, sisay],
+      [mahadi.id, mahadi],
+      [templeGarden.id, templeGarden],
+      [rejuvenatingSprings.id, rejuvenatingSprings],
+      [undergrowthStadium.id, undergrowthStadium],
+      [stompingGround.id, stompingGround],
+      [steamVents.id, steamVents],
+      [yoshimaru.id, yoshimaru],
+      [jodah.id, jodah],
+    ]),
+    activePlayerIndex: 0,
+    priorityPlayerIndex: 0,
+    phase: 'precombat_main',
+    step: 'begin_combat',
+    turnNumber: 1,
+    hasPriorityPassed: [false, false],
+    stack: [],
+    combat: null,
+    battlefieldAbilities: new Map(),
+    pendingTriggers: [],
+  };
+
+  const stateWithSisayStaticEffect = registerContinuousEffect(state, 'sisay_1', 'human', {
+    kind: 'StaticAbility',
+    modifier: {
+      kind: 'ModifyPTByUniqueColorsAmongOtherLegendaryPermanentsYouControl',
+      powerPerColor: 1,
+      toughnessPerColor: 1,
+    },
+    filter: {},
+    controller: 'any',
+    selfOnly: true,
+    excludeSelf: false,
+  });
+
+  return serializeGameState(stateWithSisayStaticEffect);
+}

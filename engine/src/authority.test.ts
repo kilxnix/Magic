@@ -2597,6 +2597,20 @@ describe('authority action boundary', () => {
     expect(fetched.ok).toBe(true);
     expect(fetched.state?.cards.get('steam_vents_regression_1')?.zone).toBe('battlefield');
     expect(fetched.state?.cards.get('steam_vents_regression_1')?.tapped).toBe(true);
+
+    const untappedAfterFetch: GameState = {
+      ...fetched.state!,
+      cards: new Map(fetched.state!.cards).set('steam_vents_regression_1', {
+        ...fetched.state!.cards.get('steam_vents_regression_1')!,
+        tapped: false,
+      }),
+      priorityPlayerIndex: 0,
+      hasPriorityPassed: [false, false],
+      stack: [],
+    };
+    const postFetchMana = getLegalActions(untappedAfterFetch, 'p1')
+      .filter(action => action.kind === 'ActivateManaAbility' && action.cardInstanceId === 'steam_vents_regression_1');
+    expect(postFetchMana.map(action => action.kind === 'ActivateManaAbility' ? action.color : null).sort()).toEqual(['R', 'U']);
   });
 
   it('can attach review decision metadata to an authoritative state update', () => {
@@ -3427,7 +3441,51 @@ describe('authority action boundary', () => {
       action.kind === 'ActivateAbility' && action.cardInstanceId === 'sisay_current_check_1',
     )).toBe(false);
 
-    const forgedMahadiMana = applyClientActionRequest(state, createClientActionRequest(state, 'p1', {
+    const noManaState = state;
+    const rawLands = [
+      ['temple_garden_current_check_1', def('temple_garden_current_check', 'Temple Garden', 'Land - Forest Plains'), 'W'],
+      ['rejuvenating_springs_current_check_1', def('rejuvenating_springs_current_check', 'Rejuvenating Springs', 'Land - Forest Island'), 'U'],
+      ['undergrowth_stadium_current_check_1', def('undergrowth_stadium_current_check', 'Undergrowth Stadium', 'Land - Swamp Forest'), 'B'],
+      ['stomping_ground_current_check_1', def('stomping_ground_current_check', 'Stomping Ground', 'Land - Mountain Forest'), 'G'],
+      ['steam_vents_current_check_1', def('steam_vents_current_check', 'Steam Vents', 'Land - Island Mountain'), 'R'],
+    ] as const;
+    for (const [instanceId, landDef] of rawLands) {
+      state.cardDefinitions.set(landDef.id, landDef);
+      state.cards.set(instanceId, {
+        ...cardInstance(instanceId, landDef.id, 'p1', 'battlefield'),
+        tapped: false,
+        summoningSick: false,
+      });
+    }
+
+    expect(getLegalActions(state, 'p1').some(action =>
+      action.kind === 'ActivateManaAbility' && action.cardInstanceId === 'temple_garden_current_check_1',
+    )).toBe(true);
+
+    for (const [instanceId, , color] of rawLands) {
+      const action = getLegalActions(state, 'p1').find(candidate =>
+        candidate.kind === 'ActivateManaAbility'
+        && candidate.cardInstanceId === instanceId
+        && candidate.color === color,
+      );
+      expect(action).toBeDefined();
+      const response = applyClientActionRequest(state, createClientActionRequest(state, 'p1', action!, {
+        id: `req-current-check-${instanceId}-mana`,
+        createdAt: 210,
+      }));
+      expect(response.ok).toBe(true);
+      state = response.state!;
+    }
+
+    expect(state.players.find(player => player.id === 'p1')?.manaPool)
+      .toEqual({ W: 1, U: 1, B: 1, R: 1, G: 1, C: 0 });
+
+    const sisayActivationFromRealLands = getLegalActions(state, 'p1').find((action): action is Extract<AIAction, { kind: 'ActivateAbility' }> =>
+      action.kind === 'ActivateAbility' && action.cardInstanceId === 'sisay_current_check_1',
+    );
+    expect(sisayActivationFromRealLands).toBeDefined();
+
+    const forgedMahadiMana = applyClientActionRequest(noManaState, createClientActionRequest(noManaState, 'p1', {
       kind: 'ActivateManaAbility',
       cardInstanceId: 'mahadi_current_check_1',
       color: 'W',
@@ -3438,7 +3496,7 @@ describe('authority action boundary', () => {
     expect(forgedMahadiMana.ok).toBe(false);
     expect(forgedMahadiMana.message).toBe('Card has no mana ability');
 
-    const forgedSisayActivation = applyClientActionRequest(state, createClientActionRequest(state, 'p1', {
+    const forgedSisayActivation = applyClientActionRequest(noManaState, createClientActionRequest(noManaState, 'p1', {
       kind: 'ActivateAbility',
       cardInstanceId: 'sisay_current_check_1',
       abilityIndex: 0,
@@ -3455,6 +3513,10 @@ describe('authority action boundary', () => {
       players: state.players.map(player => player.id === 'p1'
         ? { ...player, manaPool: { W: 1, U: 1, B: 1, R: 1, G: 1, C: 0 } }
         : player),
+      cards: new Map(state.cards).set('sisay_current_check_1', {
+        ...state.cards.get('sisay_current_check_1')!,
+        tapped: false,
+      }),
     };
 
     const sisayActivation = getLegalActions(state, 'p1').find((action): action is Extract<AIAction, { kind: 'ActivateAbility' }> =>
