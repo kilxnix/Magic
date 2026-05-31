@@ -11,6 +11,7 @@ import { SAVE_VERSION } from './schema';
 import { GameState, createPlayer, Phase, Step, CardDefinition, CardInstance } from '../types';
 import { initGrudgeTracking, recordDamage } from '../ai/grudges';
 import { stateFingerprint } from '../authority';
+import { getEffectivePower, getEffectiveToughness, registerContinuousEffect } from '../effects/continuous';
 
 // Helper to create minimal game state
 function createTestState(playerCount: number = 2): GameState {
@@ -131,6 +132,47 @@ describe('serializeGameState / deserializeGameState', () => {
     const deserialized = deserializeGameState(serializeGameState(state));
 
     expect(stateFingerprint(deserialized)).toBe(stateFingerprint(state));
+  });
+
+  it('round-trips continuous effects so restored boards keep dynamic power and toughness', () => {
+    const state = createTestState();
+    addCard(state, 'sisay1', 'p1', 'battlefield', {
+      id: 'sisay',
+      name: 'Sisay, Weatherlight Captain',
+      type_line: 'Legendary Creature - Human Soldier',
+      colors: ['W'],
+      color_identity: ['W', 'U', 'B', 'R', 'G'],
+      power: 2,
+      toughness: 2,
+    });
+    addCard(state, 'mahadi1', 'p1', 'battlefield', {
+      id: 'mahadi',
+      name: 'Mahadi, Emporium Master',
+      type_line: 'Legendary Creature - Cat Devil',
+      colors: ['B', 'R'],
+      color_identity: ['B', 'R'],
+      power: 3,
+      toughness: 3,
+    });
+
+    const layered = registerContinuousEffect(state, 'sisay1', 'p1', {
+      kind: 'StaticAbility',
+      modifier: {
+        kind: 'ModifyPTByUniqueColorsAmongOtherLegendaryPermanentsYouControl',
+        powerPerColor: 1,
+        toughnessPerColor: 1,
+      },
+      filter: {},
+      controller: 'any',
+      selfOnly: true,
+      excludeSelf: false,
+    });
+
+    const restored = deserializeGameState(serializeGameState(layered));
+
+    expect(restored.continuousEffects).toHaveLength(1);
+    expect(getEffectivePower(restored, 'sisay1')).toBe(4);
+    expect(getEffectiveToughness(restored, 'sisay1')).toBe(4);
   });
 
   it('round-trips cards correctly', () => {

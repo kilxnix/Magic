@@ -316,9 +316,9 @@ export function AdminConsolePage() {
                               ? 'border-emerald-500/40 bg-emerald-950/30 text-emerald-200'
                               : 'border-red-500/40 bg-red-950/30 text-red-200'
                           }`}>
-                            {audit.message}
-                          </span>
-                        )}
+                          {audit.message}
+                        </span>
+                      )}
                         {canonicalAudit && (
                           <span className={`rounded border px-1.5 py-0.5 text-[10px] font-black uppercase ${
                             canonicalAudit.ok
@@ -373,9 +373,31 @@ export function AdminConsolePage() {
                           )}
                           {canonicalAudit && !canonicalAudit.ok && (
                             <div className="mt-2 rounded border border-red-500/20 bg-red-950/20 p-2 text-xs text-red-100">
-                              {canonicalAudit.message}
-                            </div>
-                          )}
+                          {canonicalAudit.message}
+                        </div>
+                      )}
+                      {audit && !audit.ok && (
+                        <div className="mt-2 rounded border border-red-500/20 bg-red-950/20 p-2 text-xs text-red-100">
+                          <div className="font-bold">Replay audit diagnostic</div>
+                          <div className="mt-1 text-red-100/80">
+                            {audit.developerMessage || audit.message}
+                          </div>
+                          <div className="mt-2 grid gap-1 text-[11px] text-stone-400">
+                            {audit.failedEventSequence !== undefined && (
+                              <span>Event {audit.failedEventSequence}</span>
+                            )}
+                            {audit.reason && (
+                              <span>Reason: {audit.reason}</span>
+                            )}
+                            {audit.expectedStateBeforeId && (
+                              <span>Before expected {audit.expectedStateBeforeId.slice(0, 12)} / actual {audit.stateBeforeId?.slice(0, 12) || 'unknown'}</span>
+                            )}
+                            {audit.expectedStateAfterId && (
+                              <span>After expected {audit.expectedStateAfterId.slice(0, 12)} / actual {audit.stateAfterId?.slice(0, 12) || 'unknown'}</span>
+                            )}
+                          </div>
+                        </div>
+                      )}
                         </>
                       ) : (
                         <div className="text-xs text-stone-500">No saved practice game in this slot.</div>

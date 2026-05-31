@@ -4,6 +4,7 @@ import {
   loadFromSaveGame,
   saveGameFromJson,
   saveGameToJson,
+  serializeGameState,
   stateFingerprint,
   type SaveMetadata,
   type SerializedGameStateV1,
@@ -83,5 +84,18 @@ export function auditCanonicalPlayEngineSave(payload: PlayCanonicalEngineSave | 
       ok: false,
       message: error instanceof Error ? error.message : 'Canonical save failed',
     };
+  }
+}
+
+export function restoreCanonicalPlayEngineState(payload: PlayCanonicalEngineSave | null | undefined): SerializedGameStateV1 | null {
+  const audit = auditCanonicalPlayEngineSave(payload);
+  if (!payload || !audit.ok) return null;
+
+  try {
+    const save = saveGameFromJson(payload.saveJson);
+    const restored = loadFromSaveGame(save);
+    return serializeGameState(restored);
+  } catch {
+    return null;
   }
 }

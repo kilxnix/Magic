@@ -10,6 +10,13 @@ export interface PlaySaveAuditSummary {
   status: 'ok' | 'empty' | 'missing' | 'failed';
   recordCount: number;
   message: string;
+  developerMessage?: string;
+  failedEventSequence?: number;
+  reason?: string;
+  stateBeforeId?: string;
+  expectedStateBeforeId?: string;
+  stateAfterId?: string;
+  expectedStateAfterId?: string;
 }
 
 interface AuditableSaveSnapshot {
@@ -61,9 +68,16 @@ export function auditPlaySaveSnapshot(snapshot: unknown): PlaySaveAuditSummary {
             ok: false,
             status: 'failed',
             recordCount: eventLog.length,
-            message: failed?.message
+            message: 'Replay audit failed',
+            developerMessage: failed?.message
               ? `Event ${record.sequence}: ${failed.message}`
               : `Audit failed at event ${record.sequence}`,
+            failedEventSequence: record.sequence,
+            reason: failed?.reason,
+            stateBeforeId: failed?.stateBeforeId,
+            expectedStateBeforeId: failed?.expectedStateBeforeId,
+            stateAfterId: failed?.stateAfterId,
+            expectedStateAfterId: failed?.expectedStateAfterId,
           };
         }
       }
@@ -90,14 +104,22 @@ export function auditPlaySaveSnapshot(snapshot: unknown): PlaySaveAuditSummary {
       ok: false,
       status: 'failed',
       recordCount: eventLog.length,
-      message: failed?.message || 'Audit failed',
+      message: 'Replay audit failed',
+      developerMessage: failed?.message || 'Audit failed',
+      failedEventSequence: failed?.sequence,
+      reason: failed?.reason,
+      stateBeforeId: failed?.stateBeforeId,
+      expectedStateBeforeId: failed?.expectedStateBeforeId,
+      stateAfterId: failed?.stateAfterId,
+      expectedStateAfterId: failed?.expectedStateAfterId,
     };
   } catch (error) {
     return {
       ok: false,
       status: 'failed',
       recordCount: eventLog.length,
-      message: error instanceof Error ? error.message : 'Audit failed',
+      message: 'Replay audit failed',
+      developerMessage: error instanceof Error ? error.message : 'Audit failed',
     };
   }
 }

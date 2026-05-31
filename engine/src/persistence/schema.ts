@@ -252,6 +252,7 @@ export interface SerializedGameStateV1 {
   stack: SerializedStackItemV1[];
   combat: SerializedCombatStateV1 | null;
   battlefieldAbilities: Array<[string, unknown[]]>;
+  continuousEffects?: unknown[];
   pendingTriggers: unknown[];
   sideboards?: Array<[string, SerializedCardDefinitionV1[]]>;
   damageHistory?: SerializedDamageRecordV1[];

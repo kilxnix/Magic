@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createPlayer, serializeGameState, type GameState } from 'commander-engine';
-import { auditCanonicalPlayEngineSave, buildCanonicalPlayEngineSave } from './playCanonicalSave';
+import { auditCanonicalPlayEngineSave, buildCanonicalPlayEngineSave, restoreCanonicalPlayEngineState } from './playCanonicalSave';
 
 function minimalState(): GameState {
   return {
@@ -43,6 +43,10 @@ describe('play canonical saves', () => {
     const audit = auditCanonicalPlayEngineSave(canonical);
     expect(audit.ok).toBe(true);
     expect(audit.fingerprint).toBe(canonical?.fingerprint);
+
+    const restored = restoreCanonicalPlayEngineState(canonical);
+    expect(restored?.turnNumber).toBe(4);
+    expect(restored?.players).toHaveLength(2);
   });
 
   it('detects canonical save fingerprint drift', () => {

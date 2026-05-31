@@ -372,6 +372,9 @@ export function serializeGameState(state: GameState): SerializedGameStateV1 {
     stack: state.stack.map(serializeStackItem),
     combat: state.combat ? serializeCombatState(state.combat) : null,
     battlefieldAbilities: Array.from(state.battlefieldAbilities.entries()),
+    continuousEffects: state.continuousEffects
+      ? state.continuousEffects.map(effect => ({ ...effect }))
+      : undefined,
     pendingTriggers: [...state.pendingTriggers],
     sideboards: state.sideboards
       ? Array.from(state.sideboards.entries()).map(([playerId, defs]) => [
@@ -429,6 +432,9 @@ export function deserializeGameState(data: SerializedGameStateV1): GameState {
     stack: data.stack.map(deserializeStackItem),
     combat: data.combat ? deserializeCombatState(data.combat) : null,
     battlefieldAbilities: new Map(data.battlefieldAbilities) as GameState['battlefieldAbilities'],
+    continuousEffects: data.continuousEffects
+      ? data.continuousEffects.map(effect => ({ ...(effect as NonNullable<GameState['continuousEffects']>[number]) }))
+      : undefined,
     pendingTriggers: [...data.pendingTriggers] as GameState['pendingTriggers'],
     sideboards: new Map((data.sideboards || []).map(([playerId, defs]) => [
       playerId,

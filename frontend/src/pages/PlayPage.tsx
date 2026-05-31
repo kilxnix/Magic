@@ -20,7 +20,7 @@ import {
   type BeginnerDeck,
 } from '../lib/beginnerDecks';
 import { auditPlaySaveSnapshot } from '../lib/playSaveAudit';
-import { auditCanonicalPlayEngineSave, buildCanonicalPlayEngineSave } from '../lib/playCanonicalSave';
+import { auditCanonicalPlayEngineSave, buildCanonicalPlayEngineSave, restoreCanonicalPlayEngineState } from '../lib/playCanonicalSave';
 import { findUnsupportedEngineCards, formatUnsupportedEngineCards } from '../lib/enginePreflight';
 import {
   deletePlaySaveSlot,
@@ -210,6 +210,7 @@ export function PlayPage() {
   const [savePanelOpen, setSavePanelOpen] = useState(false);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const qaScenarioLoadedRef = useRef(false);
 
   // Load saved deck data
   useEffect(() => {
@@ -248,6 +249,79 @@ export function PlayPage() {
       setSaveError('Could not load browser save slots.');
     });
   }, []);
+
+  useEffect(() => {
+    if (!import.meta.env.DEV || qaScenarioLoadedRef.current || typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('qa') !== 'sisay-activation') return;
+
+    let cancelled = false;
+    import('../lib/qaGameScenarios')
+      .then(({ createSisayActivationQaState }) => {
+        if (cancelled || qaScenarioLoadedRef.current) return;
+        const now = Date.now();
+        const snapshot: ShelectorGameSaveSnapshot = {
+          version: 1,
+          savedAt: now,
+          engine: createSisayActivationQaState(),
+          humanDeck: null,
+          aiDecks: [],
+          humanCommander: 'Sisay, Weatherlight Captain',
+          aiCommanderNames: { 'ai-1': 'QA Opponent' },
+          humanId: 'human',
+          aiIds: ['ai-1'],
+          opponentInfo: null,
+          chatMessages: [],
+          gameLog: [],
+          authorityUpdates: [],
+          engineEventLog: [],
+          engineEventLogSeeds: {},
+          engineEventLogInitialState: null,
+          lastStateUpdate: null,
+          currentPrompt: null,
+          lastPlayedCard: null,
+          mulliganPhase: false,
+          mulliganCount: 0,
+          selectedMulliganCardIds: [],
+          selectedMulliganBottomIds: [],
+          discardPhase: false,
+          discardCount: 0,
+          tutorPhase: false,
+          tutorCards: [],
+          tutorTitle: '',
+          libraryChoice: null,
+          optionalTriggerChoice: null,
+          taxPaymentChoice: null,
+          wardPaymentChoice: null,
+          damageAssignmentChoice: null,
+          triggerOrderChoice: null,
+          undosRemaining: 10,
+          coachMode: false,
+          newPlayerMode: false,
+          holdPriority: false,
+          priorityStops,
+          actionError: null,
+          lastEvents: [],
+          endGame: { open: false, kind: 'loss' },
+        };
+        if (restoreGameSave(snapshot)) {
+          qaScenarioLoadedRef.current = true;
+          setImportResult(null);
+          setSelectedPracticePresetId(null);
+          setStep('game');
+          setSavePanelOpen(false);
+          setSaveStatus('Loaded Sisay activation QA scenario.');
+          setSaveError(null);
+        }
+      })
+      .catch(error => {
+        setSaveError(error instanceof Error ? error.message : 'Could not load QA scenario.');
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [priorityStops, restoreGameSave]);
 
   const resolvePracticeMetadata = () => {
     const preset = PRESET_DECKS.find(deck => deck.id === selectedPracticePresetId);
@@ -343,7 +417,23 @@ export function PlayPage() {
 
   const loadSaveSlot = async (record: PlaySaveSlotRecord) => {
     setSaveError(null);
-    const restored = restoreGameSave(record.snapshot as ShelectorGameSaveSnapshot);
+    const snapshot = record.snapshot as ShelectorGameSaveSnapshot;
+    const audit = auditPlaySaveSnapshot(snapshot);
+    const canonicalAudit = record.canonicalEngineSave ? auditCanonicalPlayEngineSave(record.canonicalEngineSave) : null;
+    if (canonicalAudit && !canonicalAudit.ok) {
+      setSaveError(`Slot ${record.slot} engine save is not authoritative: ${canonicalAudit.message}`);
+      return;
+    }
+    if (!canonicalAudit && audit.status === 'failed') {
+      setSaveError(`Slot ${record.slot} replay audit failed. Open Admin Console for event-level diagnostics or overwrite this slot.`);
+      return;
+    }
+
+    const canonicalEngine = record.canonicalEngineSave ? restoreCanonicalPlayEngineState(record.canonicalEngineSave) : null;
+    const snapshotToRestore: ShelectorGameSaveSnapshot = canonicalEngine
+      ? { ...snapshot, engine: canonicalEngine }
+      : snapshot;
+    const restored = restoreGameSave(snapshotToRestore);
     if (!restored) {
       setSaveError('That save could not be restored.');
       return;
@@ -516,6 +606,12 @@ export function PlayPage() {
           const audit = record ? auditPlaySaveSnapshot(record.snapshot) : null;
           const canonicalAudit = record?.canonicalEngineSave ? auditCanonicalPlayEngineSave(record.canonicalEngineSave) : null;
           const checkpointSequence = record ? latestCheckpointSequence(record) : null;
+          const loadBlocked = Boolean(
+            record && (
+              (canonicalAudit && !canonicalAudit.ok)
+              || (!canonicalAudit && audit?.status === 'failed')
+            ),
+          );
           return (
             <div
               key={slot}
@@ -550,9 +646,9 @@ export function PlayPage() {
                         <span className={`inline-flex rounded border px-1.5 py-0.5 text-[11px] font-black uppercase tracking-wide ${
                           audit.ok
                             ? 'border-emerald-500/40 bg-emerald-950/30 text-emerald-200'
-                            : 'border-red-500/40 bg-red-950/30 text-red-200'
+                            : 'border-amber-500/40 bg-amber-950/30 text-amber-100'
                         }`}>
-                          {audit.message}
+                          {audit.ok ? audit.message : 'Replay audit needs admin review'}
                         </span>
                       )}
                       {canonicalAudit && (
@@ -587,7 +683,9 @@ export function PlayPage() {
                   <button
                     type="button"
                     onClick={() => loadSaveSlot(record)}
-                    className="flex min-h-8 items-center gap-1 rounded border border-blue-500/40 px-2 text-xs font-bold text-blue-100 hover:bg-blue-950/40"
+                    disabled={loadBlocked}
+                    title={loadBlocked ? 'This save needs admin review before loading.' : undefined}
+                    className="flex min-h-8 items-center gap-1 rounded border border-blue-500/40 px-2 text-xs font-bold text-blue-100 hover:bg-blue-950/40 disabled:cursor-not-allowed disabled:border-stone-700 disabled:text-stone-500 disabled:hover:bg-transparent"
                   >
                     <FolderOpen className="h-3.5 w-3.5" />
                     Load

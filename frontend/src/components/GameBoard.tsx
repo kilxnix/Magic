@@ -205,6 +205,8 @@ export function summarizeStateUpdate(
   const actionRejected = update.rulesEvents.find(event => event.kind === 'ActionRejected');
   const promptAccepted = update.rulesEvents.find(event => event.kind === 'PromptResponseAccepted');
   const promptRejected = update.rulesEvents.find(event => event.kind === 'PromptResponseRejected');
+  const hasRulesEvent = accepted || actionRejected || promptAccepted || promptRejected;
+  const hasVisibleDiff = update.visibleDiffs.length > 0;
   const label = accepted?.kind === 'ActionAccepted'
     ? accepted.label || accepted.actionKind
     : actionRejected?.kind === 'ActionRejected'
@@ -213,6 +215,8 @@ export function summarizeStateUpdate(
     ? `Rejected ${promptRejected.promptKind}`
     : promptAccepted?.kind === 'PromptResponseAccepted'
     ? `${promptAccepted.promptKind} choice accepted`
+    : !hasRulesEvent && !hasVisibleDiff && update.prompt?.title
+    ? 'Prompt updated'
     : 'Engine update';
   const dice = update.rulesEvents
     .filter(event => event.kind === 'DiceRolled')
@@ -2612,6 +2616,12 @@ export function GameBoard({
     if (gameState.gameOver) return 'The match is complete.';
     if (card.ownerId !== gameState.humanPlayer.id) {
       return 'Opponent cards are inspectable. You can interact with them only when the engine exposes a legal target or response action.';
+    }
+    if (
+      currentPrompt?.type === 'declare-blockers'
+      && currentPrompt.playerId === gameState.humanPlayer.id
+    ) {
+      return 'Blockers are being declared now. Use a legal block action, or use No blocks if this creature cannot block.';
     }
     if (!isHumanTurn) {
       const priorityName = gameState.priorityPlayerId === gameState.humanPlayer.id ? 'you' : 'another player';

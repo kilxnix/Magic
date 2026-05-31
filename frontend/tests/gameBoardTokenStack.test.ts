@@ -105,4 +105,34 @@ describe('summarizeStateUpdate', () => {
     expect(text).toContain('ChooseReplacement choice accepted');
     expect(text).not.toContain('no visible board change');
   });
+
+  it('labels prompt-only refreshes without implying a board action happened', () => {
+    const text = summarizeStateUpdate(update({
+      prompt: {
+        id: 'prompt',
+        type: 'declare-blockers',
+        playerId: 'p1',
+        title: 'Choose blockers',
+        guidance: 'Choose blockers now, or declare no blockers before combat damage.',
+        phase: 'combat',
+        step: 'declare_blockers',
+        stackSize: 0,
+        priority: {
+          activePlayerId: 'p2',
+          priorityPlayerId: 'p2',
+          passedPriorityPlayerIds: [],
+          stackSize: 0,
+        },
+        legalChoices: [],
+        legalChoiceSummary: [],
+        canCancel: true,
+        canSubmit: false,
+      },
+    }));
+
+    expect(text).toContain('Prompt updated');
+    expect(text).toContain('Choose blockers');
+    expect(text).not.toContain('Engine update');
+    expect(text).not.toContain('no visible board change');
+  });
 });

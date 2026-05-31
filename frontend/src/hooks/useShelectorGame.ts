@@ -414,6 +414,10 @@ function buildVisibleActionPrompt(
   };
 }
 
+function hasRequiredDeclareBlockersAction(actions: AIAction[]): boolean {
+  return actions.some(action => action.kind === 'DeclareBlockers');
+}
+
 function cloneEngineEventLogRecord(record: EngineEventLogRecord): EngineEventLogRecord {
   if (typeof structuredClone === 'function') {
     return structuredClone(record);
@@ -3322,7 +3326,7 @@ export function useShelectorGame() {
       setCurrentPrompt(buildVisibleActionPrompt(engine, humanIdRef.current, visibleActions));
     } else {
       setLegalActions([]);
-      setCurrentPrompt(buildActionPrompt(engine, simple.priorityPlayerId) || null);
+      setCurrentPrompt(buildActionPrompt(engine) || null);
     }
   }, []);
 
@@ -4550,10 +4554,7 @@ export function useShelectorGame() {
               for (const defenderId of defenders) {
                 const blockActions = getLegalActions(state, defenderId);
                 if (defenderId === humanIdRef.current) {
-                  const hasBlocks = blockActions.some(
-                    a => a.kind === 'DeclareBlockers' && a.blocks.length > 0,
-                  );
-                  if (hasBlocks) {
+                  if (hasRequiredDeclareBlockersAction(blockActions)) {
                     pauseForHumanBlockers = true;
                     break;
                   }
