@@ -46,6 +46,8 @@ import type { AIAction } from './ai/types';
 import type { CardFilter } from './effects/ast';
 import type { TargetSpec } from './effects/targets';
 import { getEffectivePower, registerContinuousEffect } from './effects/continuous';
+import { getLegalActions } from './ai/legal-actions';
+import { populateParsedCache } from './cards/card-parser-cache';
 
 function def(
   id: string,
@@ -2525,7 +2527,7 @@ describe('authority action boundary', () => {
         playerId: 'p2',
         actionKind: 'PassPriority',
         reason: 'illegal_action',
-        message: 'That action is not legal in the current game state.',
+        message: 'You do not have priority',
       },
     ]);
   });
@@ -3105,6 +3107,196 @@ describe('authority action boundary', () => {
     expect(response.ok).toBe(true);
     expect(response.state?.cards.get(forest.instanceId)?.zone).toBe('battlefield');
     expect(response.state?.cards.get(forest.instanceId)?.tapped).toBe(true);
+  });
+
+  it('covers the 2026-05-31 Sisay/Mahadi authority regression end to end', () => {
+    const sisay: CardDefinition = {
+      ...def(
+        'sisay_current_check',
+        'Sisay, Weatherlight Captain',
+        'Legendary Creature - Human Soldier',
+        '{2}{W}',
+        "Sisay, Weatherlight Captain gets +1/+1 for each color among other legendary permanents you control.\n{W}{U}{B}{R}{G}, {T}: Search your library for a legendary permanent card with mana value less than Sisay, Weatherlight Captain's power, put that card onto the battlefield, then shuffle.",
+      ),
+      cmc: 3,
+      colors: ['W'],
+      color_identity: ['W', 'U', 'B', 'R', 'G'],
+      power: 2,
+      toughness: 2,
+    };
+    const mahadi = populateParsedCache({
+      ...def(
+        'mahadi_current_check',
+        'Mahadi, Emporium Master',
+        'Legendary Creature - Devil',
+        '{1}{B}{R}',
+        'At the beginning of your end step, create a Treasure token for each creature that died this turn. (It\'s an artifact with "{T}, Sacrifice this token: Add one mana of any color.")',
+      ),
+      cmc: 3,
+      colors: ['B', 'R'],
+      color_identity: ['B', 'R'],
+      power: 3,
+      toughness: 3,
+    });
+    const yoshimaru: CardDefinition = {
+      ...def('yoshimaru_current_check', 'Yoshimaru, Ever Faithful', 'Legendary Creature - Dog', '{W}'),
+      cmc: 1,
+      colors: ['W'],
+      power: 1,
+      toughness: 1,
+    };
+    const arcaneSignet = {
+      ...populateParsedCache({
+        ...def('arcane_signet_current_check', 'Arcane Signet', 'Artifact', '{2}', "{T}: Add one mana of any color in your commander's color identity."),
+        cmc: 2,
+      }),
+      colors: [],
+    };
+    const counterspell: CardDefinition = {
+      ...def('counterspell_current_check', 'Counterspell', 'Instant', '{U}{U}'),
+      cmc: 2,
+      colors: ['U'],
+    };
+    const akromasMemorial: CardDefinition = {
+      ...def('akromas_memorial_current_check', "Akroma's Memorial", 'Legendary Artifact', '{7}'),
+      cmc: 7,
+    };
+    const bloodCrypt: CardDefinition = {
+      ...def('blood_crypt_current_check', 'Blood Crypt', 'Land - Swamp Mountain'),
+      cmc: 0,
+    };
+
+    let state: GameState = {
+      ...stateWithSisaySearchChoices(),
+      cards: new Map<string, CardInstance>([
+        ['sisay_current_check_1', cardInstance('sisay_current_check_1', sisay.id, 'p1', 'battlefield')],
+        ['mahadi_current_check_1', cardInstance('mahadi_current_check_1', mahadi.id, 'p1', 'battlefield')],
+        ['yoshimaru_current_check_1', cardInstance('yoshimaru_current_check_1', yoshimaru.id, 'p1', 'library')],
+        ['arcane_signet_current_check_1', cardInstance('arcane_signet_current_check_1', arcaneSignet.id, 'p1', 'library')],
+        ['counterspell_current_check_1', cardInstance('counterspell_current_check_1', counterspell.id, 'p1', 'library')],
+        ['akromas_memorial_current_check_1', cardInstance('akromas_memorial_current_check_1', akromasMemorial.id, 'p1', 'library')],
+        ['blood_crypt_current_check_1', cardInstance('blood_crypt_current_check_1', bloodCrypt.id, 'p1', 'library')],
+      ]),
+      cardDefinitions: new Map<string, CardDefinition>([
+        [sisay.id, sisay],
+        [mahadi.id, mahadi],
+        [yoshimaru.id, yoshimaru],
+        [arcaneSignet.id, arcaneSignet],
+        [counterspell.id, counterspell],
+        [akromasMemorial.id, akromasMemorial],
+        [bloodCrypt.id, bloodCrypt],
+      ]),
+      phase: 'precombat_main',
+      step: 'main',
+      priorityPlayerIndex: 0,
+      activePlayerIndex: 0,
+      hasPriorityPassed: [false, false],
+      stack: [],
+    };
+
+    state = registerContinuousEffect(state, 'sisay_current_check_1', 'p1', {
+      kind: 'StaticAbility',
+      modifier: {
+        kind: 'ModifyPTByUniqueColorsAmongOtherLegendaryPermanentsYouControl',
+        powerPerColor: 1,
+        toughnessPerColor: 1,
+      },
+      filter: {},
+      controller: 'any',
+      excludeSelf: false,
+      selfOnly: true,
+    });
+
+    expect(getEffectivePower(state, 'sisay_current_check_1')).toBe(4);
+    expect(getLegalActions(state, 'p1').filter(action =>
+      action.kind === 'ActivateManaAbility' && action.cardInstanceId === 'mahadi_current_check_1',
+    )).toEqual([]);
+    expect(getLegalActions(state, 'p1').some(action =>
+      action.kind === 'ActivateAbility' && action.cardInstanceId === 'sisay_current_check_1',
+    )).toBe(false);
+
+    const forgedMahadiMana = applyClientActionRequest(state, createClientActionRequest(state, 'p1', {
+      kind: 'ActivateManaAbility',
+      cardInstanceId: 'mahadi_current_check_1',
+      color: 'W',
+    }, {
+      id: 'req-current-check-mahadi-mana',
+      createdAt: 200,
+    }));
+    expect(forgedMahadiMana.ok).toBe(false);
+    expect(forgedMahadiMana.message).toBe('Card has no mana ability');
+
+    const forgedSisayActivation = applyClientActionRequest(state, createClientActionRequest(state, 'p1', {
+      kind: 'ActivateAbility',
+      cardInstanceId: 'sisay_current_check_1',
+      abilityIndex: 0,
+      targets: [],
+    }, {
+      id: 'req-current-check-sisay-no-mana',
+      createdAt: 201,
+    }));
+    expect(forgedSisayActivation.ok).toBe(false);
+    expect(forgedSisayActivation.message).toBe('Cannot pay mana cost');
+
+    state = {
+      ...state,
+      players: state.players.map(player => player.id === 'p1'
+        ? { ...player, manaPool: { W: 1, U: 1, B: 1, R: 1, G: 1, C: 0 } }
+        : player),
+    };
+
+    const sisayActivation = getLegalActions(state, 'p1').find((action): action is Extract<AIAction, { kind: 'ActivateAbility' }> =>
+      action.kind === 'ActivateAbility' && action.cardInstanceId === 'sisay_current_check_1',
+    );
+    expect(sisayActivation).toBeDefined();
+
+    const activated = applyClientActionRequest(state, createClientActionRequest(state, 'p1', sisayActivation!, {
+      id: 'req-current-check-sisay-activate',
+      createdAt: 202,
+    }));
+    expect(activated.ok).toBe(true);
+    expect(activated.state?.cards.get('sisay_current_check_1')?.tapped).toBe(true);
+    expect(activated.state?.players.find(player => player.id === 'p1')?.manaPool)
+      .toEqual({ W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 });
+    expect(activated.state?.stack.at(-1)?.kind).toBe('ActivatedAbility');
+
+    const priorityComplete: GameState = {
+      ...activated.state!,
+      hasPriorityPassed: [true, true],
+    };
+    const prompt = resolveTopStackSearchPrompt(priorityComplete, {
+      playerId: 'p1',
+      createdAt: 203,
+    });
+
+    expect(prompt.ok).toBe(true);
+    if (!prompt.ok) return;
+    expect(prompt.state.stack).toHaveLength(0);
+    expect(prompt.request.legalChoices.map(choice => choice.cardName)).toEqual(['Yoshimaru, Ever Faithful']);
+    expect(prompt.request.invalidChoices).toEqual(expect.arrayContaining([
+      expect.objectContaining({ cardName: 'Arcane Signet', reason: 'Not Legendary' }),
+      expect.objectContaining({ cardName: 'Counterspell', reason: 'Not a permanent card' }),
+      expect.objectContaining({ cardName: "Akroma's Memorial", reason: 'Mana value 7 is not less than source power 4' }),
+      expect.objectContaining({ cardName: 'Blood Crypt', reason: 'Not Legendary' }),
+    ]));
+
+    const illegalSelection = applySearchLibraryPromptResponse(prompt.state, prompt.request, {
+      requestId: prompt.request.id,
+      kind: 'SearchLibrary',
+      playerId: 'p1',
+      selectedCardInstanceIds: ['arcane_signet_current_check_1'],
+    });
+    expect(illegalSelection.ok).toBe(false);
+    expect(illegalSelection.message).toBe('Illegal search selection: Not Legendary');
+
+    const legalSelection = applySearchLibraryPromptResponse(prompt.state, prompt.request, {
+      requestId: prompt.request.id,
+      kind: 'SearchLibrary',
+      playerId: 'p1',
+      selectedCardInstanceIds: ['yoshimaru_current_check_1'],
+    });
+    expect(legalSelection.ok).toBe(true);
+    expect(legalSelection.state?.cards.get('yoshimaru_current_check_1')?.zone).toBe('battlefield');
   });
 
   it('does not create a stack search prompt while priority is still pending', () => {

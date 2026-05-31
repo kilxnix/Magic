@@ -1362,6 +1362,18 @@ function illegalActionMessage(state: GameState, playerId: string, action: AIActi
       ? 'That land play is not available from the current prompt.'
       : legality.reason;
   }
+  if (
+    action.kind === 'ActivateManaAbility'
+    || action.kind === 'CastSpell'
+    || action.kind === 'ActivateAbility'
+    || action.kind === 'DeclareAttackers'
+    || action.kind === 'DeclareBlockers'
+    || action.kind === 'Equip'
+    || action.kind === 'PassPriority'
+  ) {
+    const result = dispatchAIAction(state, playerId, action);
+    return result.ok ? 'That action is not available from the current engine prompt.' : result.message;
+  }
   if (action.kind === 'ManualUntapManaSource') {
     const result = dispatchAIAction(state, playerId, action);
     return result.ok ? 'That mana correction is not available now.' : result.message;
@@ -5341,6 +5353,37 @@ export function applyClientActionRequest(
           playerId: request.playerId,
           actionKind: request.action.kind,
           reason: 'invariant_violation',
+          message,
+        }],
+        prompt: buildActionPrompt(state),
+      },
+    };
+  }
+
+  const resultStateId = stateFingerprint(result.state);
+  if (resultStateId === currentStateId) {
+    const message = 'Action resolved without changing authoritative state. The engine rejected it as a no-op instead of committing a silent update.';
+    return {
+      requestId: request.id,
+      ok: false,
+      reason: 'internal_error',
+      message,
+      update: {
+        oldStateId: currentStateId,
+        newStateId: currentStateId,
+        activePlayerId: activePlayerId(state),
+        priorityPlayerId: priorityPlayerId(state),
+        phase: state.phase,
+        step: state.step,
+        turnNumber: state.turnNumber,
+        priority: prioritySnapshot(state),
+        visibleDiffs: [],
+        rulesEvents: [{
+          kind: 'ActionRejected',
+          requestId: request.id,
+          playerId: request.playerId,
+          actionKind: request.action.kind,
+          reason: 'internal_error',
           message,
         }],
         prompt: buildActionPrompt(state),
