@@ -1,3 +1,5 @@
+import type { PlayCanonicalEngineSave } from './playCanonicalSave';
+
 export interface PlayPracticeMetadata {
   presetId?: string;
   archetype: string;
@@ -25,6 +27,7 @@ export interface PlaySaveSlotRecord {
   autosaved: boolean;
   practice?: PlayPracticeMetadata;
   audit?: PlaySaveAuditMetadata;
+  canonicalEngineSave?: PlayCanonicalEngineSave;
   snapshot: unknown;
   ui: {
     step: 'import' | 'opponent' | 'draft' | 'standard' | 'game';
@@ -98,7 +101,11 @@ function readFallback(): PlaySaveSlotRecord[] {
 }
 
 function writeFallback(records: PlaySaveSlotRecord[]): void {
-  window.localStorage.setItem(LOCAL_FALLBACK_KEY, JSON.stringify(records));
+  try {
+    window.localStorage?.setItem(LOCAL_FALLBACK_KEY, JSON.stringify(records));
+  } catch {
+    // Save slots require IndexedDB or localStorage; callers surface save errors.
+  }
 }
 
 export async function getPlaySaveSlots(): Promise<(PlaySaveSlotRecord | null)[]> {

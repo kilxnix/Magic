@@ -36,7 +36,11 @@ export function getAdConsent(): AdConsent | null {
 }
 
 export function setAdConsent(value: AdConsent) {
-  localStorage.setItem(AD_CONSENT_STORAGE_KEY, value);
+  try {
+    localStorage?.setItem(AD_CONSENT_STORAGE_KEY, value);
+  } catch {
+    // Consent storage can be unavailable in privacy-hardened contexts.
+  }
   window.dispatchEvent(new CustomEvent('magicbrains-ad-consent', { detail: value }));
 }
 

@@ -45,6 +45,12 @@ export {
 
 export type { StorageAdapter } from './manager';
 
+export {
+  BrowserLocalStorageAdapter,
+} from './local-storage';
+
+export type { KeyValueStorageLike } from './local-storage';
+
 // Migration
 export {
   needsMigration,

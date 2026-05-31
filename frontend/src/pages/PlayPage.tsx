@@ -20,6 +20,7 @@ import {
   type BeginnerDeck,
 } from '../lib/beginnerDecks';
 import { auditPlaySaveSnapshot } from '../lib/playSaveAudit';
+import { auditCanonicalPlayEngineSave, buildCanonicalPlayEngineSave } from '../lib/playCanonicalSave';
 import { findUnsupportedEngineCards, formatUnsupportedEngineCards } from '../lib/enginePreflight';
 import {
   deletePlaySaveSlot,
@@ -275,39 +276,51 @@ export function PlayPage() {
     return undefined;
   };
 
-  const buildSaveRecord = (slot: number, snapshot: ShelectorGameSaveSnapshot, autosaved: boolean): PlaySaveSlotRecord => ({
-    slot,
-    name: `Slot ${slot}`,
-    commander: gameState?.humanCommander || importResult?.commander || snapshot.humanCommander || 'Practice Game',
-    turnNumber: gameState?.turnNumber || 1,
-    phase: gameState?.phase || 'setup',
-    savedAt: Date.now(),
-    autosaved,
-    practice: resolvePracticeMetadata(),
-    audit: {
-      schema: 'engine-event-log-v1',
-      engineEventCount: engineEventLog.length,
-      hasInitialState: Boolean(engineEventLogInitialState),
-      seedCount: Object.keys(engineEventLogSeeds || {}).length,
-      updatedAt: Date.now(),
-    },
-    snapshot,
-    ui: {
-      step,
-      importTab,
-      deckUrl,
-      deckText,
-      importResult,
-      standardDeckText,
-      opponentCount,
-      spawnMode,
-      spawnBracket,
-      colorFilter,
-      personality,
-      spawnedOpponents,
-      selectedPracticePresetId,
-    },
-  });
+  const buildSaveRecord = (slot: number, snapshot: ShelectorGameSaveSnapshot, autosaved: boolean): PlaySaveSlotRecord => {
+    const savedAt = Date.now();
+    const commander = gameState?.humanCommander || importResult?.commander || snapshot.humanCommander || 'Practice Game';
+
+    return {
+      slot,
+      name: `Slot ${slot}`,
+      commander,
+      turnNumber: gameState?.turnNumber || 1,
+      phase: gameState?.phase || 'setup',
+      savedAt,
+      autosaved,
+      practice: resolvePracticeMetadata(),
+      audit: {
+        schema: 'engine-event-log-v1',
+        engineEventCount: engineEventLog.length,
+        hasInitialState: Boolean(engineEventLogInitialState),
+        seedCount: Object.keys(engineEventLogSeeds || {}).length,
+        updatedAt: savedAt,
+      },
+      canonicalEngineSave: buildCanonicalPlayEngineSave({
+        slot,
+        name: `${commander} - Slot ${slot}`,
+        humanPlayerId: snapshot.humanId || 'human',
+        serializedState: snapshot.engine,
+        createdAt: savedAt,
+      }),
+      snapshot,
+      ui: {
+        step,
+        importTab,
+        deckUrl,
+        deckText,
+        importResult,
+        standardDeckText,
+        opponentCount,
+        spawnMode,
+        spawnBracket,
+        colorFilter,
+        personality,
+        spawnedOpponents,
+        selectedPracticePresetId,
+      },
+    };
+  };
 
   const saveCurrentGame = async (slot = activeSaveSlot, autosaved = false) => {
     const snapshot = exportGameSave();
@@ -352,6 +365,95 @@ export function PlayPage() {
     setShowReview(false);
     setSavePanelOpen(false);
     setSaveStatus(`Loaded slot ${record.slot}.`);
+  };
+
+  const latestCheckpointSequence = (record: PlaySaveSlotRecord): number | null => {
+    const snapshot = record.snapshot as Partial<ShelectorGameSaveSnapshot>;
+    const seeds = snapshot.engineEventLogSeeds || {};
+    const sequences = Object.keys(seeds)
+      .map(key => Number(key))
+      .filter(sequence => Number.isFinite(sequence));
+    return sequences.length > 0 ? Math.max(...sequences) : null;
+  };
+
+  const loadLatestCheckpoint = async (record: PlaySaveSlotRecord) => {
+    setSaveError(null);
+    const snapshot = record.snapshot as ShelectorGameSaveSnapshot;
+    const sequence = latestCheckpointSequence(record);
+    const seed = sequence === null ? null : snapshot.engineEventLogSeeds?.[sequence];
+    if (sequence === null || !seed) {
+      setSaveError('That save does not have a drill checkpoint yet.');
+      return;
+    }
+
+    const checkpointRecord = snapshot.engineEventLog?.find(entry => entry.sequence === sequence);
+    const cutoff = checkpointRecord?.timestamp;
+    const checkpointSnapshot: ShelectorGameSaveSnapshot = {
+      ...snapshot,
+      savedAt: Date.now(),
+      engine: seed,
+      gameLog: typeof cutoff === 'number'
+        ? snapshot.gameLog.filter(entry => entry.timestamp < cutoff)
+        : snapshot.gameLog,
+      authorityUpdates: [],
+      engineEventLog: [],
+      engineEventLogSeeds: {},
+      engineEventLogInitialState: seed,
+      lastStateUpdate: null,
+      currentPrompt: null,
+      lastPlayedCard: null,
+      tutorPhase: false,
+      tutorCards: [],
+      tutorTitle: '',
+      tutorPromptRequest: null,
+      tutorRemaining: 0,
+      tutorFilter: undefined,
+      tutorFilterSpec: undefined,
+      tutorTapped: false,
+      tutorShuffle: true,
+      tutorDestination: 'hand',
+      tutorSourceName: 'Checkpoint',
+      tutorSourceInstanceId: undefined,
+      pendingSearchEntryChoice: null,
+      pendingTargetChoice: null,
+      libraryChoice: null,
+      libraryManipulationPromptRequest: null,
+      optionalTriggerChoice: null,
+      taxPaymentChoice: null,
+      wardPaymentChoice: null,
+      damageAssignmentChoice: null,
+      triggerOrderChoice: null,
+      discardPhase: false,
+      discardCount: 0,
+      selectedMulliganCardIds: [],
+      selectedMulliganBottomIds: [],
+      actionError: null,
+      lastEvents: [],
+    };
+
+    const restored = restoreGameSave(checkpointSnapshot);
+    if (!restored) {
+      setSaveError(`Checkpoint ${sequence} could not be restored.`);
+      return;
+    }
+
+    setActiveSaveSlot(record.slot);
+    setImportTab(record.ui.importTab);
+    setDeckUrl(record.ui.deckUrl);
+    setDeckText(record.ui.deckText);
+    setImportResult(record.ui.importResult as DeckImportResult | null);
+    setStandardDeckText(record.ui.standardDeckText);
+    setOpponentCount(record.ui.opponentCount);
+    setSpawnMode(record.ui.spawnMode);
+    setSpawnBracket(record.ui.spawnBracket);
+    setColorFilter(record.ui.colorFilter);
+    setPersonality(record.ui.personality);
+    setSpawnedOpponents(record.ui.spawnedOpponents as SpawnedOpponent[]);
+    setSelectedPracticePresetId(record.ui.selectedPracticePresetId || record.practice?.presetId || null);
+    setStep('game');
+    setShowReview(false);
+    setSavePanelOpen(false);
+    setSaveStatus(`Loaded slot ${record.slot} at drill checkpoint ${sequence}.`);
   };
 
   const deleteSave = async (slot: number) => {
@@ -412,6 +514,8 @@ export function PlayPage() {
           const slot = index + 1;
           const active = activeSaveSlot === slot;
           const audit = record ? auditPlaySaveSnapshot(record.snapshot) : null;
+          const canonicalAudit = record ? auditCanonicalPlayEngineSave(record.canonicalEngineSave) : null;
+          const checkpointSequence = record ? latestCheckpointSequence(record) : null;
           return (
             <div
               key={slot}
@@ -440,15 +544,35 @@ export function PlayPage() {
                       {record.practice.focusTags.length > 0 ? ` - ${record.practice.focusTags.slice(0, 2).join(', ')}` : ''}
                     </span>
                   )}
-                  {audit && (
-                    <span className={`mt-1 inline-flex rounded border px-1.5 py-0.5 text-[11px] font-black uppercase tracking-wide ${
-                      audit.ok
-                        ? 'border-emerald-500/40 bg-emerald-950/30 text-emerald-200'
-                        : 'border-red-500/40 bg-red-950/30 text-red-200'
-                    }`}>
-                      {audit.message}
+                  {(audit || canonicalAudit) && (
+                    <span className="mt-1 flex flex-wrap gap-1">
+                      {audit && (
+                        <span className={`inline-flex rounded border px-1.5 py-0.5 text-[11px] font-black uppercase tracking-wide ${
+                          audit.ok
+                            ? 'border-emerald-500/40 bg-emerald-950/30 text-emerald-200'
+                            : 'border-red-500/40 bg-red-950/30 text-red-200'
+                        }`}>
+                          {audit.message}
+                        </span>
+                      )}
+                      {canonicalAudit && (
+                        <span className={`inline-flex rounded border px-1.5 py-0.5 text-[11px] font-black uppercase tracking-wide ${
+                          canonicalAudit.ok
+                            ? 'border-sky-500/40 bg-sky-950/30 text-sky-200'
+                            : 'border-red-500/40 bg-red-950/30 text-red-200'
+                        }`}>
+                          {canonicalAudit.ok ? 'Engine save OK' : canonicalAudit.message}
+                        </span>
+                      )}
                     </span>
                   )}
+                  {(canonicalAudit?.ok && canonicalAudit.fingerprint) || checkpointSequence !== null ? (
+                    <span className="mt-1 block text-[11px] text-stone-500">
+                      {canonicalAudit?.ok && canonicalAudit.fingerprint ? `State ${canonicalAudit.fingerprint.slice(0, 10)}` : ''}
+                      {canonicalAudit?.ok && canonicalAudit.fingerprint && checkpointSequence !== null ? ' / ' : ''}
+                      {checkpointSequence !== null ? `Drill checkpoint ${checkpointSequence}` : ''}
+                    </span>
+                  ) : null}
                 </button>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -467,6 +591,16 @@ export function PlayPage() {
                   >
                     <FolderOpen className="h-3.5 w-3.5" />
                     Load
+                  </button>
+                )}
+                {record && checkpointSequence !== null && (
+                  <button
+                    type="button"
+                    onClick={() => loadLatestCheckpoint(record)}
+                    className="flex min-h-8 items-center gap-1 rounded border border-sky-500/40 px-2 text-xs font-bold text-sky-100 hover:bg-sky-950/40"
+                  >
+                    <History className="h-3.5 w-3.5" />
+                    Drill Latest
                   </button>
                 )}
                 {step === 'game' && (

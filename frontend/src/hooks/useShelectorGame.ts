@@ -2596,26 +2596,42 @@ export function useShelectorGame() {
   const discardCountRef = useRef(0);
   const [newPlayerMode, setNewPlayerModeState] = useState(() => {
     if (typeof window === 'undefined') return false;
-    return window.localStorage.getItem('deckreps_new_player_mode') === '1';
+    try {
+      return window.localStorage?.getItem('deckreps_new_player_mode') === '1';
+    } catch {
+      return false;
+    }
   });
 
   const setNewPlayerMode = useCallback((on: boolean) => {
     setNewPlayerModeState(on);
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem('deckreps_new_player_mode', on ? '1' : '0');
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        window.localStorage.setItem('deckreps_new_player_mode', on ? '1' : '0');
+      }
+    } catch {
+      // Preferences are optional; gameplay must not depend on storage.
     }
   }, []);
   const [coachMode, setCoachMode] = useState(true); // On by default — this is a learning tool
   const [holdPriority, setHoldPriorityState] = useState(() => {
     if (typeof window === 'undefined') return false;
-    return window.localStorage.getItem('deckreps_hold_priority') === '1';
+    try {
+      return window.localStorage?.getItem('deckreps_hold_priority') === '1';
+    } catch {
+      return false;
+    }
   });
   const holdPriorityRef = useRef(holdPriority);
   const setHoldPriority = useCallback((on: boolean) => {
     holdPriorityRef.current = on;
     setHoldPriorityState(on);
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem('deckreps_hold_priority', on ? '1' : '0');
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        window.localStorage.setItem('deckreps_hold_priority', on ? '1' : '0');
+      }
+    } catch {
+      // Preferences are optional; gameplay must not depend on storage.
     }
   }, []);
 
@@ -2625,8 +2641,12 @@ export function useShelectorGame() {
     setPriorityStopsState(prev => {
       const next = { ...prev, [key]: on };
       priorityStopsRef.current = next;
-      if (typeof window !== 'undefined') {
-        window.localStorage.setItem('deckreps_priority_stops', JSON.stringify(next));
+      try {
+        if (typeof window !== 'undefined' && window.localStorage) {
+          window.localStorage.setItem('deckreps_priority_stops', JSON.stringify(next));
+        }
+      } catch {
+        // Preferences are optional; gameplay must not depend on storage.
       }
       return next;
     });
@@ -2637,8 +2657,12 @@ export function useShelectorGame() {
     ) as PriorityStops;
     priorityStopsRef.current = next;
     setPriorityStopsState(next);
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem('deckreps_priority_stops', JSON.stringify(next));
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        window.localStorage.setItem('deckreps_priority_stops', JSON.stringify(next));
+      }
+    } catch {
+      // Preferences are optional; gameplay must not depend on storage.
     }
   }, []);
 

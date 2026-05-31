@@ -4,18 +4,28 @@ import { isInteractiveGamePath, useCurrentPathname } from '../lib/pageSurfaces';
 
 const ALPHA_BANNER_DISMISSED_KEY = 'deckreps_alpha_banner_dismissed';
 
+function alphaBannerDismissed(): boolean {
+  try {
+    return typeof window !== 'undefined' && window.localStorage?.getItem(ALPHA_BANNER_DISMISSED_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
 export function AlphaBanner() {
   const pathname = useCurrentPathname();
-  const [dismissed, setDismissed] = useState(() => (
-    typeof window !== 'undefined' && window.localStorage.getItem(ALPHA_BANNER_DISMISSED_KEY) === '1'
-  ));
+  const [dismissed, setDismissed] = useState(alphaBannerDismissed);
 
   if (isInteractiveGamePath(pathname)) return null;
   if (dismissed) return null;
 
   const dismiss = () => {
     setDismissed(true);
-    window.localStorage.setItem(ALPHA_BANNER_DISMISSED_KEY, '1');
+    try {
+      window.localStorage?.setItem(ALPHA_BANNER_DISMISSED_KEY, '1');
+    } catch {
+      // Dismissal is cosmetic; storage may be unavailable in hardened browsers.
+    }
   };
 
   return (

@@ -30,6 +30,7 @@ import {
   type AdminRoomSummary,
 } from '../lib/admin';
 import { auditPlaySaveSnapshot } from '../lib/playSaveAudit';
+import { auditCanonicalPlayEngineSave } from '../lib/playCanonicalSave';
 import {
   getPlaySaveSlots,
   type PlaySaveSlotRecord,
@@ -54,6 +55,11 @@ function statusClass(status: string | undefined | null): string {
   if (status === 'closed' || status === 'complete') return 'border-stone-700 bg-stone-900 text-stone-300';
   if (status === 'running' || status === 'in_game' || status === 'playing') return 'border-emerald-500/40 bg-emerald-950/40 text-emerald-200';
   return 'border-amber-500/40 bg-amber-950/40 text-amber-200';
+}
+
+function practiceCheckpointCount(record: PlaySaveSlotRecord): number {
+  const snapshot = record.snapshot as { engineEventLogSeeds?: Record<number, unknown> } | null | undefined;
+  return Object.keys(snapshot?.engineEventLogSeeds || {}).length;
 }
 
 export function AdminConsolePage() {
@@ -296,6 +302,7 @@ export function AdminConsolePage() {
                 {practiceSaves.map((record, index) => {
                   const slot = index + 1;
                   const audit = record ? auditPlaySaveSnapshot(record.snapshot) : null;
+                  const canonicalAudit = record ? auditCanonicalPlayEngineSave(record.canonicalEngineSave) : null;
                   return (
                     <div key={slot} className="rounded-lg border border-stone-800 bg-neutral-950 p-3">
                       <div className="mb-2 flex items-start justify-between gap-2">
@@ -310,6 +317,15 @@ export function AdminConsolePage() {
                               : 'border-red-500/40 bg-red-950/30 text-red-200'
                           }`}>
                             {audit.message}
+                          </span>
+                        )}
+                        {canonicalAudit && (
+                          <span className={`rounded border px-1.5 py-0.5 text-[10px] font-black uppercase ${
+                            canonicalAudit.ok
+                              ? 'border-sky-500/40 bg-sky-950/30 text-sky-200'
+                              : 'border-red-500/40 bg-red-950/30 text-red-200'
+                          }`}>
+                            {canonicalAudit.ok ? 'Engine Save OK' : 'Engine Save Missing'}
                           </span>
                         )}
                       </div>
@@ -340,6 +356,24 @@ export function AdminConsolePage() {
                           {record.audit && (
                             <div className="mt-2 text-xs text-stone-500">
                               {record.audit.engineEventCount} replay events / {record.audit.seedCount} seeds
+                            </div>
+                          )}
+                          {practiceCheckpointCount(record) > 0 && (
+                            <div className="mt-1 text-xs text-stone-500">
+                              {practiceCheckpointCount(record)} drill checkpoints available
+                            </div>
+                          )}
+                          {canonicalAudit?.ok && canonicalAudit.fingerprint && (
+                            <div className="mt-2 rounded border border-sky-500/20 bg-sky-950/20 p-2 text-xs text-sky-100">
+                              Canonical engine state: {canonicalAudit.fingerprint.slice(0, 12)}
+                              <span className="mt-1 block text-stone-500">
+                                {record.canonicalEngineSave?.metadata.playerCount} players / turn {record.canonicalEngineSave?.metadata.turnNumber}
+                              </span>
+                            </div>
+                          )}
+                          {canonicalAudit && !canonicalAudit.ok && (
+                            <div className="mt-2 rounded border border-red-500/20 bg-red-950/20 p-2 text-xs text-red-100">
+                              {canonicalAudit.message}
                             </div>
                           )}
                         </>
