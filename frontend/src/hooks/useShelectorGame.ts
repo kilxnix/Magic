@@ -33,6 +33,8 @@ import {
   canPayUnrestrictedCost,
   isEffectiveCreature,
   isBlockedBySummoningSicknessForTap,
+  getEffectivePower,
+  getEffectiveToughness,
   type GameState,
   type GameStateWithAI,
   type CardInstance,
@@ -740,15 +742,19 @@ function apiCardFaceToScryfall(parent: ScryfallCard, face: NonNullable<CardDataF
 }
 
 /** Convert engine CardInstance + CardDefinition into a SimpleCard for the UI */
-function toSimpleCard(inst: CardInstance, def: CardDefinition): SimpleCard {
+export function toSimpleCard(inst: CardInstance, def: CardDefinition, engine?: GameState): SimpleCard {
+  const useEffectivePT = Boolean(engine && inst.zone === 'battlefield' && isEffectiveCreature(engine, inst.instanceId));
+  const power = useEffectivePT ? getEffectivePower(engine!, inst.instanceId) : def.power;
+  const toughness = useEffectivePT ? getEffectiveToughness(engine!, inst.instanceId) : def.toughness;
+
   return {
     instanceId: inst.instanceId,
     name: def.name,
     manaCost: def.mana_cost,
     typeLine: def.type_line,
     oracleText: def.oracle_text,
-    power: def.power,
-    toughness: def.toughness,
+    power,
+    toughness,
     tapped: inst.tapped,
     zone: inst.zone as SimpleCard['zone'],
     ownerId: inst.ownerId,
@@ -1517,7 +1523,7 @@ function mapCards(engine: GameState, zone: Zone, playerId: string): SimpleCard[]
   const instances = getCardsInZone(engine, playerId, zone);
   const cards = instances.map(inst => {
     const def = getCardDefinition(engine, inst);
-    return toSimpleCard(inst, def);
+    return toSimpleCard(inst, def, engine);
   });
 
   // Build attachment relationships for battlefield cards
@@ -2004,7 +2010,7 @@ function deriveSimpleState(
         const def = getCastSpellDefinition(engine, item.cardInstanceId, { faceName: item.faceName })
           || getCardDefinition(engine, inst);
         name = def?.name || '(unknown spell)';
-        if (def) card = toSimpleCard(inst, def);
+        if (def) card = toSimpleCard(inst, def, engine);
       }
       casterId = item.casterId;
     } else if (item.kind === 'TriggeredAbility') {
@@ -2012,7 +2018,7 @@ function deriveSimpleState(
       if (inst) {
         const def = getCardDefinition(engine, inst);
         name = `${def?.name || '?'} trigger`;
-        if (def) card = toSimpleCard(inst, def);
+        if (def) card = toSimpleCard(inst, def, engine);
       }
       casterId = item.controllerId;
     } else if (item.kind === 'ActivatedAbility') {
@@ -2020,7 +2026,7 @@ function deriveSimpleState(
       if (inst) {
         const def = getCardDefinition(engine, inst);
         name = `${def?.name || '?'} ability`;
-        if (def) card = toSimpleCard(inst, def);
+        if (def) card = toSimpleCard(inst, def, engine);
       }
       casterId = item.controllerId;
     }
@@ -2976,7 +2982,7 @@ export function useShelectorGame() {
     const def = getCardDefinition(state, inst);
 
     setLastPlayedCard({
-      card: toSimpleCard(inst, def),
+      card: toSimpleCard(inst, def, state),
       playerId,
       playerName: playerId === humanIdRef.current
         ? 'You'

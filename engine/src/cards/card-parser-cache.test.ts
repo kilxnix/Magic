@@ -77,6 +77,26 @@ describe('card-parser-cache — manaProduction', () => {
 
     expect(parsed.manaProduction?.colors).toEqual(['U', 'G']);
   });
+
+  it('does not turn parenthetical token reminder text into a source mana ability', () => {
+    const parsed = populateParsedCache(defFrom(
+      'Mahadi, Emporium Master',
+      'At the beginning of your end step, create a Treasure token for each creature that died this turn. (It\'s an artifact with "{T}, Sacrifice this token: Add one mana of any color.")',
+      'Legendary Creature - Devil',
+    ));
+
+    expect(parsed.manaProduction).toBeUndefined();
+  });
+
+  it('still parses real Treasure token mana text when it belongs to the token', () => {
+    const parsed = populateParsedCache(defFrom(
+      'Treasure',
+      '{T}, Sacrifice this token: Add one mana of any color.',
+      'Token Artifact - Treasure',
+    ));
+
+    expect(parsed.manaProduction?.colors).toEqual(['W', 'U', 'B', 'R', 'G']);
+  });
 });
 
 describe('card-parser-cache — searchAbility', () => {

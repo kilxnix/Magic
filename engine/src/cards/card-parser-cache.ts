@@ -25,16 +25,21 @@ import { typeLineHasSubtype } from '../type-line';
 export function populateParsedCache(def: CardDefinition): CardDefinition {
   const oracle = def.oracle_text.toLowerCase();
   const typeLine = def.type_line.toLowerCase();
+  const manaOracle = stripParentheticalReminderText(oracle);
 
   return {
     ...def,
     isEquipment: typeLineHasSubtype(def.type_line, 'equipment'),
     equipCost: parseEquipCost(oracle),
     equipmentBonus: parseEquipmentBonus(oracle),
-    manaProduction: parseManaProduction(oracle, typeLine),
+    manaProduction: parseManaProduction(manaOracle, typeLine),
     searchAbility: parseSearchAbility(oracle),
     unlessTax: parseUnlessTax(oracle),
   };
+}
+
+function stripParentheticalReminderText(text: string): string {
+  return text.replace(/\([^()]*\)/g, ' ');
 }
 
 // ========== Equipment ==========

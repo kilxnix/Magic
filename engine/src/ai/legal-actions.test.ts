@@ -8,6 +8,7 @@ import {
 import { GameState, CardDefinition, emptyManaPool, createPlayer, Phase, Step } from '../types';
 import { populateParsedCache } from '../cards/card-parser-cache';
 import { registerContinuousAbilitiesForPermanent } from '../stack';
+import { getEffectivePower, getEffectiveToughness } from '../effects/continuous';
 
 // Helper to create minimal game state
 function createTestState(overrides: Partial<GameState> = {}): GameState {
@@ -596,6 +597,64 @@ describe('getLegalActions', () => {
 
       expect(manaActions).toHaveLength(5);
       expect(manaActions.map(a => a.kind === 'ActivateManaAbility' ? a.color : null).sort()).toEqual(['B', 'G', 'R', 'U', 'W']);
+    });
+
+    it('does not expose Mahadi reminder text as a mana ability', () => {
+      const state = createTestState({ priorityPlayerIndex: 0 });
+
+      addCard(state, 'mahadi1', 'p1', 'battlefield', {
+        name: 'Mahadi, Emporium Master',
+        type_line: 'Legendary Creature - Devil',
+        oracle_text: 'At the beginning of your end step, create a Treasure token for each creature that died this turn. (It\'s an artifact with "{T}, Sacrifice this token: Add one mana of any color.")',
+        mana_cost: '{1}{B}{R}',
+        cmc: 3,
+        colors: ['B', 'R'],
+        color_identity: ['B', 'R'],
+        card_types: ['creature'],
+        power: 3,
+        toughness: 3,
+      });
+      state.cards.get('mahadi1')!.summoningSick = false;
+
+      const actions = getLegalActions(state, 'p1');
+      const mahadiManaActions = actions.filter(a =>
+        a.kind === 'ActivateManaAbility' && a.cardInstanceId === 'mahadi1');
+
+      expect(mahadiManaActions).toHaveLength(0);
+    });
+
+    it('applies Sisay dynamic power from other legendary permanent colors', () => {
+      let state = createTestState({ priorityPlayerIndex: 0 });
+
+      addCard(state, 'sisay1', 'p1', 'battlefield', {
+        name: 'Sisay, Weatherlight Captain',
+        type_line: 'Legendary Creature - Human Soldier',
+        oracle_text: 'Sisay, Weatherlight Captain gets +1/+1 for each color among other legendary permanents you control.\n{W}{U}{B}{R}{G}, {T}: Search your library for a legendary permanent card with mana value less than Sisay\'s power, put that card onto the battlefield, then shuffle.',
+        mana_cost: '{2}{W}',
+        cmc: 3,
+        colors: ['W'],
+        color_identity: ['W', 'U', 'B', 'R', 'G'],
+        card_types: ['creature'],
+        power: 2,
+        toughness: 2,
+      });
+      addCard(state, 'mahadi1', 'p1', 'battlefield', {
+        name: 'Mahadi, Emporium Master',
+        type_line: 'Legendary Creature - Devil',
+        oracle_text: 'At the beginning of your end step, create a Treasure token for each creature that died this turn. (It\'s an artifact with "{T}, Sacrifice this token: Add one mana of any color.")',
+        mana_cost: '{1}{B}{R}',
+        cmc: 3,
+        colors: ['B', 'R'],
+        color_identity: ['B', 'R'],
+        card_types: ['creature'],
+        power: 3,
+        toughness: 3,
+      });
+
+      state = registerContinuousAbilitiesForPermanent(state, 'sisay1');
+
+      expect(getEffectivePower(state, 'sisay1')).toBe(4);
+      expect(getEffectiveToughness(state, 'sisay1')).toBe(4);
     });
 
     it('does not generate tap mana actions for summoning-sick creatures', () => {
