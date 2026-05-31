@@ -174,6 +174,12 @@ class TestParseDecklist:
         result = parse_decklist(text)
         assert result["commander"] == "Atraxa, Praetors' Voice"
 
+    def test_commander_section_preserves_names_starting_with_x(self):
+        text = "Commander\n1 Xenagos, God of Revels\nDeck\n1 Sol Ring"
+        result = parse_decklist(text)
+        assert result["commander"] == "Xenagos, God of Revels"
+        assert "Sol Ring" in result["cards"]
+
     def test_just_card_names(self):
         text = "Sol Ring\nArcane Signet"
         result = parse_decklist(text)

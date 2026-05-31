@@ -815,7 +815,7 @@ def _parse_line(line: str) -> tuple:
     line = re.sub(r"^[*\-]\s*", "", line).strip()
 
     # Try "N Card Name", "Nx Card Name", or MTGO "N [SET:CN] Card Name".
-    m = re.match(r"^(\d+)\s*[xX]?\s*(?:\[[^\]]+\]\s*)?(.+)$", line)
+    m = re.match(r"^(\d+)(?:\s*[xX]\s+|\s+)(?:\[[^\]]+\]\s*)?(.+)$", line)
     if m:
         return int(m.group(1)), _strip_set_code(m.group(2).strip())
 
