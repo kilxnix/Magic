@@ -59,7 +59,15 @@ function statusClass(status: string | undefined | null): string {
 
 function practiceCheckpointCount(record: PlaySaveSlotRecord): number {
   const snapshot = record.snapshot as { engineEventLogSeeds?: Record<number, unknown> } | null | undefined;
-  return Object.keys(snapshot?.engineEventLogSeeds || {}).length + (record.drillBookmarks?.length || 0);
+  const bookmarkCount = record.drillBookmarks?.length || 0;
+  const attemptCount = record.drillBookmarks?.reduce((sum, bookmark) => sum + (bookmark.attempts?.length || 0), 0) || 0;
+  return Object.keys(snapshot?.engineEventLogSeeds || {}).length + bookmarkCount + attemptCount;
+}
+
+function latestDrillAttempt(record: PlaySaveSlotRecord) {
+  return record.drillBookmarks
+    ?.flatMap(bookmark => (bookmark.attempts || []).map(attempt => ({ bookmark, attempt })))
+    .sort((a, b) => b.attempt.savedAt - a.attempt.savedAt)[0];
 }
 
 export function AdminConsolePage() {
@@ -374,6 +382,14 @@ export function AdminConsolePage() {
                               {record.drillBookmarks[record.drillBookmarks.length - 1]?.note && (
                                 <span className="mt-1 block text-stone-400">
                                   {record.drillBookmarks[record.drillBookmarks.length - 1]?.note}
+                                </span>
+                              )}
+                              {latestDrillAttempt(record) && (
+                                <span className="mt-2 block rounded border border-sky-500/20 bg-sky-950/30 p-2 text-sky-100">
+                                  Latest attempt: {latestDrillAttempt(record)?.bookmark.label} / {latestDrillAttempt(record)?.attempt.label}
+                                  <span className="mt-1 block text-stone-400">
+                                    {latestDrillAttempt(record)?.attempt.summary}
+                                  </span>
                                 </span>
                               )}
                             </div>

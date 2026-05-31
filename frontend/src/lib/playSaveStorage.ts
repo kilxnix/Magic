@@ -36,6 +36,19 @@ export interface PlayDrillBookmark {
   source?: 'manual' | 'checkpoint';
   focusTags?: string[];
   note?: string;
+  attempts?: PlayDrillAttempt[];
+}
+
+export interface PlayDrillAttempt {
+  id: string;
+  label: string;
+  startedAt: number;
+  savedAt: number;
+  turnNumber: number;
+  phase: string;
+  step?: string;
+  summary: string;
+  engine: SerializedGameStateV1;
 }
 
 export interface PlaySaveSlotRecord {
@@ -104,6 +117,22 @@ function snapshotFromRecord(record: PlaySaveSlotRecord): SnapshotLike | null {
 
 function engineStateFromRecord(record: PlaySaveSlotRecord): SerializedGameStateV1 | null {
   return snapshotFromRecord(record)?.engine || null;
+}
+
+function stripAuthoritativeEnginePayload(record: PlaySaveSlotRecord): PlaySaveSlotRecord {
+  if (!record.canonicalManager) return record;
+  const snapshot = snapshotFromRecord(record);
+  if (!snapshot?.engine && !record.canonicalEngineSave) return record;
+
+  const snapshotCopy = { ...(record.snapshot as Record<string, unknown>) };
+  delete snapshotCopy.engine;
+
+  const next: PlaySaveSlotRecord = {
+    ...record,
+    snapshot: snapshotCopy,
+  };
+  delete next.canonicalEngineSave;
+  return next;
 }
 
 export async function persistCanonicalPlaySlot(record: PlaySaveSlotRecord): Promise<PlaySaveSlotRecord> {
@@ -216,7 +245,7 @@ export async function putPlaySaveSlot(record: PlaySaveSlotRecord): Promise<void>
   if (record.slot < 1 || record.slot > SLOT_COUNT) {
     throw new Error('Save slot must be between 1 and 4');
   }
-  const canonicalRecord = await persistCanonicalPlaySlot(record);
+  const canonicalRecord = stripAuthoritativeEnginePayload(await persistCanonicalPlaySlot(record));
   if (canUseIndexedDb()) {
     try {
       await withStore('readwrite', store => store.put(canonicalRecord) as IDBRequest<IDBValidKey>);

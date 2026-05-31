@@ -129,6 +129,10 @@ describe('play canonical saves', () => {
       const restored = await loadCanonicalPlaySlotState(3);
       expect(restored?.turnNumber).toBe(8);
       expect(restored?.players[0].name).toBe('Pilot');
+      const rawEnvelope = JSON.parse(fakeStorage.getItem('deckreps_play_save_slots_v1') || '[]') as PlaySaveSlotRecord[];
+      expect((rawEnvelope[0].snapshot as { engine?: unknown }).engine).toBeUndefined();
+      expect(rawEnvelope[0].canonicalEngineSave).toBeUndefined();
+      expect(rawEnvelope[0].canonicalManager?.slotId).toBe('play_slot_3');
 
       await deletePlaySaveSlot(3);
       expect(await loadCanonicalPlaySlotState(3)).toBeNull();

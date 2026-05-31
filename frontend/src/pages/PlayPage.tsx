@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, ClipboardPaste, Loader2, Swords, Link as LinkIcon, History, Trash2, Shield, Trophy, Users, Lightbulb, X, Save, FolderOpen, Database, BookmarkPlus, Rocket } from 'lucide-react';
 import { useShelectorGame, type ImportedCards, type ShelectorGameSaveSnapshot } from '../hooks/useShelectorGame';
@@ -20,16 +20,18 @@ import {
   type BeginnerDeck,
 } from '../lib/beginnerDecks';
 import { auditPlaySaveSnapshot } from '../lib/playSaveAudit';
-import { auditCanonicalPlayEngineSave, buildCanonicalPlayEngineSave, restoreCanonicalPlayEngineState } from '../lib/playCanonicalSave';
+import { auditCanonicalPlayEngineSave, restoreCanonicalPlayEngineState } from '../lib/playCanonicalSave';
 import { findUnsupportedEngineCards, formatUnsupportedEngineCards } from '../lib/enginePreflight';
 import {
   deletePlaySaveSlot,
   getPlaySaveSlots,
   loadCanonicalPlaySlotState,
   putPlaySaveSlot,
+  type PlayDrillAttempt,
   type PlayDrillBookmark,
   type PlaySaveSlotRecord,
 } from '../lib/playSaveStorage';
+import { buildPracticeBranchPreviews } from '../lib/practiceBranchPreview';
 
 interface DeckImportResult {
   commander: string | null;
@@ -208,10 +210,17 @@ export function PlayPage() {
   // Review modal
   const [showReview, setShowReview] = useState(false);
   const [saveSlots, setSaveSlots] = useState<(PlaySaveSlotRecord | null)[]>(() => Array.from({ length: SAVE_SLOT_COUNT }, () => null));
+  const saveSlotsRef = useRef(saveSlots);
   const [activeSaveSlot, setActiveSaveSlot] = useState(1);
   const [savePanelOpen, setSavePanelOpen] = useState(false);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [activeDrillRun, setActiveDrillRun] = useState<{
+    slot: number;
+    bookmarkId: string;
+    label: string;
+    startedAt: number;
+  } | null>(null);
   const qaScenarioLoadedRef = useRef(false);
 
   // Load saved deck data
@@ -243,7 +252,15 @@ export function PlayPage() {
 
   const refreshSaveSlots = async () => {
     const slots = await getPlaySaveSlots();
+    saveSlotsRef.current = slots;
     setSaveSlots(slots);
+  };
+
+  const applySaveSlotRecord = (record: PlaySaveSlotRecord | null, slot: number) => {
+    const next = [...saveSlotsRef.current];
+    next[slot - 1] = record;
+    saveSlotsRef.current = next;
+    setSaveSlots(next);
   };
 
   useEffect(() => {
@@ -356,7 +373,7 @@ export function PlayPage() {
     slot: number,
     snapshot: ShelectorGameSaveSnapshot,
     autosaved: boolean,
-    drillBookmarks = saveSlots[slot - 1]?.drillBookmarks || [],
+    drillBookmarks = saveSlotsRef.current[slot - 1]?.drillBookmarks || [],
   ): PlaySaveSlotRecord => {
     const savedAt = Date.now();
     const commander = gameState?.humanCommander || importResult?.commander || snapshot.humanCommander || 'Practice Game';
@@ -377,13 +394,6 @@ export function PlayPage() {
         seedCount: Object.keys(engineEventLogSeeds || {}).length,
         updatedAt: savedAt,
       },
-      canonicalEngineSave: buildCanonicalPlayEngineSave({
-        slot,
-        name: `${commander} - Slot ${slot}`,
-        humanPlayerId: snapshot.humanId || 'human',
-        serializedState: snapshot.engine,
-        createdAt: savedAt,
-      }),
       drillBookmarks,
       snapshot,
       ui: {
@@ -432,6 +442,7 @@ export function PlayPage() {
     try {
       const record = buildSaveRecord(slot, snapshot, autosaved);
       await putPlaySaveSlot(record);
+      applySaveSlotRecord(record, slot);
       await refreshSaveSlots();
       setSaveError(null);
       setSaveStatus(`${autosaved ? 'Autosaved' : 'Saved'} slot ${slot} at ${new Date(record.savedAt).toLocaleTimeString()}`);
@@ -445,28 +456,34 @@ export function PlayPage() {
   const loadSaveSlot = async (record: PlaySaveSlotRecord) => {
     setSaveError(null);
     const snapshot = record.snapshot as ShelectorGameSaveSnapshot;
-    const audit = auditPlaySaveSnapshot(snapshot);
     const canonicalAudit = record.canonicalEngineSave ? auditCanonicalPlayEngineSave(record.canonicalEngineSave) : null;
     if (canonicalAudit && !canonicalAudit.ok) {
       setSaveError(`Slot ${record.slot} engine save is not authoritative: ${canonicalAudit.message}`);
       return;
     }
-    if (!canonicalAudit && audit.status === 'failed') {
-      setSaveError(`Slot ${record.slot} replay audit failed. Open Admin Console for event-level diagnostics or overwrite this slot.`);
-      return;
-    }
-
     const managerEngine = await loadCanonicalPlaySlotState(record.slot);
     const canonicalEngine = managerEngine || (record.canonicalEngineSave ? restoreCanonicalPlayEngineState(record.canonicalEngineSave) : null);
     const snapshotToRestore: ShelectorGameSaveSnapshot = canonicalEngine
       ? { ...snapshot, engine: canonicalEngine }
       : snapshot;
+    if (!snapshotToRestore.engine) {
+      setSaveError(`Slot ${record.slot} is missing its authoritative engine save.`);
+      return;
+    }
+
+    const audit = auditPlaySaveSnapshot(snapshotToRestore);
+    if (!canonicalAudit && audit.status === 'failed') {
+      setSaveError(`Slot ${record.slot} replay audit failed. Open Admin Console for event-level diagnostics or overwrite this slot.`);
+      return;
+    }
+
     const restored = restoreGameSave(snapshotToRestore);
     if (!restored) {
       setSaveError('That save could not be restored.');
       return;
     }
     restoreSlotUi(record);
+    setActiveDrillRun(null);
     setSaveStatus(`Loaded slot ${record.slot}${managerEngine ? ' from canonical engine save' : ''}.`);
   };
 
@@ -541,6 +558,7 @@ export function PlayPage() {
     }
 
     restoreSlotUi(record);
+    setActiveDrillRun(null);
     setSaveStatus(`Loaded slot ${record.slot} at drill checkpoint ${sequence}.`);
   };
 
@@ -594,7 +612,139 @@ export function PlayPage() {
     }
 
     restoreSlotUi(record);
+    setActiveDrillRun({
+      slot: record.slot,
+      bookmarkId: bookmark.id,
+      label: bookmark.label,
+      startedAt: Date.now(),
+    });
     setSaveStatus(`Loaded drill bookmark "${bookmark.label}".`);
+  };
+
+  const loadDrillAttempt = async (record: PlaySaveSlotRecord, bookmark: PlayDrillBookmark, attempt: PlayDrillAttempt) => {
+    setSaveError(null);
+    const snapshot = record.snapshot as ShelectorGameSaveSnapshot;
+    const drillSnapshot: ShelectorGameSaveSnapshot = {
+      ...snapshot,
+      savedAt: Date.now(),
+      engine: attempt.engine,
+      authorityUpdates: [],
+      engineEventLog: [],
+      engineEventLogSeeds: {},
+      engineEventLogInitialState: attempt.engine,
+      lastStateUpdate: null,
+      currentPrompt: null,
+      lastPlayedCard: null,
+      tutorPhase: false,
+      tutorCards: [],
+      tutorTitle: '',
+      tutorPromptRequest: null,
+      tutorRemaining: 0,
+      tutorFilter: undefined,
+      tutorFilterSpec: undefined,
+      tutorTapped: false,
+      tutorShuffle: true,
+      tutorDestination: 'hand',
+      tutorSourceName: 'Drill Attempt',
+      tutorSourceInstanceId: undefined,
+      pendingSearchEntryChoice: null,
+      pendingTargetChoice: null,
+      libraryChoice: null,
+      libraryManipulationPromptRequest: null,
+      optionalTriggerChoice: null,
+      taxPaymentChoice: null,
+      wardPaymentChoice: null,
+      damageAssignmentChoice: null,
+      triggerOrderChoice: null,
+      discardPhase: false,
+      discardCount: 0,
+      selectedMulliganCardIds: [],
+      selectedMulliganBottomIds: [],
+      actionError: null,
+      lastEvents: [],
+    };
+
+    const restored = restoreGameSave(drillSnapshot);
+    if (!restored) {
+      setSaveError(`Drill attempt "${attempt.label}" could not be restored.`);
+      return;
+    }
+
+    restoreSlotUi(record);
+    setActiveDrillRun({
+      slot: record.slot,
+      bookmarkId: bookmark.id,
+      label: `${bookmark.label} / ${attempt.label}`,
+      startedAt: Date.now(),
+    });
+    setSaveStatus(`Loaded drill attempt "${attempt.label}".`);
+  };
+
+  const summarizeDrillAttempt = (): string => {
+    if (!gameState) return 'No visible board summary.';
+    const opponents = gameState.aiPlayers
+      .map(player => `${player.name} ${player.life}`)
+      .join(', ');
+    return [
+      `You ${gameState.humanPlayer.life}`,
+      opponents ? `Opponents ${opponents}` : null,
+      `hand ${gameState.humanHand.length}`,
+      `board ${gameState.humanBattlefield.length}`,
+      `graveyard ${gameState.humanGraveyard.length}`,
+      `stack ${gameState.stack.length}`,
+    ].filter(Boolean).join(' / ');
+  };
+
+  const saveCurrentDrillAttempt = async () => {
+    if (!activeDrillRun) {
+      setSaveError('Load a drill bookmark before saving an attempt.');
+      return false;
+    }
+    const snapshot = exportGameSave();
+    if (!snapshot?.engine || !gameState) {
+      setSaveError('No active drill state to save.');
+      return false;
+    }
+    const record = saveSlotsRef.current[activeDrillRun.slot - 1];
+    if (!record?.drillBookmarks?.length) {
+      setSaveError('The source drill bookmark is missing from this slot.');
+      return false;
+    }
+
+    const savedAt = Date.now();
+    const attempt: PlayDrillAttempt = {
+      id: `${savedAt}-${Math.random().toString(36).slice(2, 8)}`,
+      label: `Attempt ${new Date(savedAt).toLocaleTimeString()}`,
+      startedAt: activeDrillRun.startedAt,
+      savedAt,
+      turnNumber: gameState.turnNumber,
+      phase: gameState.phase,
+      step: gameState.step,
+      summary: summarizeDrillAttempt(),
+      engine: snapshot.engine,
+    };
+
+    const drillBookmarks = record.drillBookmarks.map(bookmark => (
+      bookmark.id === activeDrillRun.bookmarkId
+        ? { ...bookmark, attempts: [...(bookmark.attempts || []), attempt].slice(-12) }
+        : bookmark
+    ));
+    try {
+      await putPlaySaveSlot({ ...record, drillBookmarks, savedAt });
+      applySaveSlotRecord({ ...record, drillBookmarks, savedAt }, activeDrillRun.slot);
+      await refreshSaveSlots();
+      setSaveError(null);
+      setSaveStatus(`Saved ${attempt.label} for ${activeDrillRun.label}.`);
+      return true;
+    } catch (err: any) {
+      setSaveError(err.message || 'Could not save this drill attempt.');
+      return false;
+    }
+  };
+
+  const exitCurrentDrillAttempt = () => {
+    setActiveDrillRun(null);
+    setSaveStatus('Exited drill run. Continue playing from the loaded branch or reload the bookmark.');
   };
 
   const bookmarkCurrentDrill = async () => {
@@ -624,6 +774,7 @@ export function PlayPage() {
     try {
       const record = buildSaveRecord(activeSaveSlot, snapshot, false, drillBookmarks);
       await putPlaySaveSlot(record);
+      applySaveSlotRecord(record, activeSaveSlot);
       await refreshSaveSlots();
       setSaveError(null);
       setSaveStatus(`Bookmarked ${label} in slot ${activeSaveSlot}.`);
@@ -637,6 +788,7 @@ export function PlayPage() {
   const deleteSave = async (slot: number) => {
     try {
       await deletePlaySaveSlot(slot);
+      applySaveSlotRecord(null, slot);
       await refreshSaveSlots();
       setSaveError(null);
       setSaveStatus(`Deleted slot ${slot}.`);
@@ -797,16 +949,29 @@ export function PlayPage() {
                   </button>
                 )}
                 {record?.drillBookmarks?.slice(-3).reverse().map(bookmark => (
-                  <button
-                    key={bookmark.id}
-                    type="button"
-                    onClick={() => loadDrillBookmark(record, bookmark)}
-                    className="flex min-h-8 items-center gap-1 rounded border border-fuchsia-500/40 px-2 text-xs font-bold text-fuchsia-100 hover:bg-fuchsia-950/40"
-                    title={bookmark.note || bookmark.label}
-                  >
-                    <BookmarkPlus className="h-3.5 w-3.5" />
-                    {bookmark.label}
-                  </button>
+                  <div key={bookmark.id} className="flex flex-wrap gap-1">
+                    <button
+                      type="button"
+                      onClick={() => loadDrillBookmark(record, bookmark)}
+                      className="flex min-h-8 items-center gap-1 rounded border border-fuchsia-500/40 px-2 text-xs font-bold text-fuchsia-100 hover:bg-fuchsia-950/40"
+                      title={bookmark.note || bookmark.label}
+                    >
+                      <BookmarkPlus className="h-3.5 w-3.5" />
+                      {bookmark.label}
+                      {bookmark.attempts?.length ? ` (${bookmark.attempts.length})` : ''}
+                    </button>
+                    {bookmark.attempts?.slice(-1).map(attempt => (
+                      <button
+                        key={attempt.id}
+                        type="button"
+                        onClick={() => loadDrillAttempt(record, bookmark, attempt)}
+                        className="min-h-8 rounded border border-sky-500/40 px-2 text-xs font-bold text-sky-100 hover:bg-sky-950/40"
+                        title={attempt.summary}
+                      >
+                        Latest attempt
+                      </button>
+                    ))}
+                  </div>
                 ))}
                 {step === 'game' && (
                   <button
@@ -1027,6 +1192,7 @@ export function PlayPage() {
     setImportError(null);
     setSaveError(null);
     setSaveStatus(null);
+    setActiveDrillRun(null);
     setShowReview(false);
     setSelectedPracticePresetId(deck.id);
     setDeckText(deck.decklist);
@@ -1161,6 +1327,7 @@ export function PlayPage() {
     setIsSpawning(true);
     setIsGeneratingAIDeck(false);
     setImportError(null);
+    setActiveDrillRun(null);
     setSpawnedOpponents([]);
     setSpawnProgress('');
     try {
@@ -1280,6 +1447,7 @@ export function PlayPage() {
   };
 
   const handleStartDraftMatch = (humanDeck: ImportedCards, aiDecks: ImportedCards[]) => {
+    setActiveDrillRun(null);
     const started = startGame(humanDeck, aiDecks, {
       format: 'limited',
       startingLife: 20,
@@ -1290,6 +1458,7 @@ export function PlayPage() {
   };
 
   const handleStartStandardMatch = (humanDeck: ImportedCards, aiDecks: ImportedCards[]) => {
+    setActiveDrillRun(null);
     const started = startGame(humanDeck, aiDecks, {
       format: 'limited',
       startingLife: 20,
@@ -1298,6 +1467,17 @@ export function PlayPage() {
     });
     if (started) setStep('game');
   };
+
+  const branchPreviews = useMemo(() => {
+    if (step !== 'game' || !gameState) return [];
+    const snapshot = exportGameSave();
+    return buildPracticeBranchPreviews({
+      serializedState: snapshot?.engine,
+      playerId: snapshot?.humanId || gameState.humanPlayer.id,
+      legalActions,
+      max: 4,
+    });
+  }, [step, gameState, legalActions, exportGameSave]);
 
   // ----- RENDER -----
 
@@ -1388,6 +1568,10 @@ export function PlayPage() {
             onBookmarkDrill={bookmarkCurrentDrill}
             drillBookmarkLabel="Bookmark Drill"
             practiceFocusTags={activePracticeFocusTags}
+            branchPreviews={branchPreviews}
+            activeDrillLabel={activeDrillRun?.label || null}
+            onSaveDrillAttempt={activeDrillRun ? saveCurrentDrillAttempt : undefined}
+            onExitDrillAttempt={activeDrillRun ? exitCurrentDrillAttempt : undefined}
             menuActions={[
               {
                 id: 'saves',
