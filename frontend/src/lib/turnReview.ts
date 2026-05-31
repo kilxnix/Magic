@@ -202,6 +202,36 @@ export function ratingFromDecisionDelta(delta: number, selectedIsBest: boolean):
   return 'blunder';
 }
 
+function labelsForReview(review: DecisionReview): string {
+  return [
+    review.selected.label,
+    review.best?.label || '',
+    ...review.alternatives.map(alternative => alternative.label),
+  ].join('\n').toLowerCase();
+}
+
+export function xenagosPracticeNoteFromDecision(review: DecisionReview): string | null {
+  const labels = labelsForReview(review);
+
+  if (/tooth and nail|natural order|green sun's zenith|traverse the outlands|three visits/.test(labels)) {
+    return 'Tutor/ramp spot: check whether this line produces an immediate protected threat, a damage engine, or just a bigger board that passes priority.';
+  }
+
+  if (/dracogenesis|terror of the peaks|twinflame tyrant|dragonhawk|dragon broodmother|goldspan dragon/.test(labels)) {
+    return 'ETB damage spot: decide the trigger order before committing the payoff, because one missed damage source changes the whole turn.';
+  }
+
+  if (/xenagos|anzrag|hellkite charger|savage ventmaw|chandra's ignition|balefire dragon/.test(labels)) {
+    return 'Combat spot: choose the Xenagos target and extra-combat branch before attacks, then compare lethal pressure against leaving interaction up.';
+  }
+
+  if (/blacker lotus|jeweled lotus|chrome mox|mox diamond|elvish spirit guide|simian spirit guide|lotus petal|mana vault|jeska's will/.test(labels)) {
+    return 'Burst-mana spot: spend fast mana only when it converts into a protected threat, tutor, or lethal branch this turn.';
+  }
+
+  return null;
+}
+
 export function buildDecisionReview(
   state: GameState,
   playerId: string,
@@ -309,9 +339,11 @@ export function buildDecisionReview(
 export function coachMessageFromDecision(review: DecisionReview): string | null {
   if (review.legalActionCount <= 1 || !review.best) return null;
   const selectedIsBest = review.best.label === review.selected.label && review.scoreDelta <= 0.5;
-  if (selectedIsBest) return 'Strong practice action.';
-  if (review.scoreDelta < 1) return 'Good practice action (close to the current engine preference).';
-  return `Consider: ${review.best.label} (score ${review.best.score.toFixed(1)} vs your ${review.selected.score.toFixed(1)}). ${review.best.reasoning || ''}`.trim();
+  const xenagosNote = xenagosPracticeNoteFromDecision(review);
+  const suffix = xenagosNote ? ` Xenagos focus: ${xenagosNote}` : '';
+  if (selectedIsBest) return `Strong practice action.${suffix}`;
+  if (review.scoreDelta < 1) return `Good practice action (close to the current engine preference).${suffix}`;
+  return `Consider: ${review.best.label} (score ${review.best.score.toFixed(1)} vs your ${review.selected.score.toFixed(1)}). ${review.best.reasoning || ''}${suffix}`.trim();
 }
 
 export function playByPlayFromDecision(action: string, review?: DecisionReview): string {
@@ -320,13 +352,15 @@ export function playByPlayFromDecision(action: string, review?: DecisionReview):
   }
 
   const selectedIsBest = review.best.label === review.selected.label && review.scoreDelta <= 0.5;
+  const xenagosNote = xenagosPracticeNoteFromDecision(review);
+  const suffix = xenagosNote ? ` Xenagos focus: ${xenagosNote}` : '';
   if (selectedIsBest) {
-    return `${action}. The engine review agreed this was a strong available line.`;
+    return `${action}. The engine review agreed this was a strong available line.${suffix}`;
   }
 
   if (review.scoreDelta <= 1.5) {
-    return `${action}. This was close to another available line, with ${review.best.label} rated slightly higher.`;
+    return `${action}. This was close to another available line, with ${review.best.label} rated slightly higher.${suffix}`;
   }
 
-  return `${action}. The review preferred ${review.best.label} by ${review.scoreDelta.toFixed(1)} points.`;
+  return `${action}. The review preferred ${review.best.label} by ${review.scoreDelta.toFixed(1)} points.${suffix}`;
 }

@@ -11,7 +11,14 @@ import { cacheSet, cacheGet } from '../lib/cache';
 import { importDeckUrlLocally } from '../lib/deckUrlImport';
 import { FLOATING_TABLE_LAYOUT } from '../lib/gameBoardLayout';
 import { shelectorApiUrl } from '../lib/api';
-import { BEGINNER_DECKS, type BeginnerDeck } from '../lib/beginnerDecks';
+import {
+  BEGINNER_DECKS,
+  PRACTICE_DECKS,
+  XENAGOS_PRACTICE_COACHING_NOTES,
+  XENAGOS_PRACTICE_FOCUS_TAGS,
+  XENAGOS_PRACTICE_KEY_CARDS,
+  type BeginnerDeck,
+} from '../lib/beginnerDecks';
 import { auditPlaySaveSnapshot } from '../lib/playSaveAudit';
 import { findUnsupportedEngineCards, formatUnsupportedEngineCards } from '../lib/enginePreflight';
 import {
@@ -71,6 +78,7 @@ const COLOR_BADGES: Record<string, string> = {
 };
 
 const PERSONALITIES = ['Balanced', 'Aggressive', 'Greedy', 'Political'] as const;
+const PRESET_DECKS = [...PRACTICE_DECKS, ...BEGINNER_DECKS];
 
 type OpponentCount = 1 | 2 | 3;
 
@@ -174,6 +182,7 @@ export function PlayPage() {
   const [starterDeckLoadingId, setStarterDeckLoadingId] = useState<string | null>(null);
   const [showGuidedPrompt, setShowGuidedPrompt] = useState(false);
   const [starterDeckSpotlight, setStarterDeckSpotlight] = useState(false);
+  const [selectedPracticePresetId, setSelectedPracticePresetId] = useState<string | null>(null);
   const starterDecksRef = useRef<HTMLDivElement | null>(null);
 
   // Opponent config
@@ -239,6 +248,33 @@ export function PlayPage() {
     });
   }, []);
 
+  const resolvePracticeMetadata = () => {
+    const preset = PRESET_DECKS.find(deck => deck.id === selectedPracticePresetId);
+    if (preset) {
+      return {
+        presetId: preset.id,
+        archetype: preset.name,
+        commander: preset.commander,
+        focusTags: preset.focusTags || [],
+        keyCards: preset.keyCards || [],
+        coachingNotes: preset.coachingNotes || [],
+      };
+    }
+
+    const commanderName = gameState?.humanCommander || importResult?.commander || '';
+    if (/xenagos,\s*god of revels/i.test(commanderName)) {
+      return {
+        archetype: 'Xenagos Dragon Lines',
+        commander: 'Xenagos, God of Revels',
+        focusTags: [...XENAGOS_PRACTICE_FOCUS_TAGS],
+        keyCards: [...XENAGOS_PRACTICE_KEY_CARDS],
+        coachingNotes: [...XENAGOS_PRACTICE_COACHING_NOTES],
+      };
+    }
+
+    return undefined;
+  };
+
   const buildSaveRecord = (slot: number, snapshot: ShelectorGameSaveSnapshot, autosaved: boolean): PlaySaveSlotRecord => ({
     slot,
     name: `Slot ${slot}`,
@@ -247,6 +283,14 @@ export function PlayPage() {
     phase: gameState?.phase || 'setup',
     savedAt: Date.now(),
     autosaved,
+    practice: resolvePracticeMetadata(),
+    audit: {
+      schema: 'engine-event-log-v1',
+      engineEventCount: engineEventLog.length,
+      hasInitialState: Boolean(engineEventLogInitialState),
+      seedCount: Object.keys(engineEventLogSeeds || {}).length,
+      updatedAt: Date.now(),
+    },
     snapshot,
     ui: {
       step,
@@ -261,6 +305,7 @@ export function PlayPage() {
       colorFilter,
       personality,
       spawnedOpponents,
+      selectedPracticePresetId,
     },
   });
 
@@ -302,6 +347,7 @@ export function PlayPage() {
     setColorFilter(record.ui.colorFilter);
     setPersonality(record.ui.personality);
     setSpawnedOpponents(record.ui.spawnedOpponents as SpawnedOpponent[]);
+    setSelectedPracticePresetId(record.ui.selectedPracticePresetId || record.practice?.presetId || null);
     setStep('game');
     setShowReview(false);
     setSavePanelOpen(false);
@@ -388,6 +434,12 @@ export function PlayPage() {
                       Turn {record.turnNumber} · {record.phase} · {new Date(record.savedAt).toLocaleString()}
                     </span>
                   )}
+                  {record?.practice && (
+                    <span className="mt-1 block text-xs text-amber-200">
+                      {record.practice.archetype}
+                      {record.practice.focusTags.length > 0 ? ` - ${record.practice.focusTags.slice(0, 2).join(', ')}` : ''}
+                    </span>
+                  )}
                   {audit && (
                     <span className={`mt-1 inline-flex rounded border px-1.5 py-0.5 text-[11px] font-black uppercase tracking-wide ${
                       audit.ok
@@ -460,6 +512,7 @@ export function PlayPage() {
     setIsImporting(true);
     setImportError(null);
     setImportResult(null);
+    setSelectedPracticePresetId(null);
     try {
       const localDeck = importDeckUrlLocally(deckUrl);
       if (localDeck?.format === 'standard') {
@@ -522,6 +575,7 @@ export function PlayPage() {
     setIsImporting(true);
     setImportError(null);
     setImportResult(null);
+    setSelectedPracticePresetId(null);
     try {
       const res = await fetch(shelectorApiUrl('/import-deck'), {
         method: 'POST',
@@ -575,12 +629,13 @@ export function PlayPage() {
     setIsImporting(true);
     setImportError(null);
     setImportResult(null);
+    setSelectedPracticePresetId(deck.id);
     setSpawnedOpponents([]);
     setSpawnProgress('');
     setSpawnBracket(deck.bracket);
     setDeckText(deck.decklist);
     setImportTab('text');
-    setNewPlayerMode(true);
+    setNewPlayerMode(deck.audience !== 'practice');
     setCoachMode(true);
 
     try {
@@ -1051,6 +1106,68 @@ export function PlayPage() {
             </button>
           </div>
 
+          <div className="mb-4 rounded-lg border border-amber-500/40 bg-amber-950/20">
+            <div className="border-b border-amber-500/20 px-3 py-2">
+              <div className="flex items-center gap-2 text-sm font-bold text-amber-100">
+                <Trophy className="h-4 w-4" />
+                High-Power Practice Presets
+              </div>
+              <p className="mt-1 text-xs text-amber-100/70">
+                Saved decklists with coaching focus and autosave metadata for repeat reps.
+              </p>
+            </div>
+            <div className="divide-y divide-amber-500/15">
+              {PRACTICE_DECKS.map(deck => (
+                <button
+                  key={deck.id}
+                  type="button"
+                  onClick={() => handleSelectBeginnerDeck(deck)}
+                  disabled={isImporting}
+                  className="flex w-full flex-col gap-3 px-3 py-3 text-left transition-colors hover:bg-amber-900/20 disabled:cursor-not-allowed disabled:opacity-60 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <span className="min-w-0">
+                    <span className="mb-1 flex flex-wrap items-center gap-1.5">
+                      <span className="font-bold text-stone-100">{deck.name}</span>
+                      {deck.colors.map(color => (
+                        <span
+                          key={color}
+                          className={`rounded-full px-2 py-0.5 text-[10px] font-black ${COLOR_BADGES[color]}`}
+                        >
+                          {color}
+                        </span>
+                      ))}
+                      <span className="rounded bg-amber-400 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-stone-950">
+                        Bracket {deck.bracket}
+                      </span>
+                    </span>
+                    <span className="block truncate text-xs font-semibold text-stone-300">
+                      {deck.commander}
+                    </span>
+                    <span className="block text-xs leading-5 text-stone-400">
+                      {deck.plan}
+                    </span>
+                    {deck.focusTags && (
+                      <span className="mt-2 flex flex-wrap gap-1">
+                        {deck.focusTags.map(tag => (
+                          <span key={tag} className="rounded border border-amber-500/30 px-1.5 py-0.5 text-[10px] font-bold text-amber-100">
+                            {tag}
+                          </span>
+                        ))}
+                      </span>
+                    )}
+                  </span>
+                  <span className="flex min-h-8 shrink-0 items-center justify-center rounded bg-amber-500 px-3 py-1 text-xs font-black text-stone-950">
+                    {starterDeckLoadingId === deck.id ? (
+                      <><Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />Loading</>
+                    ) : (
+                      'Use Preset'
+                    )}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+
           <div
             ref={starterDecksRef}
             className={`mb-4 rounded-lg border bg-stone-900/50 transition-colors ${
@@ -1119,6 +1236,7 @@ export function PlayPage() {
                     onClick={() => {
                       setDeckText(entry.text);
                       setImportTab('text');
+                      setSelectedPracticePresetId(null);
                       setShowDeckHistory(false);
                     }}
                     className="text-sm text-stone-200 hover:text-amber-300"
@@ -1148,7 +1266,10 @@ export function PlayPage() {
               <input
                 type="text"
                 value={deckUrl}
-                onChange={e => setDeckUrl(e.target.value)}
+                onChange={e => {
+                  setDeckUrl(e.target.value);
+                  setSelectedPracticePresetId(null);
+                }}
                 placeholder="https://www.moxfield.com/decks/..."
                 className="w-full bg-stone-700 border border-stone-600 rounded-lg px-4 py-3 text-stone-100 placeholder-stone-500 focus:outline-none focus:border-amber-500 mb-3"
               />
@@ -1174,7 +1295,10 @@ export function PlayPage() {
             <div>
               <textarea
                 value={deckText}
-                onChange={e => setDeckText(e.target.value)}
+                onChange={e => {
+                  setDeckText(e.target.value);
+                  setSelectedPracticePresetId(null);
+                }}
                 placeholder={"1 Atraxa, Praetors' Voice\n1 Sol Ring\n1 Command Tower\n..."}
                 rows={8}
                 className="w-full bg-stone-700 border border-stone-600 rounded-lg px-4 py-3 text-stone-100 placeholder-stone-500 focus:outline-none focus:border-amber-500 mb-3 font-mono text-sm"

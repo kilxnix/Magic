@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   BEGINNER_DECKS,
   CERTIFIED_BLUE_SPELLS,
+  PRACTICE_DECKS,
   decklistCardNames,
   hasOnlyLegalBeginnerDuplicates,
 } from '../src/lib/beginnerDecks';
@@ -37,5 +38,21 @@ describe('beginner starter decks', () => {
 
     expect(blueSpellCount).toBe(CERTIFIED_BLUE_SPELLS.length);
     expect(blueSpellCount).toBeGreaterThanOrEqual(20);
+  });
+
+  it('provides the exact Xenagos dragon practice preset', () => {
+    const xenagos = PRACTICE_DECKS.find(deck => deck.id === 'practice-xenagos-dragons');
+    expect(xenagos).toBeTruthy();
+    expect(xenagos?.commander).toBe('Xenagos, God of Revels');
+    expect(xenagos?.audience).toBe('practice');
+    expect(decklistCardNames(xenagos!).length).toBe(100);
+    expect(hasOnlyLegalBeginnerDuplicates(xenagos!)).toBe(true);
+
+    const names = decklistCardNames(xenagos!);
+    expect(names).toContain('Dracogenesis');
+    expect(names).toContain('Terror of the Peaks');
+    expect(names).toContain('Twinflame Tyrant');
+    expect(names).toContain('Tooth and Nail');
+    expect(names).toContain('Blacker Lotus');
   });
 });

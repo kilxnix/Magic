@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   actionIdentity,
+  coachMessageFromDecision,
   playByPlayFromDecision,
   ratingFromDecisionDelta,
   type DecisionReview,
@@ -20,6 +21,7 @@ function decision(overrides: Partial<DecisionReview> = {}): DecisionReview {
     scoreDelta: 5,
     confidence: 'high',
     confidenceReasons: [],
+    rulesAudit: { ok: true },
     elapsedMs: 1,
     ...overrides,
   };
@@ -47,5 +49,20 @@ describe('turn review helpers', () => {
       best: { actionType: 'CastSpell', label: 'Cast Shock', score: 2 },
       scoreDelta: 0,
     }))).toContain('strong available line');
+  });
+
+  it('adds Xenagos-specific coaching when the decision involves key deck lines', () => {
+    const message = coachMessageFromDecision(decision({
+      selected: { actionType: 'CastSpell', label: 'Cast Terror of the Peaks', score: 4 },
+      best: { actionType: 'CastSpell', label: 'Cast Dracogenesis', score: 8 },
+      alternatives: [
+        { actionType: 'CastSpell', label: 'Cast Dracogenesis', score: 8 },
+        { actionType: 'CastSpell', label: 'Cast Terror of the Peaks', score: 4 },
+      ],
+      scoreDelta: 4,
+    }));
+
+    expect(message).toContain('Xenagos focus');
+    expect(message).toContain('ETB damage spot');
   });
 });

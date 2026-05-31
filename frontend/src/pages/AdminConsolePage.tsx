@@ -5,6 +5,7 @@ import {
   ArrowLeft,
   Ban,
   CheckCircle2,
+  Database,
   Megaphone,
   RefreshCw,
   Shield,
@@ -28,6 +29,11 @@ import {
   type AdminOverview,
   type AdminRoomSummary,
 } from '../lib/admin';
+import { auditPlaySaveSnapshot } from '../lib/playSaveAudit';
+import {
+  getPlaySaveSlots,
+  type PlaySaveSlotRecord,
+} from '../lib/playSaveStorage';
 
 const ADMIN_TOKEN_STORAGE = 'deckreps_admin_console_token';
 
@@ -61,18 +67,34 @@ export function AdminConsolePage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [practiceSaves, setPracticeSaves] = useState<(PlaySaveSlotRecord | null)[]>([]);
+  const [practiceSaveError, setPracticeSaveError] = useState<string | null>(null);
 
   const selectedRoom = useMemo(
     () => overview?.rooms.find(room => room.id === selectedRoomId) || overview?.rooms[0] || null,
     [overview, selectedRoomId],
   );
+  const practiceSaveCount = practiceSaves.filter(Boolean).length;
+
+  const refreshPracticeSaves = async () => {
+    try {
+      const slots = await getPlaySaveSlots();
+      setPracticeSaves(slots);
+      setPracticeSaveError(null);
+    } catch (err: any) {
+      setPracticeSaveError(err.message || 'Unable to load browser practice saves.');
+    }
+  };
 
   const refresh = async (activeToken = token) => {
     if (!activeToken) return;
     setLoading(true);
     setError(null);
     try {
-      const next = await fetchAdminOverview(activeToken);
+      const [next] = await Promise.all([
+        fetchAdminOverview(activeToken),
+        refreshPracticeSaves(),
+      ]);
       setOverview(next);
       setAuthed(true);
       if (!selectedRoomId && next.rooms[0]) setSelectedRoomId(next.rooms[0].id);
@@ -229,11 +251,12 @@ export function AdminConsolePage() {
 
         {overview && (
           <>
-            <section className="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <section className="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
               {[
                 ['Rooms', overview.room_count, `${overview.active_room_count} active`],
                 ['Events', overview.event_count, `${overview.running_event_count} running`],
                 ['Diagnostics', overview.client_events.length, 'recent client events'],
+                ['Practice Saves', practiceSaveCount, 'browser slots'],
                 ['Audit', overview.audit_events.length, 'recent admin actions'],
               ].map(([label, value, sub]) => (
                 <div key={label} className="rounded-lg border border-stone-800 bg-stone-900 p-4">
@@ -242,6 +265,94 @@ export function AdminConsolePage() {
                   <div className="text-xs text-stone-400">{sub}</div>
                 </div>
               ))}
+            </section>
+
+            <section className="mb-5 rounded-lg border border-stone-800 bg-stone-900">
+              <div className="flex flex-col gap-2 border-b border-stone-800 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h2 className="flex items-center gap-2 text-sm font-black uppercase tracking-wider text-stone-300">
+                    <Database className="h-4 w-4 text-amber-300" />
+                    1v1 Practice Saves
+                  </h2>
+                  <p className="mt-1 text-xs text-stone-500">
+                    Browser-local `/play` save slots from this admin browser, including coaching focus and replay audit health.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={refreshPracticeSaves}
+                  className="flex min-h-9 items-center justify-center gap-2 rounded border border-stone-700 px-3 text-xs font-bold text-stone-200 hover:border-amber-500/60"
+                >
+                  <RefreshCw className="h-3.5 w-3.5" />
+                  Refresh Saves
+                </button>
+              </div>
+              {practiceSaveError && (
+                <div className="m-4 rounded border border-red-500/40 bg-red-950/40 px-3 py-2 text-sm text-red-100">
+                  {practiceSaveError}
+                </div>
+              )}
+              <div className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-4">
+                {practiceSaves.map((record, index) => {
+                  const slot = index + 1;
+                  const audit = record ? auditPlaySaveSnapshot(record.snapshot) : null;
+                  return (
+                    <div key={slot} className="rounded-lg border border-stone-800 bg-neutral-950 p-3">
+                      <div className="mb-2 flex items-start justify-between gap-2">
+                        <div>
+                          <div className="text-xs font-black uppercase tracking-wider text-stone-500">Slot {slot}</div>
+                          <div className="font-bold text-stone-100">{record?.commander || 'Empty'}</div>
+                        </div>
+                        {audit && (
+                          <span className={`rounded border px-1.5 py-0.5 text-[10px] font-black uppercase ${
+                            audit.ok
+                              ? 'border-emerald-500/40 bg-emerald-950/30 text-emerald-200'
+                              : 'border-red-500/40 bg-red-950/30 text-red-200'
+                          }`}>
+                            {audit.message}
+                          </span>
+                        )}
+                      </div>
+                      {record ? (
+                        <>
+                          <div className="text-xs text-stone-500">
+                            Turn {record.turnNumber} / {record.phase} / {new Date(record.savedAt).toLocaleString()}
+                          </div>
+                          {record.practice && (
+                            <div className="mt-3 rounded border border-amber-500/20 bg-amber-950/20 p-2">
+                              <div className="text-xs font-black uppercase tracking-wider text-amber-200">
+                                {record.practice.archetype}
+                              </div>
+                              <div className="mt-2 flex flex-wrap gap-1">
+                                {record.practice.focusTags.map(tag => (
+                                  <span key={tag} className="rounded border border-amber-500/30 px-1.5 py-0.5 text-[10px] text-amber-100">
+                                    {tag}
+                                  </span>
+                                ))}
+                              </div>
+                              {record.practice.keyCards.length > 0 && (
+                                <p className="mt-2 text-xs leading-5 text-stone-400">
+                                  Key cards: {record.practice.keyCards.slice(0, 4).join(', ')}
+                                </p>
+                              )}
+                            </div>
+                          )}
+                          {record.audit && (
+                            <div className="mt-2 text-xs text-stone-500">
+                              {record.audit.engineEventCount} replay events / {record.audit.seedCount} seeds
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <div className="text-xs text-stone-500">No saved practice game in this slot.</div>
+                      )}
+                    </div>
+                  );
+                })}
+                {practiceSaves.length === 0 && (
+                  <div className="text-sm text-stone-500">No browser save slots found.</div>
+                )}
+              </div>
             </section>
 
             <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_22rem]">

@@ -1,3 +1,20 @@
+export interface PlayPracticeMetadata {
+  presetId?: string;
+  archetype: string;
+  commander?: string;
+  focusTags: string[];
+  keyCards: string[];
+  coachingNotes?: string[];
+}
+
+export interface PlaySaveAuditMetadata {
+  schema: 'engine-event-log-v1';
+  engineEventCount: number;
+  hasInitialState: boolean;
+  seedCount: number;
+  updatedAt: number;
+}
+
 export interface PlaySaveSlotRecord {
   slot: number;
   name: string;
@@ -6,6 +23,8 @@ export interface PlaySaveSlotRecord {
   phase: string;
   savedAt: number;
   autosaved: boolean;
+  practice?: PlayPracticeMetadata;
+  audit?: PlaySaveAuditMetadata;
   snapshot: unknown;
   ui: {
     step: 'import' | 'opponent' | 'draft' | 'standard' | 'game';
@@ -20,6 +39,7 @@ export interface PlaySaveSlotRecord {
     colorFilter: Record<string, boolean>;
     personality: string;
     spawnedOpponents: unknown[];
+    selectedPracticePresetId?: string | null;
   };
 }
 

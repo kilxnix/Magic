@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildDecisionReview, isLikelyInfiniteComboAction } from './turnReview';
+import { buildDecisionReview, coachMessageFromDecision, isLikelyInfiniteComboAction, type DecisionReview } from './turnReview';
 import { createPlayer, type AIAction, type CardDefinition, type CardInstance, type GameState } from 'commander-engine';
 
 function def(id: string, name: string, oracleText: string, cmc: number): CardDefinition {
@@ -124,5 +124,29 @@ describe('turn review coaching filters', () => {
     expect(review?.rulesAudit.message).toContain('The stack must be empty');
     expect(review?.confidence).toBe('low');
     expect(review?.confidenceReasons.some(reason => reason.includes('Rules audit rejected selected action'))).toBe(true);
+  });
+
+  it('adds deck-specific coaching for Xenagos dragon practice decisions', () => {
+    const review: DecisionReview = {
+      schemaVersion: 1,
+      evaluator: 'engine-heuristic-v1',
+      decisionId: 'xenagos-test',
+      phase: 'precombat_main',
+      step: 'main',
+      legalActionCount: 3,
+      selected: { actionType: 'CastSpell', label: 'Cast Tooth and Nail', score: 7 },
+      best: { actionType: 'CastSpell', label: 'Cast Natural Order', score: 8 },
+      alternatives: [
+        { actionType: 'CastSpell', label: 'Cast Natural Order', score: 8 },
+        { actionType: 'CastSpell', label: 'Cast Tooth and Nail', score: 7 },
+      ],
+      scoreDelta: 1,
+      confidence: 'high',
+      confidenceReasons: [],
+      rulesAudit: { ok: true },
+      elapsedMs: 1,
+    };
+
+    expect(coachMessageFromDecision(review)).toContain('Xenagos focus: Tutor/ramp spot');
   });
 });
