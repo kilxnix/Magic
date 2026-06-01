@@ -61,6 +61,7 @@ const ARCHIDEKT_ROOM_DECKS = [
   { slug: 'ff-recursion', url: 'https://archidekt.com/decks/11964597/ff_recursion_bullshit' },
   { slug: 'birbs', url: 'https://archidekt.com/decks/15529421/birbs' },
 ];
+const BASIC_LAND_NAMES = new Set(['Plains', 'Island', 'Swamp', 'Mountain', 'Forest', 'Wastes']);
 
 fs.mkdirSync(path.join(ARTIFACT_DIR, RUN_ID), { recursive: true });
 
@@ -195,6 +196,10 @@ function parsedDeckToText(parsed) {
   }
   for (const card of parsed.cards || []) lines.push(`1 ${card}`);
   return lines.join('\n');
+}
+
+function cleanDeckLineName(line) {
+  return String(line || '').replace(/^\s*\d+x?\s+/i, '').trim();
 }
 
 async function fetchArchidektRoomDecks() {
@@ -666,10 +671,18 @@ async function runImportedFourPlayerEngineGate(browser) {
   await waitBodyIncludes(host, 'Arch Host played a land.', 25000);
 
   const guestBody = await guestA.locator('body').innerText();
+  const otherDeckNames = new Set(
+    importedDecks
+      .slice(1)
+      .flatMap(deck => deck.cards.map(cleanDeckLineName)),
+  );
   const hiddenHostCardNames = importedDecks[0].cards
-    .map(line => line.replace(/^\s*\d+x?\s+/i, '').trim())
+    .map(cleanDeckLineName)
     .filter(name => name && name !== importedDecks[0].commander)
-    .slice(8, 18);
+    .filter(name => !BASIC_LAND_NAMES.has(name))
+    .filter(name => !otherDeckNames.has(name))
+    .filter((name, index, names) => names.indexOf(name) === index)
+    .slice(0, 12);
   const leakedNames = hiddenHostCardNames.filter(name => guestBody.includes(name));
   assert(leakedNames.length === 0, `imported 4-player scoped view leaked host card names: ${leakedNames.join(', ')}`);
 
