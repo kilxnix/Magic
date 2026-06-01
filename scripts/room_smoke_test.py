@@ -395,7 +395,7 @@ def verify_engine_beta(client: ApiClient, ids: dict[str, str]) -> dict[str, Any]
     _, unsupported = client.request(
         "POST",
         f"/rooms/{room_id}/real-game/action",
-        {"player_id": ids["guest_id"], "action": {"kind": "cast_spell", "payload": {"card_instance_id": "unknown"}}},
+        {"player_id": ids["guest_id"], "action": {"kind": "activate_planeswalker", "payload": {"card_instance_id": "unknown"}}},
         expected=(400,),
     )
     assert_true(unsupported.get("detail") == "Unsupported real engine action for this slice", "unsupported action did not fail clearly")
