@@ -273,14 +273,16 @@ export function PlayPage() {
     if (!import.meta.env.DEV || qaScenarioLoadedRef.current || typeof window === 'undefined') return;
     const params = new URLSearchParams(window.location.search);
     const qaScenario = params.get('qa');
-    if (qaScenario !== 'sisay-activation' && qaScenario !== 'sisay-raw-lands') return;
+    if (qaScenario !== 'sisay-activation' && qaScenario !== 'sisay-raw-lands' && qaScenario !== 'declare-blockers') return;
 
     let cancelled = false;
     import('../lib/qaGameScenarios')
-      .then(({ createSisayActivationQaState, createSisayRawLandsQaState }) => {
+      .then(({ createDeclareBlockersQaState, createSisayActivationQaState, createSisayRawLandsQaState }) => {
         if (cancelled || qaScenarioLoadedRef.current) return;
         const engine = qaScenario === 'sisay-raw-lands'
           ? createSisayRawLandsQaState()
+          : qaScenario === 'declare-blockers'
+          ? createDeclareBlockersQaState()
           : createSisayActivationQaState();
         const now = Date.now();
         const snapshot: ShelectorGameSaveSnapshot = {
@@ -290,7 +292,7 @@ export function PlayPage() {
           humanDeck: null,
           aiDecks: [],
           humanCommander: 'Sisay, Weatherlight Captain',
-          aiCommanderNames: { 'ai-1': 'QA Opponent' },
+          aiCommanderNames: { 'ai-1': qaScenario === 'declare-blockers' ? 'Marchesa, Dealer of Death' : 'QA Opponent' },
           humanId: 'human',
           aiIds: ['ai-1'],
           opponentInfo: null,
@@ -333,7 +335,13 @@ export function PlayPage() {
           setSelectedPracticePresetId(null);
           setStep('game');
           setSavePanelOpen(false);
-          setSaveStatus(`Loaded ${qaScenario === 'sisay-raw-lands' ? 'Sisay raw lands' : 'Sisay activation'} QA scenario.`);
+          setSaveStatus(`Loaded ${
+            qaScenario === 'sisay-raw-lands'
+              ? 'Sisay raw lands'
+              : qaScenario === 'declare-blockers'
+              ? 'declare blockers'
+              : 'Sisay activation'
+          } QA scenario.`);
           setSaveError(null);
         }
       })
@@ -850,9 +858,12 @@ export function PlayPage() {
           const audit = record ? auditPlaySaveSnapshot(record.snapshot) : null;
           const canonicalAudit = record?.canonicalEngineSave ? auditCanonicalPlayEngineSave(record.canonicalEngineSave) : null;
           const checkpointSequence = record ? latestCheckpointSequence(record) : null;
+          const managerStatus = record?.canonicalManager?.status;
           const loadBlocked = Boolean(
             record && (
               (canonicalAudit && !canonicalAudit.ok)
+              || managerStatus === 'missing'
+              || managerStatus === 'mismatch'
               || (!record.canonicalManager && !canonicalAudit && audit?.status === 'failed')
             ),
           );
@@ -887,8 +898,16 @@ export function PlayPage() {
                   {(audit || canonicalAudit || record?.canonicalManager) && (
                     <span className="mt-1 flex flex-wrap gap-1">
                       {record?.canonicalManager && (
-                        <span className="inline-flex rounded border border-fuchsia-500/40 bg-fuchsia-950/30 px-1.5 py-0.5 text-[11px] font-black uppercase tracking-wide text-fuchsia-200">
-                          SaveManager primary
+                        <span className={`inline-flex rounded border px-1.5 py-0.5 text-[11px] font-black uppercase tracking-wide ${
+                          record.canonicalManager.status === 'ok'
+                            ? 'border-fuchsia-500/40 bg-fuchsia-950/30 text-fuchsia-200'
+                            : 'border-red-500/40 bg-red-950/30 text-red-200'
+                        }`}>
+                          {record.canonicalManager.status === 'ok'
+                            ? 'SaveManager verified'
+                            : record.canonicalManager.status === 'mismatch'
+                            ? 'SaveManager mismatch'
+                            : 'SaveManager missing'}
                         </span>
                       )}
                       {audit && (
@@ -916,6 +935,7 @@ export function PlayPage() {
                   {(canonicalAudit?.ok && canonicalAudit.fingerprint) || checkpointSequence !== null ? (
                     <span className="mt-1 block text-[11px] text-stone-500">
                       {record?.canonicalManager?.fingerprint ? `Manager ${record.canonicalManager.fingerprint.slice(0, 10)}` : ''}
+                      {record?.canonicalManager?.verifiedFingerprint ? ` / Verified ${record.canonicalManager.verifiedFingerprint.slice(0, 10)}` : ''}
                       {record?.canonicalManager?.fingerprint && canonicalAudit?.ok && canonicalAudit.fingerprint ? ' / ' : ''}
                       {canonicalAudit?.ok && canonicalAudit.fingerprint ? `State ${canonicalAudit.fingerprint.slice(0, 10)}` : ''}
                       {canonicalAudit?.ok && canonicalAudit.fingerprint && checkpointSequence !== null ? ' / ' : ''}
@@ -937,7 +957,7 @@ export function PlayPage() {
                     type="button"
                     onClick={() => loadSaveSlot(record)}
                     disabled={loadBlocked}
-                    title={loadBlocked ? 'This save needs admin review before loading.' : undefined}
+                    title={loadBlocked ? 'This save is missing or mismatching its authoritative engine state.' : undefined}
                     className="flex min-h-8 items-center gap-1 rounded border border-blue-500/40 px-2 text-xs font-bold text-blue-100 hover:bg-blue-950/40 disabled:cursor-not-allowed disabled:border-stone-700 disabled:text-stone-500 disabled:hover:bg-transparent"
                   >
                     <FolderOpen className="h-3.5 w-3.5" />

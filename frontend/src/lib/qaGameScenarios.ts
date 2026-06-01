@@ -324,3 +324,91 @@ export function createSisayRawLandsQaState(): SerializedGameStateV1 {
 
   return serializeGameState(stateWithSisayStaticEffect);
 }
+
+export function createDeclareBlockersQaState(): SerializedGameStateV1 {
+  const sisay = def(
+    'sisay_blocker',
+    'Sisay, Weatherlight Captain',
+    'Legendary Creature - Human Soldier',
+    '{2}{W}',
+    "Sisay, Weatherlight Captain gets +1/+1 for each color among other legendary permanents you control.\n{W}{U}{B}{R}{G}, {T}: Search your library for a legendary permanent card with mana value less than Sisay, Weatherlight Captain's power, put that card onto the battlefield, then shuffle.",
+    { cmc: 3, colors: ['W'], color_identity: ['W', 'U', 'B', 'R', 'G'], power: 2, toughness: 2 },
+  );
+  const bodyLaunderer = def(
+    'body_launderer',
+    'Body Launderer',
+    'Creature - Ogre Rogue',
+    '{2}{B}{B}',
+    'Deathtouch\nWhenever another nontoken creature you control dies, Body Launderer connives.\nWhen Body Launderer dies, return another target non-Rogue creature card with equal or lesser power from your graveyard to the battlefield.',
+    { cmc: 4, colors: ['B'], color_identity: ['B'], power: 3, toughness: 3, keywords: ['Deathtouch'] },
+  );
+  const marchesa = def(
+    'marchesa_dealer',
+    'Marchesa, Dealer of Death',
+    'Legendary Creature - Human Rogue',
+    '{1}{U}{B}{R}',
+    'Whenever you commit a crime, you may pay {1}. If you do, draw a card.',
+    { cmc: 4, colors: ['U', 'B', 'R'], color_identity: ['U', 'B', 'R'], power: 3, toughness: 4 },
+  );
+
+  const state: GameState = {
+    players: [
+      {
+        id: 'human',
+        name: 'Sisay QA Pilot',
+        life: 40,
+        poisonCounters: 0,
+        commanderDamage: {},
+        commanderTax: 0,
+        commanderInstanceId: 'sisay_blocker_1',
+        commanderCastCount: 1,
+        manaPool: pool(),
+        hasPlayedLand: false,
+        hasPriority: false,
+        hasLost: false,
+      },
+      {
+        id: 'ai-1',
+        name: 'Marchesa, Dealer of Death',
+        life: 40,
+        poisonCounters: 0,
+        commanderDamage: {},
+        commanderTax: 0,
+        commanderInstanceId: 'marchesa_dealer_1',
+        commanderCastCount: 1,
+        manaPool: pool(),
+        hasPlayedLand: false,
+        hasPriority: true,
+        hasLost: false,
+      },
+    ],
+    cards: new Map<string, CardInstance>([
+      ['sisay_blocker_1', instance('sisay_blocker_1', sisay.id, 'human', 'battlefield', { isCommander: true })],
+      ['body_launderer_1', instance('body_launderer_1', bodyLaunderer.id, 'ai-1', 'battlefield', { tapped: true })],
+      ['marchesa_dealer_1', instance('marchesa_dealer_1', marchesa.id, 'ai-1', 'battlefield', { isCommander: true })],
+    ]),
+    cardDefinitions: new Map<string, CardDefinition>([
+      [sisay.id, sisay],
+      [bodyLaunderer.id, bodyLaunderer],
+      [marchesa.id, marchesa],
+    ]),
+    activePlayerIndex: 1,
+    priorityPlayerIndex: 1,
+    phase: 'combat',
+    step: 'declare_blockers',
+    turnNumber: 5,
+    hasPriorityPassed: [false, false],
+    stack: [],
+    combat: {
+      attackers: [{ cardInstanceId: 'body_launderer_1', defendingPlayerId: 'human' }],
+      blockers: [],
+      blockersDeclared: false,
+      blockersDeclaredBy: [],
+      damageAssignment: new Map(),
+    },
+    battlefieldAbilities: new Map(),
+    pendingTriggers: [],
+  };
+
+  return serializeGameState(state);
+}

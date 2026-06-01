@@ -39,7 +39,7 @@ import {
   stateFingerprint,
   summarizeActionPromptChoices,
 } from './authority';
-import { resolveCombatDamage } from './combat';
+import { declareBlockers, resolveCombatDamage } from './combat';
 import { initGameState } from './game-state';
 import type { CardDefinition, CardInstance, GameState, StackItem, TriggeredAbilityRef } from './types';
 import type { AIAction } from './ai/types';
@@ -492,6 +492,19 @@ describe('authority action boundary', () => {
       choice.kind === 'DeclareBlockers'
       && choice.label === 'Declare 1 blocker',
     )).toBe(true);
+  });
+
+  it('returns to a normal priority prompt after the defender declares blockers', () => {
+    const state = stateWithOpponentAttackingHumanBlocker();
+    const declared = declareBlockers(state, 'p1', []);
+    const prompt = buildActionPrompt(declared);
+
+    expect(declared.combat?.blockersDeclared).toBe(true);
+    expect(prompt?.type).toBe('priority');
+    expect(prompt?.title).toBe('Priority');
+    expect(prompt?.playerId).toBe('p2');
+    expect(prompt?.priority.priorityPlayerId).toBe('p2');
+    expect(prompt?.legalChoices.some(choice => choice.kind === 'DeclareBlockers')).toBe(false);
   });
 
   it('summarizes action prompts by decision workflow categories', () => {

@@ -337,8 +337,16 @@ export function AdminConsolePage() {
                           </span>
                         )}
                         {record?.canonicalManager && (
-                          <span className="rounded border border-fuchsia-500/40 bg-fuchsia-950/30 px-1.5 py-0.5 text-[10px] font-black uppercase text-fuchsia-200">
-                            SaveManager
+                          <span className={`rounded border px-1.5 py-0.5 text-[10px] font-black uppercase ${
+                            record.canonicalManager.status === 'ok'
+                              ? 'border-fuchsia-500/40 bg-fuchsia-950/30 text-fuchsia-200'
+                              : 'border-red-500/40 bg-red-950/30 text-red-200'
+                          }`}>
+                            {record.canonicalManager.status === 'ok'
+                              ? 'SaveManager OK'
+                              : record.canonicalManager.status === 'mismatch'
+                              ? 'SaveManager mismatch'
+                              : 'SaveManager missing'}
                           </span>
                         )}
                       </div>
@@ -397,6 +405,16 @@ export function AdminConsolePage() {
                           {record.canonicalManager && (
                             <div className="mt-2 rounded border border-fuchsia-500/20 bg-fuchsia-950/20 p-2 text-xs text-fuchsia-100">
                               SaveManager primary: {record.canonicalManager.fingerprint.slice(0, 12)}
+                              {record.canonicalManager.verifiedFingerprint && (
+                                <span className="mt-1 block text-stone-400">
+                                  Verified: {record.canonicalManager.verifiedFingerprint.slice(0, 12)}
+                                </span>
+                              )}
+                              {record.canonicalManager.status && record.canonicalManager.status !== 'ok' && (
+                                <span className="mt-1 block text-red-200">
+                                  Authoritative engine save is {record.canonicalManager.status}.
+                                </span>
+                              )}
                             </div>
                           )}
                           {canonicalAudit?.ok && canonicalAudit.fingerprint && (

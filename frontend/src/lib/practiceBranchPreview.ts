@@ -52,7 +52,18 @@ function summarizePreview(
   after: ReturnType<typeof visibleBoardSummary>,
   phase: string,
   step: string,
+  action?: AIAction,
 ): string {
+  if (action?.kind === 'DeclareBlockers') {
+    return action.blocks.length > 0
+      ? `Blocks assigned: ${action.blocks.length}; then ${phase}/${step}`
+      : `No blockers declared; then ${phase}/${step}`;
+  }
+  if (action?.kind === 'DeclareAttackers') {
+    return action.attacks.length > 0
+      ? `Attackers declared: ${action.attacks.length}; then ${phase}/${step}`
+      : `No attackers declared; then ${phase}/${step}`;
+  }
   const deltas = [
     deltaLabel(before.life, after.life, 'life'),
     deltaLabel(before.hand, after.hand, 'hand'),
@@ -108,7 +119,7 @@ export function buildPracticeBranchPreviews(input: {
       const afterState = response.state || branchState;
       const after = visibleBoardSummary(afterState, input.playerId);
       const summary = response.ok
-        ? summarizePreview(before, after, afterState.phase, afterState.step)
+        ? summarizePreview(before, after, afterState.phase, afterState.step, action._engineAction)
         : response.message || 'This line is not currently legal from this exact state.';
       const sourceCard = action.cardInstanceId ? branchState.cards.get(action.cardInstanceId) : undefined;
       const sourceName = sourceCard ? getCardDefinition(branchState, sourceCard).name : action.cardName;

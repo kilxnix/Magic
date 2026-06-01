@@ -2663,11 +2663,17 @@ export function GameBoard({
   const otherCardActions = legalActions.filter(
     a => a.cardInstanceId && !['CastSpell', 'PlayLand', 'ActivateManaAbility', 'PassPriority', 'DeclareAttackers', 'DeclareBlockers'].includes(a.kind)
   );
-  const hasPhaseMovement = isHumanTurn && !gameState.gameOver && !mulliganPhase && (
+  const hasHumanCombatDecision = combatActions.length > 0;
+  const hasHumanActionWindow = isHumanTurn || hasHumanCombatDecision || (
+    currentPrompt?.playerId === gameState.humanPlayer.id && legalActions.length > 0
+  );
+  const hasHumanDeclareBlockersDecision = combatActions.some(action => action.kind === 'DeclareBlockers');
+  const hasHumanDeclareAttackersDecision = combatActions.some(action => action.kind === 'DeclareAttackers');
+  const hasPhaseMovement = hasHumanActionWindow && !gameState.gameOver && !mulliganPhase && (
     skipRestAction || skipEmptyAction || passAction || combatActions.length > 0
   );
   const canUndo = !!onUndo && (undosRemaining ?? 0) > 0;
-  const hasTopActions = isHumanTurn && !gameState.gameOver && !mulliganPhase && (
+  const hasTopActions = hasHumanActionWindow && !gameState.gameOver && !mulliganPhase && (
     currentPrompt || castActions.length > 0 || playLandActions.length > 0 ||
     manaActions.length > 0 || otherCardActions.length > 0 || canUndo
   );
@@ -2757,7 +2763,7 @@ export function GameBoard({
     ) {
       return 'Blockers are being declared now. Use a legal block action, or use No blocks if this creature cannot block.';
     }
-    if (!isHumanTurn) {
+    if (!hasHumanActionWindow) {
       const priorityName = gameState.priorityPlayerId === gameState.humanPlayer.id ? 'you' : 'another player';
       return `This is not currently a legal action because ${priorityName} has priority.`;
     }
@@ -2904,6 +2910,20 @@ export function GameBoard({
   };
   const activeOwnerName = playerNameForId(gameState.activePlayerId);
   const priorityOwnerName = playerNameForId(gameState.priorityPlayerId);
+  const actionWindowLabel = hasHumanDeclareBlockersDecision
+    ? 'Your Blockers'
+    : hasHumanDeclareAttackersDecision
+    ? 'Your Attackers'
+    : isHumanTurn
+    ? 'Your Priority'
+    : `${priorityOwnerName} Priority`;
+  const actionWindowOwnerLabel = hasHumanDeclareBlockersDecision
+    ? 'You block'
+    : hasHumanDeclareAttackersDecision
+    ? 'You attack'
+    : isHumanTurn
+    ? 'You'
+    : priorityOwnerName;
   const prioritySnapshot = currentPrompt?.priority;
   const passedPriorityNames = prioritySnapshot?.passedPriorityPlayerIds.map(playerNameForId) ?? [];
   const stackTopId = prioritySnapshot?.stackTop?.id || gameState.stack[gameState.stack.length - 1]?.id;
@@ -3130,11 +3150,11 @@ export function GameBoard({
         <div className="ml-auto flex items-center gap-1.5 md:gap-2 shrink-0">
           {isLoading && <Loader2 className="w-3.5 h-3.5 md:w-4 md:h-4 animate-spin text-amber-400" />}
           <span className={`max-w-[9rem] truncate text-[10px] md:text-xs font-semibold px-1.5 md:px-2 py-0.5 rounded whitespace-nowrap md:max-w-[12rem] ${
-            isHumanTurn
+            hasHumanActionWindow
               ? 'bg-green-800 text-green-200'
               : 'bg-red-900 text-red-300'
           }`}>
-            {isHumanTurn ? 'Your Priority' : `${priorityOwnerName} Priority`}
+            {actionWindowLabel}
           </span>
           {canUndo && (
             <button
@@ -3195,12 +3215,14 @@ export function GameBoard({
                   <div className="truncate">{activeOwnerName}</div>
                 </div>
                 <div className={`rounded border px-3 py-2 ${
-                  isHumanTurn
+                  hasHumanActionWindow
                     ? 'border-green-600/40 bg-green-950/60 text-green-200'
                     : 'border-red-700/40 bg-red-950/60 text-red-200'
                 }`}>
-                  <div className="text-[9px] uppercase tracking-wider opacity-70">Priority</div>
-                  <div className="truncate">{isHumanTurn ? 'You' : priorityOwnerName}</div>
+                  <div className="text-[9px] uppercase tracking-wider opacity-70">
+                    {hasHumanCombatDecision ? 'Decision' : 'Priority'}
+                  </div>
+                  <div className="truncate">{actionWindowOwnerLabel}</div>
                 </div>
               </div>
 

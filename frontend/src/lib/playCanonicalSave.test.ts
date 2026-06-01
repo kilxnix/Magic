@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createPlayer, serializeGameState, type GameState } from 'commander-engine';
 import { auditCanonicalPlayEngineSave, buildCanonicalPlayEngineSave, restoreCanonicalPlayEngineState } from './playCanonicalSave';
-import { deletePlaySaveSlot, loadCanonicalPlaySlotState, putPlaySaveSlot, type PlaySaveSlotRecord } from './playSaveStorage';
+import { deletePlaySaveSlot, getPlaySaveSlots, loadCanonicalPlaySlotState, putPlaySaveSlot, type PlaySaveSlotRecord } from './playSaveStorage';
 
 function minimalState(): GameState {
   return {
@@ -133,6 +133,10 @@ describe('play canonical saves', () => {
       expect((rawEnvelope[0].snapshot as { engine?: unknown }).engine).toBeUndefined();
       expect(rawEnvelope[0].canonicalEngineSave).toBeUndefined();
       expect(rawEnvelope[0].canonicalManager?.slotId).toBe('play_slot_3');
+
+      const slots = await getPlaySaveSlots();
+      expect(slots[2]?.canonicalManager?.status).toBe('ok');
+      expect(slots[2]?.canonicalManager?.verifiedFingerprint).toBe(slots[2]?.canonicalManager?.fingerprint);
 
       await deletePlaySaveSlot(3);
       expect(await loadCanonicalPlaySlotState(3)).toBeNull();

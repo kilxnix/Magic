@@ -1492,8 +1492,16 @@ export function labelForAction(state: GameState, action: AIAction): string {
 
 function promptTypeForState(state: GameState): PromptType {
   if (state.players.some(player => player.hasLost)) return 'game-over';
-  if (state.step === 'declare_attackers') return 'declare-attackers';
-  if (state.step === 'declare_blockers') return 'declare-blockers';
+  if (state.step === 'declare_attackers' && !state.combat) return 'declare-attackers';
+  if (state.step === 'declare_blockers' && state.combat) {
+    const attackedDefenders = new Set(state.combat.attackers.map(attack => attack.defendingPlayerId));
+    const waitingOnDefender = state.players.some(player =>
+      !player.hasLost
+      && attackedDefenders.has(player.id)
+      && !hasPlayerDeclaredBlockers(state, player.id),
+    );
+    if (waitingOnDefender) return 'declare-blockers';
+  }
   if (state.stack.length > 0) return 'stack-response';
   if (state.phase === 'precombat_main' || state.phase === 'postcombat_main') {
     return 'main-action';

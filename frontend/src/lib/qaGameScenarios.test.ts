@@ -5,7 +5,7 @@ import {
   tapLandForMana,
   type ManaColor,
 } from 'commander-engine';
-import { createSisayRawLandsQaState } from './qaGameScenarios';
+import { createDeclareBlockersQaState, createSisayRawLandsQaState } from './qaGameScenarios';
 
 describe('QA game scenarios', () => {
   it('loads raw dual lands with mana actions and reaches Sisay activation after tapping WUBRG', () => {
@@ -33,6 +33,24 @@ describe('QA game scenarios', () => {
     const afterMana = getLegalActions(state, 'human');
     expect(afterMana.some(action =>
       action.kind === 'ActivateAbility' && action.cardInstanceId === 'sisay_1',
+    )).toBe(true);
+  });
+
+  it('loads a defender-owned declare-blockers decision even while attacker has priority', () => {
+    const state = deserializeGameState(createDeclareBlockersQaState());
+    const actions = getLegalActions(state, 'human');
+
+    expect(state.players[state.priorityPlayerIndex]?.id).toBe('ai-1');
+    expect(state.step).toBe('declare_blockers');
+    expect(actions.some(action =>
+      action.kind === 'DeclareBlockers' && action.blocks.length === 0,
+    )).toBe(true);
+    expect(actions.some(action =>
+      action.kind === 'DeclareBlockers'
+      && action.blocks.some(block =>
+        block.cardInstanceId === 'sisay_blocker_1'
+        && block.blockingAttackerId === 'body_launderer_1',
+      ),
     )).toBe(true);
   });
 });

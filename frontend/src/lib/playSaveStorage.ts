@@ -66,6 +66,9 @@ export interface PlaySaveSlotRecord {
     slotId: string;
     fingerprint: string;
     updatedAt: number;
+    status?: 'ok' | 'missing' | 'mismatch';
+    verifiedFingerprint?: string;
+    verifiedAt?: number;
   };
   drillBookmarks?: PlayDrillBookmark[];
   snapshot: unknown;
@@ -163,6 +166,54 @@ export async function loadCanonicalPlaySlotState(slot: number): Promise<Serializ
   return state ? serializeGameState(state) : null;
 }
 
+async function verifyCanonicalManagerRecord(record: PlaySaveSlotRecord): Promise<PlaySaveSlotRecord> {
+  if (!record.canonicalManager) return record;
+  const manager = getBrowserSaveManager();
+  if (!manager) {
+    return {
+      ...record,
+      canonicalManager: {
+        ...record.canonicalManager,
+        status: 'missing',
+        verifiedAt: Date.now(),
+      },
+    };
+  }
+
+  try {
+    const state = await manager.loadGame(record.canonicalManager.slotId);
+    if (!state) {
+      return {
+        ...record,
+        canonicalManager: {
+          ...record.canonicalManager,
+          status: 'missing',
+          verifiedAt: Date.now(),
+        },
+      };
+    }
+    const verifiedFingerprint = stateFingerprint(state);
+    return {
+      ...record,
+      canonicalManager: {
+        ...record.canonicalManager,
+        status: verifiedFingerprint === record.canonicalManager.fingerprint ? 'ok' : 'mismatch',
+        verifiedFingerprint,
+        verifiedAt: Date.now(),
+      },
+    };
+  } catch {
+    return {
+      ...record,
+      canonicalManager: {
+        ...record.canonicalManager,
+        status: 'missing',
+        verifiedAt: Date.now(),
+      },
+    };
+  }
+}
+
 export async function deleteCanonicalPlaySlot(slot: number): Promise<void> {
   const manager = getBrowserSaveManager();
   if (!manager) return;
@@ -237,7 +288,8 @@ export async function getPlaySaveSlots(): Promise<(PlaySaveSlotRecord | null)[]>
   } else {
     records = readFallback();
   }
-  const bySlot = new Map(records.map(record => [record.slot, record]));
+  const verifiedRecords = await Promise.all(records.map(record => verifyCanonicalManagerRecord(record)));
+  const bySlot = new Map(verifiedRecords.map(record => [record.slot, record]));
   return Array.from({ length: SLOT_COUNT }, (_, index) => bySlot.get(index + 1) || null);
 }
 

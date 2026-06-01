@@ -3320,15 +3320,18 @@ export function useShelectorGame() {
         }
       }
 
+      const hasRequiredCombatDeclaration = simpleActions.some(action =>
+        action.kind === 'DeclareAttackers' || action.kind === 'DeclareBlockers',
+      );
       const canSkipRestOfTurn = engine.stack.length === 0;
-      if (canSkipRestOfTurn) {
+      if (!hasRequiredCombatDeclaration && canSkipRestOfTurn) {
         const humanIsActivePlayer = engine.players[engine.activePlayerIndex]?.id === humanId;
         simpleActions.unshift({
           kind: 'SkipRestOfTurn',
           label: humanIsActivePlayer ? 'Skip Rest of Turn' : 'Yield Until My Turn',
           _engineAction: { kind: 'PassPriority' },
         });
-      } else if (isEmptyWindowSkippable(simpleActions)) {
+      } else if (!hasRequiredCombatDeclaration && isEmptyWindowSkippable(simpleActions)) {
         simpleActions.unshift({
           kind: 'SkipEmptyPhases',
           label: engine.stack.length > 0 ? 'Pass Empty Responses' : 'Skip Empty Phases',
@@ -8472,8 +8475,12 @@ export function useShelectorGame() {
     }
   }, [setCoachMode, setHoldPriority, setNewPlayerMode, syncState]);
 
+  const hasHumanRequiredCombatDecision = legalActions.some(action =>
+    action.kind === 'DeclareAttackers' || action.kind === 'DeclareBlockers',
+  );
   const isHumanTurn =
     gameState?.priorityPlayerId === humanIdRef.current
+    || hasHumanRequiredCombatDecision
     || (!!currentPrompt && currentPrompt.playerId === humanIdRef.current && legalActions.length > 0);
   const isGameOver = gameState?.gameOver ?? false;
   const winner = gameState?.winnerId ?? null;
