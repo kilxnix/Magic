@@ -433,6 +433,102 @@ export function createLandEntryFetchQaState(): SerializedGameStateV1 {
   return serializeGameState(state);
 }
 
+export function createModalChoiceQaState(): SerializedGameStateV1 {
+  const commander = def(
+    'modal_qa_commander',
+    'Krenko, Mob Boss',
+    'Legendary Creature - Goblin Warrior',
+    '{2}{R}{R}',
+    '{T}: Create X 1/1 red Goblin creature tokens, where X is the number of Goblins you control.',
+    { cmc: 4, colors: ['R'], color_identity: ['R'], power: 3, toughness: 3 },
+  );
+  const abrade = def(
+    'abrade',
+    'Abrade',
+    'Instant',
+    '{1}{R}',
+    'Choose one —\n• Abrade deals 3 damage to target creature.\n• Destroy target artifact.',
+    { cmc: 2, colors: ['R'], color_identity: ['R'] },
+  );
+  const solRing = def(
+    'opponent_sol_ring',
+    'Sol Ring',
+    'Artifact',
+    '{1}',
+    '{T}: Add {C}{C}.',
+    { cmc: 1 },
+  );
+  const bear = def(
+    'opponent_bear',
+    'Grizzly Bears',
+    'Creature - Bear',
+    '{1}{G}',
+    '',
+    { cmc: 2, colors: ['G'], color_identity: ['G'], power: 2, toughness: 2 },
+  );
+  const mountain = def('modal_qa_mountain', 'Mountain', 'Basic Land - Mountain', '', '({T}: Add {R}.)', { card_types: ['land'] });
+
+  const state: GameState = {
+    players: [
+      {
+        id: 'human',
+        name: 'Modal QA Pilot',
+        life: 40,
+        poisonCounters: 0,
+        commanderDamage: {},
+        commanderTax: 0,
+        commanderInstanceId: 'modal_qa_commander_1',
+        commanderCastCount: 0,
+        manaPool: pool({ R: 4 }),
+        hasPlayedLand: false,
+        hasPriority: true,
+        hasLost: false,
+      },
+      {
+        id: 'ai-1',
+        name: 'Modal QA Opponent',
+        life: 40,
+        poisonCounters: 0,
+        commanderDamage: {},
+        commanderTax: 0,
+        commanderInstanceId: null,
+        commanderCastCount: 0,
+        manaPool: pool(),
+        hasPlayedLand: false,
+        hasPriority: false,
+        hasLost: false,
+      },
+    ],
+    cards: new Map<string, CardInstance>([
+      ['modal_qa_commander_1', instance('modal_qa_commander_1', commander.id, 'human', 'command', { isCommander: true })],
+      ['abrade_damage_1', instance('abrade_damage_1', abrade.id, 'human', 'hand')],
+      ['abrade_artifact_1', instance('abrade_artifact_1', abrade.id, 'human', 'hand')],
+      ['modal_qa_mountain_1', instance('modal_qa_mountain_1', mountain.id, 'human', 'battlefield')],
+      ['opponent_sol_ring_1', instance('opponent_sol_ring_1', solRing.id, 'ai-1', 'battlefield')],
+      ['opponent_bear_1', instance('opponent_bear_1', bear.id, 'ai-1', 'battlefield')],
+    ]),
+    cardDefinitions: new Map<string, CardDefinition>([
+      [commander.id, commander],
+      [abrade.id, abrade],
+      [mountain.id, mountain],
+      [solRing.id, solRing],
+      [bear.id, bear],
+    ]),
+    activePlayerIndex: 0,
+    priorityPlayerIndex: 0,
+    phase: 'precombat_main',
+    step: 'upkeep',
+    turnNumber: 1,
+    hasPriorityPassed: [false, false],
+    stack: [],
+    combat: null,
+    battlefieldAbilities: new Map(),
+    pendingTriggers: [],
+  };
+
+  return serializeGameState(state);
+}
+
 export function createDeclareBlockersQaState(): SerializedGameStateV1 {
   const sisay = def(
     'sisay_blocker',

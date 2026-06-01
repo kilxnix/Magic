@@ -151,4 +151,95 @@ describe('play canonical saves', () => {
       });
     }
   });
+
+  it('keeps a canonical engine save as fallback when SaveManager storage is unavailable', async () => {
+    const store = new Map<string, string>();
+    const fakeStorage = {
+      get length() {
+        return store.size;
+      },
+      getItem: (key: string) => store.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        store.set(key, value);
+      },
+      removeItem: (key: string) => {
+        store.delete(key);
+      },
+      key: (index: number) => Array.from(store.keys())[index] ?? null,
+    };
+    const previousWindow = (globalThis as any).window;
+    const previousLocalStorage = (globalThis as any).localStorage;
+    Object.defineProperty(globalThis, 'window', {
+      value: { localStorage: fakeStorage },
+      configurable: true,
+    });
+    Object.defineProperty(globalThis, 'localStorage', {
+      value: undefined,
+      configurable: true,
+    });
+
+    try {
+      const state = minimalState();
+      state.turnNumber = 11;
+      const serialized = serializeGameState(state);
+      const canonicalEngineSave = buildCanonicalPlayEngineSave({
+        slot: 2,
+        name: 'Fallback Slot',
+        humanPlayerId: 'human',
+        serializedState: serialized,
+      });
+      expect(canonicalEngineSave).toBeTruthy();
+
+      const record: PlaySaveSlotRecord = {
+        slot: 2,
+        name: 'Fallback Slot',
+        commander: 'Talrand, Sky Summoner',
+        turnNumber: 11,
+        phase: 'precombat_main',
+        savedAt: Date.now(),
+        autosaved: false,
+        canonicalEngineSave,
+        snapshot: {
+          engine: serialized,
+          humanId: 'human',
+        },
+        ui: {
+          step: 'game',
+          importTab: 'text',
+          deckUrl: '',
+          deckText: '',
+          importResult: null,
+          standardDeckText: '',
+          opponentCount: 1,
+          spawnMode: 'counter',
+          spawnBracket: 3,
+          colorFilter: { W: false, U: false, B: false, R: false, G: false },
+          personality: 'Balanced',
+          spawnedOpponents: [],
+          selectedPracticePresetId: 'beginner-talrand-spells',
+        },
+      };
+
+      await putPlaySaveSlot(record);
+      const rawEnvelope = JSON.parse(fakeStorage.getItem('deckreps_play_save_slots_v1') || '[]') as PlaySaveSlotRecord[];
+      expect((rawEnvelope[0].snapshot as { engine?: unknown }).engine).toBeUndefined();
+      expect(rawEnvelope[0].canonicalEngineSave?.schema).toBe('commander-engine-save-v1');
+      expect(rawEnvelope[0].canonicalManager).toBeUndefined();
+
+      const slots = await getPlaySaveSlots();
+      const fallbackRecord = slots[1];
+      expect(fallbackRecord?.canonicalEngineSave).toBeTruthy();
+      const restored = restoreCanonicalPlayEngineState(fallbackRecord?.canonicalEngineSave);
+      expect(restored?.turnNumber).toBe(11);
+    } finally {
+      Object.defineProperty(globalThis, 'window', {
+        value: previousWindow,
+        configurable: true,
+      });
+      Object.defineProperty(globalThis, 'localStorage', {
+        value: previousLocalStorage,
+        configurable: true,
+      });
+    }
+  });
 });

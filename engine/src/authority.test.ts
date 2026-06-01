@@ -2325,6 +2325,39 @@ describe('authority action boundary', () => {
     expect(illegal.reason).toBe('illegal_response');
   });
 
+  it('validates modal choices from named-card oracle text with stable mode indices', () => {
+    const state = stateWithForestInHand();
+    const abrade = def(
+      'abrade',
+      'Abrade',
+      'Instant',
+      '{1}{R}',
+      'Choose one —\n• Abrade deals 3 damage to target creature.\n• Destroy target artifact.',
+    );
+    state.cardDefinitions.set(abrade.id, abrade);
+    state.cards.set('abrade_in_hand', cardInstance('abrade_in_hand', abrade.id, 'p1', 'hand'));
+
+    const request = createChooseModePromptRequest(state, 'p1', 'abrade_in_hand', {
+      id: 'prompt-named-modal-choice',
+      createdAt: 28,
+    });
+
+    expect(request.legalChoices.map(choice => choice.modeIndex)).toEqual([0, 1]);
+    expect(request.legalChoices.map(choice => choice.label)).toEqual([
+      'Abrade deals 3 damage to target creature',
+      'Destroy target artifact',
+    ]);
+
+    const artifactMode = applyChooseModePromptResponse(state, request, {
+      requestId: request.id,
+      kind: 'ChooseMode',
+      playerId: 'p1',
+      selectedModeIndices: [1],
+    });
+    expect(artifactMode.ok).toBe(true);
+    expect(artifactMode.selectedModeIndices).toEqual([1]);
+  });
+
   it('rejects forged modal cast requests whose chosen modes were not generated as legal actions', () => {
     const state = stateWithForestInHand();
     const charm = def(

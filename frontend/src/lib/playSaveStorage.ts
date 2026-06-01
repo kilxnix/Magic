@@ -123,7 +123,7 @@ function engineStateFromRecord(record: PlaySaveSlotRecord): SerializedGameStateV
 }
 
 function stripAuthoritativeEnginePayload(record: PlaySaveSlotRecord): PlaySaveSlotRecord {
-  if (!record.canonicalManager) return record;
+  if (!record.canonicalManager && !record.canonicalEngineSave) return record;
   const snapshot = snapshotFromRecord(record);
   if (!snapshot?.engine && !record.canonicalEngineSave) return record;
 
@@ -134,7 +134,9 @@ function stripAuthoritativeEnginePayload(record: PlaySaveSlotRecord): PlaySaveSl
     ...record,
     snapshot: snapshotCopy,
   };
-  delete next.canonicalEngineSave;
+  if (record.canonicalManager) {
+    delete next.canonicalEngineSave;
+  }
   return next;
 }
 

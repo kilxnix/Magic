@@ -5,7 +5,7 @@ import {
   tapLandForMana,
   type ManaColor,
 } from 'commander-engine';
-import { createDeclareBlockersQaState, createLandEntryFetchQaState, createSisayRawLandsQaState } from './qaGameScenarios';
+import { createDeclareBlockersQaState, createLandEntryFetchQaState, createModalChoiceQaState, createSisayRawLandsQaState } from './qaGameScenarios';
 
 describe('QA game scenarios', () => {
   it('loads raw dual lands with mana actions and reaches Sisay activation after tapping WUBRG', () => {
@@ -63,6 +63,26 @@ describe('QA game scenarios', () => {
     )).toBe(true);
     expect(actions.some(action =>
       action.kind === 'ActivateAbility' && action.cardInstanceId === 'scalding_tarn_board_1',
+    )).toBe(true);
+  });
+
+  it('loads a modal spell with separate legal damage and artifact-destroy choices for browser QA', () => {
+    const state = deserializeGameState(createModalChoiceQaState());
+    const actions = getLegalActions(state, 'human');
+    const abradeActions = actions.filter(action =>
+      action.kind === 'CastSpell'
+      && (action.cardInstanceId === 'abrade_damage_1' || action.cardInstanceId === 'abrade_artifact_1')
+    );
+
+    expect(abradeActions.some(action =>
+      action.kind === 'CastSpell'
+      && action.chosenModes?.[0] === 0
+      && action.targets.includes('opponent_bear_1'),
+    )).toBe(true);
+    expect(abradeActions.some(action =>
+      action.kind === 'CastSpell'
+      && action.chosenModes?.[0] === 1
+      && action.targets.includes('opponent_sol_ring_1'),
     )).toBe(true);
   });
 });

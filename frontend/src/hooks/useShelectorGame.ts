@@ -377,7 +377,10 @@ function modalSelectedModeSuffix(engineState: GameState, action: Extract<AIActio
   const parsed = parseOracleText(normalizeOracleForFrontendParser(def.oracle_text, def.name), def.mana_cost);
   if (parsed.kind !== 'Modal') return '';
   const labels = action.chosenModes
-    .map(modeIndex => parsed.modal.choices[modeIndex]?.label)
+    .map(modeIndex => {
+      const label = parsed.modal.choices[modeIndex]?.label;
+      return label ? restoreSelfReferenceLabel(label, def.name) : undefined;
+    })
     .filter((label): label is string => Boolean(label));
   return labels.length ? ` choosing ${labels.join(' + ')}` : '';
 }
@@ -1474,6 +1477,10 @@ function normalizeOracleForFrontendParser(oracleText: string, cardName: string):
   if (!cardName) return oracleText;
   const escaped = cardName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   return oracleText.replace(new RegExp(escaped, 'gi'), '~');
+}
+
+function restoreSelfReferenceLabel(label: string, cardName: string): string {
+  return cardName ? label.replace(/~/g, cardName) : label;
 }
 
 function definitionLooksPermanent(def: CardDefinition): boolean {
@@ -7786,6 +7793,7 @@ export function useShelectorGame() {
               precastState,
               humanIdRef.current,
               engineAction.cardInstanceId,
+              { faceName: engineAction.faceName },
             );
             const modeSubmission = {
               requestId: modeRequest.id,

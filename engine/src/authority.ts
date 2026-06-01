@@ -523,6 +523,7 @@ export interface CreateChooseModePromptOptions {
   minSelections?: number;
   maxSelections?: number;
   createdAt?: number;
+  faceName?: string;
 }
 
 export interface ChooseModePromptResponse {
@@ -1201,15 +1202,35 @@ function targetSuffix(state: GameState, targets?: string[]): string {
   return ` targeting ${names.join(', ')}`;
 }
 
+function normalizeOracleForAuthorityParser(oracleText: string, cardName: string): string {
+  if (!cardName) return oracleText;
+  const escaped = cardName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  let text = oracleText.replace(new RegExp(escaped, 'gi'), '~');
+  const shortName = cardName.split(',')[0]?.trim();
+  if (shortName && shortName.length >= 3 && shortName !== cardName) {
+    const escapedShort = shortName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    text = text.replace(new RegExp(`\\b${escapedShort}\\b`, 'gi'), '~');
+  }
+  return text;
+}
+
+function restoreSelfReferenceLabel(label: string, cardName: string): string {
+  return cardName ? label.replace(/~/g, cardName) : label;
+}
+
 function modalModeSuffix(state: GameState, action: Extract<AIAction, { kind: 'CastSpell' }>): string {
   if (!action.chosenModes?.length) return '';
   const card = state.cards.get(action.cardInstanceId);
-  const def = card ? getCardDefinition(state, card) : undefined;
+  const def = getCastSpellDefinition(state, action.cardInstanceId, { faceName: action.faceName })
+    || (card ? getCardDefinition(state, card) : undefined);
   if (!def) return '';
-  const parsed = parseOracleText(def.oracle_text);
+  const parsed = parseOracleText(normalizeOracleForAuthorityParser(def.oracle_text, def.name), def.mana_cost);
   if (parsed.kind !== 'Modal') return '';
   const labels = action.chosenModes
-    .map(modeIndex => parsed.modal.choices[modeIndex]?.label)
+    .map(modeIndex => {
+      const label = parsed.modal.choices[modeIndex]?.label;
+      return label ? restoreSelfReferenceLabel(label, def.name) : undefined;
+    })
     .filter((label): label is string => Boolean(label));
   return labels.length ? ` choosing ${labels.join(' + ')}` : '';
 }
@@ -4693,18 +4714,23 @@ function chooseModeRejectUpdate(
   };
 }
 
-function modalChoicesForCard(state: GameState, sourceInstanceId: string): { chooseCount: number; upTo?: boolean; choices: ModeChoice[] } | undefined {
+function modalChoicesForCard(
+  state: GameState,
+  sourceInstanceId: string,
+  options: CreateChooseModePromptOptions = {},
+): { chooseCount: number; upTo?: boolean; choices: ModeChoice[] } | undefined {
   const card = state.cards.get(sourceInstanceId);
-  const def = card ? getCardDefinition(state, card) : undefined;
+  const def = getCastSpellDefinition(state, sourceInstanceId, { faceName: options.faceName })
+    || (card ? getCardDefinition(state, card) : undefined);
   if (!def) return undefined;
-  const parsed = parseOracleText(def.oracle_text);
+  const parsed = parseOracleText(normalizeOracleForAuthorityParser(def.oracle_text, def.name), def.mana_cost);
   if (parsed.kind !== 'Modal') return undefined;
   return {
     chooseCount: parsed.modal.chooseCount,
     upTo: parsed.modal.upTo,
     choices: parsed.modal.choices.map((choice, modeIndex) => ({
       modeIndex,
-      label: choice.label || `Mode ${modeIndex + 1}`,
+      label: choice.label ? restoreSelfReferenceLabel(choice.label, def.name) : `Mode ${modeIndex + 1}`,
       legal: true,
     })),
   };
@@ -4718,7 +4744,7 @@ export function createChooseModePromptRequest(
 ): ChooseModePromptRequest {
   const expectedStateId = stateFingerprint(state);
   const createdAt = options.createdAt ?? Date.now();
-  const modal = modalChoicesForCard(state, sourceInstanceId);
+  const modal = modalChoicesForCard(state, sourceInstanceId, options);
   const minSelections = options.minSelections ?? (modal?.upTo ? 1 : modal?.chooseCount ?? 1);
   const maxSelections = options.maxSelections ?? (modal?.chooseCount ?? minSelections);
   const legalChoices = modal?.choices || [];

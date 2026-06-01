@@ -57,6 +57,7 @@ async function dismissOverlays(page) {
 }
 
 async function openGameSaves(page) {
+  await dismissOverlays(page);
   await page.getByRole('button', { name: 'Open game menu' }).click();
   await page.getByRole('button', { name: /^Saves\b/ }).click();
 }
@@ -77,6 +78,17 @@ async function openReview(page) {
     await page.waitForTimeout(150);
   }
   throw new Error('Could not open the game review from the menu');
+}
+
+async function clickFirstAvailableAction(page) {
+  for (const pattern of [/^(Play|Tap|Cast|Activate)\b/i, /Skip Rest of Turn|End Phase|Done|Pass/i]) {
+    const button = page.getByRole('button', { name: pattern }).first();
+    if ((await button.count()) > 0 && (await button.isVisible().catch(() => false))) {
+      await button.click();
+      return;
+    }
+  }
+  throw new Error('Could not find an initial game action before saving.');
 }
 
 async function readSavedSlot(page, slot) {
@@ -112,9 +124,8 @@ async function readSavedSlot(page, slot) {
     await page.getByRole('button', { name: 'Start 1v1' }).click();
     await page.getByText('Keep', { exact: true }).waitFor({ timeout: 60000 });
     await page.getByText('Keep', { exact: true }).click();
-    const firstAction = page.getByRole('button', { name: /Skip Rest of Turn|End Phase|Done|Pass/i }).first();
-    await firstAction.waitFor({ timeout: 15000 });
-    await firstAction.click();
+    await page.getByRole('button', { name: /^(Play|Tap|Cast|Activate)\b|Skip Rest of Turn|End Phase|Done|Pass/i }).first().waitFor({ timeout: 15000 });
+    await clickFirstAvailableAction(page);
     await page.waitForTimeout(500);
     await openGameSaves(page);
     await page.getByRole('button', { name: 'Save Here' }).first().click();
@@ -137,7 +148,7 @@ async function readSavedSlot(page, slot) {
     await page.getByRole('button', { name: 'Load' }).first().click();
     await page.getByRole('button', { name: 'Open game menu' }).waitFor({ timeout: 15000 });
     await openGameSaves(page);
-    await page.getByText('Loaded slot 1.').waitFor({ timeout: 10000 });
+    await page.getByText(/Loaded slot 1/).waitFor({ timeout: 10000 });
     await page.screenshot({ path: artifact('play-save-slots-restored.png'), fullPage: false });
 
     const slotCount = await page.getByText('Slot 1').count();

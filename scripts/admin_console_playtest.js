@@ -74,10 +74,25 @@ async function dismissOverlays(page) {
   const roomName = `Admin QA ${Date.now()}`;
   const created = await apiJson('/api/multiplayer/rooms', {
     method: 'POST',
-    body: JSON.stringify({ name: roomName, host_name: 'Admin Host', is_private: true, namespace: 'qa' }),
+    body: JSON.stringify({ name: roomName, host_name: 'Admin Host', is_private: false, namespace: 'qa' }),
   });
   assert(created.ok, `could not create QA room (${created.status})`);
   const roomId = created.body.room.id;
+  const guest = await apiJson(`/api/multiplayer/rooms/${roomId}/join`, {
+    method: 'POST',
+    body: JSON.stringify({ player_name: 'Muted Guest' }),
+  });
+  assert(guest.ok, `could not join muted guest (${guest.status})`);
+  const guestId = guest.body.player_id;
+  const bannedGuest = await apiJson(`/api/multiplayer/rooms/${roomId}/join`, {
+    method: 'POST',
+    body: JSON.stringify({ player_name: 'Banned Guest' }),
+  });
+  assert(bannedGuest.ok, `could not join banned guest (${bannedGuest.status})`);
+  await apiJson(`/api/multiplayer/rooms/${roomId}/chat`, {
+    method: 'POST',
+    body: JSON.stringify({ player_id: guestId, message: 'Friendly admin QA chat message' }),
+  });
 
   const browser = await chromium.launch({ headless: HEADLESS });
   const context = await browser.newContext({ viewport: { width: 1366, height: 900 } });
@@ -93,6 +108,56 @@ async function dismissOverlays(page) {
 
     await page.getByRole('button', { name: roomName, exact: true }).click();
     await page.getByPlaceholder('Optional reason stored in admin audit').fill('admin console playtest');
+
+    await page.getByPlaceholder('Message all room users').fill('Admin QA announcement');
+    await page.getByLabel('Send room announcement', { exact: true }).click();
+    await page.getByText('Announcement sent.').waitFor({ timeout: 10000 });
+    let overview = await apiJson('/api/admin/overview', { headers: { 'x-admin-token': ADMIN_TOKEN } });
+    let inspectedRoom = overview.body.rooms.find(room => room.id === roomId);
+    assert(inspectedRoom?.chat.some(message => message.player_name === 'Admin' && message.message === 'Admin QA announcement'), 'admin announcement was not added to room chat');
+
+    await page.getByRole('button', { name: roomName, exact: true }).click();
+    await page.getByLabel('Mute Muted Guest', { exact: true }).click();
+    await page.getByText('Seat muted.').waitFor({ timeout: 10000 });
+    const mutedChat = await apiJson(`/api/multiplayer/rooms/${roomId}/chat`, {
+      method: 'POST',
+      body: JSON.stringify({ player_id: guestId, message: 'This should be blocked while muted' }),
+    });
+    assert(!mutedChat.ok && mutedChat.status === 403, 'muted room user was still able to chat');
+
+    await page.getByRole('button', { name: roomName, exact: true }).click();
+    await page.getByLabel('Unmute Muted Guest', { exact: true }).click();
+    await page.getByText('Seat unmuted.').waitFor({ timeout: 10000 });
+    const unmutedChat = await apiJson(`/api/multiplayer/rooms/${roomId}/chat`, {
+      method: 'POST',
+      body: JSON.stringify({ player_id: guestId, message: 'Unmuted admin QA chat message' }),
+    });
+    assert(unmutedChat.ok, 'unmuted room user could not chat');
+
+    await page.getByRole('button', { name: roomName, exact: true }).click();
+    await page.getByLabel('Remove chat message', { exact: true }).first().click();
+    await page.getByText('Chat message removed.').waitFor({ timeout: 10000 });
+    overview = await apiJson('/api/admin/overview', { headers: { 'x-admin-token': ADMIN_TOKEN } });
+    inspectedRoom = overview.body.rooms.find(room => room.id === roomId);
+    assert(inspectedRoom?.chat.some(message => message.message === 'Admin removed a chat message.'), 'admin chat removal was not logged');
+
+    await page.getByRole('button', { name: roomName, exact: true }).click();
+    await page.getByLabel('Ban Banned Guest', { exact: true }).click();
+    await page.getByText('Seat banned.').waitFor({ timeout: 10000 });
+    const bannedRejoin = await apiJson(`/api/multiplayer/rooms/${roomId}/join`, {
+      method: 'POST',
+      body: JSON.stringify({ player_name: 'Banned Guest' }),
+    });
+    assert(!bannedRejoin.ok && bannedRejoin.status === 403, 'banned room name was able to rejoin');
+
+    await page.getByRole('button', { name: roomName, exact: true }).click();
+    await page.getByLabel('Remove Muted Guest', { exact: true }).click();
+    await page.getByText('Seat removed.').waitFor({ timeout: 10000 });
+    overview = await apiJson('/api/admin/overview', { headers: { 'x-admin-token': ADMIN_TOKEN } });
+    inspectedRoom = overview.body.rooms.find(room => room.id === roomId);
+    assert(inspectedRoom && inspectedRoom.player_count === 1, 'admin kick did not remove the guest seat');
+
+    await page.getByRole('button', { name: roomName, exact: true }).click();
     await page.locator('aside').getByRole('button', { name: 'Close' }).click();
     await page.getByText('Room closed.').waitFor({ timeout: 10000 });
 

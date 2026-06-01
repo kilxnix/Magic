@@ -20,7 +20,7 @@ import {
   type BeginnerDeck,
 } from '../lib/beginnerDecks';
 import { auditPlaySaveSnapshot } from '../lib/playSaveAudit';
-import { auditCanonicalPlayEngineSave, restoreCanonicalPlayEngineState } from '../lib/playCanonicalSave';
+import { auditCanonicalPlayEngineSave, buildCanonicalPlayEngineSave, restoreCanonicalPlayEngineState } from '../lib/playCanonicalSave';
 import { findUnsupportedEngineCards, formatUnsupportedEngineCards } from '../lib/enginePreflight';
 import {
   deletePlaySaveSlot,
@@ -278,6 +278,7 @@ export function PlayPage() {
       && qaScenario !== 'sisay-raw-lands'
       && qaScenario !== 'declare-blockers'
       && qaScenario !== 'land-entry-fetch'
+      && qaScenario !== 'modal-choice'
     ) return;
 
     let cancelled = false;
@@ -285,6 +286,7 @@ export function PlayPage() {
       .then(({
         createDeclareBlockersQaState,
         createLandEntryFetchQaState,
+        createModalChoiceQaState,
         createSisayActivationQaState,
         createSisayRawLandsQaState,
       }) => {
@@ -295,6 +297,8 @@ export function PlayPage() {
           ? createDeclareBlockersQaState()
           : qaScenario === 'land-entry-fetch'
           ? createLandEntryFetchQaState()
+          : qaScenario === 'modal-choice'
+          ? createModalChoiceQaState()
           : createSisayActivationQaState();
         const now = Date.now();
         const snapshot: ShelectorGameSaveSnapshot = {
@@ -303,10 +307,12 @@ export function PlayPage() {
           engine,
           humanDeck: null,
           aiDecks: [],
-          humanCommander: 'Sisay, Weatherlight Captain',
+          humanCommander: qaScenario === 'modal-choice' ? 'Krenko, Mob Boss' : 'Sisay, Weatherlight Captain',
           aiCommanderNames: {
             'ai-1': qaScenario === 'declare-blockers'
               ? 'Marchesa, Dealer of Death'
+              : qaScenario === 'modal-choice'
+              ? 'Modal QA Opponent'
               : 'QA Opponent',
           },
           humanId: 'human',
@@ -358,6 +364,8 @@ export function PlayPage() {
               ? 'declare blockers'
               : qaScenario === 'land-entry-fetch'
               ? 'land entry/fetch'
+              : qaScenario === 'modal-choice'
+              ? 'modal choice'
               : 'Sisay activation'
           } QA scenario.`);
           setSaveError(null);
@@ -407,6 +415,15 @@ export function PlayPage() {
   ): PlaySaveSlotRecord => {
     const savedAt = Date.now();
     const commander = gameState?.humanCommander || importResult?.commander || snapshot.humanCommander || 'Practice Game';
+    const canonicalEngineSave = snapshot.engine
+      ? buildCanonicalPlayEngineSave({
+          slot,
+          name: `Slot ${slot} - ${commander}`,
+          humanPlayerId: snapshot.humanId || 'human',
+          serializedState: snapshot.engine,
+          createdAt: savedAt,
+        })
+      : undefined;
 
     return {
       slot,
@@ -425,6 +442,7 @@ export function PlayPage() {
         updatedAt: savedAt,
       },
       drillBookmarks,
+      canonicalEngineSave,
       snapshot,
       ui: {
         step,

@@ -239,7 +239,8 @@ async function driveToNamedCardPrompt(page) {
     fs.writeFileSync(artifact('post-pick-body.txt'), body);
     await screenshot(page, '04-after-named-card-resolution.png');
     assert(!body.toLowerCase().includes('tainted pact: name a card'), 'Tainted Pact card-name picker did not close.');
-    assert(body.includes('State update - stack 1 -> 0'), 'Tainted Pact did not resolve after choosing a card name.');
+    assert(/(?:State|Engine) update - stack 1 -> 0/i.test(body), 'Tainted Pact did not resolve after choosing a card name.');
+    assert(/library -> exile/i.test(body), 'Tainted Pact did not move library cards after choosing a card name.');
 
     const result = {
       ok: true,
