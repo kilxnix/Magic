@@ -273,16 +273,28 @@ export function PlayPage() {
     if (!import.meta.env.DEV || qaScenarioLoadedRef.current || typeof window === 'undefined') return;
     const params = new URLSearchParams(window.location.search);
     const qaScenario = params.get('qa');
-    if (qaScenario !== 'sisay-activation' && qaScenario !== 'sisay-raw-lands' && qaScenario !== 'declare-blockers') return;
+    if (
+      qaScenario !== 'sisay-activation'
+      && qaScenario !== 'sisay-raw-lands'
+      && qaScenario !== 'declare-blockers'
+      && qaScenario !== 'land-entry-fetch'
+    ) return;
 
     let cancelled = false;
     import('../lib/qaGameScenarios')
-      .then(({ createDeclareBlockersQaState, createSisayActivationQaState, createSisayRawLandsQaState }) => {
+      .then(({
+        createDeclareBlockersQaState,
+        createLandEntryFetchQaState,
+        createSisayActivationQaState,
+        createSisayRawLandsQaState,
+      }) => {
         if (cancelled || qaScenarioLoadedRef.current) return;
         const engine = qaScenario === 'sisay-raw-lands'
           ? createSisayRawLandsQaState()
           : qaScenario === 'declare-blockers'
           ? createDeclareBlockersQaState()
+          : qaScenario === 'land-entry-fetch'
+          ? createLandEntryFetchQaState()
           : createSisayActivationQaState();
         const now = Date.now();
         const snapshot: ShelectorGameSaveSnapshot = {
@@ -292,7 +304,11 @@ export function PlayPage() {
           humanDeck: null,
           aiDecks: [],
           humanCommander: 'Sisay, Weatherlight Captain',
-          aiCommanderNames: { 'ai-1': qaScenario === 'declare-blockers' ? 'Marchesa, Dealer of Death' : 'QA Opponent' },
+          aiCommanderNames: {
+            'ai-1': qaScenario === 'declare-blockers'
+              ? 'Marchesa, Dealer of Death'
+              : 'QA Opponent',
+          },
           humanId: 'human',
           aiIds: ['ai-1'],
           opponentInfo: null,
@@ -340,6 +356,8 @@ export function PlayPage() {
               ? 'Sisay raw lands'
               : qaScenario === 'declare-blockers'
               ? 'declare blockers'
+              : qaScenario === 'land-entry-fetch'
+              ? 'land entry/fetch'
               : 'Sisay activation'
           } QA scenario.`);
           setSaveError(null);

@@ -325,6 +325,114 @@ export function createSisayRawLandsQaState(): SerializedGameStateV1 {
   return serializeGameState(stateWithSisayStaticEffect);
 }
 
+export function createLandEntryFetchQaState(): SerializedGameStateV1 {
+  const commander = def(
+    'lands_qa_commander',
+    'Sisay, Weatherlight Captain',
+    'Legendary Creature - Human Soldier',
+    '{2}{W}',
+    "Sisay, Weatherlight Captain gets +1/+1 for each color among other legendary permanents you control.\n{W}{U}{B}{R}{G}, {T}: Search your library for a legendary permanent card with mana value less than Sisay, Weatherlight Captain's power, put that card onto the battlefield, then shuffle.",
+    { cmc: 3, colors: ['W'], color_identity: ['W', 'U', 'B', 'R', 'G'], power: 2, toughness: 2 },
+  );
+  const stompingGround = def(
+    'stomping_ground_hand',
+    'Stomping Ground',
+    'Land - Mountain Forest',
+    '',
+    "As Stomping Ground enters, you may pay 2 life. If you don't, it enters tapped.",
+    { card_types: ['land'] },
+  );
+  const scaldingTarn = def(
+    'scalding_tarn_board',
+    'Scalding Tarn',
+    'Land',
+    '',
+    '{T}, Pay 1 life, Sacrifice this land: Search your library for an Island or Mountain card, put it onto the battlefield, then shuffle.',
+    { card_types: ['land'] },
+  );
+  const steamVents = def(
+    'steam_vents_library',
+    'Steam Vents',
+    'Land - Island Mountain',
+    '',
+    "As Steam Vents enters, you may pay 2 life. If you don't, it enters tapped.",
+    { card_types: ['land'] },
+  );
+  const island = def('island_library', 'Island', 'Basic Land - Island', '', '({T}: Add {U}.)', { card_types: ['land'] });
+  const forest = def('forest_library', 'Forest', 'Basic Land - Forest', '', '({T}: Add {G}.)', { card_types: ['land'] });
+  const arcaneSignet = def(
+    'arcane_signet_library',
+    'Arcane Signet',
+    'Artifact',
+    '{2}',
+    "{T}: Add one mana of any color in your commander's color identity.",
+    { cmc: 2 },
+  );
+
+  const state: GameState = {
+    players: [
+      {
+        id: 'human',
+        name: 'Land Entry QA Pilot',
+        life: 40,
+        poisonCounters: 0,
+        commanderDamage: {},
+        commanderTax: 0,
+        commanderInstanceId: 'lands_qa_commander_1',
+        commanderCastCount: 0,
+        manaPool: pool(),
+        hasPlayedLand: false,
+        hasPriority: true,
+        hasLost: false,
+      },
+      {
+        id: 'ai-1',
+        name: 'QA Opponent',
+        life: 40,
+        poisonCounters: 0,
+        commanderDamage: {},
+        commanderTax: 0,
+        commanderInstanceId: null,
+        commanderCastCount: 0,
+        manaPool: pool(),
+        hasPlayedLand: false,
+        hasPriority: false,
+        hasLost: false,
+      },
+    ],
+    cards: new Map<string, CardInstance>([
+      ['lands_qa_commander_1', instance('lands_qa_commander_1', commander.id, 'human', 'command', { isCommander: true })],
+      ['stomping_ground_hand_1', instance('stomping_ground_hand_1', stompingGround.id, 'human', 'hand')],
+      ['scalding_tarn_board_1', instance('scalding_tarn_board_1', scaldingTarn.id, 'human', 'battlefield')],
+      ['steam_vents_library_1', instance('steam_vents_library_1', steamVents.id, 'human', 'library')],
+      ['island_library_1', instance('island_library_1', island.id, 'human', 'library')],
+      ['forest_library_1', instance('forest_library_1', forest.id, 'human', 'library')],
+      ['arcane_signet_library_1', instance('arcane_signet_library_1', arcaneSignet.id, 'human', 'library')],
+    ]),
+    cardDefinitions: new Map<string, CardDefinition>([
+      [commander.id, commander],
+      [stompingGround.id, stompingGround],
+      [scaldingTarn.id, scaldingTarn],
+      [steamVents.id, steamVents],
+      [island.id, island],
+      [forest.id, forest],
+      [arcaneSignet.id, arcaneSignet],
+    ]),
+    activePlayerIndex: 0,
+    priorityPlayerIndex: 0,
+    phase: 'precombat_main',
+    step: 'upkeep',
+    turnNumber: 1,
+    hasPriorityPassed: [false, false],
+    stack: [],
+    combat: null,
+    battlefieldAbilities: new Map(),
+    pendingTriggers: [],
+  };
+
+  return serializeGameState(state);
+}
+
 export function createDeclareBlockersQaState(): SerializedGameStateV1 {
   const sisay = def(
     'sisay_blocker',

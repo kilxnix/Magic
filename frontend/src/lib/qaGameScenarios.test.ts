@@ -5,7 +5,7 @@ import {
   tapLandForMana,
   type ManaColor,
 } from 'commander-engine';
-import { createDeclareBlockersQaState, createSisayRawLandsQaState } from './qaGameScenarios';
+import { createDeclareBlockersQaState, createLandEntryFetchQaState, createSisayRawLandsQaState } from './qaGameScenarios';
 
 describe('QA game scenarios', () => {
   it('loads raw dual lands with mana actions and reaches Sisay activation after tapping WUBRG', () => {
@@ -51,6 +51,18 @@ describe('QA game scenarios', () => {
         block.cardInstanceId === 'sisay_blocker_1'
         && block.blockingAttackerId === 'body_launderer_1',
       ),
+    )).toBe(true);
+  });
+
+  it('loads Stomping Ground from hand and Scalding Tarn activation for browser QA', () => {
+    const state = deserializeGameState(createLandEntryFetchQaState());
+    const actions = getLegalActions(state, 'human');
+
+    expect(actions.some(action =>
+      action.kind === 'PlayLand' && action.cardInstanceId === 'stomping_ground_hand_1',
+    )).toBe(true);
+    expect(actions.some(action =>
+      action.kind === 'ActivateAbility' && action.cardInstanceId === 'scalding_tarn_board_1',
     )).toBe(true);
   });
 });
