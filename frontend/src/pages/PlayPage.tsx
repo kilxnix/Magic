@@ -182,6 +182,7 @@ export function PlayPage() {
   const [deckUrl, setDeckUrl] = useState('');
   const [deckText, setDeckText] = useState('');
   const [importResult, setImportResult] = useState<DeckImportResult | null>(null);
+  const [fillMissingCards, setFillMissingCards] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
   const [standardDeckText, setStandardDeckText] = useState('');
@@ -1126,7 +1127,7 @@ export function PlayPage() {
         body: JSON.stringify({
           decklist_text: listText,
           bracket: spawnBracket,
-          fill_missing: true,
+          fill_missing: fillMissingCards,
         }),
       });
       if (!importRes.ok) throw new Error(`Import validation failed (${importRes.status})`);
@@ -1160,7 +1161,7 @@ export function PlayPage() {
         body: JSON.stringify({
           decklist_text: deckText,
           bracket: spawnBracket,
-          fill_missing: true,
+          fill_missing: fillMissingCards,
         }),
       });
       if (!res.ok) throw new Error(`Server error ${res.status}`);
@@ -2038,6 +2039,18 @@ export function PlayPage() {
               <p className="text-xs text-stone-500 mb-3">
                 Supports Moxfield, Archidekt, TappedOut, and MTGGoldfish
               </p>
+              <label className="mb-3 flex items-start gap-3 rounded-lg border border-stone-700 bg-stone-900/45 p-3 text-sm text-stone-300">
+                <input
+                  type="checkbox"
+                  checked={fillMissingCards}
+                  onChange={e => setFillMissingCards(e.target.checked)}
+                  className="mt-1 h-4 w-4 rounded border-stone-500 bg-stone-800 text-amber-500 focus:ring-amber-500"
+                />
+                <span>
+                  <span className="block font-medium text-stone-100">Fill missing cards with practice-safe suggestions</span>
+                  <span className="text-xs text-stone-500">Off keeps imported lists exact. Turn this on only when a source is short and you want a playable practice deck.</span>
+                </span>
+              </label>
               <button
                 onClick={handleImportFromUrl}
                 disabled={isImporting || !deckUrl.trim()}
@@ -2065,6 +2078,18 @@ export function PlayPage() {
                 rows={8}
                 className="w-full bg-stone-700 border border-stone-600 rounded-lg px-4 py-3 text-stone-100 placeholder-stone-500 focus:outline-none focus:border-amber-500 mb-3 font-mono text-sm"
               />
+              <label className="mb-3 flex items-start gap-3 rounded-lg border border-stone-700 bg-stone-900/45 p-3 text-sm text-stone-300">
+                <input
+                  type="checkbox"
+                  checked={fillMissingCards}
+                  onChange={e => setFillMissingCards(e.target.checked)}
+                  className="mt-1 h-4 w-4 rounded border-stone-500 bg-stone-800 text-amber-500 focus:ring-amber-500"
+                />
+                <span>
+                  <span className="block font-medium text-stone-100">Fill missing cards with practice-safe suggestions</span>
+                  <span className="text-xs text-stone-500">Off keeps pasted lists exact. Turn this on only when a source is short and you want a playable practice deck.</span>
+                </span>
+              </label>
               <button
                 onClick={handleImportFromText}
                 disabled={isImporting || !deckText.trim()}
@@ -2098,6 +2123,16 @@ export function PlayPage() {
               {importResult.warnings.length > 0 && (
                 <div className="text-xs text-amber-400 space-y-1">
                   {importResult.warnings.map((w, i) => <div key={i}>{w}</div>)}
+                </div>
+              )}
+              {(importResult.filled_cards?.length || 0) > 0 && (
+                <div className="mt-2 rounded-lg border border-amber-700/50 bg-amber-950/30 p-3 text-xs text-amber-200">
+                  <div className="font-semibold text-amber-100">
+                    Filled {(importResult.filled_cards || []).length} missing card{(importResult.filled_cards || []).length === 1 ? '' : 's'} for practice.
+                  </div>
+                  <div className="mt-1 text-amber-300">
+                    {(importResult.filled_cards || []).join(', ')}
+                  </div>
                 </div>
               )}
               {importResult.errors.length > 0 && (

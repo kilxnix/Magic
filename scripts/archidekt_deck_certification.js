@@ -56,6 +56,7 @@ const ARTIFACT_DIR = path.resolve(process.env.UI_PLAYTEST_ARTIFACT_DIR || 'playt
 const RUN_ID = new Date().toISOString().replace(/[:.]/g, '-');
 const HUMAN_ACTIONS = Number(process.env.ARCHIDEKT_CERT_ACTIONS || 18);
 const SELECTED_DECK = process.env.ARCHIDEKT_CERT_DECK || '';
+const ALLOW_FILLED_CERTIFICATION = process.env.ARCHIDEKT_CERT_ALLOW_FILL === '1';
 
 const DECKS = [
   {
@@ -130,7 +131,7 @@ async function importDeck(url) {
     body: JSON.stringify({
       decklist_text: decklistText,
       bracket: 3,
-      fill_missing: true,
+      fill_missing: ALLOW_FILLED_CERTIFICATION,
     }),
   });
   return { parsed, imported, decklistText };
@@ -221,6 +222,32 @@ async function visibleActionButtons(page) {
 }
 
 async function resolveBlockingGamePrompt(page) {
+  const overlayButtons = page.locator('div.fixed.inset-0').getByRole('button');
+  const overlayPriority = [
+    /^Pick selected$/i,
+    /^Keep Selected$/i,
+    /^Keep All Top$/i,
+    /^Confirm$/i,
+    /^Do it$/i,
+    /^Don't Respond$/i,
+    /^Pass$/i,
+    /^Done$/i,
+    /^Decline sacrifice$/i,
+    /^Cancel search$/i,
+  ];
+  for (const pattern of overlayPriority) {
+    for (let index = 0; index < await overlayButtons.count(); index += 1) {
+      const button = overlayButtons.nth(index);
+      if (!(await button.isVisible().catch(() => false))) continue;
+      if (!(await button.isEnabled().catch(() => false))) continue;
+      const text = (await button.innerText().catch(() => '')).replace(/\s+/g, ' ').trim();
+      if (!pattern.test(text)) continue;
+      await button.click();
+      await page.waitForTimeout(600);
+      return text;
+    }
+  }
+
   const promptActions = [
     { label: 'Confirm', locator: page.getByRole('button', { name: 'Confirm', exact: true }) },
     { label: 'Pick selected', locator: page.getByRole('button', { name: 'Pick selected', exact: true }) },
@@ -254,6 +281,7 @@ async function resolveBlockingGamePrompt(page) {
 }
 
 function chooseHumanAction(actions) {
+  const playableActions = actions.filter(action => !/^(Bookmark|Game Saves|Save Here|Load|Delete|Undo|Menu|Coach|Review)$/i.test(action.text));
   const priorities = [
     /^Do it$/i,
     /^Play\b/i,
@@ -271,10 +299,10 @@ function chooseHumanAction(actions) {
     /^Pass\b/i,
   ];
   for (const pattern of priorities) {
-    const found = actions.find(action => pattern.test(action.text));
+    const found = playableActions.find(action => pattern.test(action.text));
     if (found) return found;
   }
-  return actions[0] || null;
+  return playableActions[0] || null;
 }
 
 async function driveHumanActions(page, maxActions) {
@@ -328,11 +356,33 @@ async function runUiDeckPass(browser, deck, imported) {
 
     const urlBox = page.getByRole('textbox', { name: 'https://www.moxfield.com/decks/...', exact: true });
     await urlBox.fill(deck.url);
+    if (ALLOW_FILLED_CERTIFICATION) {
+      const fillToggle = page.getByLabel(/Fill missing cards with practice-safe suggestions/i);
+      if ((await fillToggle.count()) > 0) {
+        await fillToggle.first().check();
+      }
+    }
     await clickVisibleButton(page, 'Import Deck', 30000);
-    await waitBodyIncludes(page, imported.commander || '100 cards', 80000);
-    await waitBodyIncludes(page, '100 cards', 80000);
+    await waitBodyIncludes(page, imported.commander || `${imported.total} cards`, 80000);
+    await waitBodyIncludes(page, `${imported.total} cards`, 80000);
     await screenshot(page, deck.slug, '01-imported');
     result.screenshots.push(`${deck.slug}-01-imported.png`);
+
+    if (!imported.valid || (!ALLOW_FILLED_CERTIFICATION && imported.total !== 100) || ((imported.filled_cards || []).length > 0 && !ALLOW_FILLED_CERTIFICATION)) {
+      const finalText = await page.locator('body').innerText();
+      result.importGate = {
+        total: imported.total,
+        valid: imported.valid,
+        filledCards: imported.filled_cards || [],
+        errors: imported.errors || [],
+        warnings: imported.warnings || [],
+      };
+      result.visibleWarnings = finalText
+        .split(/\r?\n/)
+        .filter(line => /\bmissing\b|\berror\b|\bfilled\b|\bcard\b|\binvalid\b/i.test(line))
+        .slice(0, 20);
+      return result;
+    }
 
     await clickVisibleButton(page, 'Choose Opponent', 30000);
     await waitBodyIncludes(page, 'Opponent Setup', 30000);
@@ -514,6 +564,7 @@ async function runEngineSweep(deck) {
         parsed: {
           commander: parsed.commander,
           sourceCardCount: parsed.cards.length,
+          exactCommanderDeckCount: (parsed.commander ? 1 : 0) + parsed.cards.length,
         },
         imported: {
           commander: imported.commander,
@@ -530,7 +581,13 @@ async function runEngineSweep(deck) {
 
       deckReport.ui = await runUiDeckPass(browser, deck, imported);
       deckReport.engine = await runEngineSweep(deck, imported);
-      deckReport.ok = Boolean(imported.valid && deckReport.ui.ok && deckReport.engine.ok);
+      deckReport.ok = Boolean(
+        (ALLOW_FILLED_CERTIFICATION || deckReport.parsed.exactCommanderDeckCount === 100)
+        && imported.valid
+        && (ALLOW_FILLED_CERTIFICATION || deckReport.imported.filledCards.length === 0)
+        && deckReport.ui.ok
+        && deckReport.engine.ok,
+      );
       reports.push(deckReport);
       fs.writeFileSync(artifact(`${deck.slug}-report.json`), JSON.stringify(deckReport, null, 2));
       console.log(JSON.stringify({
@@ -538,7 +595,9 @@ async function runEngineSweep(deck) {
         ok: deckReport.ok,
         uiOk: deckReport.ui.ok,
         sourceCardCount: deckReport.parsed.sourceCardCount,
+        exactCommanderDeckCount: deckReport.parsed.exactCommanderDeckCount,
         filledCards: deckReport.imported.filledCards,
+        importErrors: deckReport.imported.errors,
         engineFailures: deckReport.engine.failures.length,
         firstFailures: deckReport.engine.failures.slice(0, 8),
       }, null, 2));
@@ -558,6 +617,8 @@ async function runEngineSweep(deck) {
       uiOk: report.ui.ok,
       engineOk: report.engine.ok,
       engineFailures: report.engine.failures.length,
+      exactCommanderDeckCount: report.parsed.exactCommanderDeckCount,
+      importErrors: report.imported.errors,
       filledCards: report.imported.filledCards,
     })),
   };
