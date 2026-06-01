@@ -130,13 +130,19 @@ describe('play canonical saves', () => {
       expect(restored?.turnNumber).toBe(8);
       expect(restored?.players[0].name).toBe('Pilot');
       const rawEnvelope = JSON.parse(fakeStorage.getItem('deckreps_play_save_slots_v1') || '[]') as PlaySaveSlotRecord[];
+      expect(rawEnvelope[0].schema).toBe('deckreps-play-slot-v2');
       expect((rawEnvelope[0].snapshot as { engine?: unknown }).engine).toBeUndefined();
       expect(rawEnvelope[0].canonicalEngineSave).toBeUndefined();
       expect(rawEnvelope[0].canonicalManager?.slotId).toBe('play_slot_3');
+      expect(rawEnvelope[0].engineAuthority?.kind).toBe('save-manager');
+      expect(rawEnvelope[0].engineAuthority?.slotId).toBe('play_slot_3');
 
       const slots = await getPlaySaveSlots();
+      expect(slots[2]?.schema).toBe('deckreps-play-slot-v2');
       expect(slots[2]?.canonicalManager?.status).toBe('ok');
       expect(slots[2]?.canonicalManager?.verifiedFingerprint).toBe(slots[2]?.canonicalManager?.fingerprint);
+      expect(slots[2]?.engineAuthority?.kind).toBe('save-manager');
+      expect(slots[2]?.engineAuthority?.status).toBe('ok');
 
       await deletePlaySaveSlot(3);
       expect(await loadCanonicalPlaySlotState(3)).toBeNull();
@@ -237,6 +243,8 @@ describe('play canonical saves', () => {
 
       await putPlaySaveSlot(record);
       const rawEnvelope = JSON.parse(fakeStorage.getItem('deckreps_play_save_slots_v1') || '[]') as PlaySaveSlotRecord[];
+      expect(rawEnvelope[0].schema).toBe('deckreps-play-slot-v2');
+      expect(rawEnvelope[0].engineAuthority?.kind).toBe('save-manager');
       expect((rawEnvelope[0].snapshot as { engine?: unknown }).engine).toBeUndefined();
       expect(rawEnvelope[0].drillBookmarks?.[0].engine).toBeUndefined();
       expect(rawEnvelope[0].drillBookmarks?.[0].canonicalState?.slotId).toBe('play_slot_4_drill_bookmark-a');
@@ -245,6 +253,8 @@ describe('play canonical saves', () => {
         .toBe('play_slot_4_drill_bookmark-a_attempt_attempt-a');
 
       const slots = await getPlaySaveSlots();
+      expect(slots[3]?.engineAuthority?.kind).toBe('save-manager');
+      expect(slots[3]?.engineAuthority?.status).toBe('ok');
       const bookmark = slots[3]?.drillBookmarks?.[0];
       const attempt = bookmark?.attempts?.[0];
       const restoredBookmark = await loadCanonicalPlayStateRef(bookmark?.canonicalState);
@@ -337,13 +347,16 @@ describe('play canonical saves', () => {
 
       await putPlaySaveSlot(record);
       const rawEnvelope = JSON.parse(fakeStorage.getItem('deckreps_play_save_slots_v1') || '[]') as PlaySaveSlotRecord[];
+      expect(rawEnvelope[0].schema).toBe('deckreps-play-slot-v2');
       expect((rawEnvelope[0].snapshot as { engine?: unknown }).engine).toBeUndefined();
       expect(rawEnvelope[0].canonicalEngineSave?.schema).toBe('commander-engine-save-v1');
       expect(rawEnvelope[0].canonicalManager).toBeUndefined();
+      expect(rawEnvelope[0].engineAuthority?.kind).toBe('canonical-json');
 
       const slots = await getPlaySaveSlots();
       const fallbackRecord = slots[1];
       expect(fallbackRecord?.canonicalEngineSave).toBeTruthy();
+      expect(fallbackRecord?.engineAuthority?.kind).toBe('canonical-json');
       const restored = restoreCanonicalPlayEngineState(fallbackRecord?.canonicalEngineSave);
       expect(restored?.turnNumber).toBe(11);
     } finally {

@@ -34,6 +34,17 @@ export interface PlayCanonicalStateRef {
   verifiedAt?: number;
 }
 
+export interface PlayEngineAuthority {
+  kind: 'save-manager' | 'canonical-json' | 'legacy-inline' | 'missing';
+  slotId?: string;
+  fingerprint?: string;
+  status?: 'ok' | 'missing' | 'mismatch';
+  verifiedFingerprint?: string;
+  verifiedAt?: number;
+  updatedAt?: number;
+  message?: string;
+}
+
 export interface PlayDrillBookmark {
   id: string;
   label: string;
@@ -63,6 +74,7 @@ export interface PlayDrillAttempt {
 }
 
 export interface PlaySaveSlotRecord {
+  schema?: 'deckreps-play-slot-v2';
   slot: number;
   name: string;
   commander: string;
@@ -74,6 +86,7 @@ export interface PlaySaveSlotRecord {
   audit?: PlaySaveAuditMetadata;
   canonicalEngineSave?: PlayCanonicalEngineSave;
   canonicalManager?: PlayCanonicalStateRef;
+  engineAuthority?: PlayEngineAuthority;
   drillBookmarks?: PlayDrillBookmark[];
   snapshot: unknown;
   ui: {
@@ -173,7 +186,52 @@ function stripAuthoritativeEnginePayload(record: PlaySaveSlotRecord): PlaySaveSl
   if (strippedDrills.canonicalManager) {
     delete next.canonicalEngineSave;
   }
-  return next;
+  return {
+    ...next,
+    schema: 'deckreps-play-slot-v2',
+    engineAuthority: engineAuthorityForRecord(next),
+  };
+}
+
+function engineAuthorityForRecord(record: PlaySaveSlotRecord): PlayEngineAuthority {
+  if (record.canonicalManager) {
+    return {
+      kind: 'save-manager',
+      slotId: record.canonicalManager.slotId,
+      fingerprint: record.canonicalManager.fingerprint,
+      status: record.canonicalManager.status,
+      verifiedFingerprint: record.canonicalManager.verifiedFingerprint,
+      verifiedAt: record.canonicalManager.verifiedAt,
+      updatedAt: record.canonicalManager.updatedAt,
+    };
+  }
+  if (record.canonicalEngineSave) {
+    return {
+      kind: 'canonical-json',
+      slotId: record.canonicalEngineSave.slotId,
+      fingerprint: record.canonicalEngineSave.fingerprint,
+      updatedAt: record.canonicalEngineSave.createdAt,
+      message: 'SaveManager was unavailable; using canonical JSON fallback.',
+    };
+  }
+  if (engineStateFromRecord(record)) {
+    return {
+      kind: 'legacy-inline',
+      message: 'Legacy inline engine state; resave this slot to migrate it.',
+    };
+  }
+  return {
+    kind: 'missing',
+    message: 'No authoritative engine state is attached to this slot.',
+  };
+}
+
+function normalizePlaySaveRecord(record: PlaySaveSlotRecord): PlaySaveSlotRecord {
+  return {
+    ...record,
+    schema: 'deckreps-play-slot-v2',
+    engineAuthority: engineAuthorityForRecord(record),
+  };
 }
 
 async function persistCanonicalSerializedState(
@@ -208,7 +266,14 @@ export async function persistCanonicalPlaySlot(record: PlaySaveSlotRecord): Prom
 
   return {
     ...record,
+    schema: 'deckreps-play-slot-v2',
     canonicalManager,
+    engineAuthority: {
+      kind: 'save-manager',
+      slotId: canonicalManager.slotId,
+      fingerprint: canonicalManager.fingerprint,
+      updatedAt: canonicalManager.updatedAt,
+    },
   };
 }
 
@@ -287,6 +352,14 @@ async function verifyCanonicalManagerRecord(record: PlaySaveSlotRecord): Promise
         status: 'missing',
         verifiedAt: Date.now(),
       },
+      engineAuthority: engineAuthorityForRecord({
+        ...record,
+        canonicalManager: {
+          ...record.canonicalManager,
+          status: 'missing',
+          verifiedAt: Date.now(),
+        },
+      }),
     };
   }
 
@@ -300,26 +373,38 @@ async function verifyCanonicalManagerRecord(record: PlaySaveSlotRecord): Promise
           status: 'missing',
           verifiedAt: Date.now(),
         },
+        engineAuthority: engineAuthorityForRecord({
+          ...record,
+          canonicalManager: {
+            ...record.canonicalManager,
+            status: 'missing',
+            verifiedAt: Date.now(),
+          },
+        }),
       };
     }
     const verifiedFingerprint = stateFingerprint(state);
+    const canonicalManager = {
+      ...record.canonicalManager,
+      status: verifiedFingerprint === record.canonicalManager.fingerprint ? 'ok' : 'mismatch',
+      verifiedFingerprint,
+      verifiedAt: Date.now(),
+    } satisfies PlayCanonicalStateRef;
     return {
       ...record,
-      canonicalManager: {
-        ...record.canonicalManager,
-        status: verifiedFingerprint === record.canonicalManager.fingerprint ? 'ok' : 'mismatch',
-        verifiedFingerprint,
-        verifiedAt: Date.now(),
-      },
+      canonicalManager,
+      engineAuthority: engineAuthorityForRecord({ ...record, canonicalManager }),
     };
   } catch {
+    const canonicalManager = {
+      ...record.canonicalManager,
+      status: 'missing',
+      verifiedAt: Date.now(),
+    } satisfies PlayCanonicalStateRef;
     return {
       ...record,
-      canonicalManager: {
-        ...record.canonicalManager,
-        status: 'missing',
-        verifiedAt: Date.now(),
-      },
+      canonicalManager,
+      engineAuthority: engineAuthorityForRecord({ ...record, canonicalManager }),
     };
   }
 }
@@ -414,7 +499,7 @@ export async function getPlaySaveSlots(): Promise<(PlaySaveSlotRecord | null)[]>
   } else {
     records = readFallback();
   }
-  const verifiedRecords = await Promise.all(records.map(record => verifyCanonicalManagerRecord(record)));
+  const verifiedRecords = await Promise.all(records.map(record => verifyCanonicalManagerRecord(normalizePlaySaveRecord(record))));
   const bySlot = new Map(verifiedRecords.map(record => [record.slot, record]));
   return Array.from({ length: SLOT_COUNT }, (_, index) => bySlot.get(index + 1) || null);
 }

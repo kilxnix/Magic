@@ -101,17 +101,17 @@ async function createDrillBookmark(page) {
     }
     const body = await page.locator('body').innerText().catch(() => '');
     fs.writeFileSync(artifact('bookmark-failure-body.txt'), body);
-    throw new Error('Drill bookmark was not stored after clicking Bookmark Drill.');
+    throw new Error('Drill bookmark was not stored after clicking the drill bookmark button.');
   };
 
-  const titled = page.locator('button[title="Bookmark Drill"]').first();
+  const titled = page.locator('button[title="Bookmark This Moment"], button[title="Bookmark Drill"]').first();
   if ((await titled.count()) > 0 && (await titled.isVisible().catch(() => false)) && (await titled.isEnabled().catch(() => false))) {
     await titled.click();
     await waitForStoredBookmark();
     return;
   }
 
-  const candidates = page.getByRole('button', { name: /^Bookmark Drill$|^Bookmark$/i });
+  const candidates = page.getByRole('button', { name: /^Bookmark This Moment$|^Bookmark Drill$|^Bookmark$/i });
   for (let index = 0; index < await candidates.count(); index += 1) {
     const button = candidates.nth(index);
     if ((await button.isVisible().catch(() => false)) && (await button.isEnabled().catch(() => false))) {
@@ -164,6 +164,11 @@ async function readSavedSlot(page, slot) {
     await page.getByRole('button', { name: 'Save Here' }).first().click();
     await page.getByText('Saved slot 1').waitFor({ timeout: 10000 });
     const savedSlot = await readSavedSlot(page, 1);
+    assert(savedSlot.schema === 'deckreps-play-slot-v2', 'save slot is not using the play slot v2 schema');
+    assert(savedSlot.engineAuthority?.kind === 'save-manager', 'save slot is not SaveManager-primary');
+    assert(savedSlot.canonicalManager?.slotId === 'play_slot_1', 'save slot is missing its SaveManager canonical slot id');
+    assert(!savedSlot.canonicalEngineSave, 'save slot still stores the canonical JSON fallback while SaveManager is available');
+    assert(!savedSlot.snapshot.engine, 'save slot still stores an inline authoritative engine snapshot');
     assert(savedSlot?.snapshot?.engineEventLogInitialState, 'save slot is missing the audit replay initial state');
     assert(Array.isArray(savedSlot?.snapshot?.engineEventLog), 'save slot is missing the audit event log array');
     assert(savedSlot.snapshot.engineEventLog.length > 0, 'save slot did not persist any authority action audit records');

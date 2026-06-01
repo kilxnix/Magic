@@ -428,6 +428,7 @@ export function PlayPage() {
       : undefined;
 
     return {
+      schema: 'deckreps-play-slot-v2',
       slot,
       name: `Slot ${slot}`,
       commander,
@@ -958,6 +959,23 @@ export function PlayPage() {
                             : 'SaveManager missing'}
                         </span>
                       )}
+                      {record?.engineAuthority && (
+                        <span className={`inline-flex rounded border px-1.5 py-0.5 text-[11px] font-black uppercase tracking-wide ${
+                          record.engineAuthority.kind === 'save-manager' && record.engineAuthority.status !== 'missing' && record.engineAuthority.status !== 'mismatch'
+                            ? 'border-fuchsia-500/40 bg-fuchsia-950/30 text-fuchsia-200'
+                            : record.engineAuthority.kind === 'canonical-json'
+                              ? 'border-sky-500/40 bg-sky-950/30 text-sky-200'
+                              : 'border-red-500/40 bg-red-950/30 text-red-200'
+                        }`}>
+                          {record.engineAuthority.kind === 'save-manager'
+                            ? 'SaveManager primary'
+                            : record.engineAuthority.kind === 'canonical-json'
+                            ? 'Canonical fallback'
+                            : record.engineAuthority.kind === 'legacy-inline'
+                            ? 'Legacy inline'
+                            : 'Engine missing'}
+                        </span>
+                      )}
                       {audit && (
                         <span className={`inline-flex rounded border px-1.5 py-0.5 text-[11px] font-black uppercase tracking-wide ${
                           audit.ok
@@ -1022,31 +1040,44 @@ export function PlayPage() {
                     Drill Latest
                   </button>
                 )}
-                {record?.drillBookmarks?.slice(-3).reverse().map(bookmark => (
-                  <div key={bookmark.id} className="flex flex-wrap gap-1">
-                    <button
-                      type="button"
-                      onClick={() => loadDrillBookmark(record, bookmark)}
-                      className="flex min-h-8 items-center gap-1 rounded border border-fuchsia-500/40 px-2 text-xs font-bold text-fuchsia-100 hover:bg-fuchsia-950/40"
-                      title={bookmark.note || bookmark.label}
-                    >
-                      <BookmarkPlus className="h-3.5 w-3.5" />
-                      {bookmark.label}
-                      {bookmark.attempts?.length ? ` (${bookmark.attempts.length})` : ''}
-                    </button>
-                    {bookmark.attempts?.slice(-1).map(attempt => (
-                      <button
-                        key={attempt.id}
-                        type="button"
-                        onClick={() => loadDrillAttempt(record, bookmark, attempt)}
-                        className="min-h-8 rounded border border-sky-500/40 px-2 text-xs font-bold text-sky-100 hover:bg-sky-950/40"
-                        title={attempt.summary}
-                      >
-                        Latest attempt
-                      </button>
-                    ))}
+                {record?.drillBookmarks && record.drillBookmarks.length > 0 && (
+                  <div className="basis-full rounded-lg border border-fuchsia-500/25 bg-fuchsia-950/20 p-2">
+                    <div className="mb-1 flex items-center justify-between gap-2">
+                      <div className="text-[10px] font-black uppercase tracking-wider text-fuchsia-200">Drill Lab</div>
+                      <div className="text-[10px] text-fuchsia-100/70">{record.drillBookmarks.length} bookmark{record.drillBookmarks.length === 1 ? '' : 's'}</div>
+                    </div>
+                    <div className="grid gap-1 sm:grid-cols-2">
+                      {record.drillBookmarks.slice(-6).reverse().map(bookmark => (
+                        <div key={bookmark.id} className="rounded border border-fuchsia-500/20 bg-neutral-950/50 p-1.5">
+                          <button
+                            type="button"
+                            onClick={() => loadDrillBookmark(record, bookmark)}
+                            className="flex min-h-8 w-full items-center gap-1 rounded border border-fuchsia-500/40 px-2 text-left text-xs font-bold text-fuchsia-100 hover:bg-fuchsia-950/40"
+                            title={bookmark.note || bookmark.label}
+                          >
+                            <BookmarkPlus className="h-3.5 w-3.5 shrink-0" />
+                            <span className="min-w-0 flex-1 truncate">{bookmark.label}</span>
+                            {bookmark.attempts?.length ? <span className="shrink-0 text-[10px] text-fuchsia-100/70">{bookmark.attempts.length}</span> : null}
+                          </button>
+                          {bookmark.note && (
+                            <div className="mt-1 truncate text-[10px] text-fuchsia-100/65">{bookmark.note}</div>
+                          )}
+                          {bookmark.attempts?.slice(-1).map(attempt => (
+                            <button
+                              key={attempt.id}
+                              type="button"
+                              onClick={() => loadDrillAttempt(record, bookmark, attempt)}
+                              className="mt-1 min-h-7 rounded border border-sky-500/40 px-2 text-[10px] font-bold text-sky-100 hover:bg-sky-950/40"
+                              title={attempt.summary}
+                            >
+                              Latest attempt
+                            </button>
+                          ))}
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                ))}
+                )}
                 {step === 'game' && (
                   <button
                     type="button"
@@ -1640,7 +1671,7 @@ export function PlayPage() {
             actionError={actionError}
             onClearActionError={clearActionError}
             onBookmarkDrill={bookmarkCurrentDrill}
-            drillBookmarkLabel="Bookmark Drill"
+            drillBookmarkLabel="Bookmark This Moment"
             practiceFocusTags={activePracticeFocusTags}
             branchPreviews={branchPreviews}
             activeDrillLabel={activeDrillRun?.label || null}

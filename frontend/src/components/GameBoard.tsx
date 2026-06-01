@@ -2530,7 +2530,7 @@ export function GameBoard({
   actionError,
   onClearActionError,
   onBookmarkDrill,
-  drillBookmarkLabel = 'Bookmark Drill',
+  drillBookmarkLabel = 'Bookmark This Moment',
   practiceFocusTags = [],
   branchPreviews = [],
   activeDrillLabel,
@@ -2703,6 +2703,10 @@ export function GameBoard({
     libraryChoice,
     lastStateUpdate,
   });
+  const complexDecisionCount = Math.max(1, complexTurnSignals.length + branchPreviews.length + (currentPrompt ? 1 : 0));
+  const shouldShowComplexTurnOverview = !gameState.gameOver && !mulliganPhase && (
+    complexTurnSignals.length > 0 || branchPreviews.length > 0 || currentPrompt || activeDrillLabel
+  );
 
   const handleCardClick = (card: SimpleCard) => {
     setInspectedCard(card);
@@ -3869,6 +3873,59 @@ export function GameBoard({
                 <X className="h-3.5 w-3.5" />
               </button>
             )}
+          </div>
+        </div>
+      )}
+      {shouldShowComplexTurnOverview && (
+        <div className="relative z-10 shrink-0 border-b border-amber-900/50 bg-neutral-950/88 px-2 py-2 md:px-4">
+          <div className="mx-auto flex max-w-7xl flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="text-[10px] font-black uppercase tracking-[0.18em] text-amber-300">
+                  Complex Turn Overview
+                </div>
+                <span className="rounded border border-amber-500/30 bg-amber-950/35 px-2 py-0.5 text-[10px] font-bold text-amber-100">
+                  {complexDecisionCount} decision point{complexDecisionCount === 1 ? '' : 's'}
+                </span>
+                {activeDrillLabel && (
+                  <span className="rounded border border-fuchsia-500/35 bg-fuchsia-950/35 px-2 py-0.5 text-[10px] font-bold text-fuchsia-100">
+                    Drill: {activeDrillLabel}
+                  </span>
+                )}
+              </div>
+              <div className="mt-1 text-xs leading-snug text-stone-300">
+                {complexTurnSignals[0]?.detail || currentPrompt?.guidance || 'Compare the visible branches before committing the next action.'}
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-1.5 lg:max-w-[46rem] lg:justify-end">
+              {complexTurnSignals.slice(0, 3).map(signal => (
+                <div
+                  key={`overview-${signal.label}:${signal.detail}`}
+                  className={`max-w-[18rem] rounded border px-2 py-1 ${complexSignalClass(signal.tone)}`}
+                >
+                  <div className="text-[10px] font-black uppercase tracking-wider">{signal.label}</div>
+                  <div className="line-clamp-2 text-[10px] leading-snug opacity-85">{signal.detail}</div>
+                </div>
+              ))}
+              {branchPreviews.slice(0, 2).map(preview => (
+                <div key={`overview-preview-${preview.actionId}`} className="max-w-[18rem] rounded border border-sky-500/30 bg-sky-950/35 px-2 py-1 text-sky-100">
+                  <div className="truncate text-[10px] font-black uppercase tracking-wider">
+                    {preview.label}
+                    {typeof preview.score === 'number' ? ` ${preview.score.toFixed(1)}` : ''}
+                  </div>
+                  <div className="line-clamp-2 text-[10px] leading-snug opacity-85">{preview.summary}</div>
+                </div>
+              ))}
+              {onBookmarkDrill && (
+                <button
+                  type="button"
+                  onClick={onBookmarkDrill}
+                  className="min-h-10 rounded bg-fuchsia-500 px-3 text-xs font-black text-neutral-950 transition-colors hover:bg-fuchsia-400"
+                >
+                  {drillBookmarkLabel}
+                </button>
+              )}
+            </div>
           </div>
         </div>
       )}

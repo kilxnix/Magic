@@ -9,7 +9,7 @@ import { useState, useMemo } from 'react';
 import { X, ChevronRight } from 'lucide-react';
 import type { GameLogEntry, SimpleGameState } from '../hooks/useShelectorGame';
 import { auditPlaySaveSnapshot } from '../lib/playSaveAudit';
-import { ratingFromDecisionDelta } from '../lib/turnReview';
+import { ratingFromDecisionDelta, xenagosPracticeNoteFromDecision } from '../lib/turnReview';
 import type { EngineEventLogRecord, EngineStateUpdate, SerializedGameStateV1 } from 'commander-engine';
 
 // ========== Rating Types ==========
@@ -20,6 +20,12 @@ interface RatedEntry extends GameLogEntry {
   rating: MoveRating;
   reasoning: string;
   counterAnalysis?: string;
+}
+
+interface XenagosReviewInsight {
+  label: string;
+  detail: string;
+  turn?: number;
 }
 
 function emptyReviewStats(finalState: SimpleGameState) {
@@ -331,6 +337,64 @@ function analyzeCounterPlay(entry: GameLogEntry, allEntries: GameLogEntry[], ind
   return undefined;
 }
 
+function xenagosEntryInsights(entry: GameLogEntry): XenagosReviewInsight[] {
+  if (!entry.decision) return [];
+  const insights: XenagosReviewInsight[] = [];
+  const note = xenagosPracticeNoteFromDecision(entry.decision);
+  if (note) {
+    const label = note.startsWith('Tutor/ramp')
+      ? 'Tutor/Ramp Line'
+      : note.startsWith('ETB damage')
+      ? 'ETB Damage Line'
+      : note.startsWith('Combat')
+      ? 'Combat Branch'
+      : note.startsWith('Burst')
+      ? 'Burst Mana Branch'
+      : 'Xenagos Line';
+    insights.push({ label, detail: note, turn: entry.turnNumber });
+  }
+  for (const detail of entry.decision.practiceInsights || []) {
+    insights.push({ label: 'Board-Specific Check', detail, turn: entry.turnNumber });
+  }
+  return insights;
+}
+
+function xenagosReviewInsights(entries: RatedEntry[], finalState: SimpleGameState): XenagosReviewInsight[] {
+  const isXenagosPractice = /xenagos,\s*god of revels/i.test(finalState.humanCommander)
+    || entries.some(entry => xenagosEntryInsights(entry).length > 0);
+  if (!isXenagosPractice) return [];
+
+  const collected: XenagosReviewInsight[] = [];
+  for (const entry of entries) {
+    collected.push(...xenagosEntryInsights(entry));
+  }
+
+  if (collected.length === 0) {
+    collected.push(
+      {
+        label: 'Tutor/Ramp Line',
+        detail: 'For Xenagos reps, compare ramp/tutor actions by whether they create an immediate protected threat, damage engine, or lethal next turn.',
+      },
+      {
+        label: 'ETB Damage Line',
+        detail: 'When Dracogenesis, Terror, Twinflame Tyrant, or Dragonhawk are involved, bookmark before the payoff and compare trigger order.',
+      },
+      {
+        label: 'Combat Branch',
+        detail: 'Before attacks, choose the Xenagos target and extra-combat plan, then compare lethal pressure against leaving interaction up.',
+      },
+    );
+  }
+
+  const seen = new Set<string>();
+  return collected.filter(insight => {
+    const key = `${insight.label}:${insight.detail}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).slice(0, 6);
+}
+
 // ========== Grade Calculation ==========
 
 function calculateGrade(ratedEntries: RatedEntry[]): { grade: string; accuracy: number; counts: Record<MoveRating, number> } {
@@ -407,6 +471,7 @@ export function GameReview({
 
   // Calculate summary
   const { grade, accuracy, counts } = useMemo(() => calculateGrade(ratedEntries), [ratedEntries]);
+  const xenagosInsights = useMemo(() => xenagosReviewInsights(ratedEntries, finalState), [finalState, ratedEntries]);
 
   // Filter entries
   const filteredEntries = useMemo(() => {
@@ -426,6 +491,7 @@ export function GameReview({
   }, [filteredEntries]);
 
   const selectedEntry = selectedIndex !== null ? ratedEntries[selectedIndex] : null;
+  const selectedXenagosInsights = selectedEntry ? xenagosEntryInsights(selectedEntry) : [];
 
   // Determine result text
   const isFinished = finalState.gameOver || winner !== null;
@@ -522,6 +588,31 @@ export function GameReview({
             <span>Moves: {ratedEntries.filter(e => e.player === 'human').length}h / {ratedEntries.filter(e => e.player === 'ai').length}ai</span>
           </div>
         </div>
+
+        {xenagosInsights.length > 0 && (
+          <div className="border-b border-amber-800/50 bg-amber-950/20 px-3 py-3 sm:px-6" aria-label="Xenagos practice review">
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <div className="text-[10px] font-black uppercase tracking-[0.18em] text-amber-300">Xenagos Practice Review</div>
+                <div className="text-xs text-stone-300">High-signal checks for dragon tutor turns, ETB storms, burst mana, and combat branches.</div>
+              </div>
+              <div className="rounded border border-amber-500/30 bg-neutral-950/50 px-2 py-1 text-[10px] font-bold text-amber-100">
+                {xenagosInsights.length} focus note{xenagosInsights.length === 1 ? '' : 's'}
+              </div>
+            </div>
+            <div className="grid gap-2 md:grid-cols-3">
+              {xenagosInsights.slice(0, 6).map((insight, index) => (
+                <div key={`${insight.label}-${index}`} className="rounded-lg border border-amber-500/25 bg-neutral-950/45 p-2">
+                  <div className="mb-1 flex items-center justify-between gap-2">
+                    <div className="text-[10px] font-black uppercase tracking-wider text-amber-200">{insight.label}</div>
+                    {insight.turn && <div className="text-[10px] text-stone-500">T{insight.turn}</div>}
+                  </div>
+                  <div className="text-xs leading-snug text-stone-200">{insight.detail}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Filter Tabs */}
         <div className="flex px-3 sm:px-6 py-2 border-b border-stone-700 gap-2">
@@ -657,6 +748,22 @@ export function GameReview({
                                 </div>
                               )}
 
+                              {selectedXenagosInsights.length > 0 && (
+                                <div className="rounded-lg border border-amber-700/50 bg-amber-950/20 px-3 py-2">
+                                  <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-amber-300">
+                                    Xenagos Focus
+                                  </div>
+                                  <div className="space-y-1.5">
+                                    {selectedXenagosInsights.slice(0, 3).map((insight, insightIndex) => (
+                                      <div key={`${insight.label}-${insightIndex}`} className="rounded border border-amber-500/20 bg-neutral-950/35 px-2 py-1">
+                                        <div className="text-[10px] font-black uppercase tracking-wider text-amber-200">{insight.label}</div>
+                                        <p className="text-xs leading-snug text-stone-200">{insight.detail}</p>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+
                               {/* Counter Analysis */}
                               {selectedEntry.counterAnalysis && (
                                 <div className="rounded-lg border border-purple-700/50 bg-purple-900/20 px-3 py-2">
@@ -786,6 +893,22 @@ export function GameReview({
                         {selectedEntry.decision.confidenceReasons.join(' ')}
                       </p>
                     )}
+                  </div>
+                )}
+
+                {selectedXenagosInsights.length > 0 && (
+                  <div className="rounded-lg border border-amber-700/50 bg-amber-950/20 px-4 py-3">
+                    <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-amber-300">
+                      Xenagos Focus
+                    </div>
+                    <div className="grid gap-2">
+                      {selectedXenagosInsights.slice(0, 4).map((insight, insightIndex) => (
+                        <div key={`${insight.label}-${insightIndex}`} className="rounded border border-amber-500/20 bg-neutral-950/35 px-3 py-2">
+                          <div className="mb-1 text-[10px] font-black uppercase tracking-wider text-amber-200">{insight.label}</div>
+                          <p className="text-sm leading-relaxed text-stone-200">{insight.detail}</p>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
 
