@@ -90,7 +90,14 @@ export function validateStateInvariants(state: GameState): StateInvariantReport 
           message: `${card.instanceId} has an empty counter name.`,
         });
       }
-      pushNumericViolation(violations, 'invalid_card_counter', `${card.instanceId} ${counterName} counter count`, amount);
+      const isInternalPtModifier = counterName === '_powerMod' || counterName === '_toughnessMod';
+      pushNumericViolation(
+        violations,
+        'invalid_card_counter',
+        `${card.instanceId} ${counterName} ${isInternalPtModifier ? 'modifier' : 'counter count'}`,
+        amount,
+        { allowNegative: isInternalPtModifier },
+      );
     }
     if (card.zone === 'stack' && !spellStackCardIds.has(card.instanceId)) {
       violations.push({

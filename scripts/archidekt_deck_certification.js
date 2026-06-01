@@ -299,6 +299,26 @@ async function resolveBlockingGamePrompt(page) {
   return null;
 }
 
+async function resolveDiscardPrompt(page) {
+  const body = await page.locator('body').innerText().catch(() => '');
+  if (!/hand \(\d+\)\s+[—-]\s+discard \d+ card/i.test(body)) return null;
+  const viewport = page.viewportSize() || { width: 1360, height: 920 };
+  const buttons = page.getByRole('button');
+  for (let index = 0; index < await buttons.count(); index += 1) {
+    const button = buttons.nth(index);
+    if (!(await button.isVisible().catch(() => false))) continue;
+    if (!(await button.isEnabled().catch(() => false))) continue;
+    const text = (await button.innerText().catch(() => '')).replace(/\s+/g, ' ').trim();
+    if (!text || /^(Keep|Pick Cards First|Bookmark|Save|Load|Delete|Review|Menu|Undo)$/i.test(text)) continue;
+    const box = await button.boundingBox().catch(() => null);
+    if (!box || box.y < viewport.height - 260) continue;
+    await button.click();
+    await page.waitForTimeout(700);
+    return `Discard ${text.split(/\s{2,}|\n/)[0].slice(0, 80)}`;
+  }
+  return null;
+}
+
 function chooseHumanAction(actions) {
   const playableActions = actions.filter(action => !/^(Bookmark|Game Saves|Save Here|Load|Delete|Undo|Menu|Coach|Review)$/i.test(action.text));
   const priorities = [
@@ -332,6 +352,11 @@ async function driveHumanActions(page, maxActions) {
     const promptResolution = await resolveBlockingGamePrompt(page);
     if (promptResolution) {
       trace.push({ index, action: `Resolve prompt: ${promptResolution}`, at: new Date().toISOString() });
+      continue;
+    }
+    const discardResolution = await resolveDiscardPrompt(page);
+    if (discardResolution) {
+      trace.push({ index, action: discardResolution, at: new Date().toISOString() });
       continue;
     }
     const actions = await visibleActionButtons(page);

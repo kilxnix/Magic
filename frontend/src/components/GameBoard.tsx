@@ -3877,7 +3877,7 @@ export function GameBoard({
         </div>
       )}
       {shouldShowComplexTurnOverview && (
-        <div className="relative z-50 shrink-0 border-b border-amber-900/50 bg-neutral-950/88 px-2 py-2 md:px-4">
+        <div className="pointer-events-none relative z-50 shrink-0 border-b border-amber-900/50 bg-neutral-950/88 px-2 py-2 md:px-4">
           <div className="mx-auto flex max-w-7xl flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
@@ -3908,6 +3908,15 @@ export function GameBoard({
                   ))}
                 </div>
               )}
+              {onBookmarkDrill && (
+                <button
+                  type="button"
+                  onClick={onBookmarkDrill}
+                  className="pointer-events-auto mt-2 min-h-9 rounded bg-fuchsia-500 px-3 text-xs font-black text-neutral-950 transition-colors hover:bg-fuchsia-400"
+                >
+                  {drillBookmarkLabel}
+                </button>
+              )}
             </div>
             <div className="flex flex-wrap gap-1.5 lg:max-w-[46rem] lg:justify-end">
               {complexTurnSignals.slice(0, 3).map(signal => (
@@ -3928,15 +3937,6 @@ export function GameBoard({
                   <div className="line-clamp-2 text-[10px] leading-snug opacity-85">{preview.summary}</div>
                 </div>
               ))}
-              {onBookmarkDrill && (
-                <button
-                  type="button"
-                  onClick={onBookmarkDrill}
-                  className="min-h-10 rounded bg-fuchsia-500 px-3 text-xs font-black text-neutral-950 transition-colors hover:bg-fuchsia-400"
-                >
-                  {drillBookmarkLabel}
-                </button>
-              )}
             </div>
           </div>
         </div>

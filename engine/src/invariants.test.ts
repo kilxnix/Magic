@@ -156,6 +156,22 @@ describe('validateStateInvariants', () => {
     }));
   });
 
+  it('allows negative internal temporary power/toughness modifiers', () => {
+    const cmd = commander();
+    const state = initGameState([
+      { playerId: 'p1', name: 'Alice', cards: [cmd], commanderId: cmd.id },
+      { playerId: 'p2', name: 'Bob', cards: [cmd], commanderId: cmd.id },
+    ]);
+    const creature = [...state.cards.values()].find(card => card.ownerId === 'p1')!;
+    state.cards.set(creature.instanceId, {
+      ...creature,
+      zone: 'battlefield',
+      counters: { _powerMod: -2, _toughnessMod: -2 },
+    });
+
+    expect(validateStateInvariants(state)).toEqual({ ok: true, violations: [] });
+  });
+
   it('rejects stale pending trigger and battlefield ability references', () => {
     const cmd = commander();
     const state = initGameState([
