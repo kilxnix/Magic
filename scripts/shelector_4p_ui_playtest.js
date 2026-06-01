@@ -251,7 +251,7 @@ async function driveHumanActions(page, maxActions) {
     await screenshot(page, '02-four-player-selected.png');
 
     await clickButtonByPattern(page, /^Start 1v1v1v1\b/i, 15000);
-    await waitBodyIncludes(page, 'Keep', 180000);
+    await page.getByRole('button', { name: 'Keep', exact: true }).first().waitFor({ state: 'visible', timeout: 180000 });
     await screenshot(page, '03-opening-hand.png');
 
     const openingText = await page.locator('body').innerText();
