@@ -91,6 +91,38 @@ async function clickFirstAvailableAction(page) {
   throw new Error('Could not find an initial game action before saving.');
 }
 
+async function createDrillBookmark(page) {
+  const waitForStoredBookmark = async () => {
+    const started = Date.now();
+    while (Date.now() - started < 10000) {
+      const slot = await readSavedSlot(page, 1).catch(() => null);
+      if (slot?.drillBookmarks?.length) return;
+      await page.waitForTimeout(250);
+    }
+    const body = await page.locator('body').innerText().catch(() => '');
+    fs.writeFileSync(artifact('bookmark-failure-body.txt'), body);
+    throw new Error('Drill bookmark was not stored after clicking Bookmark Drill.');
+  };
+
+  const titled = page.locator('button[title="Bookmark Drill"]').first();
+  if ((await titled.count()) > 0 && (await titled.isVisible().catch(() => false)) && (await titled.isEnabled().catch(() => false))) {
+    await titled.click();
+    await waitForStoredBookmark();
+    return;
+  }
+
+  const candidates = page.getByRole('button', { name: /^Bookmark Drill$|^Bookmark$/i });
+  for (let index = 0; index < await candidates.count(); index += 1) {
+    const button = candidates.nth(index);
+    if ((await button.isVisible().catch(() => false)) && (await button.isEnabled().catch(() => false))) {
+      await button.click();
+      await waitForStoredBookmark();
+      return;
+    }
+  }
+  throw new Error('Could not create a drill bookmark through the game UI.');
+}
+
 async function readSavedSlot(page, slot) {
   return page.evaluate(targetSlot => new Promise((resolve, reject) => {
     const request = indexedDB.open('deckreps_play_saves_v1', 1);
@@ -127,6 +159,7 @@ async function readSavedSlot(page, slot) {
     await page.getByRole('button', { name: /^(Play|Tap|Cast|Activate)\b|Skip Rest of Turn|End Phase|Done|Pass/i }).first().waitFor({ timeout: 15000 });
     await clickFirstAvailableAction(page);
     await page.waitForTimeout(500);
+    await createDrillBookmark(page);
     await openGameSaves(page);
     await page.getByRole('button', { name: 'Save Here' }).first().click();
     await page.getByText('Saved slot 1').waitFor({ timeout: 10000 });
@@ -135,6 +168,9 @@ async function readSavedSlot(page, slot) {
     assert(Array.isArray(savedSlot?.snapshot?.engineEventLog), 'save slot is missing the audit event log array');
     assert(savedSlot.snapshot.engineEventLog.length > 0, 'save slot did not persist any authority action audit records');
     assert(Object.keys(savedSlot.snapshot.engineEventLogSeeds || {}).length > 0, 'save slot is missing per-record audit seeds');
+    assert(savedSlot.drillBookmarks?.length > 0, 'save slot did not persist the UI-created drill bookmark');
+    assert(savedSlot.drillBookmarks[0].canonicalState?.slotId, 'drill bookmark is missing its canonical SaveManager reference');
+    assert(!savedSlot.drillBookmarks[0].engine, 'drill bookmark still stores an inline engine snapshot');
     await page.getByText(/Audit OK|Audit ready/).first().waitFor({ timeout: 10000 });
     await page.screenshot({ path: artifact('play-save-slots-game.png'), fullPage: false });
     await openReview(page);

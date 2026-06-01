@@ -9,6 +9,7 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { spawnSync } = require('node:child_process');
 
 function findPlaywrightPackage() {
   try {
@@ -52,6 +53,40 @@ function artifact(name) {
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
+}
+
+function runEngineStarterQa() {
+  if (process.env.SKIP_ENGINE_STARTER_QA === '1') {
+    return { skipped: true, reason: 'SKIP_ENGINE_STARTER_QA=1' };
+  }
+  const npmCommand = process.platform === 'win32' ? 'cmd.exe' : 'npm';
+  const npmArgs = process.platform === 'win32'
+    ? ['/d', '/s', '/c', 'npm.cmd run test -- starter-decks-card-qa.test.ts']
+    : ['run', 'test', '--', 'starter-decks-card-qa.test.ts'];
+  const result = spawnSync(
+    npmCommand,
+    npmArgs,
+    {
+      cwd: path.resolve('engine'),
+      encoding: 'utf8',
+      shell: false,
+      env: process.env,
+    },
+  );
+  fs.writeFileSync(artifact('engine-starter-qa.stdout.txt'), result.stdout || '');
+  fs.writeFileSync(artifact('engine-starter-qa.stderr.txt'), result.stderr || '');
+  if (result.error) {
+    throw new Error(`Engine starter full-card QA could not launch: ${result.error.message}`);
+  }
+  if (result.status !== 0) {
+    throw new Error(`Engine starter full-card QA failed with exit ${result.status}. See ${artifact('engine-starter-qa.stdout.txt')}`);
+  }
+  return {
+    skipped: false,
+    command: process.platform === 'win32' ? 'npm.cmd run test -- starter-decks-card-qa.test.ts' : 'npm run test -- starter-decks-card-qa.test.ts',
+    stdout: 'engine-starter-qa.stdout.txt',
+    stderr: 'engine-starter-qa.stderr.txt',
+  };
 }
 
 async function dismissOverlays(page) {
@@ -113,6 +148,21 @@ function collectBadLines(body) {
 }
 
 async function handleOpenPrompt(page, trace, step) {
+  const overlayButtons = page.locator('div.fixed.inset-0').getByRole('button');
+  const overlayPriority = [/^Pick selected$/i, /^Keep Selected$/i, /^Confirm$/i, /^Do it$/i, /^Done$/i, /^Pass$/i];
+  for (const pattern of overlayPriority) {
+    for (let index = 0; index < await overlayButtons.count(); index += 1) {
+      const button = overlayButtons.nth(index);
+      if (!(await button.isVisible().catch(() => false)) || !(await button.isEnabled().catch(() => false))) continue;
+      const text = (await button.innerText().catch(() => '')).replace(/\s+/g, ' ').trim();
+      if (!pattern.test(text)) continue;
+      await button.click();
+      trace.push({ step, action: text, surface: 'modal' });
+      await page.waitForTimeout(500);
+      return true;
+    }
+  }
+
   const pickButton = page.getByRole('button', { name: 'Pick selected', exact: true }).first();
   if ((await pickButton.count()) > 0 && await pickButton.isVisible().catch(() => false) && await pickButton.isEnabled().catch(() => false)) {
     await pickButton.click();
@@ -180,13 +230,14 @@ async function certifyStarter(browser, starter, index) {
 }
 
 (async () => {
+  const engineQa = runEngineStarterQa();
   const browser = await chromium.launch({ headless: HEADLESS });
   try {
     const results = [];
     for (let index = 0; index < STARTERS.length; index += 1) {
       results.push(await certifyStarter(browser, STARTERS[index], index));
     }
-    const result = { ok: true, baseUrl: BASE_URL, results, artifactDir: path.join(ARTIFACT_DIR, RUN_ID) };
+    const result = { ok: true, baseUrl: BASE_URL, engineQa, results, artifactDir: path.join(ARTIFACT_DIR, RUN_ID) };
     fs.writeFileSync(artifact('result.json'), JSON.stringify(result, null, 2));
     console.log(JSON.stringify(result, null, 2));
   } finally {

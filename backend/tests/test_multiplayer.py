@@ -1,3 +1,4 @@
+import json
 from datetime import timedelta
 
 from fastapi import FastAPI
@@ -753,6 +754,100 @@ def test_real_engine_spectator_view_redacts_hidden_information(monkeypatch):
         assert "cards" not in player["zones"]["hand"]
         assert "cards" not in player["zones"]["library"]
         assert player["zones"]["command"]["cards"][0]["name"] == "Talrand, Sky Summoner"
+
+
+def test_real_engine_four_player_views_are_sanitized_server_side(monkeypatch):
+    client = make_client(monkeypatch)
+
+    created = client.post(
+        "/api/multiplayer/rooms",
+        json={
+            "name": "Four Player Hidden Info",
+            "host_name": "Seat One",
+            "tags": [],
+            "is_private": False,
+            "tier": "free",
+        },
+    ).json()
+    room_id = created["room"]["id"]
+    player_ids = [created["player_id"]]
+    for name in ("Seat Two", "Seat Three", "Seat Four"):
+        joined = client.post(f"/api/multiplayer/rooms/{room_id}/join", json={"player_name": name})
+        assert joined.status_code == 200
+        player_ids.append(joined.json()["player_id"])
+
+    for index, player_id in enumerate(player_ids, start=1):
+        deck = {"commander": "Talrand, Sky Summoner", "list": ["Island"] * 99, "colors": ["U"]}
+        seated = client.post(
+            f"/api/multiplayer/rooms/{room_id}/seat",
+            json={
+                "player_id": player_id,
+                "ready": True,
+                "deck_name": f"Seat {index} Deck",
+                "commander": deck["commander"],
+                "deck": deck,
+            },
+        )
+        assert seated.status_code == 200
+
+    started = client.post(f"/api/multiplayer/rooms/{room_id}/start-real-game", json={"player_id": player_ids[0]})
+    assert started.status_code == 200
+    assert started.json()["real_game"]["authority_player_id"] == player_ids[0]
+
+    def leaky_view(viewer_id: str) -> dict:
+        return {
+            "viewerId": viewer_id,
+            "turnNumber": 1,
+            "phase": "precombat_main",
+            "step": "main",
+            "activePlayerId": player_ids[0],
+            "priorityPlayerId": player_ids[0],
+            "stackSize": 0,
+            "players": [
+                {
+                    "id": player_id,
+                    "name": f"Seat {index}",
+                    "life": 40,
+                    "isActive": player_id == player_ids[0],
+                    "hasPriority": player_id == player_ids[0],
+                    "zones": {
+                        "hand": {"count": 7, "cards": [{"name": f"Hidden Hand {index}"}]},
+                        "library": {"count": 92, "cards": [{"name": f"Hidden Library {index}"}]},
+                        "battlefield": {"count": 1, "cards": [{"name": f"Public Permanent {index}"}]},
+                        "graveyard": {"count": 0, "cards": []},
+                        "exile": {"count": 0, "cards": []},
+                        "command": {"count": 1, "cards": [{"name": "Talrand, Sky Summoner"}]},
+                    },
+                }
+                for index, player_id in enumerate(player_ids, start=1)
+            ],
+        }
+
+    snapshot = client.post(
+        f"/api/multiplayer/rooms/{room_id}/real-game/snapshot",
+        json={
+            "player_id": player_ids[0],
+            "revision": 1,
+            "views": {player_id: leaky_view(player_id) for player_id in player_ids},
+        },
+    )
+    assert snapshot.status_code == 200
+
+    for index, player_id in enumerate(player_ids, start=1):
+        response = client.get(f"/api/multiplayer/rooms/{room_id}/real-game/view", params={"player_id": player_id})
+        assert response.status_code == 200
+        view = response.json()["view"]
+        assert view["viewerId"] == player_id
+        rendered = json.dumps(view)
+        assert f"Hidden Hand {index}" in rendered
+        assert f"Hidden Library {index}" in rendered
+        assert "Public Permanent 1" in rendered
+        assert "Public Permanent 4" in rendered
+        for other_index in range(1, 5):
+            if other_index == index:
+                continue
+            assert f"Hidden Hand {other_index}" not in rendered
+            assert f"Hidden Library {other_index}" not in rendered
 
 
 def test_room_settings_can_disable_spectators(monkeypatch):

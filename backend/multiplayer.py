@@ -816,6 +816,36 @@ def _redact_spectator_view(view: Optional[dict[str, Any]]) -> Optional[dict[str,
     return redacted
 
 
+def _redact_scoped_player_view(view: Optional[dict[str, Any]], viewer_id: str) -> Optional[dict[str, Any]]:
+    if not view:
+        return None
+    redacted = json.loads(json.dumps(view))
+    redacted["viewerId"] = viewer_id
+    for player in redacted.get("players", []):
+        player_id = str(player.get("id") or player.get("playerId") or "")
+        if player_id == viewer_id:
+            continue
+        zones = player.get("zones") or {}
+        for zone_name in ("hand", "library"):
+            zone = zones.get(zone_name)
+            if isinstance(zone, dict):
+                zone.pop("cards", None)
+            direct_zone = player.get(zone_name)
+            if isinstance(direct_zone, dict):
+                direct_zone.pop("cards", None)
+    return redacted
+
+
+def _sanitize_real_game_views(views: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    sanitized: dict[str, dict[str, Any]] = {}
+    for player_id, view in views.items():
+        clean_player_id = str(player_id)
+        scoped = _redact_scoped_player_view(view, clean_player_id)
+        if scoped is not None:
+            sanitized[clean_player_id] = scoped
+    return sanitized
+
+
 def _locked_deck_from_seat(seat: dict) -> dict:
     deck = seat.get("deck")
     if not deck:
@@ -3085,7 +3115,7 @@ async def publish_real_game_snapshot(room_id: str, req: RealGameSnapshotRequest)
         _safe_json_size(req.views, max_bytes=MAX_REAL_GAME_VIEW_BYTES, field_name="Real engine views")
         _reject_links_in_json(req.views, field_name="Real engine views")
         real_game["revision"] = max(real_game.get("revision", 0), req.revision)
-        real_game["views"] = req.views
+        real_game["views"] = _sanitize_real_game_views(req.views)
         completed_ids = set(req.completed_action_ids)
         if any(not SAFE_ACTION_ID_RE.match(str(action_id)) for action_id in completed_ids):
             raise HTTPException(status_code=400, detail="Completed action ids are invalid")
@@ -3148,7 +3178,7 @@ async def get_real_game_view(room_id: str, player_id: str = Query(...)):
             authority_player_id=real_game.get("authority_player_id") or "",
             authority_player_name=authority["name"] if authority else "Unknown",
             authority_last_seen_at=_iso(real_game["authority_last_seen_at"]) if real_game.get("authority_last_seen_at") else None,
-            view=(real_game.get("views") or {}).get(player_id),
+            view=_redact_scoped_player_view((real_game.get("views") or {}).get(player_id), player_id),
             pending_action_count=len(real_game.get("pending_actions", [])),
             log=[
                 RealGameLogEntry(

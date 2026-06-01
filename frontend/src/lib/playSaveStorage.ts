@@ -25,6 +25,15 @@ export interface PlaySaveAuditMetadata {
   updatedAt: number;
 }
 
+export interface PlayCanonicalStateRef {
+  slotId: string;
+  fingerprint: string;
+  updatedAt: number;
+  status?: 'ok' | 'missing' | 'mismatch';
+  verifiedFingerprint?: string;
+  verifiedAt?: number;
+}
+
 export interface PlayDrillBookmark {
   id: string;
   label: string;
@@ -32,7 +41,8 @@ export interface PlayDrillBookmark {
   turnNumber: number;
   phase: string;
   step?: string;
-  engine: SerializedGameStateV1;
+  engine?: SerializedGameStateV1;
+  canonicalState?: PlayCanonicalStateRef;
   source?: 'manual' | 'checkpoint';
   focusTags?: string[];
   note?: string;
@@ -48,7 +58,8 @@ export interface PlayDrillAttempt {
   phase: string;
   step?: string;
   summary: string;
-  engine: SerializedGameStateV1;
+  engine?: SerializedGameStateV1;
+  canonicalState?: PlayCanonicalStateRef;
 }
 
 export interface PlaySaveSlotRecord {
@@ -62,14 +73,7 @@ export interface PlaySaveSlotRecord {
   practice?: PlayPracticeMetadata;
   audit?: PlaySaveAuditMetadata;
   canonicalEngineSave?: PlayCanonicalEngineSave;
-  canonicalManager?: {
-    slotId: string;
-    fingerprint: string;
-    updatedAt: number;
-    status?: 'ok' | 'missing' | 'mismatch';
-    verifiedFingerprint?: string;
-    verifiedAt?: number;
-  };
+  canonicalManager?: PlayCanonicalStateRef;
   drillBookmarks?: PlayDrillBookmark[];
   snapshot: unknown;
   ui: {
@@ -104,6 +108,14 @@ export function canonicalPlaySlotId(slot: number): string {
   return `${PLAY_SLOT_PREFIX}${slot}`;
 }
 
+function canonicalDrillBookmarkSlotId(slot: number, bookmarkId: string): string {
+  return `${canonicalPlaySlotId(slot)}_drill_${bookmarkId}`;
+}
+
+function canonicalDrillAttemptSlotId(slot: number, bookmarkId: string, attemptId: string): string {
+  return `${canonicalDrillBookmarkSlotId(slot, bookmarkId)}_attempt_${attemptId}`;
+}
+
 function getBrowserSaveManager() {
   if (typeof window === 'undefined') return null;
   try {
@@ -122,50 +134,146 @@ function engineStateFromRecord(record: PlaySaveSlotRecord): SerializedGameStateV
   return snapshotFromRecord(record)?.engine || null;
 }
 
-function stripAuthoritativeEnginePayload(record: PlaySaveSlotRecord): PlaySaveSlotRecord {
-  if (!record.canonicalManager && !record.canonicalEngineSave) return record;
-  const snapshot = snapshotFromRecord(record);
-  if (!snapshot?.engine && !record.canonicalEngineSave) return record;
+function stripCanonicalDrillPayloads(record: PlaySaveSlotRecord): PlaySaveSlotRecord {
+  if (!record.drillBookmarks?.length) return record;
+  return {
+    ...record,
+    drillBookmarks: record.drillBookmarks.map(bookmark => {
+      const nextBookmark: PlayDrillBookmark = { ...bookmark };
+      if (nextBookmark.canonicalState) {
+        delete nextBookmark.engine;
+      }
+      if (nextBookmark.attempts?.length) {
+        nextBookmark.attempts = nextBookmark.attempts.map(attempt => {
+          const nextAttempt: PlayDrillAttempt = { ...attempt };
+          if (nextAttempt.canonicalState) {
+            delete nextAttempt.engine;
+          }
+          return nextAttempt;
+        });
+      }
+      return nextBookmark;
+    }),
+  };
+}
 
-  const snapshotCopy = { ...(record.snapshot as Record<string, unknown>) };
+function stripAuthoritativeEnginePayload(record: PlaySaveSlotRecord): PlaySaveSlotRecord {
+  const strippedDrills = stripCanonicalDrillPayloads(record);
+  if (!strippedDrills.canonicalManager && !strippedDrills.canonicalEngineSave) return strippedDrills;
+  const snapshot = snapshotFromRecord(strippedDrills);
+  if (!snapshot?.engine && !strippedDrills.canonicalEngineSave) return strippedDrills;
+
+  const snapshotCopy = { ...(strippedDrills.snapshot as Record<string, unknown>) };
   delete snapshotCopy.engine;
 
   const next: PlaySaveSlotRecord = {
-    ...record,
+    ...strippedDrills,
     snapshot: snapshotCopy,
   };
-  if (record.canonicalManager) {
+  if (strippedDrills.canonicalManager) {
     delete next.canonicalEngineSave;
   }
   return next;
+}
+
+async function persistCanonicalSerializedState(
+  slotId: string,
+  serializedState: SerializedGameStateV1,
+  name: string,
+  humanPlayerId: string = 'human',
+): Promise<PlayCanonicalStateRef | null> {
+  const manager = getBrowserSaveManager();
+  if (!manager) return null;
+  const state = deserializeGameState(serializedState);
+  await manager.saveGame(slotId, state, name, humanPlayerId);
+  return {
+    slotId,
+    fingerprint: stateFingerprint(state),
+    updatedAt: Date.now(),
+  };
 }
 
 export async function persistCanonicalPlaySlot(record: PlaySaveSlotRecord): Promise<PlaySaveSlotRecord> {
   const serializedState = engineStateFromRecord(record);
   if (!serializedState) return record;
 
-  const manager = getBrowserSaveManager();
-  if (!manager) return record;
-
   const slotId = canonicalPlaySlotId(record.slot);
-  const state = deserializeGameState(serializedState);
-  await manager.saveGame(slotId, state, record.name || `${record.commander} - Slot ${record.slot}`, snapshotFromRecord(record)?.humanId || 'human');
+  const canonicalManager = await persistCanonicalSerializedState(
+    slotId,
+    serializedState,
+    record.name || `${record.commander} - Slot ${record.slot}`,
+    snapshotFromRecord(record)?.humanId || 'human',
+  );
+  if (!canonicalManager) return record;
 
   return {
     ...record,
-    canonicalManager: {
-      slotId,
-      fingerprint: stateFingerprint(state),
-      updatedAt: Date.now(),
-    },
+    canonicalManager,
   };
 }
 
 export async function loadCanonicalPlaySlotState(slot: number): Promise<SerializedGameStateV1 | null> {
+  return loadCanonicalPlayStateRef({ slotId: canonicalPlaySlotId(slot), fingerprint: '', updatedAt: 0 });
+}
+
+export async function loadCanonicalPlayStateRef(ref: PlayCanonicalStateRef | null | undefined): Promise<SerializedGameStateV1 | null> {
+  if (!ref?.slotId) return null;
   const manager = getBrowserSaveManager();
   if (!manager) return null;
-  const state = await manager.loadGame(canonicalPlaySlotId(slot));
+  const state = await manager.loadGame(ref.slotId);
   return state ? serializeGameState(state) : null;
+}
+
+async function persistCanonicalDrillStates(record: PlaySaveSlotRecord): Promise<PlaySaveSlotRecord> {
+  if (!record.drillBookmarks?.length) return record;
+  const humanPlayerId = snapshotFromRecord(record)?.humanId || 'human';
+  const drillBookmarks: PlayDrillBookmark[] = [];
+
+  for (const bookmark of record.drillBookmarks) {
+    const nextBookmark: PlayDrillBookmark = { ...bookmark };
+    if (bookmark.engine) {
+      try {
+        const ref = await persistCanonicalSerializedState(
+          canonicalDrillBookmarkSlotId(record.slot, bookmark.id),
+          bookmark.engine,
+          `${record.name || record.commander} - ${bookmark.label}`,
+          humanPlayerId,
+        );
+        if (ref) nextBookmark.canonicalState = ref;
+      } catch {
+        // Keep the inline engine snapshot when canonical drill storage fails.
+      }
+    }
+
+    if (bookmark.attempts?.length) {
+      const attempts: PlayDrillAttempt[] = [];
+      for (const attempt of bookmark.attempts) {
+        const nextAttempt: PlayDrillAttempt = { ...attempt };
+        if (attempt.engine) {
+          try {
+            const ref = await persistCanonicalSerializedState(
+              canonicalDrillAttemptSlotId(record.slot, bookmark.id, attempt.id),
+              attempt.engine,
+              `${record.name || record.commander} - ${bookmark.label} - ${attempt.label}`,
+              humanPlayerId,
+            );
+            if (ref) nextAttempt.canonicalState = ref;
+          } catch {
+            // Keep the inline engine snapshot when canonical attempt storage fails.
+          }
+        }
+        attempts.push(nextAttempt);
+      }
+      nextBookmark.attempts = attempts;
+    }
+
+    drillBookmarks.push(nextBookmark);
+  }
+
+  return {
+    ...record,
+    drillBookmarks,
+  };
 }
 
 async function verifyCanonicalManagerRecord(record: PlaySaveSlotRecord): Promise<PlaySaveSlotRecord> {
@@ -220,6 +328,22 @@ export async function deleteCanonicalPlaySlot(slot: number): Promise<void> {
   const manager = getBrowserSaveManager();
   if (!manager) return;
   await manager.deleteSave(canonicalPlaySlotId(slot));
+}
+
+async function deleteCanonicalRecordStates(record: PlaySaveSlotRecord | null | undefined): Promise<void> {
+  const manager = getBrowserSaveManager();
+  if (!manager || !record) return;
+  const slotIds = new Set<string>();
+  if (record.canonicalManager?.slotId) slotIds.add(record.canonicalManager.slotId);
+  for (const bookmark of record.drillBookmarks || []) {
+    if (bookmark.canonicalState?.slotId) slotIds.add(bookmark.canonicalState.slotId);
+    for (const attempt of bookmark.attempts || []) {
+      if (attempt.canonicalState?.slotId) slotIds.add(attempt.canonicalState.slotId);
+    }
+  }
+  for (const slotId of slotIds) {
+    await manager.deleteSave(slotId);
+  }
 }
 
 function canUseIndexedDb(): boolean {
@@ -299,7 +423,9 @@ export async function putPlaySaveSlot(record: PlaySaveSlotRecord): Promise<void>
   if (record.slot < 1 || record.slot > SLOT_COUNT) {
     throw new Error('Save slot must be between 1 and 4');
   }
-  const canonicalRecord = stripAuthoritativeEnginePayload(await persistCanonicalPlaySlot(record));
+  const canonicalRecord = stripAuthoritativeEnginePayload(
+    await persistCanonicalDrillStates(await persistCanonicalPlaySlot(record)),
+  );
   if (canUseIndexedDb()) {
     try {
       await withStore('readwrite', store => store.put(canonicalRecord) as IDBRequest<IDBValidKey>);
@@ -314,6 +440,13 @@ export async function putPlaySaveSlot(record: PlaySaveSlotRecord): Promise<void>
 }
 
 export async function deletePlaySaveSlot(slot: number): Promise<void> {
+  let existingRecord: PlaySaveSlotRecord | null = null;
+  try {
+    existingRecord = (await getPlaySaveSlots())[slot - 1];
+  } catch {
+    existingRecord = null;
+  }
+  await deleteCanonicalRecordStates(existingRecord);
   await deleteCanonicalPlaySlot(slot);
   if (canUseIndexedDb()) {
     try {

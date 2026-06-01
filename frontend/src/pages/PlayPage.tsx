@@ -25,6 +25,7 @@ import { findUnsupportedEngineCards, formatUnsupportedEngineCards } from '../lib
 import {
   deletePlaySaveSlot,
   getPlaySaveSlots,
+  loadCanonicalPlayStateRef,
   loadCanonicalPlaySlotState,
   putPlaySaveSlot,
   type PlayDrillAttempt,
@@ -613,14 +614,19 @@ export function PlayPage() {
   const loadDrillBookmark = async (record: PlaySaveSlotRecord, bookmark: PlayDrillBookmark) => {
     setSaveError(null);
     const snapshot = record.snapshot as ShelectorGameSaveSnapshot;
+    const engine = bookmark.engine || await loadCanonicalPlayStateRef(bookmark.canonicalState);
+    if (!engine) {
+      setSaveError(`Drill bookmark "${bookmark.label}" is missing its authoritative engine state.`);
+      return;
+    }
     const drillSnapshot: ShelectorGameSaveSnapshot = {
       ...snapshot,
       savedAt: Date.now(),
-      engine: bookmark.engine,
+      engine,
       authorityUpdates: [],
       engineEventLog: [],
       engineEventLogSeeds: {},
-      engineEventLogInitialState: bookmark.engine,
+      engineEventLogInitialState: engine,
       lastStateUpdate: null,
       currentPrompt: null,
       lastPlayedCard: null,
@@ -672,14 +678,19 @@ export function PlayPage() {
   const loadDrillAttempt = async (record: PlaySaveSlotRecord, bookmark: PlayDrillBookmark, attempt: PlayDrillAttempt) => {
     setSaveError(null);
     const snapshot = record.snapshot as ShelectorGameSaveSnapshot;
+    const engine = attempt.engine || await loadCanonicalPlayStateRef(attempt.canonicalState);
+    if (!engine) {
+      setSaveError(`Drill attempt "${attempt.label}" is missing its authoritative engine state.`);
+      return;
+    }
     const drillSnapshot: ShelectorGameSaveSnapshot = {
       ...snapshot,
       savedAt: Date.now(),
-      engine: attempt.engine,
+      engine,
       authorityUpdates: [],
       engineEventLog: [],
       engineEventLogSeeds: {},
-      engineEventLogInitialState: attempt.engine,
+      engineEventLogInitialState: engine,
       lastStateUpdate: null,
       currentPrompt: null,
       lastPlayedCard: null,
