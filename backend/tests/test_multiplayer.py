@@ -520,7 +520,36 @@ def test_real_engine_session_routes_actions_and_scoped_views(monkeypatch):
             "player_id": host_id,
             "revision": 1,
             "views": {
-                host_id: {"viewerId": host_id, "players": []},
+                host_id: {
+                    "viewerId": host_id,
+                    "players": [
+                        {
+                            "id": host_id,
+                            "zones": {
+                                "battlefield": {
+                                    "cards": [
+                                        {
+                                            "name": "Forest",
+                                            "metadata": {
+                                                "printed": {
+                                                    "faces": [
+                                                        {
+                                                            "oracle": {
+                                                                "paragraphs": [
+                                                                    {"text": "Tap: Add G."}
+                                                                ]
+                                                            }
+                                                        }
+                                                    ]
+                                                }
+                                            },
+                                        }
+                                    ]
+                                }
+                            },
+                        }
+                    ],
+                },
                 guest_id: {"viewerId": guest_id, "players": []},
             },
             "completed_action_ids": [action_id, tap_mana.json()["id"], cast_spell.json()["id"]],

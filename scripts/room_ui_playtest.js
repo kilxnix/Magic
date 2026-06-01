@@ -55,6 +55,12 @@ const QA_HEADERS = QA_ADMIN_TOKEN
       'x-admin-token': QA_ADMIN_TOKEN,
     }
   : undefined;
+const ARCHIDEKT_ROOM_DECKS = [
+  { slug: 'storms-typhoon', url: 'https://archidekt.com/decks/10024261/storms_typhoon', allowFill: true },
+  { slug: 'league-of-legendaries', url: 'https://archidekt.com/decks/6060588/league_of_legendaries' },
+  { slug: 'ff-recursion', url: 'https://archidekt.com/decks/11964597/ff_recursion_bullshit' },
+  { slug: 'birbs', url: 'https://archidekt.com/decks/15529421/birbs' },
+];
 
 fs.mkdirSync(path.join(ARTIFACT_DIR, RUN_ID), { recursive: true });
 
@@ -178,6 +184,45 @@ async function apiJson(pathname, options = {}) {
     throw new Error(`API ${pathname} returned ${response.status}: ${text}`);
   }
   return text ? JSON.parse(text) : null;
+}
+
+function parsedDeckToText(parsed) {
+  const lines = [];
+  if (parsed.commander) {
+    lines.push('Commander');
+    lines.push(`1 ${parsed.commander}`);
+    lines.push('Deck');
+  }
+  for (const card of parsed.cards || []) lines.push(`1 ${card}`);
+  return lines.join('\n');
+}
+
+async function fetchArchidektRoomDecks() {
+  const decks = [];
+  for (const spec of ARCHIDEKT_ROOM_DECKS) {
+    const parsed = await apiJson('/api/parse-deck-url', {
+      method: 'POST',
+      body: JSON.stringify({ url: spec.url }),
+    });
+    const imported = await apiJson('/shelector-api/import-deck', {
+      method: 'POST',
+      body: JSON.stringify({
+        decklist_text: parsedDeckToText(parsed),
+        bracket: 3,
+        fill_missing: Boolean(spec.allowFill),
+      }),
+    });
+    assert(imported.valid, `${spec.slug} import was not valid: ${(imported.errors || []).join(' | ')}`);
+    assert(imported.total === 100, `${spec.slug} imported as ${imported.total} cards; room engine needs 100`);
+    decks.push({
+      slug: spec.slug,
+      commander: imported.commander,
+      // Keep lands first so the real-engine room can prove a browser land play deterministically.
+      cards: [...(imported.lands || []), ...(imported.cards || [])].map(card => `1 ${card}`),
+      filledCards: imported.filled_cards || [],
+    });
+  }
+  return decks;
 }
 
 async function joinRoom(page, { roomId, playerName, password, mobile = false }) {
@@ -560,6 +605,85 @@ async function runFourPlayerEngineGate(browser) {
   await Promise.all(contexts.map(context => context.close()));
   return {
     roomId,
+    playerIds: sessions.map(session => session?.playerId).filter(Boolean),
+  };
+}
+
+async function runImportedFourPlayerEngineGate(browser) {
+  const importedDecks = await fetchArchidektRoomDecks();
+  const password = `ui-imported-4p-${Date.now()}`;
+  const contexts = await Promise.all([
+    newContext(browser, { viewport: { width: 1280, height: 900 } }),
+    newContext(browser, { viewport: { width: 1280, height: 900 } }),
+    newContext(browser, { viewport: { width: 1280, height: 900 } }),
+    newContext(browser, { viewport: { width: 1280, height: 900 } }),
+  ]);
+  const [host, guestA, guestB, guestC] = await Promise.all(contexts.map(context => context.newPage()));
+  const seats = [
+    { page: host, name: 'Arch Host', deck: importedDecks[0] },
+    { page: guestA, name: 'Arch A', deck: importedDecks[1] },
+    { page: guestB, name: 'Arch B', deck: importedDecks[2] },
+    { page: guestC, name: 'Arch C', deck: importedDecks[3] },
+  ];
+
+  const roomId = await createRoom(host, {
+    hostName: seats[0].name,
+    roomName: `Imported 4P Engine ${RUN_ID}`,
+    password,
+  });
+  await joinRoom(guestA, { roomId, playerName: seats[1].name, password });
+  await joinRoom(guestB, { roomId, playerName: seats[2].name, password });
+  await joinRoom(guestC, { roomId, playerName: seats[3].name, password });
+
+  for (const seat of seats) {
+    await readyWithDeck(seat.page, {
+      deckName: seat.deck.slug,
+      commander: seat.deck.commander,
+      cards: seat.deck.cards,
+    });
+  }
+
+  await (await waitForEnabledButton(host, 'Start Engine Beta', 20000)).click();
+  for (const seat of seats) {
+    await waitBodyIncludes(seat.page, 'EXPERIMENTAL REAL ENGINE', 25000);
+    await waitBodyIncludes(seat.page, 'Scoped hidden views', 25000);
+    await waitBodyIncludes(seat.page, seat.deck.commander, 25000);
+  }
+
+  const hostBody = await host.locator('body').innerText();
+  const normalizedHostBody = hostBody.toLowerCase();
+  assert(normalizedHostBody.includes('active: arch host'), 'imported 4-player engine active player label missing');
+  assert(normalizedHostBody.includes('priority: arch host'), 'imported 4-player engine priority label missing');
+  assert(normalizedHostBody.includes('4/4 seated'), 'imported 4-player room did not show four occupied seats');
+
+  for (const seat of seats) await clickAction(seat.page, 'Pass Priority');
+  await waitBodyIncludes(host, 'advanced to beginning / draw', 25000);
+  for (const seat of seats) await clickAction(seat.page, 'Pass Priority');
+  await waitBodyIncludes(host, 'advanced to precombat_main', 25000);
+
+  const playLand = await waitForEnabledButton(host, 'Play First Land', 20000);
+  await playLand.click();
+  await waitBodyIncludes(host, 'Arch Host played a land.', 25000);
+
+  const guestBody = await guestA.locator('body').innerText();
+  const hiddenHostCardNames = importedDecks[0].cards
+    .map(line => line.replace(/^\s*\d+x?\s+/i, '').trim())
+    .filter(name => name && name !== importedDecks[0].commander)
+    .slice(8, 18);
+  const leakedNames = hiddenHostCardNames.filter(name => guestBody.includes(name));
+  assert(leakedNames.length === 0, `imported 4-player scoped view leaked host card names: ${leakedNames.join(', ')}`);
+
+  await screenshot(host, 'engine-4p-imported-host-after-land.png');
+  await screenshot(guestA, 'engine-4p-imported-guest-a.png');
+  const sessions = await Promise.all(seats.map(seat => readRoomSession(seat.page)));
+  await Promise.all(contexts.map(context => context.close()));
+  return {
+    roomId,
+    decks: importedDecks.map(deck => ({
+      slug: deck.slug,
+      commander: deck.commander,
+      filledCards: deck.filledCards,
+    })),
     playerIds: sessions.map(session => session?.playerId).filter(Boolean),
   };
 }
@@ -978,6 +1102,7 @@ async function checkUnsupportedActionFails(roomId, playerId) {
     const shared = await runSharedMatch(browser);
     const engine = await runEngineGate(browser);
     const engineFourPlayer = await runFourPlayerEngineGate(browser);
+    const importedFourPlayer = await runImportedFourPlayerEngineGate(browser);
     const complexPlay = await runComplexPlayUiGate(browser);
     const mobile = await runMobileRoomCheck(browser);
     const unsupported = await checkUnsupportedActionFails(engine.roomId, engine.guestPlayerId);
@@ -988,6 +1113,7 @@ async function checkUnsupportedActionFails(roomId, playerId) {
       shared,
       engine,
       engineFourPlayer,
+      importedFourPlayer,
       complexPlay,
       mobile,
       unsupported,

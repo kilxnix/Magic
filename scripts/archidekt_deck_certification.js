@@ -55,6 +55,7 @@ const HEADLESS = process.env.HEADLESS !== '0';
 const ARTIFACT_DIR = path.resolve(process.env.UI_PLAYTEST_ARTIFACT_DIR || 'playtest-artifacts/archidekt-cert');
 const RUN_ID = new Date().toISOString().replace(/[:.]/g, '-');
 const HUMAN_ACTIONS = Number(process.env.ARCHIDEKT_CERT_ACTIONS || 18);
+const MIN_UI_ACTIONS = Number(process.env.ARCHIDEKT_CERT_MIN_ACTIONS || Math.min(10, HUMAN_ACTIONS));
 const SELECTED_DECK = process.env.ARCHIDEKT_CERT_DECK || '';
 const ALLOW_FILLED_CERTIFICATION = process.env.ARCHIDEKT_CERT_ALLOW_FILL === '1';
 
@@ -203,6 +204,24 @@ async function clickButtonByPattern(page, pattern, timeout = 20000) {
   throw new Error(`Timed out waiting for button matching ${pattern}`);
 }
 
+function collectUiFailureLines(body) {
+  return body
+    .split(/\r?\n/)
+    .map(line => line.replace(/\s+/g, ' ').trim())
+    .filter(Boolean)
+    .filter(line =>
+      /^Action Rejected$/i.test(line)
+      || /\bcommander not found\b/i.test(line)
+      || /\bengine invariant failed\b/i.test(line)
+      || /\brules invariant failed\b/i.test(line)
+      || /^Could not\b/i.test(line)
+      || /^AI error\b/i.test(line)
+      || /^Action failed\b/i.test(line)
+      || /^Error:/i.test(line),
+    )
+    .slice(0, 30);
+}
+
 async function visibleActionButtons(page) {
   const result = [];
   const docks = page.locator('[aria-label="Game actions"], [aria-label="Phase controls"]');
@@ -348,6 +367,7 @@ async function runUiDeckPass(browser, deck, imported) {
     screenshots: [],
     humanActions: [],
     visibleWarnings: [],
+    uiFailures: [],
   };
   try {
     await page.goto(`${BASE_URL}/play?archidekt-cert=${deck.slug}-${Date.now()}`, { waitUntil: 'domcontentloaded' });
@@ -405,11 +425,12 @@ async function runUiDeckPass(browser, deck, imported) {
     result.screenshots.push(`${deck.slug}-04-after-actions.png`);
 
     const finalText = await page.locator('body').innerText();
+    result.uiFailures = collectUiFailureLines(finalText);
     result.visibleWarnings = finalText
       .split(/\r?\n/)
-      .filter(line => /\bfailed\b|\berror\b|commander not found|\bunsupported\b|cannot\b/i.test(line))
+      .filter(line => /\bfailed\b|\berror\b|commander not found|\bunsupported\b/i.test(line))
       .slice(0, 20);
-    result.ok = result.humanActions.length > 0 && !/Commander not found/i.test(finalText);
+    result.ok = result.humanActions.length >= MIN_UI_ACTIONS && result.uiFailures.length === 0;
     return result;
   } catch (error) {
     result.error = error.stack || error.message;
@@ -599,6 +620,8 @@ async function runEngineSweep(deck) {
         filledCards: deckReport.imported.filledCards,
         importErrors: deckReport.imported.errors,
         engineFailures: deckReport.engine.failures.length,
+        uiFailures: deckReport.ui.uiFailures || [],
+        humanActions: deckReport.ui.humanActions?.length || 0,
         firstFailures: deckReport.engine.failures.slice(0, 8),
       }, null, 2));
     }
@@ -617,6 +640,8 @@ async function runEngineSweep(deck) {
       uiOk: report.ui.ok,
       engineOk: report.engine.ok,
       engineFailures: report.engine.failures.length,
+      uiFailures: report.ui.uiFailures || [],
+      humanActions: report.ui.humanActions?.length || 0,
       exactCommanderDeckCount: report.parsed.exactCommanderDeckCount,
       importErrors: report.imported.errors,
       filledCards: report.imported.filledCards,

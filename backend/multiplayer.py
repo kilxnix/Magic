@@ -74,6 +74,7 @@ MAX_DECK_CARDS = 120
 MAX_PENDING_REAL_ACTIONS = 80
 MAX_REAL_GAME_ACTION_BYTES = int(os.getenv("MULTIPLAYER_MAX_ACTION_BYTES", "4000"))
 MAX_REAL_GAME_VIEW_BYTES = int(os.getenv("MULTIPLAYER_MAX_VIEW_BYTES", "120000"))
+MAX_REAL_GAME_VIEW_DEPTH = int(os.getenv("MULTIPLAYER_MAX_VIEW_DEPTH", "24"))
 MAX_SPECTATORS = int(os.getenv("MULTIPLAYER_MAX_SPECTATORS", "12"))
 REAL_AUTHORITY_STALE_SECONDS = int(os.getenv("MULTIPLAYER_AUTHORITY_STALE_SECONDS", "30"))
 MAX_EVENT_PLAYERS = int(os.getenv("MULTIPLAYER_MAX_EVENT_PLAYERS", "64"))
@@ -899,8 +900,8 @@ def _safe_json_size(value: Any, *, max_bytes: int, field_name: str) -> None:
         raise HTTPException(status_code=413, detail=f"{field_name} is too large")
 
 
-def _reject_links_in_json(value: Any, *, field_name: str, depth: int = 0) -> None:
-    if depth > 10:
+def _reject_links_in_json(value: Any, *, field_name: str, depth: int = 0, max_depth: int = 10) -> None:
+    if depth > max_depth:
         raise HTTPException(status_code=400, detail=f"{field_name} is too deeply nested")
     if isinstance(value, str):
         if len(value) > 4000:
@@ -909,13 +910,13 @@ def _reject_links_in_json(value: Any, *, field_name: str, depth: int = 0) -> Non
         return
     if isinstance(value, list):
         for item in value:
-            _reject_links_in_json(item, field_name=field_name, depth=depth + 1)
+            _reject_links_in_json(item, field_name=field_name, depth=depth + 1, max_depth=max_depth)
         return
     if isinstance(value, dict):
         for key, item in value.items():
             if isinstance(key, str):
                 _reject_links(key, field_name=field_name)
-            _reject_links_in_json(item, field_name=field_name, depth=depth + 1)
+            _reject_links_in_json(item, field_name=field_name, depth=depth + 1, max_depth=max_depth)
         return
     if value is None or isinstance(value, (bool, int, float)):
         return
@@ -3113,7 +3114,7 @@ async def publish_real_game_snapshot(room_id: str, req: RealGameSnapshotRequest)
             raise HTTPException(status_code=403, detail="Only the authority player can publish engine snapshots")
         _touch_real_authority(room, req.player_id)
         _safe_json_size(req.views, max_bytes=MAX_REAL_GAME_VIEW_BYTES, field_name="Real engine views")
-        _reject_links_in_json(req.views, field_name="Real engine views")
+        _reject_links_in_json(req.views, field_name="Real engine views", max_depth=MAX_REAL_GAME_VIEW_DEPTH)
         real_game["revision"] = max(real_game.get("revision", 0), req.revision)
         real_game["views"] = _sanitize_real_game_views(req.views)
         completed_ids = set(req.completed_action_ids)
