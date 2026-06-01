@@ -3877,7 +3877,7 @@ export function GameBoard({
         </div>
       )}
       {shouldShowComplexTurnOverview && (
-        <div className="relative z-10 shrink-0 border-b border-amber-900/50 bg-neutral-950/88 px-2 py-2 md:px-4">
+        <div className="relative z-50 shrink-0 border-b border-amber-900/50 bg-neutral-950/88 px-2 py-2 md:px-4">
           <div className="mx-auto flex max-w-7xl flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
@@ -3896,6 +3896,18 @@ export function GameBoard({
               <div className="mt-1 text-xs leading-snug text-stone-300">
                 {complexTurnSignals[0]?.detail || currentPrompt?.guidance || 'Compare the visible branches before committing the next action.'}
               </div>
+              {practiceFocusTags.length > 0 && (
+                <div className="mt-1.5 flex flex-wrap gap-1">
+                  <span className="rounded border border-amber-500/25 bg-amber-950/25 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider text-amber-200">
+                    Practice Focus
+                  </span>
+                  {practiceFocusTags.slice(0, 5).map(tag => (
+                    <span key={`overview-focus-${tag}`} className="rounded border border-stone-700 bg-neutral-900 px-1.5 py-0.5 text-[9px] font-bold text-stone-200">
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
             <div className="flex flex-wrap gap-1.5 lg:max-w-[46rem] lg:justify-end">
               {complexTurnSignals.slice(0, 3).map(signal => (
