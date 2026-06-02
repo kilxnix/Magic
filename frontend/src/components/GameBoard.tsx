@@ -2496,7 +2496,7 @@ function GraveyardViewer({
   if (cards.length === 0) return null;
 
   const panelClass = placement === 'above'
-    ? 'absolute bottom-full right-0 z-[80] mb-1 max-h-44 w-[min(17rem,86vw)] overflow-y-auto rounded-lg border border-stone-700 bg-stone-800 p-2 shadow-xl shadow-black/55'
+    ? 'fixed right-3 bottom-[calc(env(safe-area-inset-bottom)+13.25rem)] z-[90] max-h-44 w-[min(17rem,86vw)] overflow-y-auto rounded-lg border border-stone-700 bg-stone-800 p-2 shadow-xl shadow-black/55'
     : 'relative z-50 mt-1 max-h-32 overflow-y-auto rounded-lg border border-stone-700 bg-stone-800 p-2 shadow-xl shadow-black/40';
 
   return (
