@@ -5398,6 +5398,7 @@ export function useShelectorGame() {
         subject: 'OpeningMulliganBottom',
         zone: 'hand',
         destination: 'library',
+        libraryPosition: 'bottom',
         minSelections: cardsToBottom,
         maxSelections: cardsToBottom,
       });
@@ -5532,6 +5533,7 @@ export function useShelectorGame() {
             subject: 'OpeningMulliganBottom',
             zone: 'hand',
             destination: 'library',
+            libraryPosition: 'bottom',
             minSelections: cardsToBottom,
             maxSelections: cardsToBottom,
           });

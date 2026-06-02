@@ -338,6 +338,7 @@ export interface SelectCardsPromptRequest {
   subject: SelectCardsSubject;
   zone: Zone;
   destination: Zone;
+  libraryPosition?: 'top' | 'bottom';
   filter?: CardFilter;
   commitSelection: boolean;
   minSelections: number;
@@ -357,6 +358,7 @@ export interface CreateSelectCardsPromptOptions {
   subject?: SelectCardsSubject;
   zone?: Zone;
   destination?: Zone;
+  libraryPosition?: 'top' | 'bottom';
   filter?: CardFilter;
   commitSelection?: boolean;
   minSelections?: number;
@@ -3227,6 +3229,8 @@ export function createSelectCardsPromptRequest(
   const zone = options.zone || 'hand';
   const destination = options.destination || 'graveyard';
   const subject = options.subject || 'ManualDiscard';
+  const libraryPosition = options.libraryPosition
+    || (subject === 'OpeningMulliganBottom' && destination === 'library' ? 'bottom' : 'top');
   const commitSelection = options.commitSelection ?? true;
   const minSelections = options.minSelections ?? 1;
   const maxSelections = options.maxSelections ?? minSelections;
@@ -3275,6 +3279,7 @@ export function createSelectCardsPromptRequest(
     subject,
     zone,
     destination,
+    libraryPosition: destination === 'library' ? libraryPosition : undefined,
     filter: options.filter,
     commitSelection,
     minSelections,
@@ -3316,9 +3321,10 @@ function selectCardsRejectUpdate(
   };
 }
 
-function moveSelectedCardsToLibraryTop(
+function moveSelectedCardsToLibrary(
   state: GameState,
   selectedIds: string[],
+  position: 'top' | 'bottom' = 'top',
 ): Map<string, CardInstance> {
   const selectedSet = new Set(selectedIds);
   const selectedCards = selectedIds
@@ -3353,8 +3359,13 @@ function moveSelectedCardsToLibraryTop(
 
   const newCards = new Map<string, CardInstance>();
   for (const [id, card] of entriesBeforeLibrary) newCards.set(id, card);
-  for (const card of selectedCards) newCards.set(card.instanceId, card);
-  for (const [id, card] of existingLibrary) newCards.set(id, card);
+  if (position === 'top') {
+    for (const card of selectedCards) newCards.set(card.instanceId, card);
+    for (const [id, card] of existingLibrary) newCards.set(id, card);
+  } else {
+    for (const [id, card] of existingLibrary) newCards.set(id, card);
+    for (const card of selectedCards) newCards.set(card.instanceId, card);
+  }
   for (const [id, card] of entriesAfterLibrary) newCards.set(id, card);
   return newCards;
 }
@@ -3444,7 +3455,7 @@ export function applySelectCardsPromptResponse(
   let newCards = new Map(state.cards);
   if (request.commitSelection) {
     if (request.destination === 'library') {
-      newCards = moveSelectedCardsToLibraryTop(state, selectedIds);
+      newCards = moveSelectedCardsToLibrary(state, selectedIds, request.libraryPosition || 'top');
     } else {
       for (const selectedId of selectedIds) {
         const card = newCards.get(selectedId);

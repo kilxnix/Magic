@@ -1774,11 +1774,20 @@ describe('authority action boundary', () => {
     expect(redraw.update.oldStateId).toBe(stateFingerprint(state));
     expect(redraw.update.newStateId).toBe(stateFingerprint(redraw.state));
 
+    state.cards.set(
+      'library-before-bottom-1',
+      cardInstance('library-before-bottom-1', forest!.definitionId, 'p1', 'library'),
+    );
+    state.cards.set(
+      'library-before-bottom-2',
+      cardInstance('library-before-bottom-2', forest!.definitionId, 'p1', 'library'),
+    );
     const bottomRequest = createSelectCardsPromptRequest(state, 'p1', {
       id: 'prompt-opening-mulligan-bottom',
       subject: 'OpeningMulliganBottom',
       zone: 'hand',
       destination: 'library',
+      libraryPosition: 'bottom',
       minSelections: 1,
       maxSelections: 1,
       createdAt: 224,
@@ -1792,6 +1801,10 @@ describe('authority action boundary', () => {
 
     expect(bottomAccepted.ok).toBe(true);
     expect(bottomAccepted.state?.cards.get(forest!.instanceId)?.zone).toBe('library');
+    const bottomLibraryOrder = [...bottomAccepted.state!.cards.values()]
+      .filter(card => card.ownerId === 'p1' && card.zone === 'library')
+      .map(card => card.instanceId);
+    expect(bottomLibraryOrder[bottomLibraryOrder.length - 1]).toBe(forest!.instanceId);
   });
 
   it('can attach a validated card selection to a stack item without moving the card', () => {
