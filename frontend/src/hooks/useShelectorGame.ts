@@ -952,6 +952,7 @@ type PendingHandTopLibraryChoice = {
   selectedIds: string[];
   sourceName: string;
   count: number;
+  shuffleAfter?: boolean;
 };
 
 type PendingStackTopLibraryChoice = {
@@ -1038,18 +1039,60 @@ function topLibraryChoiceOptionsFromPrompt(
     });
 }
 
-function topStackBrainstormInfo(state: GameState): { controllerId: string; sourceName: string; sourceInstanceId: string } | null {
+function handTopLibraryChoiceInfoFromEffects(
+  effects: unknown[] | undefined,
+  namedCardChoices: Record<string, string> | undefined,
+): { count: number; choiceKey: string; shuffleAfter: boolean } | undefined {
+  if (!Array.isArray(effects)) return undefined;
+  for (let index = 0; index < effects.length; index += 1) {
+    const effect = effects[index];
+    if (!effect || typeof effect !== 'object') continue;
+    const candidate = effect as { kind?: string; count?: unknown; selectedCardChoiceId?: string };
+    if (candidate.kind !== 'PutCardsFromHandOnTop') continue;
+    const choiceKey = candidate.selectedCardChoiceId || 'putOnTopIds';
+    if (Object.prototype.hasOwnProperty.call(namedCardChoices || {}, choiceKey)) continue;
+    return {
+      count: amountRefToChoiceCount(candidate.count),
+      choiceKey,
+      shuffleAfter: effects.slice(index + 1).some(nextEffect =>
+        !!nextEffect
+        && typeof nextEffect === 'object'
+        && (nextEffect as { kind?: string }).kind === 'ShuffleLibrary',
+      ),
+    };
+  }
+  return undefined;
+}
+
+function topStackHandTopLibraryInfo(state: GameState): {
+  controllerId: string;
+  sourceName: string;
+  sourceInstanceId: string;
+  count: number;
+  shuffleAfter: boolean;
+} | null {
   const top = state.stack[state.stack.length - 1];
   if (!top || top.kind !== 'Spell') return null;
   const spellCard = state.cards.get(top.cardInstanceId);
   if (!spellCard) return null;
   const spellDef = getCastSpellDefinition(state, top.cardInstanceId, { faceName: top.faceName })
     || getCardDefinition(state, spellCard);
-  if (!spellDef || spellDef.name.toLowerCase() !== 'brainstorm') return null;
+  if (!spellDef) return null;
+  const override = getOverride(spellDef.id, spellDef.name);
+  const parsed = override ? null : parseOracleText(spellDef.oracle_text);
+  const effects = override?.kind === 'Spell'
+    ? override.effects
+    : parsed?.kind === 'Spell'
+      ? parsed.effects
+      : undefined;
+  const choiceInfo = handTopLibraryChoiceInfoFromEffects(effects, top.namedCardChoices);
+  if (!choiceInfo || choiceInfo.count <= 0) return null;
   return {
     controllerId: top.casterId,
     sourceName: spellDef.name,
     sourceInstanceId: top.cardInstanceId,
+    count: choiceInfo.count,
+    shuffleAfter: choiceInfo.shuffleAfter,
   };
 }
 
@@ -2965,6 +3008,7 @@ export function useShelectorGame() {
     sourceName: string,
     sourceInstanceId: string,
     count: number,
+    shuffleAfter = false,
   ): boolean => {
     const handCount = getCardsInZone(state, humanIdRef.current, 'hand').length;
     const requiredCount = Math.min(count, handCount);
@@ -2983,6 +3027,7 @@ export function useShelectorGame() {
       selectedIds: [],
       sourceName,
       count: requiredCount,
+      shuffleAfter,
     };
     tutorRemainingRef.current = 0;
     tutorFilterRef.current = undefined;
@@ -2992,18 +3037,24 @@ export function useShelectorGame() {
     tutorSourceNameRef.current = sourceName;
     tutorSourceInstanceIdRef.current = sourceInstanceId;
     tutorPromptRequestRef.current = null;
-    setTutorTitle(`${sourceName}: choose card 1 of ${requiredCount} for the top of your library`);
+    setTutorTitle(`${sourceName}: choose card 1 of ${requiredCount} ${shuffleAfter ? 'to shuffle into your library' : 'for the top of your library'}`);
     setTutorCards(handTopLibraryOptionsFromPrompt(state, promptRequest, [], requiredCount));
     setTutorPhase(true);
-    addMessage('system', `${sourceName} - choose ${requiredCount} card${requiredCount === 1 ? '' : 's'} from hand to put on top of your library.`);
+    addMessage('system', `${sourceName} - choose ${requiredCount} card${requiredCount === 1 ? '' : 's'} from hand ${shuffleAfter ? 'to shuffle into your library' : 'to put on top of your library'}.`);
     return true;
   }, [addMessage]);
 
   const resolveTopOfStackAndPauseForFollowUp = useCallback((state: GameState): { state: GameState; pause: boolean } => {
-    const brainstorm = topStackBrainstormInfo(state);
+    const handTopLibrary = topStackHandTopLibraryInfo(state);
     const nextState = resolveTopOfStackWithAuthority(state);
-    if (brainstorm?.controllerId === humanIdRef.current) {
-      const queued = queueHandTopLibraryChoice(nextState, brainstorm.sourceName, brainstorm.sourceInstanceId, 2);
+    if (handTopLibrary?.controllerId === humanIdRef.current) {
+      const queued = queueHandTopLibraryChoice(
+        nextState,
+        handTopLibrary.sourceName,
+        handTopLibrary.sourceInstanceId,
+        handTopLibrary.count,
+        handTopLibrary.shuffleAfter,
+      );
       if (queued) return { state: nextState, pause: true };
     }
     return { state: nextState, pause: false };
@@ -5816,7 +5867,7 @@ export function useShelectorGame() {
           ...pendingHandTopLibrary,
           selectedIds,
         };
-        setTutorTitle(`${pendingHandTopLibrary.sourceName}: choose card ${selectedIds.length + 1} of ${pendingHandTopLibrary.count} for the top of your library`);
+        setTutorTitle(`${pendingHandTopLibrary.sourceName}: choose card ${selectedIds.length + 1} of ${pendingHandTopLibrary.count} ${pendingHandTopLibrary.shuffleAfter ? 'to shuffle into your library' : 'for the top of your library'}`);
         setTutorCards(handTopLibraryOptionsFromPrompt(
           engineForChoice,
           pendingHandTopLibrary.promptRequest,
@@ -5847,8 +5898,20 @@ export function useShelectorGame() {
       setTutorPhase(false);
       setTutorCards([]);
       setTutorTitle('');
-      engineRef.current = selectResponse.state as GameStateWithAI;
-      addMessage('player', `${pendingHandTopLibrary.sourceName}: put ${selectedIds.length} card${selectedIds.length === 1 ? '' : 's'} from hand on top of your library.`);
+      let selectedState = selectResponse.state as GameStateWithAI;
+      if (pendingHandTopLibrary.shuffleAfter) {
+        const shuffledState = executeEffects(
+          selectedState,
+          [{ kind: 'ShuffleLibrary', player: { kind: 'Controller' } }] as Effect[],
+          humanIdRef.current,
+          [],
+          [],
+        ) as GameStateWithAI;
+        recordAuthorityUpdate(buildStateUpdate(selectedState, shuffledState));
+        selectedState = shuffledState;
+      }
+      engineRef.current = selectedState;
+      addMessage('player', `${pendingHandTopLibrary.sourceName}: ${pendingHandTopLibrary.shuffleAfter ? 'shuffled' : 'put'} ${selectedIds.length} card${selectedIds.length === 1 ? '' : 's'} from hand ${pendingHandTopLibrary.shuffleAfter ? 'into your library' : 'on top of your library'}.`);
 
       const loopMessages: { role: ChatMessage['role']; text: string }[] = [];
       const loopLogEntries: GameLogEntry[] = [];
@@ -6468,7 +6531,7 @@ export function useShelectorGame() {
   const cancelTutor = useCallback(() => {
     if (!engineRef.current) return;
     if (pendingHandTopLibraryChoiceRef.current) {
-      addMessage('system', `${pendingHandTopLibraryChoiceRef.current.sourceName} requires choosing cards for the top of your library.`);
+      addMessage('system', `${pendingHandTopLibraryChoiceRef.current.sourceName} requires choosing cards ${pendingHandTopLibraryChoiceRef.current.shuffleAfter ? 'to shuffle into your library' : 'for the top of your library'}.`);
       syncState();
       return;
     }

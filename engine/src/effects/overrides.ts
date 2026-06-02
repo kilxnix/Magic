@@ -641,7 +641,30 @@ registerOverrideByName('Brainstorm', {
   targets: [],
 });
 
-// Opt — Scry 1, then draw a card.
+// See Beyond - draw two, then shuffle a card from your hand into your library.
+registerOverrideByName('See Beyond', {
+  kind: 'Spell',
+  effects: [
+    {
+      kind: 'Draw',
+      player: { kind: 'Controller' },
+      count: 2,
+    },
+    {
+      kind: 'PutCardsFromHandOnTop',
+      player: { kind: 'Controller' },
+      count: 1,
+      selectedCardChoiceId: 'shuffleIntoLibraryIds',
+    },
+    {
+      kind: 'ShuffleLibrary',
+      player: { kind: 'Controller' },
+    },
+  ],
+  targets: [],
+});
+
+// Opt - Scry 1, then draw a card.
 registerOverrideByName('Opt', {
   kind: 'Spell',
   effects: [

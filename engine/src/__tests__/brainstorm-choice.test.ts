@@ -114,6 +114,27 @@ describe('Brainstorm card selection', () => {
   });
 });
 
+describe('See Beyond card selection', () => {
+  it('draws two, then shuffles the selected hand card into the library', () => {
+    const next = resolveOverride(stateWithBrainstormCards(), 'See Beyond', {
+      shuffleIntoLibraryIds: 'hand-a',
+    });
+
+    const handIds = [...next.cards.values()]
+      .filter(instance => instance.ownerId === 'p1' && instance.zone === 'hand')
+      .map(instance => instance.instanceId);
+    const libraryIds = [...next.cards.values()]
+      .filter(instance => instance.ownerId === 'p1' && instance.zone === 'library')
+      .map(instance => instance.instanceId);
+
+    expect(next.cards.get('draw-a')?.zone).toBe('hand');
+    expect(next.cards.get('draw-b')?.zone).toBe('hand');
+    expect(next.cards.get('hand-a')?.zone).toBe('library');
+    expect(handIds).toHaveLength(4);
+    expect(libraryIds).toHaveLength(3);
+  });
+});
+
 describe('top-library pile choices', () => {
   it('resolves Fact or Fiction selected cards to hand and the rest to graveyard', () => {
     const next = resolveOverride(stateWithBrainstormCards(), 'Fact or Fiction', {
