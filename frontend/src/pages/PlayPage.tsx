@@ -576,10 +576,21 @@ export function PlayPage() {
     slot: number,
     snapshot: ShelectorGameSaveSnapshot,
     autosaved: boolean,
-    drillBookmarks = saveSlotsRef.current[slot - 1]?.drillBookmarks || [],
+    drillBookmarks?: PlayDrillBookmark[],
   ): PlaySaveSlotRecord => {
     const savedAt = Date.now();
     const commander = gameState?.humanCommander || importResult?.commander || snapshot.humanCommander || 'Practice Game';
+    const practice = resolvePracticeMetadata();
+    const existing = saveSlotsRef.current[slot - 1];
+    const existingPracticeId = existing?.practice?.presetId || null;
+    const nextPracticeId = practice?.presetId || null;
+    const shouldCarryExistingDrills = Boolean(
+      existing
+      && existing.commander === commander
+      && existingPracticeId === nextPracticeId
+    );
+    const effectiveDrillBookmarks = drillBookmarks
+      ?? (shouldCarryExistingDrills ? existing?.drillBookmarks || [] : []);
     const canonicalEngineSave = snapshot.engine
       ? buildCanonicalPlayEngineSave({
           slot,
@@ -599,7 +610,7 @@ export function PlayPage() {
       phase: gameState?.phase || 'setup',
       savedAt,
       autosaved,
-      practice: resolvePracticeMetadata(),
+      practice,
       audit: {
         schema: 'engine-event-log-v1',
         engineEventCount: engineEventLog.length,
@@ -607,7 +618,7 @@ export function PlayPage() {
         seedCount: Object.keys(engineEventLogSeeds || {}).length,
         updatedAt: savedAt,
       },
-      drillBookmarks,
+      drillBookmarks: effectiveDrillBookmarks,
       canonicalEngineSave,
       snapshot,
       ui: {
