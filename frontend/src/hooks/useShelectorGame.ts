@@ -2424,12 +2424,20 @@ function toSimpleLegalAction(action: AIAction, engineState: GameState): SimpleLe
       const blockerDef = blockerInst
         ? getCardDefinition(engineState, blockerInst)
         : undefined;
+      const blockedAttackerInst = action.blocks.length === 1
+        ? engineState.cards.get(action.blocks[0].blockingAttackerId)
+        : undefined;
+      const blockedAttackerDef = blockedAttackerInst
+        ? getCardDefinition(engineState, blockedAttackerInst)
+        : undefined;
       return {
         kind: 'DeclareBlockers',
         cardInstanceId: blockerInst?.instanceId,
         cardName: blockerDef?.name,
         label: action.blocks.length > 0
-          ? `Block with ${action.blocks.length} creature(s)`
+          ? action.blocks.length === 1
+            ? `Block ${blockedAttackerDef?.name || 'attacker'} with ${blockerDef?.name || 'creature'}`
+            : `Block with ${action.blocks.length} creatures`
           : 'No blocks',
         _engineAction: action,
       };
