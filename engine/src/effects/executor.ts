@@ -253,6 +253,8 @@ function resolveTargetRef(
       throw new Error('AllAttackingCreatures must be handled before calling resolveTargetRef');
     case 'AllCreaturesYouControl':
       throw new Error('AllCreaturesYouControl must be handled before calling resolveTargetRef');
+    case 'AllCreaturesYouControlMatching':
+      throw new Error('AllCreaturesYouControlMatching must be handled before calling resolveTargetRef');
     case 'AllOfType':
       throw new Error('AllOfType must be handled before calling resolveTargetRef');
     case 'Source':
@@ -1387,6 +1389,22 @@ export function matchesCardFilter(def: CardDefinition, filter: CardFilter, conte
     return false;
   }
 
+  return true;
+}
+
+function matchesCardInstanceFilter(
+  state: GameState,
+  instanceId: string,
+  filter: CardFilter,
+  context: CardFilterContext = {},
+): boolean {
+  const card = state.cards.get(instanceId);
+  if (!card) return false;
+  const def = getCardDefinition(state, card);
+  const filterWithoutPower = { ...filter };
+  delete filterWithoutPower.power;
+  if (!matchesCardFilter(def, filterWithoutPower, context)) return false;
+  if (filter.power && !matchesNumericFilter(getEffectivePower(state, instanceId), filter.power)) return false;
   return true;
 }
 
@@ -2930,6 +2948,18 @@ function executeEffect(
         }
         return s;
       }
+      if (effect.target.kind === 'AllCreaturesYouControlMatching') {
+        let s = state;
+        for (const card of state.cards.values()) {
+          if (card.zone !== 'battlefield' || card.ownerId !== casterId) continue;
+          if (!isEffectiveCreature(s, card.instanceId)) continue;
+          if (!matchesCardInstanceFilter(s, card.instanceId, effect.target.filter, { state: s, sourceInstanceId })) continue;
+          const power = resolveAmount(effect.power, xValue, s, casterId, chosenTargets, card.instanceId);
+          const toughness = resolveAmount(effect.toughness, xValue, s, casterId, chosenTargets, card.instanceId);
+          s = executeModifyPT(s, card.instanceId, power, toughness);
+        }
+        return s;
+      }
       if (effect.target.kind === 'Source') {
         if (!sourceInstanceId) return state;
         const power = resolveAmount(effect.power, xValue, state, casterId, chosenTargets, sourceInstanceId);
@@ -3003,6 +3033,16 @@ function executeEffect(
           if (card.ownerId !== casterId || card.zone !== 'battlefield') continue;
           const def = getCardDefinition(state, card);
           if (!def.card_types.includes('creature')) continue;
+          nextState = executeGrantKeyword(nextState, card.instanceId, effect.keyword);
+        }
+        return nextState;
+      }
+      if (effect.target.kind === 'AllCreaturesYouControlMatching') {
+        let nextState = state;
+        for (const card of state.cards.values()) {
+          if (card.ownerId !== casterId || card.zone !== 'battlefield') continue;
+          if (!isEffectiveCreature(nextState, card.instanceId)) continue;
+          if (!matchesCardInstanceFilter(nextState, card.instanceId, effect.target.filter, { state: nextState, sourceInstanceId })) continue;
           nextState = executeGrantKeyword(nextState, card.instanceId, effect.keyword);
         }
         return nextState;

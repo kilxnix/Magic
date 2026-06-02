@@ -2114,6 +2114,68 @@ function matchModifyPT(tokens: string[], startIndex: number): PatternResult {
     return { effects: [effect], targets: [], consumed };
   }
 
+  // "each creature you control with power 4 or greater gets +1/+1 and gains trample until end of turn"
+  // Also accepts "creatures you control with power 4 or greater ..."
+  if (
+    slice.length >= 13 &&
+    (
+      (slice[0] === 'each' && slice[1] === 'creature' && slice[2] === 'you' && slice[3] === 'control')
+      || (slice[0] === 'creatures' && slice[1] === 'you' && slice[2] === 'control')
+    )
+  ) {
+    let idx = slice[0] === 'each' ? 4 : 3;
+    if (slice[idx] !== 'with' || slice[idx + 1] !== 'power') return null;
+    const powerValue = Number.parseInt(slice[idx + 2], 10);
+    if (Number.isNaN(powerValue) || slice[idx + 3] !== 'or') return null;
+    const opWord = slice[idx + 4];
+    if (opWord !== 'greater' && opWord !== 'less') return null;
+    idx += 5;
+    if (slice[idx] !== 'gets' && slice[idx] !== 'get') return null;
+    idx++;
+
+    const ptMatch = slice[idx]?.match(/^([+-]\d+)\/([+-]\d+)$/);
+    if (!ptMatch) return null;
+    idx++;
+    const power = Number.parseInt(ptMatch[1], 10);
+    const toughness = Number.parseInt(ptMatch[2], 10);
+    const target: TargetRef = {
+      kind: 'AllCreaturesYouControlMatching',
+      filter: {
+        types: ['creature'],
+        power: { op: opWord === 'greater' ? 'gte' : 'lte', value: powerValue },
+      },
+    };
+    const effects: Effect[] = [{
+      kind: 'ModifyPT',
+      target,
+      power,
+      toughness,
+      untilEndOfTurn: true,
+    }];
+
+    if (slice[idx] === 'and' && (slice[idx + 1] === 'gain' || slice[idx + 1] === 'gains')) {
+      const keyword = slice[idx + 2];
+      if (!keyword) return null;
+      if (slice[idx + 3] !== 'until' || slice[idx + 4] !== 'end' || slice[idx + 5] !== 'of'
+        || (slice[idx + 6] !== 'turn' && slice[idx + 6] !== 'combat')) return null;
+      effects.push({
+        kind: 'GrantKeyword',
+        target,
+        keyword: keyword.charAt(0).toUpperCase() + keyword.slice(1),
+        untilEndOfTurn: true,
+      });
+      idx += 7;
+    } else {
+      if (slice[idx] !== 'until' || slice[idx + 1] !== 'end' || slice[idx + 2] !== 'of'
+        || (slice[idx + 3] !== 'turn' && slice[idx + 3] !== 'combat')) return null;
+      idx += 4;
+    }
+
+    let consumed = idx;
+    if (tokens[startIndex + consumed] === '.') consumed++;
+    return { effects, targets: [], consumed };
+  }
+
   // "creatures you control get +N/+N until end of turn"
   if (slice.length >= 8 &&
       slice[0] === 'creatures' && slice[1] === 'you' && slice[2] === 'control' &&

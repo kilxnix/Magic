@@ -1062,6 +1062,39 @@ describe('starter deck full-card QA', () => {
     }
   });
 
+  it('resolves Goreclaw attack trigger before combat damage', () => {
+    let state = makeState();
+    const goreclaw = addCard(state, 'Goreclaw, Terror of Qal Sisma', 'battlefield', 'p1', {
+      isCommander: true,
+      summoningSick: false,
+    });
+    const terra = addCard(state, 'Terra Stomper', 'battlefield', 'p1', { summoningSick: false });
+    const small = addCard(state, 'Colossodon Yearling', 'battlefield', 'p1', { summoningSick: false });
+    state = registerPermanent(state, goreclaw);
+    state = {
+      ...state,
+      phase: 'combat',
+      step: 'declare_attackers',
+      priorityPlayerIndex: 0,
+    };
+
+    state = declareAttackers(state, 'p1', [{ cardInstanceId: goreclaw, defendingPlayerId: 'p2' }]);
+    expect(state.pendingTriggers.length).toBeGreaterThan(0);
+    state = resolveAllPendingTriggers(state);
+
+    expect(getEffectivePower(state, goreclaw)).toBe(5);
+    expect(getEffectivePower(state, terra)).toBe(9);
+    expect(getEffectivePower(state, small)).toBe(2);
+    expect(instanceHasKeyword(state, goreclaw, 'Trample')).toBe(true);
+    expect(instanceHasKeyword(state, terra, 'Trample')).toBe(true);
+    expect(instanceHasKeyword(state, small, 'Trample')).toBe(false);
+
+    state = declareBlockers(state, 'p2', []);
+    state = resolveCombatDamage(state);
+
+    expect(state.players.find(player => player.id === 'p2')?.life).toBe(35);
+  });
+
   it('deals combat damage for every starter commander through public attack and block actions', () => {
     const damageCases = [
       { deckId: 'beginner-goreclaw-stompy', attackerName: 'Goreclaw, Terror of Qal Sisma' },

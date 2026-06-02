@@ -519,6 +519,7 @@ export type TargetRef =
   | { kind: 'AllCreatures' }
   | { kind: 'AllAttackingCreatures' }
   | { kind: 'AllCreaturesYouControl' }
+  | { kind: 'AllCreaturesYouControlMatching'; filter: CardFilter }
   | { kind: 'AllOfType'; filter: CardFilter }
   | { kind: 'Source' }
   | { kind: 'SourceAttachedTo' }
