@@ -11,7 +11,7 @@ import {
   tryPlayLand,
   type ManaColor,
 } from 'commander-engine';
-import { createComplexCombatQaState, createDeclareBlockersQaState, createGenerousGiftQaState, createKrenkoSkirkQaState, createLandEntryFetchQaState, createLibraryManipulationQaState, createMagecraftTriggersQaState, createModalChoiceQaState, createMulliganSelectionQaState, createSeeBeyondQaState, createSisayRawLandsQaState, createSpellCopyQaState, createStormGrapeshotQaState } from './qaGameScenarios';
+import { createComplexCombatQaState, createCostReductionQaState, createDeclareBlockersQaState, createGenerousGiftQaState, createKrenkoSkirkQaState, createLandEntryFetchQaState, createLibraryManipulationQaState, createMagecraftTriggersQaState, createModalChoiceQaState, createMulliganSelectionQaState, createSeeBeyondQaState, createSisayRawLandsQaState, createSpellCopyQaState, createStormGrapeshotQaState } from './qaGameScenarios';
 
 describe('QA game scenarios', () => {
   it('loads raw dual lands with mana actions and reaches Sisay activation after tapping WUBRG', () => {
@@ -167,6 +167,18 @@ describe('QA game scenarios', () => {
 
     expect([...state.cards.values()].filter(card => card.ownerId === 'human' && card.zone === 'hand')).toHaveLength(7);
     expect([...state.cards.values()].filter(card => card.ownerId === 'human' && card.zone === 'library')).toHaveLength(5);
+  });
+
+  it('loads a cost-reduced instant that is castable with only colored mana available', () => {
+    const state = deserializeGameState(createCostReductionQaState());
+    const actions = getLegalActions(state, 'human');
+
+    expect(state.players[0].manaPool.R).toBe(1);
+    expect(actions.some(action =>
+      action.kind === 'CastSpell'
+      && action.cardInstanceId === 'cost_reduction_qa_bolt_1'
+      && action.targets.includes('ai-1'),
+    )).toBe(true);
   });
 
   it('loads a storm spell with previous spell count for browser QA', () => {

@@ -957,6 +957,86 @@ export function createMulliganSelectionQaState(): SerializedGameStateV1 {
   return serializeGameState(state);
 }
 
+export function createCostReductionQaState(): SerializedGameStateV1 {
+  const mentor = def(
+    'cost_reduction_qa_mentor',
+    'Stormcatch Mentor',
+    'Creature - Otter Wizard',
+    '{1}{R}',
+    'Instant and sorcery spells you cast cost {1} less to cast.',
+    { cmc: 2, colors: ['R'], color_identity: ['R'], power: 1, toughness: 1 },
+  );
+  const bolt = def(
+    'cost_reduction_qa_bolt',
+    'Expensive Bolt',
+    'Instant',
+    '{1}{R}',
+    'Expensive Bolt deals 3 damage to any target.',
+    { cmc: 2, colors: ['R'], color_identity: ['R'] },
+  );
+
+  const state: GameState = {
+    players: [
+      {
+        id: 'human',
+        name: 'Cost Reduction QA Pilot',
+        life: 40,
+        poisonCounters: 0,
+        commanderDamage: {},
+        commanderTax: 0,
+        commanderInstanceId: null,
+        commanderCastCount: 0,
+        manaPool: pool({ R: 1 }),
+        hasPlayedLand: false,
+        hasPriority: true,
+        hasLost: false,
+      },
+      {
+        id: 'ai-1',
+        name: 'Cost Reduction QA Opponent',
+        life: 40,
+        poisonCounters: 0,
+        commanderDamage: {},
+        commanderTax: 0,
+        commanderInstanceId: null,
+        commanderCastCount: 0,
+        manaPool: pool(),
+        hasPlayedLand: false,
+        hasPriority: false,
+        hasLost: false,
+      },
+    ],
+    cards: new Map<string, CardInstance>([
+      ['cost_reduction_qa_mentor_1', instance('cost_reduction_qa_mentor_1', mentor.id, 'human', 'battlefield')],
+      ['cost_reduction_qa_bolt_1', instance('cost_reduction_qa_bolt_1', bolt.id, 'human', 'hand')],
+    ]),
+    cardDefinitions: new Map<string, CardDefinition>([
+      [mentor.id, mentor],
+      [bolt.id, bolt],
+    ]),
+    activePlayerIndex: 0,
+    priorityPlayerIndex: 0,
+    phase: 'precombat_main',
+    step: 'upkeep',
+    turnNumber: 1,
+    hasPriorityPassed: [false, false],
+    stack: [],
+    combat: null,
+    battlefieldAbilities: new Map(),
+    pendingTriggers: [],
+  };
+
+  const withReduction = registerContinuousEffect(state, 'cost_reduction_qa_mentor_1', 'human', {
+    kind: 'StaticAbility',
+    modifier: { kind: 'ReduceCost', amount: 1 },
+    filter: { types: ['instant', 'sorcery'] },
+    controller: 'you',
+    excludeSelf: false,
+  });
+
+  return serializeGameState(withReduction);
+}
+
 export function createStormGrapeshotQaState(): SerializedGameStateV1 {
   const commander = def(
     'storm_qa_commander',

@@ -284,6 +284,7 @@ export function PlayPage() {
       && qaScenario !== 'library-manipulation'
       && qaScenario !== 'see-beyond'
       && qaScenario !== 'mulligan-selection'
+      && qaScenario !== 'cost-reduction'
       && qaScenario !== 'storm-grapeshot'
       && qaScenario !== 'spell-copy'
       && qaScenario !== 'magecraft-triggers'
@@ -298,6 +299,7 @@ export function PlayPage() {
       .then(({
         createDeclareBlockersQaState,
         createComplexCombatQaState,
+        createCostReductionQaState,
         createGenerousGiftQaState,
         createKrenkoSkirkQaState,
         createLandEntryFetchQaState,
@@ -324,6 +326,8 @@ export function PlayPage() {
           ? createSeeBeyondQaState()
           : qaScenario === 'mulligan-selection'
           ? createMulliganSelectionQaState()
+          : qaScenario === 'cost-reduction'
+          ? createCostReductionQaState()
           : qaScenario === 'storm-grapeshot'
           ? createStormGrapeshotQaState()
           : qaScenario === 'spell-copy'
@@ -356,6 +360,8 @@ export function PlayPage() {
             ? 'Talrand, Sky Summoner'
             : qaScenario === 'mulligan-selection'
             ? 'Talrand, Sky Summoner'
+            : qaScenario === 'cost-reduction'
+            ? 'Stormcatch Mentor'
             : qaScenario === 'storm-grapeshot' || qaScenario === 'spell-copy'
             ? 'Vivi Ornitier'
             : qaScenario === 'magecraft-triggers'
@@ -447,6 +453,8 @@ export function PlayPage() {
               ? 'See Beyond'
               : qaScenario === 'mulligan-selection'
               ? 'mulligan selection'
+              : qaScenario === 'cost-reduction'
+              ? 'cost reduction'
               : qaScenario === 'storm-grapeshot'
               ? 'storm Grapeshot'
               : qaScenario === 'spell-copy'
