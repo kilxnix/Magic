@@ -18,6 +18,15 @@ describe('CardPickerModal helpers', () => {
     ]);
   });
 
+  it('preserves supplied order for explicit destination choices', () => {
+    const sorted = sortCardPickerCards([
+      { name: 'Pay 2 life', typeLine: 'Enter untapped', legal: true, destination: 'choice' as const },
+      { name: 'Enter tapped', typeLine: 'Do not pay life', legal: true, destination: 'choice' as const },
+    ]);
+
+    expect(sorted.map(card => card.name)).toEqual(['Pay 2 life', 'Enter tapped']);
+  });
+
   it('uses availability wording instead of overclaiming full rules legality', () => {
     expect(cardPickerAvailabilityLabel({ legal: true })).toBe('Selectable');
     expect(cardPickerAvailabilityLabel({})).toBe('Selectable');

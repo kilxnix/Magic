@@ -26,6 +26,7 @@ Completion rule:
 | BCL-004 | Complex combat certification | Open | Multi-blocker, trample/deathtouch/double strike, and multi-opponent assignment not fully certified through UI. | Live or deterministic UI scenario plus engine regression coverage. |
 | BCL-005 | Real room engine mode | Open | 4-human-context real engine room proof is not complete. | Four-context room run proving scoped views, priority, stack, reload, and action sync. |
 | BCL-006 | Save/replay canonicality | Open | `/play` save slots still contain UI metadata around canonical engine saves and can show replay audit warnings. | SaveManager-primary slot round-trip with replay audit clean for a long complex session. |
+| BCL-008 | Fetched shockland replacement choice | Open | Live `?qa=land-entry-fetch` Scalding Tarn -> Steam Vents moved Steam Vents library -> battlefield tapped with no pay-2-life prompt. | Regression test plus live extension proof that fetched Steam Vents prompts tapped/pay-2 and honors the chosen branch. |
 
 ## Closed Items
 

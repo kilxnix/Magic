@@ -23,7 +23,11 @@ interface CardPickerModalProps {
   allowCustomName?: boolean;
 }
 
-export function sortCardPickerCards<T extends Pick<CardPickerCard, 'legal' | 'name' | 'typeLine'>>(cards: T[]): T[] {
+export function sortCardPickerCards<T extends Pick<CardPickerCard, 'legal' | 'name' | 'typeLine'> & Partial<Pick<CardPickerCard, 'destination'>>>(cards: T[]): T[] {
+  if (cards.length > 0 && cards.every(card => card.destination === 'choice')) {
+    return [...cards];
+  }
+
   return [...cards].sort((a, b) => {
     const aLegal = a.legal !== false;
     const bLegal = b.legal !== false;
@@ -123,7 +127,8 @@ export function CardPickerModal({ title, cards, filter, onPick, onCancel, cancel
               key={card.instanceId}
               type="button"
               disabled={card.legal === false}
-              onClick={() => card.legal !== false && onPick(card.instanceId)}
+              onClick={() => card.legal !== false && setSelectedId(card.instanceId)}
+              onDoubleClick={() => card.legal !== false && onPick(card.instanceId)}
               onMouseEnter={() => setSelectedId(card.instanceId)}
               onFocus={() => setSelectedId(card.instanceId)}
               className={`w-full rounded px-3 py-2 text-left transition-colors ${
