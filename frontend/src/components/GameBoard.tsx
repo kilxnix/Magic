@@ -3877,7 +3877,7 @@ export function GameBoard({
         </div>
       )}
       {shouldShowComplexTurnOverview && (
-        <div className="pointer-events-none relative z-50 shrink-0 border-b border-amber-900/50 bg-neutral-950/88 px-2 py-2 md:px-4">
+        <div className="pointer-events-none relative z-50 hidden shrink-0 border-b border-amber-900/50 bg-neutral-950/88 px-2 py-2 md:px-4 lg:block">
           <div className="mx-auto flex max-w-7xl flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
