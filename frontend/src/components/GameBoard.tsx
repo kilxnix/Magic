@@ -2569,7 +2569,7 @@ export function GameBoard({
       return;
     }
     setShowLastPlayedToast(true);
-    const timeout = window.setTimeout(() => setShowLastPlayedToast(false), 4500);
+    const timeout = window.setTimeout(() => setShowLastPlayedToast(false), 12000);
     return () => window.clearTimeout(timeout);
   }, [lastPlayedCard?.card.instanceId, lastPlayedCard?.turnNumber]);
 
@@ -3841,6 +3841,7 @@ export function GameBoard({
             onClick={() => setInspectedCard(lastPlayedCard.card)}
             className="max-w-full rounded border border-red-500/40 bg-neutral-950/85 px-3 py-1.5 text-left shadow-lg shadow-black/25 backdrop-blur transition-colors hover:border-red-300/80 hover:bg-neutral-900 focus:outline-none focus:ring-2 focus:ring-red-400/60 sm:max-w-64"
             title={`Inspect ${lastPlayedCard.card.name}`}
+            aria-label={`Inspect last played card: ${lastPlayedCard.card.name}`}
           >
             <div className="text-[9px] font-bold uppercase tracking-wider text-red-300/80">Last Played</div>
             <div className="max-w-64 truncate text-xs font-semibold text-stone-100">{lastPlayedCard.card.name}</div>
