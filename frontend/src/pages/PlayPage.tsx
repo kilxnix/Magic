@@ -914,6 +914,19 @@ export function PlayPage() {
     ].filter(Boolean).join(' / ');
   };
 
+  const summarizePracticeDecisionContext = (): string => {
+    if (!gameState) return 'No practice context.';
+    const parts = [
+      currentPrompt ? `Prompt: ${currentPrompt.title || currentPrompt.type}` : null,
+      currentPrompt?.guidance ? `Guidance: ${currentPrompt.guidance}` : null,
+      lastPlayedCard ? `Last: ${lastPlayedCard.card.name}` : null,
+      gameState.stack.length > 0 ? `Stack: ${gameState.stack.map(item => item.name).slice(-3).join(', ')}` : null,
+      branchPreviews.length > 0 ? `Branches: ${branchPreviews.slice(0, 3).map(preview => preview.label).join(' | ')}` : null,
+      legalActions.length > 0 ? `Available actions: ${legalActions.length}` : null,
+    ].filter(Boolean);
+    return parts.length > 0 ? parts.join(' / ') : 'Manual drill bookmark';
+  };
+
   const saveCurrentDrillAttempt = async () => {
     if (!activeDrillRun) {
       setSaveError('Load a drill bookmark before saving an attempt.');
@@ -939,7 +952,7 @@ export function PlayPage() {
       turnNumber: gameState.turnNumber,
       phase: gameState.phase,
       step: gameState.step,
-      summary: summarizeDrillAttempt(),
+      summary: `${summarizeDrillAttempt()} / ${summarizePracticeDecisionContext()}`,
       engine: snapshot.engine,
     };
 
@@ -986,7 +999,7 @@ export function PlayPage() {
       engine: snapshot.engine,
       source: 'manual',
       focusTags: resolvePracticeMetadata()?.focusTags || [],
-      note: currentPrompt?.title || lastPlayedCard?.card.name || 'Manual drill bookmark',
+      note: summarizePracticeDecisionContext(),
     };
 
     const drillBookmarks = [...(existing?.drillBookmarks || []), bookmark].slice(-16);
@@ -1222,17 +1235,33 @@ export function PlayPage() {
                           {bookmark.note && (
                             <div className="mt-1 truncate text-[10px] text-fuchsia-100/65">{bookmark.note}</div>
                           )}
-                          {bookmark.attempts?.slice(-1).map(attempt => (
-                            <button
-                              key={attempt.id}
-                              type="button"
-                              onClick={() => loadDrillAttempt(record, bookmark, attempt)}
-                              className="mt-1 min-h-7 rounded border border-sky-500/40 px-2 text-[10px] font-bold text-sky-100 hover:bg-sky-950/40"
-                              title={attempt.summary}
-                            >
-                              Latest attempt
-                            </button>
-                          ))}
+                          {bookmark.attempts?.length ? (
+                            <div className="mt-1 rounded border border-sky-500/20 bg-sky-950/15 p-1">
+                              <div className="mb-1 flex items-center justify-between gap-2 text-[9px] font-black uppercase tracking-wider text-sky-200/85">
+                                <span>Recent Attempts</span>
+                                <span>{bookmark.attempts.length}</span>
+                              </div>
+                              <div className="grid gap-1">
+                                {bookmark.attempts.slice(-3).reverse().map((attempt, attemptIndex) => (
+                                  <button
+                                    key={attempt.id}
+                                    type="button"
+                                    onClick={() => loadDrillAttempt(record, bookmark, attempt)}
+                                    className="min-h-7 rounded border border-sky-500/40 px-2 text-left text-[10px] font-bold text-sky-100 hover:bg-sky-950/40"
+                                    title={attempt.summary}
+                                  >
+                                    <span className="block truncate">
+                                      {attemptIndex === 0 ? 'Latest: ' : ''}
+                                      {attempt.label}
+                                    </span>
+                                    <span className="block truncate text-[9px] font-semibold text-sky-100/60">
+                                      T{attempt.turnNumber} {attempt.step || attempt.phase}
+                                    </span>
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          ) : null}
                         </div>
                       ))}
                     </div>

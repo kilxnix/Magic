@@ -2791,6 +2791,20 @@ export function GameBoard({
   const shouldShowComplexTurnOverview = !gameState.gameOver && !mulliganPhase && (
     complexTurnSignals.length > 0 || branchPreviews.length > 0 || currentPrompt || activeDrillLabel
   );
+  const hasDecisionMapContent = complexTurnSignals.length > 0
+    || practiceFocusTags.length > 0
+    || branchPreviews.length > 0
+    || !!activeDrillLabel;
+  const smartBookmarkReason = (() => {
+    if (!onBookmarkDrill || gameState.gameOver || mulliganPhase) return '';
+    if (currentPrompt) return currentPrompt.title || PROMPT_TYPE_LABELS[currentPrompt.type] || 'Current prompt';
+    if (triggerOrderChoice?.triggers.length) return `${triggerOrderChoice.triggers.length} triggers waiting`;
+    if (damageAssignmentChoice) return 'Combat damage assignment';
+    if (branchPreviews.length >= 3) return `${branchPreviews.length} branch previews available`;
+    if (complexTurnSignals.length >= 2) return `${complexTurnSignals.length} complex turn signals`;
+    if (gameState.stack.length > 0) return `${gameState.stack.length} stack object${gameState.stack.length === 1 ? '' : 's'}`;
+    return '';
+  })();
 
   const handleCardClick = (card: SimpleCard) => {
     setInspectedCard(card);
@@ -3574,7 +3588,7 @@ export function GameBoard({
         </div>
       )}
 
-      {(complexTurnSignals.length > 0 || practiceFocusTags.length > 0 || branchPreviews.length > 0 || activeDrillLabel) && (
+      {hasDecisionMapContent && (
         <div
           aria-label="Decision map"
           className="absolute left-2 top-14 z-30 hidden w-[22rem] max-w-[calc(100%-1rem)] rounded-lg border border-amber-500/20 bg-neutral-950/84 p-2 shadow-xl shadow-black/25 backdrop-blur lg:block"
@@ -3618,6 +3632,19 @@ export function GameBoard({
                     </button>
                   )}
                 </div>
+              </div>
+            )}
+            {smartBookmarkReason && (
+              <div className="rounded border border-fuchsia-500/30 bg-fuchsia-950/25 px-2 py-1 text-fuchsia-100">
+                <div className="text-[10px] font-black uppercase tracking-wider">Smart Checkpoint</div>
+                <div className="text-[10px] leading-snug opacity-85">{smartBookmarkReason}</div>
+                <button
+                  type="button"
+                  onClick={onBookmarkDrill}
+                  className="mt-1 rounded bg-fuchsia-500 px-2 py-0.5 text-[9px] font-black uppercase text-neutral-950 transition-colors hover:bg-fuchsia-400"
+                >
+                  Bookmark This Decision
+                </button>
               </div>
             )}
             {practiceFocusTags.length > 0 && (
@@ -3668,14 +3695,14 @@ export function GameBoard({
         </div>
       )}
 
-      {(practiceFocusTags.length > 0 || activeDrillLabel) && !hasTopActions && (
+      {hasDecisionMapContent && !hasTopActions && (
         <div
-          aria-label="Practice focus"
+          aria-label="Mobile decision map"
           className="absolute left-2 right-14 top-14 z-30 rounded-lg border border-amber-500/20 bg-neutral-950/88 p-2 shadow-xl shadow-black/25 backdrop-blur lg:hidden"
         >
           <div className="mb-1 flex items-center justify-between gap-2">
             <div className="text-[9px] font-black uppercase tracking-wider text-amber-300">
-              Practice Focus
+              Decision Map
             </div>
             {onBookmarkDrill && (
               <button
@@ -3688,13 +3715,36 @@ export function GameBoard({
               </button>
             )}
           </div>
-          <div className="flex flex-wrap gap-1">
-            {practiceFocusTags.slice(0, 4).map(tag => (
-              <span key={tag} className="rounded border border-amber-500/30 px-1.5 py-0.5 text-[9px] font-bold text-amber-100">
-                {tag}
-              </span>
-            ))}
-          </div>
+          {practiceFocusTags.length > 0 && (
+            <div className="flex flex-wrap gap-1">
+              {practiceFocusTags.slice(0, 4).map(tag => (
+                <span key={tag} className="rounded border border-amber-500/30 px-1.5 py-0.5 text-[9px] font-bold text-amber-100">
+                  {tag}
+                </span>
+              ))}
+            </div>
+          )}
+          {smartBookmarkReason && (
+            <div className="mt-2 rounded border border-fuchsia-500/30 bg-fuchsia-950/35 px-2 py-1 text-[10px] text-fuchsia-100">
+              <div className="font-black uppercase tracking-wider">Smart Checkpoint</div>
+              <div>{smartBookmarkReason}</div>
+            </div>
+          )}
+          {complexTurnSignals.slice(0, 2).map(signal => (
+            <div
+              key={`floating-mobile-${signal.label}:${signal.detail}`}
+              className={`mt-1 rounded border px-2 py-1 text-[10px] ${complexSignalClass(signal.tone)}`}
+            >
+              <div className="font-black uppercase tracking-wider">{signal.label}</div>
+              <div className="leading-snug opacity-85">{signal.detail}</div>
+            </div>
+          ))}
+          {branchPreviews.slice(0, 2).map(preview => (
+            <div key={`floating-mobile-preview-${preview.actionId}`} className="mt-1 rounded border border-sky-500/25 bg-sky-950/25 px-2 py-1 text-[10px] text-sky-100">
+              <div className="truncate font-black uppercase tracking-wider">{preview.label}</div>
+              <div className="leading-snug opacity-85">{preview.summary}</div>
+            </div>
+          ))}
           {activeDrillLabel && (
             <div className="mt-2 rounded border border-fuchsia-500/30 bg-fuchsia-950/35 px-2 py-1 text-[10px] text-fuchsia-100">
               <div className="font-black uppercase tracking-wider">Drill Run</div>
@@ -3982,7 +4032,7 @@ export function GameBoard({
         </div>
       )}
       {shouldShowComplexTurnOverview && (
-        <div className="pointer-events-none relative z-50 hidden shrink-0 border-b border-amber-900/50 bg-neutral-950/88 px-2 py-2 md:px-4 lg:block">
+        <div className="pointer-events-none relative z-50 block max-h-40 shrink-0 overflow-y-auto border-b border-amber-900/50 bg-neutral-950/88 px-2 py-2 md:px-4 lg:max-h-none lg:overflow-visible">
           <div className="mx-auto flex max-w-7xl flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
@@ -4242,6 +4292,19 @@ export function GameBoard({
           )}
           {!actionsCollapsed && (complexTurnSignals.length > 0 || practiceFocusTags.length > 0 || branchPreviews.length > 0 || activeDrillLabel) && (
             <div className="mb-2 grid gap-1.5 lg:hidden">
+              {smartBookmarkReason && (
+                <div className="rounded border border-fuchsia-500/30 bg-fuchsia-950/30 px-2 py-1.5 text-fuchsia-100">
+                  <div className="text-[10px] font-black uppercase tracking-wider">Smart Checkpoint</div>
+                  <div className="text-[10px] leading-snug opacity-85">{smartBookmarkReason}</div>
+                  <button
+                    type="button"
+                    onClick={onBookmarkDrill}
+                    className="mt-1 min-h-7 rounded bg-fuchsia-500 px-2 text-[9px] font-black uppercase text-neutral-950"
+                  >
+                    Bookmark Decision
+                  </button>
+                </div>
+              )}
               {activeDrillLabel && (
                 <div className="rounded border border-fuchsia-500/30 bg-fuchsia-950/35 px-2 py-1.5 text-fuchsia-100">
                   <div className="text-[10px] font-black uppercase tracking-wider">Drill Run</div>
@@ -4292,9 +4355,12 @@ export function GameBoard({
               {branchPreviews.length > 0 && (
                 <div className="rounded border border-sky-500/25 bg-sky-950/25 px-2 py-1.5">
                   <div className="text-[10px] font-black uppercase tracking-wider text-sky-200">Branch Preview</div>
-                  {branchPreviews.slice(0, 2).map(preview => (
+                  {branchPreviews.slice(0, 3).map(preview => (
                     <div key={`mobile-preview-${preview.actionId}`} className="mt-1 text-[10px] leading-snug text-sky-100/85">
                       <span className="font-bold text-stone-100">{preview.label}:</span> {preview.summary}
+                      {preview.warnings[0] && (
+                        <div className="mt-0.5 text-amber-100/85">{preview.warnings[0]}</div>
+                      )}
                     </div>
                   ))}
                 </div>
