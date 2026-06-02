@@ -25,6 +25,13 @@ const STEP_TO_PHASE: Record<Step, Phase> = {
   cleanup: 'ending',
 };
 
+const EMPTY_ATTACK_COMBAT_STEPS: Step[] = [
+  'declare_attackers',
+  'declare_blockers',
+  'first_strike_damage',
+  'combat_damage',
+];
+
 function derivePhase(currentStep: Step, nextStep: Step): Phase {
   if (currentStep === 'draw' && nextStep === 'begin_combat') {
     return 'precombat_main';
@@ -35,16 +42,26 @@ function derivePhase(currentStep: Step, nextStep: Step): Phase {
   return STEP_TO_PHASE[nextStep];
 }
 
+function nextMeaningfulStep(state: GameState): Step | null {
+  const currentIndex = STEP_ORDER.indexOf(state.step);
+  if (currentIndex === STEP_ORDER.length - 1) return null;
+
+  if (state.combat && state.combat.attackers.length === 0 && EMPTY_ATTACK_COMBAT_STEPS.includes(state.step)) {
+    return 'end_of_combat';
+  }
+
+  return STEP_ORDER[currentIndex + 1];
+}
+
 export function advanceStep(state: GameState): GameState {
   state = pruneDamagePreventionEffects(state);
   state = pruneGameOutcomePreventionEffects(state);
-  const currentIndex = STEP_ORDER.indexOf(state.step);
+  const nextStep = nextMeaningfulStep(state);
 
-  if (currentIndex === STEP_ORDER.length - 1) {
+  if (!nextStep) {
     return advanceToNextTurn(state);
   }
 
-  const nextStep = STEP_ORDER[currentIndex + 1];
   const nextPhase = derivePhase(state.step, nextStep);
 
   const updatedPlayers = state.players.map(p => ({

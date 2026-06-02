@@ -113,6 +113,48 @@ describe('Turn Manager', () => {
       expect(next.pendingTriggers).toHaveLength(1);
       expect(next.pendingTriggers[0].ability.trigger.kind).toBe('BeginningCombat');
     });
+
+    it('skips blockers and damage when no attackers were declared', () => {
+      let state = initGameState(makeEmptyDecks(4));
+      state = {
+        ...state,
+        phase: 'combat',
+        step: 'declare_attackers',
+        combat: {
+          attackers: [],
+          blockers: [],
+          damageAssignment: new Map(),
+        },
+      };
+
+      const next = advanceStep(state);
+
+      expect(next.phase).toBe('combat');
+      expect(next.step).toBe('end_of_combat');
+      expect(next.priorityPlayerIndex).toBe(next.activePlayerIndex);
+      expect(next.hasPriorityPassed.every(Boolean)).toBe(false);
+    });
+
+    it('recovers already-entered empty blocker steps by advancing to end of combat', () => {
+      let state = initGameState(makeEmptyDecks(4));
+      state = {
+        ...state,
+        phase: 'combat',
+        step: 'declare_blockers',
+        priorityPlayerIndex: 2,
+        combat: {
+          attackers: [],
+          blockers: [],
+          damageAssignment: new Map(),
+        },
+      };
+
+      const next = advanceStep(state);
+
+      expect(next.phase).toBe('combat');
+      expect(next.step).toBe('end_of_combat');
+      expect(next.priorityPlayerIndex).toBe(next.activePlayerIndex);
+    });
   });
 
   describe('advanceToNextTurn', () => {
