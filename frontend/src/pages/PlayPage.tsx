@@ -283,6 +283,7 @@ export function PlayPage() {
       && qaScenario !== 'land-entry-fetch'
       && qaScenario !== 'library-manipulation'
       && qaScenario !== 'see-beyond'
+      && qaScenario !== 'mulligan-selection'
       && qaScenario !== 'storm-grapeshot'
       && qaScenario !== 'spell-copy'
       && qaScenario !== 'magecraft-triggers'
@@ -302,6 +303,7 @@ export function PlayPage() {
         createLandEntryFetchQaState,
         createLibraryManipulationQaState,
         createMagecraftTriggersQaState,
+        createMulliganSelectionQaState,
         createModalChoiceQaState,
         createSeeBeyondQaState,
         createSisayActivationQaState,
@@ -320,6 +322,8 @@ export function PlayPage() {
           ? createLibraryManipulationQaState()
           : qaScenario === 'see-beyond'
           ? createSeeBeyondQaState()
+          : qaScenario === 'mulligan-selection'
+          ? createMulliganSelectionQaState()
           : qaScenario === 'storm-grapeshot'
           ? createStormGrapeshotQaState()
           : qaScenario === 'spell-copy'
@@ -349,6 +353,8 @@ export function PlayPage() {
             : qaScenario === 'library-manipulation'
             ? 'Talrand, Sky Summoner'
             : qaScenario === 'see-beyond'
+            ? 'Talrand, Sky Summoner'
+            : qaScenario === 'mulligan-selection'
             ? 'Talrand, Sky Summoner'
             : qaScenario === 'storm-grapeshot' || qaScenario === 'spell-copy'
             ? 'Vivi Ornitier'
@@ -398,7 +404,7 @@ export function PlayPage() {
           lastStateUpdate: null,
           currentPrompt: null,
           lastPlayedCard: null,
-          mulliganPhase: false,
+          mulliganPhase: qaScenario === 'mulligan-selection',
           mulliganCount: 0,
           selectedMulliganCardIds: [],
           selectedMulliganBottomIds: [],
@@ -439,6 +445,8 @@ export function PlayPage() {
               ? 'library manipulation'
               : qaScenario === 'see-beyond'
               ? 'See Beyond'
+              : qaScenario === 'mulligan-selection'
+              ? 'mulligan selection'
               : qaScenario === 'storm-grapeshot'
               ? 'storm Grapeshot'
               : qaScenario === 'spell-copy'

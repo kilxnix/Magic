@@ -872,6 +872,91 @@ export function createSeeBeyondQaState(): SerializedGameStateV1 {
   return serializeGameState(state);
 }
 
+export function createMulliganSelectionQaState(): SerializedGameStateV1 {
+  const commander = def(
+    'mulligan_qa_commander',
+    'Talrand, Sky Summoner',
+    'Legendary Creature - Merfolk Wizard',
+    '{2}{U}{U}',
+    'Whenever you cast an instant or sorcery spell, create a 2/2 blue Drake creature token with flying.',
+    { cmc: 4, colors: ['U'], color_identity: ['U'], power: 2, toughness: 2 },
+  );
+  const handDefs = [
+    def('mulligan_qa_opt', 'Opt', 'Instant', '{U}', 'Scry 1.\nDraw a card.', { cmc: 1, colors: ['U'], color_identity: ['U'] }),
+    def('mulligan_qa_counterspell', 'Counterspell', 'Instant', '{U}{U}', 'Counter target spell.', { cmc: 2, colors: ['U'], color_identity: ['U'] }),
+    def('mulligan_qa_island', 'Island', 'Basic Land - Island', '', '({T}: Add {U}.)', { card_types: ['land'] }),
+    def('mulligan_qa_mountain', 'Mountain', 'Basic Land - Mountain', '', '({T}: Add {R}.)', { card_types: ['land'] }),
+    def('mulligan_qa_forest', 'Forest', 'Basic Land - Forest', '', '({T}: Add {G}.)', { card_types: ['land'] }),
+    def('mulligan_qa_bear', 'Grizzly Bears', 'Creature - Bear', '{1}{G}', '', { cmc: 2, colors: ['G'], color_identity: ['G'], power: 2, toughness: 2 }),
+    def('mulligan_qa_bolt', 'Lightning Bolt', 'Instant', '{R}', 'Lightning Bolt deals 3 damage to any target.', { cmc: 1, colors: ['R'], color_identity: ['R'] }),
+  ];
+  const libraryDefs = [
+    def('mulligan_qa_draw_1', 'Ponder', 'Sorcery', '{U}', 'Look at the top three cards of your library, then put them back in any order. You may shuffle. Draw a card.', { cmc: 1, colors: ['U'], color_identity: ['U'] }),
+    def('mulligan_qa_draw_2', 'Preordain', 'Sorcery', '{U}', 'Scry 2, then draw a card.', { cmc: 1, colors: ['U'], color_identity: ['U'] }),
+    def('mulligan_qa_draw_3', 'Arcane Signet', 'Artifact', '{2}', '{T}: Add one mana of any color in your commander\'s color identity.', { cmc: 2, card_types: ['artifact'] }),
+    def('mulligan_qa_draw_4', 'Sol Ring', 'Artifact', '{1}', '{T}: Add {C}{C}.', { cmc: 1, card_types: ['artifact'] }),
+    def('mulligan_qa_draw_5', 'Island Two', 'Basic Land - Island', '', '({T}: Add {U}.)', { card_types: ['land'] }),
+  ];
+  const allDefs = [commander, ...handDefs, ...libraryDefs];
+
+  const state: GameState = {
+    players: [
+      {
+        id: 'human',
+        name: 'Mulligan QA Pilot',
+        life: 40,
+        poisonCounters: 0,
+        commanderDamage: {},
+        commanderTax: 0,
+        commanderInstanceId: 'mulligan_qa_commander_1',
+        commanderCastCount: 0,
+        manaPool: pool(),
+        hasPlayedLand: false,
+        hasPriority: true,
+        hasLost: false,
+      },
+      {
+        id: 'ai-1',
+        name: 'Mulligan QA Opponent',
+        life: 40,
+        poisonCounters: 0,
+        commanderDamage: {},
+        commanderTax: 0,
+        commanderInstanceId: null,
+        commanderCastCount: 0,
+        manaPool: pool(),
+        hasPlayedLand: false,
+        hasPriority: false,
+        hasLost: false,
+      },
+    ],
+    cards: new Map<string, CardInstance>([
+      ['mulligan_qa_commander_1', instance('mulligan_qa_commander_1', commander.id, 'human', 'command', { isCommander: true })],
+      ...handDefs.map((card): [string, CardInstance] => [
+        `${card.id}_1`,
+        instance(`${card.id}_1`, card.id, 'human', 'hand'),
+      ]),
+      ...libraryDefs.map((card): [string, CardInstance] => [
+        `${card.id}_1`,
+        instance(`${card.id}_1`, card.id, 'human', 'library'),
+      ]),
+    ]),
+    cardDefinitions: new Map<string, CardDefinition>(allDefs.map(card => [card.id, card])),
+    activePlayerIndex: 0,
+    priorityPlayerIndex: 0,
+    phase: 'precombat_main',
+    step: 'upkeep',
+    turnNumber: 1,
+    hasPriorityPassed: [false, false],
+    stack: [],
+    combat: null,
+    battlefieldAbilities: new Map(),
+    pendingTriggers: [],
+  };
+
+  return serializeGameState(state);
+}
+
 export function createStormGrapeshotQaState(): SerializedGameStateV1 {
   const commander = def(
     'storm_qa_commander',

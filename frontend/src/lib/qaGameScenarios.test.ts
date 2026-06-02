@@ -11,7 +11,7 @@ import {
   tryPlayLand,
   type ManaColor,
 } from 'commander-engine';
-import { createComplexCombatQaState, createDeclareBlockersQaState, createGenerousGiftQaState, createKrenkoSkirkQaState, createLandEntryFetchQaState, createLibraryManipulationQaState, createMagecraftTriggersQaState, createModalChoiceQaState, createSeeBeyondQaState, createSisayRawLandsQaState, createSpellCopyQaState, createStormGrapeshotQaState } from './qaGameScenarios';
+import { createComplexCombatQaState, createDeclareBlockersQaState, createGenerousGiftQaState, createKrenkoSkirkQaState, createLandEntryFetchQaState, createLibraryManipulationQaState, createMagecraftTriggersQaState, createModalChoiceQaState, createMulliganSelectionQaState, createSeeBeyondQaState, createSisayRawLandsQaState, createSpellCopyQaState, createStormGrapeshotQaState } from './qaGameScenarios';
 
 describe('QA game scenarios', () => {
   it('loads raw dual lands with mana actions and reaches Sisay activation after tapping WUBRG', () => {
@@ -160,6 +160,13 @@ describe('QA game scenarios', () => {
     )).toBe(true);
     expect([...state.cards.values()].filter(card => card.ownerId === 'human' && card.zone === 'hand')).toHaveLength(3);
     expect([...state.cards.values()].filter(card => card.ownerId === 'human' && card.zone === 'library')).toHaveLength(3);
+  });
+
+  it('loads a seven-card opening hand for mulligan selection browser QA', () => {
+    const state = deserializeGameState(createMulliganSelectionQaState());
+
+    expect([...state.cards.values()].filter(card => card.ownerId === 'human' && card.zone === 'hand')).toHaveLength(7);
+    expect([...state.cards.values()].filter(card => card.ownerId === 'human' && card.zone === 'library')).toHaveLength(5);
   });
 
   it('loads a storm spell with previous spell count for browser QA', () => {
