@@ -1950,6 +1950,17 @@ export function PlayPage() {
                 label: 'Review',
                 onSelect: () => setShowReview(true),
               },
+              ...(activePracticeDeck?.id === 'practice-xenagos-dragons'
+                ? [{
+                    id: 'restart-focused-xenagos',
+                    label: 'Restart Focused Rep',
+                    detail: 'Xenagos / Aggressive Shelector',
+                    onSelect: () => {
+                      setSavePanelOpen(false);
+                      handleStartFocusedXenagosRep();
+                    },
+                  }]
+                : []),
             ]}
           />
         </div>
