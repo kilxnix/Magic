@@ -519,6 +519,13 @@ def test_real_engine_session_routes_actions_and_scoped_views(monkeypatch):
         json={
             "player_id": host_id,
             "revision": 1,
+            "engine_state": {
+                "version": 1,
+                "turnNumber": 1,
+                "activePlayerIndex": 0,
+                "priorityPlayerIndex": 0,
+                "players": [{"id": host_id, "landsPlayedThisTurn": 1}],
+            },
             "views": {
                 host_id: {
                     "viewerId": host_id,
@@ -558,6 +565,10 @@ def test_real_engine_session_routes_actions_and_scoped_views(monkeypatch):
     )
     assert snapshot.status_code == 200
     assert snapshot.json()["real_game"]["pending_action_count"] == 0
+
+    restored_payload = client.get(f"/api/multiplayer/rooms/{room_id}/real-game/start-payload", params={"player_id": host_id})
+    assert restored_payload.status_code == 200
+    assert restored_payload.json()["engineState"]["players"][0]["landsPlayedThisTurn"] == 1
 
     rejected_action = client.post(
         f"/api/multiplayer/rooms/{room_id}/real-game/action",

@@ -74,6 +74,7 @@ MAX_DECK_CARDS = 120
 MAX_PENDING_REAL_ACTIONS = 80
 MAX_REAL_GAME_ACTION_BYTES = int(os.getenv("MULTIPLAYER_MAX_ACTION_BYTES", "4000"))
 MAX_REAL_GAME_VIEW_BYTES = int(os.getenv("MULTIPLAYER_MAX_VIEW_BYTES", "120000"))
+MAX_REAL_GAME_STATE_BYTES = int(os.getenv("MULTIPLAYER_MAX_STATE_BYTES", "1500000"))
 MAX_REAL_GAME_VIEW_DEPTH = int(os.getenv("MULTIPLAYER_MAX_VIEW_DEPTH", "24"))
 MAX_SPECTATORS = int(os.getenv("MULTIPLAYER_MAX_SPECTATORS", "12"))
 REAL_AUTHORITY_STALE_SECONDS = int(os.getenv("MULTIPLAYER_AUTHORITY_STALE_SECONDS", "30"))
@@ -1190,6 +1191,7 @@ class StartRealGamePayload(BaseModel):
     firstPlayerId: Optional[str] = None
     startingLife: int = 40
     authorityPlayerId: str
+    engineState: Optional[dict[str, Any]] = None
 
 
 class PendingRealGameAction(BaseModel):
@@ -1367,6 +1369,7 @@ class RealGameSnapshotRequest(BaseModel):
     player_id: str
     revision: int = Field(..., ge=0)
     views: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    engine_state: Optional[dict[str, Any]] = None
     completed_action_ids: list[str] = Field(default_factory=list, max_length=MAX_PENDING_REAL_ACTIONS)
     rejected_actions: dict[str, str] = Field(default_factory=dict)
     events: list[str] = Field(default_factory=list, max_length=20)
@@ -3040,7 +3043,10 @@ async def get_real_game_start_payload(room_id: str, player_id: str = Query(...))
             raise HTTPException(status_code=403, detail="Only the authority player can fetch the full start payload")
         _touch_real_authority(room, player_id)
         _save_rooms_locked()
-        return StartRealGamePayload(**real_game["start_payload"])
+        payload = dict(real_game["start_payload"])
+        if isinstance(real_game.get("engine_state"), dict):
+            payload["engineState"] = real_game["engine_state"]
+        return StartRealGamePayload(**payload)
 
 
 @router.get("/rooms/{room_id}/real-game/actions", response_model=list[PendingRealGameAction])
@@ -3115,6 +3121,10 @@ async def publish_real_game_snapshot(room_id: str, req: RealGameSnapshotRequest)
         _touch_real_authority(room, req.player_id)
         _safe_json_size(req.views, max_bytes=MAX_REAL_GAME_VIEW_BYTES, field_name="Real engine views")
         _reject_links_in_json(req.views, field_name="Real engine views", max_depth=MAX_REAL_GAME_VIEW_DEPTH)
+        if req.engine_state is not None:
+            _safe_json_size(req.engine_state, max_bytes=MAX_REAL_GAME_STATE_BYTES, field_name="Real engine state")
+            _reject_links_in_json(req.engine_state, field_name="Real engine state", max_depth=MAX_REAL_GAME_VIEW_DEPTH + 8)
+            real_game["engine_state"] = req.engine_state
         real_game["revision"] = max(real_game.get("revision", 0), req.revision)
         real_game["views"] = _sanitize_real_game_views(req.views)
         completed_ids = set(req.completed_action_ids)

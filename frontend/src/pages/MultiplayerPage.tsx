@@ -63,7 +63,7 @@ import {
   createRoomEngineState,
   createRoomScopedViews,
 } from '../lib/roomEngineBridge';
-import type { GameState } from 'commander-engine';
+import { serializeGameState, type GameState } from 'commander-engine';
 
 interface RoomSession {
   roomId: string;
@@ -1183,6 +1183,7 @@ export function MultiplayerPage() {
       player_id: activeSession.playerId,
       revision: engineRevisionRef.current,
       views: createRoomScopedViews(state),
+      engine_state: serializeGameState(state),
       completed_action_ids: completedActionIds,
       rejected_actions: rejectedActions,
       events,

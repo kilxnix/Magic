@@ -132,6 +132,7 @@ export interface StartRealGamePayload {
   firstPlayerId?: string | null;
   startingLife: number;
   authorityPlayerId: string;
+  engineState?: unknown;
 }
 
 export type RealGameAction =
@@ -754,6 +755,7 @@ export function publishRealGameSnapshot(
     player_id: string;
     revision: number;
     views: Record<string, unknown>;
+    engine_state?: unknown;
     completed_action_ids?: string[];
     rejected_actions?: Record<string, string>;
     events?: string[];

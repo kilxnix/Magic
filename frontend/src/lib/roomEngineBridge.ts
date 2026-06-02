@@ -14,6 +14,7 @@ import {
   tryDeclareAttackers,
   tryDeclareBlockers,
   tryAdjustCounters,
+  deserializeGameState,
   type GameState,
   type ManaCost,
   type ScryfallCard,
@@ -148,6 +149,9 @@ async function fetchCardLookup(names: string[]) {
 }
 
 export async function createRoomEngineState(payload: StartRealGamePayload): Promise<GameState> {
+  if (payload.engineState) {
+    return deserializeGameState(payload.engineState as Parameters<typeof deserializeGameState>[0]);
+  }
   const names = payload.players.flatMap(player => [player.deck.commander, ...player.deck.list]);
   const cardLookup = await fetchCardLookup(names);
   return initRoomGame({
