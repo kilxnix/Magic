@@ -5,8 +5,10 @@ import {
   checkStateBasedActions,
   createDamageAssignmentPromptRequest,
   getLegalActions,
+  resetLoopDetector,
   resolveCombatDamage,
   tapLandForMana,
+  tryPlayLand,
   type ManaColor,
 } from 'commander-engine';
 import { createComplexCombatQaState, createDeclareBlockersQaState, createLandEntryFetchQaState, createLibraryManipulationQaState, createMagecraftTriggersQaState, createModalChoiceQaState, createSisayRawLandsQaState, createSpellCopyQaState, createStormGrapeshotQaState } from './qaGameScenarios';
@@ -71,6 +73,20 @@ describe('QA game scenarios', () => {
     expect(actions.some(action =>
       action.kind === 'ActivateAbility' && action.cardInstanceId === 'scalding_tarn_board_1',
     )).toBe(true);
+  });
+
+  it('does not report a possible loop when Cavern resolves in the land-entry QA state', () => {
+    resetLoopDetector();
+    const state = deserializeGameState(createLandEntryFetchQaState());
+
+    const result = tryPlayLand(state, 'human', 'cavern_of_souls_hand_1', {
+      chosenCreatureType: 'Human',
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.cards.get('cavern_of_souls_hand_1')?.zone).toBe('battlefield');
+    expect(result.events.some(event => event.kind === 'PossibleLoop')).toBe(false);
   });
 
   it('loads a modal spell with separate legal damage and artifact-destroy choices for browser QA', () => {

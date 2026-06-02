@@ -5132,6 +5132,9 @@ export function useShelectorGame() {
     (importedCards?: ImportedCards, aiDeckDataArray?: ImportedCards | ImportedCards[], options?: StartGameOptions): boolean => {
       resetLoopDetector();
       setError(null);
+      setActionError(null);
+      setLastEvents([]);
+      setEndGame({ open: false, kind: 'loss' });
       setChatMessages([]);
       setGameLog([]);
       setAuthorityUpdates([]);
@@ -8404,6 +8407,9 @@ export function useShelectorGame() {
         throw new Error('Unsupported save snapshot');
       }
       resetLoopDetector();
+      setActionError(null);
+      setLastEvents([]);
+      setEndGame({ open: false, kind: 'loss' });
       const restored = deserializeGameState(snapshot.engine) as GameStateWithAI;
       const aiIdSet = new Set(snapshot.aiIds || []);
       restored.players = restored.players.map(player => ({
@@ -8520,9 +8526,15 @@ export function useShelectorGame() {
       setHoldPriority(Boolean(snapshot.holdPriority));
       setPriorityStopsState(snapshot.priorityStops || readStoredPriorityStops());
       priorityStopsRef.current = snapshot.priorityStops || readStoredPriorityStops();
+      const restoredEvents = (snapshot.lastEvents || []).filter(event => event.kind !== 'PossibleLoop');
+      const restoredEndGame = snapshot.endGame;
       setActionError(snapshot.actionError || null);
-      setLastEvents(snapshot.lastEvents || []);
-      setEndGame(snapshot.endGame || { open: false, kind: 'loss' });
+      setLastEvents(restoredEvents);
+      setEndGame(
+        restoredEndGame?.open && restoredEndGame.kind !== 'loop'
+          ? restoredEndGame
+          : { open: false, kind: 'loss' },
+      );
       setIsLoading(false);
       setError(null);
       syncState();
