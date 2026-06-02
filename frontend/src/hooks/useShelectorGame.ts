@@ -2203,20 +2203,34 @@ function captureLogEntry(
 function manaAbilityActionLabel(def: CardDefinition | undefined, color: ManaColor): string {
   const name = def?.name || 'permanent';
   const mana = def?.manaProduction;
+  const manaLabel = manaAbilityDisplayMana(def, color);
   if (mana?.activationZone === 'hand') {
-    return `Exile ${name} for ${color}`;
+    return `Exile ${name} for ${manaLabel}`;
   }
   const sacrificeName = sacrificeManaSubject(def);
   if (sacrificeName) {
-    return `Sacrifice ${sacrificeName} with ${name} for ${color}`;
+    return `Sacrifice ${sacrificeName} with ${name} for ${manaLabel}`;
   }
   if (mana?.requiresSacrifice) {
-    return `Sacrifice ${name} for ${color}`;
+    return `Sacrifice ${name} for ${manaLabel}`;
   }
   if (mana?.isTapAbility === false) {
-    return `Activate ${name} for ${color}`;
+    return `Activate ${name} for ${manaLabel}`;
   }
-  return `Tap ${name} for ${color}`;
+  return `Tap ${name} for ${manaLabel}`;
+}
+
+function manaAbilityDisplayMana(def: CardDefinition | undefined, color: ManaColor): string {
+  const mana = def?.manaProduction;
+  if (!mana) return color;
+  if (mana.producesAllColors) {
+    return mana.colors.map(manaColor => {
+      const amount = mana.amounts[manaColor] ?? 1;
+      return amount > 1 ? `${amount}${manaColor}` : manaColor;
+    }).join('');
+  }
+  const amount = mana.amounts[color] ?? 1;
+  return amount > 1 ? `${amount}${color}` : color;
 }
 
 function manaAbilityLogVerb(def: CardDefinition | undefined): string {
