@@ -81,6 +81,7 @@ REAL_AUTHORITY_STALE_SECONDS = int(os.getenv("MULTIPLAYER_AUTHORITY_STALE_SECOND
 MAX_EVENT_PLAYERS = int(os.getenv("MULTIPLAYER_MAX_EVENT_PLAYERS", "64"))
 MAX_EVENT_ANNOUNCEMENTS = 80
 ROOM_EXPIRY = timedelta(hours=12)
+CLOSED_ROOM_ADMIN_RETENTION = timedelta(hours=1)
 REAL_AUTHORITY_STALE_AFTER = timedelta(seconds=REAL_AUTHORITY_STALE_SECONDS)
 ROOM_STORE_PATH = Path(os.getenv("MULTIPLAYER_ROOM_STORE", "/app/runtime/multiplayer_rooms.json"))
 EVENT_STORE_PATH = Path(os.getenv("MULTIPLAYER_EVENT_STORE", "/app/runtime/multiplayer_events.json"))
@@ -440,10 +441,12 @@ def _ensure_not_room_muted(room: dict, player_id: str) -> None:
 
 def _cleanup_rooms_locked() -> None:
     cutoff = _now() - ROOM_EXPIRY
+    closed_cutoff = _now() - CLOSED_ROOM_ADMIN_RETENTION
     expired = [
         room_id
         for room_id, room in _rooms.items()
-        if room["updated_at"] < cutoff or room["status"] == "closed"
+        if room["updated_at"] < cutoff
+        or (room["status"] == "closed" and room["updated_at"] < closed_cutoff)
     ]
     for room_id in expired:
         _rooms.pop(room_id, None)

@@ -1089,10 +1089,20 @@ def test_room_cleanup_removes_closed_and_expired_rooms(monkeypatch):
             "tier": "free",
         },
     ).json()
-    closed = client.post(
+    closed_recent = client.post(
         "/api/multiplayer/rooms",
         json={
-            "name": "Closed Room",
+            "name": "Recently Closed Room",
+            "host_name": "Host",
+            "tags": [],
+            "is_private": False,
+            "tier": "free",
+        },
+    ).json()
+    closed_old = client.post(
+        "/api/multiplayer/rooms",
+        json={
+            "name": "Old Closed Room",
             "host_name": "Host",
             "tags": [],
             "is_private": False,
@@ -1102,16 +1112,21 @@ def test_room_cleanup_removes_closed_and_expired_rooms(monkeypatch):
 
     fresh_id = fresh["room"]["id"]
     expired_id = expired["room"]["id"]
-    closed_id = closed["room"]["id"]
+    closed_recent_id = closed_recent["room"]["id"]
+    closed_old_id = closed_old["room"]["id"]
 
     multiplayer._rooms[expired_id]["updated_at"] = multiplayer._now() - multiplayer.ROOM_EXPIRY - timedelta(minutes=1)
-    multiplayer._rooms[closed_id]["status"] = "closed"
+    multiplayer._rooms[closed_recent_id]["status"] = "closed"
+    multiplayer._rooms[closed_old_id]["status"] = "closed"
+    multiplayer._rooms[closed_old_id]["updated_at"] = multiplayer._now() - multiplayer.CLOSED_ROOM_ADMIN_RETENTION - timedelta(minutes=1)
 
     listed = client.get("/api/multiplayer/rooms")
     assert listed.status_code == 200
     assert fresh_id in multiplayer._rooms
     assert expired_id not in multiplayer._rooms
-    assert closed_id not in multiplayer._rooms
+    assert closed_recent_id in multiplayer._rooms
+    assert closed_old_id not in multiplayer._rooms
+    assert closed_recent_id not in [room["id"] for room in listed.json()]
 
 
 def test_qa_namespace_is_direct_only_and_not_public_discovery(monkeypatch):
