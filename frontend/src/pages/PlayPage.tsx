@@ -285,6 +285,7 @@ export function PlayPage() {
       && qaScenario !== 'see-beyond'
       && qaScenario !== 'mulligan-selection'
       && qaScenario !== 'cost-reduction'
+      && qaScenario !== 'brain-gorgers-sacrifice'
       && qaScenario !== 'storm-grapeshot'
       && qaScenario !== 'spell-copy'
       && qaScenario !== 'magecraft-triggers'
@@ -298,6 +299,7 @@ export function PlayPage() {
     import('../lib/qaGameScenarios')
       .then(({
         createDeclareBlockersQaState,
+        createBrainGorgersSacrificeQaState,
         createComplexCombatQaState,
         createCostReductionQaState,
         createGenerousGiftQaState,
@@ -328,6 +330,8 @@ export function PlayPage() {
           ? createMulliganSelectionQaState()
           : qaScenario === 'cost-reduction'
           ? createCostReductionQaState()
+          : qaScenario === 'brain-gorgers-sacrifice'
+          ? createBrainGorgersSacrificeQaState()
           : qaScenario === 'storm-grapeshot'
           ? createStormGrapeshotQaState()
           : qaScenario === 'spell-copy'
@@ -362,6 +366,8 @@ export function PlayPage() {
             ? 'Talrand, Sky Summoner'
             : qaScenario === 'cost-reduction'
             ? 'Stormcatch Mentor'
+            : qaScenario === 'brain-gorgers-sacrifice'
+            ? 'Doomed Bear'
             : qaScenario === 'storm-grapeshot' || qaScenario === 'spell-copy'
             ? 'Vivi Ornitier'
             : qaScenario === 'magecraft-triggers'
@@ -384,6 +390,8 @@ export function PlayPage() {
                   ? 'Library QA Opponent'
                   : qaScenario === 'see-beyond'
                   ? 'See Beyond QA Opponent'
+                  : qaScenario === 'brain-gorgers-sacrifice'
+                  ? 'Brain Gorgers QA Opponent'
                   : qaScenario === 'storm-grapeshot'
                   ? 'Storm QA Opponent'
                   : qaScenario === 'spell-copy'
@@ -455,6 +463,8 @@ export function PlayPage() {
               ? 'mulligan selection'
               : qaScenario === 'cost-reduction'
               ? 'cost reduction'
+              : qaScenario === 'brain-gorgers-sacrifice'
+              ? 'Brain Gorgers sacrifice'
               : qaScenario === 'storm-grapeshot'
               ? 'storm Grapeshot'
               : qaScenario === 'spell-copy'

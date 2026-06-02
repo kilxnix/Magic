@@ -2,16 +2,19 @@ import { describe, expect, it } from 'vitest';
 import {
   deserializeGameState,
   applyDamageAssignmentPromptResponse,
+  applySelectCardsPromptResponse,
   checkStateBasedActions,
   createDamageAssignmentPromptRequest,
+  createSelectCardsPromptRequest,
   getLegalActions,
   resetLoopDetector,
   resolveCombatDamage,
+  resolveTopOfStack,
   tapLandForMana,
   tryPlayLand,
   type ManaColor,
 } from 'commander-engine';
-import { createComplexCombatQaState, createCostReductionQaState, createDeclareBlockersQaState, createGenerousGiftQaState, createKrenkoSkirkQaState, createLandEntryFetchQaState, createLibraryManipulationQaState, createMagecraftTriggersQaState, createModalChoiceQaState, createMulliganSelectionQaState, createSeeBeyondQaState, createSisayRawLandsQaState, createSpellCopyQaState, createStormGrapeshotQaState } from './qaGameScenarios';
+import { createBrainGorgersSacrificeQaState, createComplexCombatQaState, createCostReductionQaState, createDeclareBlockersQaState, createGenerousGiftQaState, createKrenkoSkirkQaState, createLandEntryFetchQaState, createLibraryManipulationQaState, createMagecraftTriggersQaState, createModalChoiceQaState, createMulliganSelectionQaState, createSeeBeyondQaState, createSisayRawLandsQaState, createSpellCopyQaState, createStormGrapeshotQaState } from './qaGameScenarios';
 
 describe('QA game scenarios', () => {
   it('loads raw dual lands with mana actions and reaches Sisay activation after tapping WUBRG', () => {
@@ -179,6 +182,43 @@ describe('QA game scenarios', () => {
       && action.cardInstanceId === 'cost_reduction_qa_bolt_1'
       && action.targets.includes('ai-1'),
     )).toBe(true);
+  });
+
+  it('loads Brain Gorgers ETB sacrifice choice and commits the selected creature', () => {
+    let state = deserializeGameState(createBrainGorgersSacrificeQaState());
+    const top = state.stack[0];
+
+    expect(top?.kind).toBe('TriggeredAbility');
+    const request = createSelectCardsPromptRequest(state, 'human', {
+      subject: 'SacrificeChoice',
+      zone: 'battlefield',
+      destination: 'graveyard',
+      filter: { types: ['creature'] },
+      commitSelection: false,
+      stackItemId: top.id,
+      choiceKey: 'sacrificeCardId:human',
+      sourceInstanceId: 'brain_gorgers_qa_1',
+      minSelections: 1,
+      maxSelections: 1,
+    });
+
+    expect(request.legalChoices.map(choice => choice.cardInstanceId).sort()).toEqual([
+      'brain_gorgers_qa_doomed_bear_1',
+      'brain_gorgers_qa_keeper_elf_1',
+    ]);
+
+    const response = applySelectCardsPromptResponse(state, request, {
+      requestId: request.id,
+      kind: 'SelectCards',
+      playerId: 'human',
+      selectedCardInstanceIds: ['brain_gorgers_qa_doomed_bear_1'],
+    });
+    expect(response.ok).toBe(true);
+    state = resolveTopOfStack(response.state!);
+
+    expect(state.cards.get('brain_gorgers_qa_1')?.zone).toBe('battlefield');
+    expect(state.cards.get('brain_gorgers_qa_doomed_bear_1')?.zone).toBe('graveyard');
+    expect(state.cards.get('brain_gorgers_qa_keeper_elf_1')?.zone).toBe('battlefield');
   });
 
   it('loads a storm spell with previous spell count for browser QA', () => {

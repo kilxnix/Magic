@@ -1037,6 +1037,106 @@ export function createCostReductionQaState(): SerializedGameStateV1 {
   return serializeGameState(withReduction);
 }
 
+export function createBrainGorgersSacrificeQaState(): SerializedGameStateV1 {
+  const brainGorgers = def(
+    'brain_gorgers_qa',
+    'Brain Gorgers',
+    'Creature - Zombie',
+    '{3}{B}',
+    'When Brain Gorgers enters the battlefield, sacrifice it unless target opponent sacrifices a creature.',
+    { cmc: 4, colors: ['B'], color_identity: ['B'], power: 4, toughness: 2 },
+  );
+  const doomedBear = def(
+    'brain_gorgers_qa_doomed_bear',
+    'Doomed Bear',
+    'Creature - Bear',
+    '{1}{G}',
+    '',
+    { cmc: 2, colors: ['G'], color_identity: ['G'], power: 2, toughness: 2 },
+  );
+  const keeperElf = def(
+    'brain_gorgers_qa_keeper_elf',
+    'Keeper Elf',
+    'Creature - Elf Druid',
+    '{G}',
+    '{T}: Add {G}.',
+    { cmc: 1, colors: ['G'], color_identity: ['G'], power: 1, toughness: 1 },
+  );
+
+  const state: GameState = {
+    players: [
+      {
+        id: 'human',
+        name: 'Brain Gorgers QA Pilot',
+        life: 40,
+        poisonCounters: 0,
+        commanderDamage: {},
+        commanderTax: 0,
+        commanderInstanceId: null,
+        commanderCastCount: 0,
+        manaPool: pool(),
+        hasPlayedLand: false,
+        hasPriority: true,
+        hasLost: false,
+      },
+      {
+        id: 'ai-1',
+        name: 'Brain Gorgers QA Opponent',
+        life: 40,
+        poisonCounters: 0,
+        commanderDamage: {},
+        commanderTax: 0,
+        commanderInstanceId: null,
+        commanderCastCount: 0,
+        manaPool: pool(),
+        hasPlayedLand: false,
+        hasPriority: false,
+        hasLost: false,
+      },
+    ],
+    cards: new Map<string, CardInstance>([
+      ['brain_gorgers_qa_1', instance('brain_gorgers_qa_1', brainGorgers.id, 'ai-1', 'battlefield')],
+      ['brain_gorgers_qa_doomed_bear_1', instance('brain_gorgers_qa_doomed_bear_1', doomedBear.id, 'human', 'battlefield')],
+      ['brain_gorgers_qa_keeper_elf_1', instance('brain_gorgers_qa_keeper_elf_1', keeperElf.id, 'human', 'battlefield')],
+    ]),
+    cardDefinitions: new Map<string, CardDefinition>([
+      [brainGorgers.id, brainGorgers],
+      [doomedBear.id, doomedBear],
+      [keeperElf.id, keeperElf],
+    ]),
+    activePlayerIndex: 1,
+    priorityPlayerIndex: 0,
+    phase: 'precombat_main',
+    step: 'upkeep',
+    turnNumber: 2,
+    hasPriorityPassed: [false, false],
+    stack: [{
+      kind: 'TriggeredAbility',
+      id: 'brain_gorgers_qa_trigger_1',
+      sourceInstanceId: 'brain_gorgers_qa_1',
+      controllerId: 'ai-1',
+      ability: {
+        kind: 'TriggeredAbility',
+        trigger: { kind: 'ETB', who: 'self' },
+        effects: [{
+          kind: 'SacrificeSelfUnlessPlayerSacrifices',
+          player: { kind: 'Chosen', targetId: 'target_1' },
+          count: 1,
+          filter: { types: ['creature'] },
+        }],
+        targets: [{ id: 'target_1', kind: 'Player' }],
+      },
+      targets: ['human'],
+      targetSpecs: [{ id: 'target_1', kind: 'Player' }],
+    }],
+    combat: null,
+    battlefieldAbilities: new Map(),
+    pendingTriggers: [],
+  };
+
+  return serializeGameState(state);
+}
+
 export function createStormGrapeshotQaState(): SerializedGameStateV1 {
   const commander = def(
     'storm_qa_commander',
