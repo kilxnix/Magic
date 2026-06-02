@@ -281,6 +281,7 @@ export function PlayPage() {
       && qaScenario !== 'sisay-raw-lands'
       && qaScenario !== 'declare-blockers'
       && qaScenario !== 'land-entry-fetch'
+      && qaScenario !== 'library-manipulation'
       && qaScenario !== 'modal-choice'
     ) return;
 
@@ -289,6 +290,7 @@ export function PlayPage() {
       .then(({
         createDeclareBlockersQaState,
         createLandEntryFetchQaState,
+        createLibraryManipulationQaState,
         createModalChoiceQaState,
         createSisayActivationQaState,
         createSisayRawLandsQaState,
@@ -300,6 +302,8 @@ export function PlayPage() {
           ? createDeclareBlockersQaState()
           : qaScenario === 'land-entry-fetch'
           ? createLandEntryFetchQaState()
+          : qaScenario === 'library-manipulation'
+          ? createLibraryManipulationQaState()
           : qaScenario === 'modal-choice'
           ? createModalChoiceQaState()
           : createSisayActivationQaState();
@@ -310,10 +314,16 @@ export function PlayPage() {
           engine,
           humanDeck: null,
           aiDecks: [],
-          humanCommander: qaScenario === 'modal-choice' ? 'Krenko, Mob Boss' : 'Sisay, Weatherlight Captain',
+          humanCommander: qaScenario === 'modal-choice'
+            ? 'Krenko, Mob Boss'
+            : qaScenario === 'library-manipulation'
+            ? 'Talrand, Sky Summoner'
+            : 'Sisay, Weatherlight Captain',
           aiCommanderNames: {
             'ai-1': qaScenario === 'declare-blockers'
               ? 'Marchesa, Dealer of Death'
+              : qaScenario === 'library-manipulation'
+              ? 'Library QA Opponent'
               : qaScenario === 'modal-choice'
               ? 'Modal QA Opponent'
               : 'QA Opponent',
@@ -367,6 +377,8 @@ export function PlayPage() {
               ? 'declare blockers'
               : qaScenario === 'land-entry-fetch'
               ? 'land entry/fetch'
+              : qaScenario === 'library-manipulation'
+              ? 'library manipulation'
               : qaScenario === 'modal-choice'
               ? 'modal choice'
               : 'Sisay activation'

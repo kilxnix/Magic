@@ -529,6 +529,100 @@ export function createModalChoiceQaState(): SerializedGameStateV1 {
   return serializeGameState(state);
 }
 
+export function createLibraryManipulationQaState(): SerializedGameStateV1 {
+  const commander = def(
+    'library_qa_commander',
+    'Talrand, Sky Summoner',
+    'Legendary Creature - Merfolk Wizard',
+    '{2}{U}{U}',
+    'Whenever you cast an instant or sorcery spell, create a 2/2 blue Drake creature token with flying.',
+    { cmc: 4, colors: ['U'], color_identity: ['U'], power: 2, toughness: 2 },
+  );
+  const opt = def(
+    'library_qa_opt',
+    'Opt',
+    'Instant',
+    '{U}',
+    'Scry 1.\nDraw a card.',
+    { cmc: 1, colors: ['U'], color_identity: ['U'] },
+  );
+  const consider = def(
+    'library_qa_consider',
+    'Consider',
+    'Instant',
+    '{U}',
+    'Surveil 1.\nDraw a card.',
+    { cmc: 1, colors: ['U'], color_identity: ['U'] },
+  );
+  const lightningBolt = def('library_qa_bolt', 'Lightning Bolt', 'Instant', '{R}', 'Lightning Bolt deals 3 damage to any target.', { cmc: 1, colors: ['R'], color_identity: ['R'] });
+  const island = def('library_qa_island', 'Island', 'Basic Land - Island', '', '({T}: Add {U}.)', { card_types: ['land'] });
+  const mountain = def('library_qa_mountain', 'Mountain', 'Basic Land - Mountain', '', '({T}: Add {R}.)', { card_types: ['land'] });
+  const forest = def('library_qa_forest', 'Forest', 'Basic Land - Forest', '', '({T}: Add {G}.)', { card_types: ['land'] });
+
+  const state: GameState = {
+    players: [
+      {
+        id: 'human',
+        name: 'Library Manipulation QA Pilot',
+        life: 40,
+        poisonCounters: 0,
+        commanderDamage: {},
+        commanderTax: 0,
+        commanderInstanceId: 'library_qa_commander_1',
+        commanderCastCount: 0,
+        manaPool: pool({ U: 4 }),
+        hasPlayedLand: false,
+        hasPriority: true,
+        hasLost: false,
+      },
+      {
+        id: 'ai-1',
+        name: 'Library QA Opponent',
+        life: 40,
+        poisonCounters: 0,
+        commanderDamage: {},
+        commanderTax: 0,
+        commanderInstanceId: null,
+        commanderCastCount: 0,
+        manaPool: pool(),
+        hasPlayedLand: false,
+        hasPriority: false,
+        hasLost: false,
+      },
+    ],
+    cards: new Map<string, CardInstance>([
+      ['library_qa_commander_1', instance('library_qa_commander_1', commander.id, 'human', 'command', { isCommander: true })],
+      ['library_qa_opt_1', instance('library_qa_opt_1', opt.id, 'human', 'hand')],
+      ['library_qa_consider_1', instance('library_qa_consider_1', consider.id, 'human', 'hand')],
+      ['library_qa_bolt_1', instance('library_qa_bolt_1', lightningBolt.id, 'human', 'library')],
+      ['library_qa_island_1', instance('library_qa_island_1', island.id, 'human', 'library')],
+      ['library_qa_mountain_1', instance('library_qa_mountain_1', mountain.id, 'human', 'library')],
+      ['library_qa_forest_1', instance('library_qa_forest_1', forest.id, 'human', 'library')],
+    ]),
+    cardDefinitions: new Map<string, CardDefinition>([
+      [commander.id, commander],
+      [opt.id, opt],
+      [consider.id, consider],
+      [lightningBolt.id, lightningBolt],
+      [island.id, island],
+      [mountain.id, mountain],
+      [forest.id, forest],
+    ]),
+    activePlayerIndex: 0,
+    priorityPlayerIndex: 0,
+    phase: 'precombat_main',
+    step: 'upkeep',
+    turnNumber: 1,
+    hasPriorityPassed: [false, false],
+    stack: [],
+    combat: null,
+    battlefieldAbilities: new Map(),
+    pendingTriggers: [],
+  };
+
+  return serializeGameState(state);
+}
+
 export function createDeclareBlockersQaState(): SerializedGameStateV1 {
   const sisay = def(
     'sisay_blocker',

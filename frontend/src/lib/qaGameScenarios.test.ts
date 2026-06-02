@@ -5,7 +5,7 @@ import {
   tapLandForMana,
   type ManaColor,
 } from 'commander-engine';
-import { createDeclareBlockersQaState, createLandEntryFetchQaState, createModalChoiceQaState, createSisayRawLandsQaState } from './qaGameScenarios';
+import { createDeclareBlockersQaState, createLandEntryFetchQaState, createLibraryManipulationQaState, createModalChoiceQaState, createSisayRawLandsQaState } from './qaGameScenarios';
 
 describe('QA game scenarios', () => {
   it('loads raw dual lands with mana actions and reaches Sisay activation after tapping WUBRG', () => {
@@ -83,6 +83,18 @@ describe('QA game scenarios', () => {
       action.kind === 'CastSpell'
       && action.chosenModes?.[0] === 1
       && action.targets.includes('opponent_sol_ring_1'),
+    )).toBe(true);
+  });
+
+  it('loads scry and surveil spells for browser QA', () => {
+    const state = deserializeGameState(createLibraryManipulationQaState());
+    const actions = getLegalActions(state, 'human');
+
+    expect(actions.some(action =>
+      action.kind === 'CastSpell' && action.cardInstanceId === 'library_qa_opt_1',
+    )).toBe(true);
+    expect(actions.some(action =>
+      action.kind === 'CastSpell' && action.cardInstanceId === 'library_qa_consider_1',
     )).toBe(true);
   });
 });
