@@ -2483,18 +2483,24 @@ function GraveyardViewer({
   label,
   onInspect,
   onHoverCard,
+  placement = 'inline',
 }: {
   cards: SimpleCard[];
   label: string;
   onInspect: (card: SimpleCard) => void;
   onHoverCard?: (card: SimpleCard | null) => void;
+  placement?: 'inline' | 'above';
 }) {
   const [expanded, setExpanded] = useState(false);
 
   if (cards.length === 0) return null;
 
+  const panelClass = placement === 'above'
+    ? 'absolute bottom-full right-0 z-[80] mb-1 max-h-44 w-[min(17rem,86vw)] overflow-y-auto rounded-lg border border-stone-700 bg-stone-800 p-2 shadow-xl shadow-black/55'
+    : 'relative z-50 mt-1 max-h-32 overflow-y-auto rounded-lg border border-stone-700 bg-stone-800 p-2 shadow-xl shadow-black/40';
+
   return (
-    <div className="relative z-50 mt-1">
+    <div className="relative z-[80] mt-1">
       <button
         type="button"
         onClick={(event) => {
@@ -2510,7 +2516,7 @@ function GraveyardViewer({
         <span>{label} Graveyard: {cards.length}</span>
       </button>
       {expanded && (
-        <div className="relative z-50 mt-1 max-h-32 overflow-y-auto rounded-lg border border-stone-700 bg-stone-800 p-2 shadow-xl shadow-black/40">
+        <div className={panelClass}>
           {cards.map((card, i) => (
             <button
               type="button"
@@ -4170,8 +4176,6 @@ export function GameBoard({
           {renderBattlefieldRows(gameState.humanBattlefield, 'human')}
         </div>
 
-        {/* Human Graveyard */}
-        <GraveyardViewer cards={gameState.humanGraveyard} label="Your" onInspect={setInspectedCard} onHoverCard={handleCardHover} />
       </div>
 
       {/* Action chooser: roomy on desktop, capped near the hand on mobile. */}
@@ -4473,6 +4477,14 @@ export function GameBoard({
                 : `Select cards to mulligan (${selectedMulliganCount} selected)`
               : `Hand (${gameState.humanHand.length})`}
           </div>
+          <div className="flex items-center gap-2">
+            <GraveyardViewer
+              cards={gameState.humanGraveyard}
+              label="Your"
+              onInspect={setInspectedCard}
+              onHoverCard={handleCardHover}
+              placement="above"
+            />
           {mulliganPhase && (
             <div className="flex gap-2">
               <button
@@ -4495,6 +4507,7 @@ export function GameBoard({
               </button>
             </div>
           )}
+          </div>
         </div>
         {mulliganPhase && (
           <div className="-mt-0.5 mb-1 rounded border border-amber-500/20 bg-amber-950/25 px-2 py-1 text-[10px] font-semibold leading-snug text-amber-100/85">
