@@ -351,6 +351,14 @@ export function createLandEntryFetchQaState(): SerializedGameStateV1 {
     '{T}, Pay 1 life, Sacrifice this land: Search your library for an Island or Mountain card, put it onto the battlefield, then shuffle.',
     { card_types: ['land'] },
   );
+  const cavern = def(
+    'cavern_of_souls_hand',
+    'Cavern of Souls',
+    'Land',
+    '',
+    "As Cavern of Souls enters, choose a creature type.\n{T}: Add {C}.\n{T}: Add one mana of any color. Spend this mana only to cast a creature spell of the chosen type, and that spell can't be countered.",
+    { card_types: ['land'] },
+  );
   const steamVents = def(
     'steam_vents_library',
     'Steam Vents',
@@ -404,6 +412,7 @@ export function createLandEntryFetchQaState(): SerializedGameStateV1 {
     cards: new Map<string, CardInstance>([
       ['lands_qa_commander_1', instance('lands_qa_commander_1', commander.id, 'human', 'command', { isCommander: true })],
       ['stomping_ground_hand_1', instance('stomping_ground_hand_1', stompingGround.id, 'human', 'hand')],
+      ['cavern_of_souls_hand_1', instance('cavern_of_souls_hand_1', cavern.id, 'human', 'hand')],
       ['scalding_tarn_board_1', instance('scalding_tarn_board_1', scaldingTarn.id, 'human', 'battlefield')],
       ['steam_vents_library_1', instance('steam_vents_library_1', steamVents.id, 'human', 'library')],
       ['island_library_1', instance('island_library_1', island.id, 'human', 'library')],
@@ -413,6 +422,7 @@ export function createLandEntryFetchQaState(): SerializedGameStateV1 {
     cardDefinitions: new Map<string, CardDefinition>([
       [commander.id, commander],
       [stompingGround.id, stompingGround],
+      [cavern.id, cavern],
       [scaldingTarn.id, scaldingTarn],
       [steamVents.id, steamVents],
       [island.id, island],

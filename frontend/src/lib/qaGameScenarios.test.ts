@@ -58,12 +58,15 @@ describe('QA game scenarios', () => {
     )).toBe(true);
   });
 
-  it('loads Stomping Ground from hand and Scalding Tarn activation for browser QA', () => {
+  it('loads Stomping Ground, Cavern choice, and Scalding Tarn activation for browser QA', () => {
     const state = deserializeGameState(createLandEntryFetchQaState());
     const actions = getLegalActions(state, 'human');
 
     expect(actions.some(action =>
       action.kind === 'PlayLand' && action.cardInstanceId === 'stomping_ground_hand_1',
+    )).toBe(true);
+    expect(actions.some(action =>
+      action.kind === 'PlayLand' && action.cardInstanceId === 'cavern_of_souls_hand_1',
     )).toBe(true);
     expect(actions.some(action =>
       action.kind === 'ActivateAbility' && action.cardInstanceId === 'scalding_tarn_board_1',
