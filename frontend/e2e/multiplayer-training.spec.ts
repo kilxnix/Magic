@@ -308,3 +308,58 @@ test('four-player shared tracker seats a full pod and cycles turns', async ({ br
     await Promise.all(contexts.map((context) => context.close()));
   }
 });
+
+test('engine beta starts separately with scoped views for both players', async ({ browser, baseURL }) => {
+  const hostContext = await browser.newContext();
+  const guestContext = await browser.newContext();
+  const host = await hostContext.newPage();
+  const guest = await guestContext.newPage();
+  let roomId = '';
+  let hostPlayerId = '';
+
+  try {
+    const created = await createRoomThroughUi(host);
+    roomId = created.roomId;
+    hostPlayerId = created.hostPlayerId;
+    await joinRoomThroughUi(guest, roomId, created.password);
+
+    await lockSeat(host, {
+      deckName: 'E2E Engine Host Basics',
+      commander: hostCommander,
+      list: deckList('Forest'),
+    });
+    await lockSeat(guest, {
+      deckName: 'E2E Engine Guest Basics',
+      commander: guestCommander,
+      list: deckList('Island'),
+    });
+
+    await host.reload();
+    await expect(host.getByText('99 cards locked')).toHaveCount(2);
+    const engineButton = host.getByRole('button', { name: 'Start Engine Beta' });
+    await expect(engineButton).toBeEnabled();
+    await engineButton.click();
+
+    await expect(host.getByText('Mode: Engine Beta')).toBeVisible();
+    await expect(host.getByText('Experimental Real Engine')).toBeVisible();
+    await expect(host.getByText(`Authority: ${created.hostName}`, { exact: true })).toBeVisible();
+    await expect(host.getByText('Scoped hidden views')).toBeVisible();
+    await expect(host.getByText('Real Actions')).toBeVisible();
+    await expect(host.getByRole('button', { name: 'Pass Priority' })).toBeVisible();
+    await expect(host.getByRole('button', { name: 'Play First Land' })).toBeVisible();
+
+    await guest.reload();
+    await expect(guest.getByText('Mode: Engine Beta')).toBeVisible();
+    await expect(guest.getByText('Experimental Real Engine')).toBeVisible();
+    await expect(guest.getByText(`Authority: ${created.hostName}`, { exact: true })).toBeVisible();
+    await expect(guest.getByText('Scoped hidden views')).toBeVisible();
+    await expect(guest.getByText('Real Actions')).toBeVisible();
+    await expect(guest.getByText('Waiting for authority snapshot')).not.toBeVisible();
+  } finally {
+    if (baseURL && roomId && hostPlayerId) {
+      await closeRoomForQa(baseURL, roomId, hostPlayerId).catch(() => {});
+    }
+    await hostContext.close();
+    await guestContext.close();
+  }
+});
