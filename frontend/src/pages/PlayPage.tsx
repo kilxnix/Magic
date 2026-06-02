@@ -1,6 +1,6 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, type ChangeEvent } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, ClipboardPaste, Download, Loader2, Swords, Link as LinkIcon, History, Trash2, Shield, Trophy, Users, Lightbulb, X, Save, FolderOpen, Database, BookmarkPlus, Rocket } from 'lucide-react';
+import { ArrowLeft, ClipboardPaste, Download, Loader2, Swords, Link as LinkIcon, History, Trash2, Shield, Trophy, Users, Lightbulb, X, Save, FolderOpen, Database, BookmarkPlus, Rocket, Upload } from 'lucide-react';
 import { useShelectorGame, type GameLogEntry, type ImportedCards, type ShelectorGameSaveSnapshot } from '../hooks/useShelectorGame';
 import { GameBoard } from '../components/GameBoard';
 import { GameReview } from '../components/GameReview';
@@ -1067,6 +1067,57 @@ export function PlayPage() {
     setSaveStatus(`Exported drill "${bookmark.label}".`);
   };
 
+  const importDrillBookmark = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.currentTarget.files?.[0];
+    event.currentTarget.value = '';
+    if (!file) return;
+
+    try {
+      const payload = JSON.parse(await file.text()) as {
+        schema?: string;
+        bookmark?: PlayDrillBookmark;
+      };
+      if (payload.schema !== 'deckreps-practice-drill-v1' || !payload.bookmark) {
+        throw new Error('That file is not a DeckReps drill export.');
+      }
+      if (!payload.bookmark.engine) {
+        throw new Error('This drill export is missing its portable engine state.');
+      }
+
+      const savedAt = Date.now();
+      const importedBookmark: PlayDrillBookmark = {
+        ...payload.bookmark,
+        id: `${savedAt}-${Math.random().toString(36).slice(2, 8)}`,
+        label: `${payload.bookmark.label} (imported)`,
+        savedAt,
+        source: payload.bookmark.source || 'manual',
+        note: [
+          payload.bookmark.note,
+          `Imported from ${file.name}`,
+        ].filter(Boolean).join(' / '),
+      };
+      const existing = saveSlotsRef.current[activeSaveSlot - 1];
+      const nextBookmarks = [...(existing?.drillBookmarks || []), importedBookmark].slice(-16);
+      const snapshot = exportGameSave();
+      const record = snapshot
+        ? buildSaveRecord(activeSaveSlot, snapshot, false, nextBookmarks)
+        : existing
+          ? { ...existing, drillBookmarks: nextBookmarks, savedAt }
+          : null;
+      if (!record) {
+        throw new Error('Start or load a practice game before importing a drill into an empty slot.');
+      }
+
+      await putPlaySaveSlot(record);
+      applySaveSlotRecord(record, activeSaveSlot);
+      await refreshSaveSlots();
+      setSaveError(null);
+      setSaveStatus(`Imported drill "${importedBookmark.label}" into slot ${activeSaveSlot}.`);
+    } catch (err: any) {
+      setSaveError(err.message || 'Could not import that drill export.');
+    }
+  };
+
   const loadReviewEntryAsDrill = async (entry: GameLogEntry) => {
     const snapshot = exportGameSave();
     if (!snapshot || !gameState) {
@@ -1200,16 +1251,28 @@ export function PlayPage() {
           <Database className="h-4 w-4 text-amber-300" />
           <h2 className="text-sm font-black uppercase tracking-wider text-stone-200">Game Saves</h2>
         </div>
-        {step === 'game' && (
-          <button
-            type="button"
-            onClick={() => saveCurrentGame(activeSaveSlot, false)}
-            className="flex min-h-9 items-center gap-1.5 rounded bg-amber-500 px-3 text-xs font-black text-stone-950 hover:bg-amber-400"
-          >
-            <Save className="h-3.5 w-3.5" />
-            Save
-          </button>
-        )}
+        <div className="flex flex-wrap justify-end gap-2">
+          <label className="flex min-h-9 cursor-pointer items-center gap-1.5 rounded border border-sky-500/40 px-3 text-xs font-black text-sky-100 hover:bg-sky-950/40">
+            <Upload className="h-3.5 w-3.5" />
+            Import Drill
+            <input
+              type="file"
+              accept="application/json,.json"
+              className="hidden"
+              onChange={importDrillBookmark}
+            />
+          </label>
+          {step === 'game' && (
+            <button
+              type="button"
+              onClick={() => saveCurrentGame(activeSaveSlot, false)}
+              className="flex min-h-9 items-center gap-1.5 rounded bg-amber-500 px-3 text-xs font-black text-stone-950 hover:bg-amber-400"
+            >
+              <Save className="h-3.5 w-3.5" />
+              Save
+            </button>
+          )}
+        </div>
       </div>
       {(saveStatus || saveError) && (
         <div className={`mb-3 rounded border px-3 py-2 text-xs ${
