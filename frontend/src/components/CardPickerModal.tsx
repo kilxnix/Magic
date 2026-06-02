@@ -8,7 +8,7 @@ interface CardPickerCard {
   oracleText?: string;
   legal?: boolean;
   reason?: string;
-  destination?: 'hand' | 'battlefield' | 'graveyard' | 'top' | 'bottom' | 'exile' | 'command' | 'choice';
+  destination?: 'hand' | 'battlefield' | 'graveyard' | 'top' | 'bottom' | 'library' | 'exile' | 'command' | 'choice';
   entersTapped?: boolean;
   mustReveal?: boolean;
 }
@@ -50,6 +50,7 @@ export function cardPickerDestinationLabel(card: Pick<CardPickerCard, 'destinati
     graveyard: 'To graveyard',
     top: 'To top of library',
     bottom: 'To bottom of library',
+    library: 'Into library',
     exile: 'To exile',
     command: 'To command zone',
     choice: 'Destination choice',

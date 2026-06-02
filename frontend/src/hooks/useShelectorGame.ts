@@ -855,7 +855,7 @@ export type TutorCardOption = {
   cmc?: number;
   legal?: boolean;
   reason?: string;
-  destination?: 'hand' | 'battlefield' | 'graveyard' | 'top' | 'bottom' | 'exile' | 'command' | 'choice';
+  destination?: 'hand' | 'battlefield' | 'graveyard' | 'top' | 'bottom' | 'library' | 'exile' | 'command' | 'choice';
   entersTapped?: boolean;
   mustReveal?: boolean;
 };
@@ -994,6 +994,7 @@ function handTopLibraryOptionsFromPrompt(
   prompt: SelectCardsPromptRequest,
   selectedIds: string[],
   count: number,
+  shuffleAfter = false,
 ): TutorCardOption[] {
   const selected = new Set(selectedIds);
   const nextPick = selectedIds.length + 1;
@@ -1007,8 +1008,10 @@ function handTopLibraryOptionsFromPrompt(
         ? [{
             ...option,
             legal: true,
-            reason: `Pick ${nextPick} of ${count}; chosen order becomes top-to-bottom library order.`,
-            destination: 'top' as const,
+            reason: shuffleAfter
+              ? `Pick ${nextPick} of ${count}; selected card will be shuffled into your library.`
+              : `Pick ${nextPick} of ${count}; chosen order becomes top-to-bottom library order.`,
+            destination: shuffleAfter ? 'library' as const : 'top' as const,
           }]
         : [];
     })
@@ -3038,7 +3041,7 @@ export function useShelectorGame() {
     tutorSourceInstanceIdRef.current = sourceInstanceId;
     tutorPromptRequestRef.current = null;
     setTutorTitle(`${sourceName}: choose card 1 of ${requiredCount} ${shuffleAfter ? 'to shuffle into your library' : 'for the top of your library'}`);
-    setTutorCards(handTopLibraryOptionsFromPrompt(state, promptRequest, [], requiredCount));
+    setTutorCards(handTopLibraryOptionsFromPrompt(state, promptRequest, [], requiredCount, shuffleAfter));
     setTutorPhase(true);
     addMessage('system', `${sourceName} - choose ${requiredCount} card${requiredCount === 1 ? '' : 's'} from hand ${shuffleAfter ? 'to shuffle into your library' : 'to put on top of your library'}.`);
     return true;
@@ -5873,6 +5876,7 @@ export function useShelectorGame() {
           pendingHandTopLibrary.promptRequest,
           selectedIds,
           pendingHandTopLibrary.count,
+          pendingHandTopLibrary.shuffleAfter,
         ));
         addMessage('player', `Selected ${selectedIds.length} of ${pendingHandTopLibrary.count} for ${pendingHandTopLibrary.sourceName}.`);
         syncState();
