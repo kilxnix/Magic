@@ -289,6 +289,7 @@ export function PlayPage() {
       && qaScenario !== 'equipment-d20'
       && qaScenario !== 'equipment-equip'
       && qaScenario !== 'token-stack'
+      && qaScenario !== 'creature-mana-sickness'
       && qaScenario !== 'storm-grapeshot'
       && qaScenario !== 'spell-copy'
       && qaScenario !== 'magecraft-triggers'
@@ -305,6 +306,7 @@ export function PlayPage() {
         createBrainGorgersSacrificeQaState,
         createComplexCombatQaState,
         createCostReductionQaState,
+        createCreatureManaSicknessQaState,
         createEquipmentD20QaState,
         createEquipmentEquipQaState,
         createGenerousGiftQaState,
@@ -344,6 +346,8 @@ export function PlayPage() {
           ? createEquipmentEquipQaState()
           : qaScenario === 'token-stack'
           ? createTokenStackQaState()
+          : qaScenario === 'creature-mana-sickness'
+          ? createCreatureManaSicknessQaState()
           : qaScenario === 'storm-grapeshot'
           ? createStormGrapeshotQaState()
           : qaScenario === 'spell-copy'
@@ -385,6 +389,8 @@ export function PlayPage() {
             ? 'Goblin Morningstar'
             : qaScenario === 'token-stack'
             ? 'Goblin'
+            : qaScenario === 'creature-mana-sickness'
+            ? 'Elvish Mystic'
             : qaScenario === 'storm-grapeshot' || qaScenario === 'spell-copy'
             ? 'Vivi Ornitier'
             : qaScenario === 'magecraft-triggers'
@@ -414,6 +420,8 @@ export function PlayPage() {
                   ? 'Equipment QA Opponent'
                   : qaScenario === 'token-stack'
                   ? 'Token QA Opponent'
+                  : qaScenario === 'creature-mana-sickness'
+                  ? 'Creature Mana QA Opponent'
                   : qaScenario === 'storm-grapeshot'
                   ? 'Storm QA Opponent'
                   : qaScenario === 'spell-copy'
@@ -492,6 +500,8 @@ export function PlayPage() {
               ? 'equipment and d20'
               : qaScenario === 'token-stack'
               ? 'token stack'
+              : qaScenario === 'creature-mana-sickness'
+              ? 'creature mana sickness'
               : qaScenario === 'storm-grapeshot'
               ? 'storm Grapeshot'
               : qaScenario === 'spell-copy'

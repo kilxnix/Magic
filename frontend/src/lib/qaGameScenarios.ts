@@ -1294,6 +1294,78 @@ export function createTokenStackQaState(): SerializedGameStateV1 {
   return serializeGameState(state);
 }
 
+export function createCreatureManaSicknessQaState(): SerializedGameStateV1 {
+  const sickElf = def(
+    'creature_mana_qa_sick_elf',
+    'Llanowar Elves',
+    'Creature - Elf Druid',
+    '{G}',
+    '{T}: Add {G}.',
+    { cmc: 1, colors: ['G'], color_identity: ['G'], power: 1, toughness: 1 },
+  );
+  const readyElf = def(
+    'creature_mana_qa_ready_elf',
+    'Elvish Mystic',
+    'Creature - Elf Druid',
+    '{G}',
+    '{T}: Add {G}.',
+    { cmc: 1, colors: ['G'], color_identity: ['G'], power: 1, toughness: 1 },
+  );
+
+  const state: GameState = {
+    players: [
+      {
+        id: 'human',
+        name: 'Creature Mana QA Pilot',
+        life: 40,
+        poisonCounters: 0,
+        commanderDamage: {},
+        commanderTax: 0,
+        commanderInstanceId: null,
+        commanderCastCount: 0,
+        manaPool: pool(),
+        hasPlayedLand: false,
+        hasPriority: true,
+        hasLost: false,
+      },
+      {
+        id: 'ai-1',
+        name: 'Creature Mana QA Opponent',
+        life: 40,
+        poisonCounters: 0,
+        commanderDamage: {},
+        commanderTax: 0,
+        commanderInstanceId: null,
+        commanderCastCount: 0,
+        manaPool: pool(),
+        hasPlayedLand: false,
+        hasPriority: false,
+        hasLost: false,
+      },
+    ],
+    cards: new Map<string, CardInstance>([
+      ['creature_mana_qa_sick_elf_1', instance('creature_mana_qa_sick_elf_1', sickElf.id, 'human', 'battlefield', { summoningSick: true })],
+      ['creature_mana_qa_ready_elf_1', instance('creature_mana_qa_ready_elf_1', readyElf.id, 'human', 'battlefield', { summoningSick: false })],
+    ]),
+    cardDefinitions: new Map<string, CardDefinition>([
+      [sickElf.id, sickElf],
+      [readyElf.id, readyElf],
+    ]),
+    activePlayerIndex: 0,
+    priorityPlayerIndex: 0,
+    phase: 'precombat_main',
+    step: 'upkeep',
+    turnNumber: 1,
+    hasPriorityPassed: [false, false],
+    stack: [],
+    combat: null,
+    battlefieldAbilities: new Map(),
+    pendingTriggers: [],
+  };
+
+  return serializeGameState(state);
+}
+
 export function createStormGrapeshotQaState(): SerializedGameStateV1 {
   const commander = def(
     'storm_qa_commander',
