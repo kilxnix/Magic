@@ -9,10 +9,13 @@ import {
   getEffectivePower,
   getLegalActions,
   instanceHasKeyword,
+  advanceStep,
+  passPriority,
   resetLoopDetector,
   resolveCombatDamage,
   resolveTopOfStack,
   tapLandForMana,
+  tryDeclareBlockers,
   tryEquip,
   tryPlayLand,
   type ManaColor,
@@ -66,6 +69,38 @@ describe('QA game scenarios', () => {
         && block.blockingAttackerId === 'body_launderer_1',
       ),
     )).toBe(true);
+  });
+
+  it('resolves the declare-blockers QA branch with deathtouch damage moving Sisay off the battlefield', () => {
+    let state = deserializeGameState(createDeclareBlockersQaState());
+    const blockAction = getLegalActions(state, 'human').find(action =>
+      action.kind === 'DeclareBlockers'
+      && action.blocks.some(block =>
+        block.cardInstanceId === 'sisay_blocker_1'
+        && block.blockingAttackerId === 'body_launderer_1',
+      ),
+    );
+
+    expect(blockAction?.kind).toBe('DeclareBlockers');
+    const blocked = tryDeclareBlockers(
+      state,
+      'human',
+      blockAction?.kind === 'DeclareBlockers' ? blockAction.blocks : [],
+    );
+    expect(blocked.ok).toBe(true);
+    state = blocked.state!;
+
+    state = passPriority(state);
+    state = passPriority(state);
+    state = advanceStep(state);
+    state = passPriority(state);
+    state = passPriority(state);
+    state = advanceStep(state);
+    state = resolveCombatDamage(state);
+
+    expect(state.cards.get('sisay_blocker_1')?.zone).toBe('command');
+    expect(state.cards.get('body_launderer_1')?.zone).toBe('battlefield');
+    expect(state.players.find(player => player.id === 'human')?.life).toBe(40);
   });
 
   it('loads Stomping Ground, Cavern choice, and Scalding Tarn activation for browser QA', () => {
