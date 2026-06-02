@@ -303,10 +303,11 @@ async function resolveBlockingGamePrompt(page) {
 
 async function resolveDiscardPrompt(page) {
   const body = await page.locator('body').innerText().catch(() => '');
-  if (!/\bhand \(\d+\)\s*(?:[-\u2013\u2014]|—)\s*discard \d+ card/i.test(body)) return null;
+  if (!/\bhand \(\d+\)/i.test(body) || !/discard \d+ cards?/i.test(body)) return null;
   const viewport = page.viewportSize() || { width: 1360, height: 920 };
   const buttons = page.getByRole('button');
-  for (let index = 0; index < await buttons.count(); index += 1) {
+  const count = await buttons.count();
+  for (let index = 0; index < count; index += 1) {
     const button = buttons.nth(index);
     if (!(await button.isVisible().catch(() => false))) continue;
     if (!(await button.isEnabled().catch(() => false))) continue;
@@ -318,6 +319,19 @@ async function resolveDiscardPrompt(page) {
     await button.click();
     await page.waitForTimeout(700);
     return text.split(/\s{2,}|\n/)[0].slice(0, 100);
+  }
+  const excluded = /Bookmark This Moment|SaveManager|Game Saves|Undo|Menu|Feedback|Skip|Pass|End Phase|Do it|View|Inspect|Close|Allow Ads|Decline Ads/i;
+  for (let index = 0; index < count; index += 1) {
+    const button = buttons.nth(index);
+    if (!(await button.isVisible().catch(() => false))) continue;
+    if (!(await button.isEnabled().catch(() => false))) continue;
+    const text = (await button.innerText().catch(() => '')).replace(/\s+/g, ' ').trim();
+    if (!text || /^Discard\b/i.test(text) || excluded.test(text)) continue;
+    const box = await button.boundingBox().catch(() => null);
+    if (!box || box.y < viewport.height - 260) continue;
+    await button.click();
+    await page.waitForTimeout(700);
+    return `Discard ${text.split(/\s{2,}|\n/)[0].slice(0, 80)}`;
   }
   return null;
 }
