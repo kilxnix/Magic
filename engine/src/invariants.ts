@@ -208,13 +208,15 @@ export function validateStateInvariants(state: GameState): StateInvariantReport 
     stackIds.add(id);
 
     if (item.kind === 'Spell') {
-      if (spellStackCardIdsSeen.has(item.cardInstanceId)) {
+      if (!item.isCopy && spellStackCardIdsSeen.has(item.cardInstanceId)) {
         violations.push({
           code: 'duplicate_spell_stack_card',
           message: `${item.cardInstanceId} appears in more than one spell stack object.`,
         });
       }
-      spellStackCardIdsSeen.add(item.cardInstanceId);
+      if (!item.isCopy) {
+        spellStackCardIdsSeen.add(item.cardInstanceId);
+      }
       const card = state.cards.get(item.cardInstanceId);
       if (!card) {
         violations.push({

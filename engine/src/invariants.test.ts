@@ -133,6 +133,24 @@ describe('validateStateInvariants', () => {
     }));
   });
 
+  it('allows spell-copy stack objects to reference the copied card', () => {
+    const cmd = commander();
+    const state = initGameState([
+      { playerId: 'p1', name: 'Alice', cards: [cmd], commanderId: cmd.id },
+      { playerId: 'p2', name: 'Bob', cards: [cmd], commanderId: cmd.id },
+    ]);
+    const spell = [...state.cards.values()].find(card => card.ownerId === 'p1');
+    expect(spell).toBeDefined();
+    state.cards.set(spell!.instanceId, { ...spell!, zone: 'stack' });
+    state.stack = [
+      { kind: 'Spell', id: 'stack-a', cardInstanceId: spell!.instanceId, casterId: 'p1', targets: [] },
+      { kind: 'Spell', id: 'stack-copy-a', cardInstanceId: spell!.instanceId, casterId: 'p1', targets: [], isCopy: true, copyOfCardInstanceId: spell!.instanceId },
+      { kind: 'Spell', id: 'stack-copy-b', cardInstanceId: spell!.instanceId, casterId: 'p1', targets: [], isCopy: true, copyOfCardInstanceId: spell!.instanceId },
+    ];
+
+    expect(validateStateInvariants(state)).toEqual({ ok: true, violations: [] });
+  });
+
   it('rejects non-finite player/card numeric state', () => {
     const cmd = commander();
     const state = initGameState([
