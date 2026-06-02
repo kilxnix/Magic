@@ -37,5 +37,6 @@ describe('buildPracticeBranchPreviews', () => {
     expect(previews.some(preview => preview.summary.includes('No blockers declared'))).toBe(true);
     expect(previews.some(preview => preview.summary.includes('Blocks assigned: 1'))).toBe(true);
     expect(previews.every(preview => !preview.summary.includes('No visible count change'))).toBe(true);
+    expect(previews.every(preview => preview.resultEngine)).toBe(true);
   });
 });

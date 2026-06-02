@@ -5,6 +5,7 @@ import {
   evaluateActions,
   getCardsInZone,
   getCardDefinition,
+  serializeGameState,
   type AIAction,
   type SerializedGameStateV1,
 } from 'commander-engine';
@@ -17,6 +18,7 @@ export interface PracticeBranchPreview {
   score?: number;
   summary: string;
   warnings: string[];
+  resultEngine?: SerializedGameStateV1;
 }
 
 function actionPreviewId(action: AIAction, index: number): string {
@@ -131,6 +133,7 @@ export function buildPracticeBranchPreviews(input: {
         score: scoreByKind.get(JSON.stringify(action._engineAction)),
         summary,
         warnings: previewWarnings(label, summary),
+        resultEngine: response.ok ? serializeGameState(afterState) : undefined,
       };
     });
   } catch {

@@ -54,10 +54,40 @@ export interface PlayDrillBookmark {
   step?: string;
   engine?: SerializedGameStateV1;
   canonicalState?: PlayCanonicalStateRef;
-  source?: 'manual' | 'checkpoint';
+  source?: 'manual' | 'checkpoint' | 'branch-preview';
   focusTags?: string[];
   note?: string;
+  decisionContext?: PlayDrillDecisionContext;
   attempts?: PlayDrillAttempt[];
+}
+
+export interface PlayDrillDecisionContext {
+  currentPrompt?: unknown;
+  tutorPhase?: boolean;
+  tutorCards?: unknown[];
+  tutorTitle?: string;
+  tutorPromptRequest?: unknown;
+  tutorRemaining?: number;
+  tutorFilter?: string;
+  tutorFilterSpec?: unknown;
+  tutorTapped?: boolean;
+  tutorShuffle?: boolean;
+  tutorDestination?: string;
+  tutorSourceName?: string;
+  tutorSourceInstanceId?: string;
+  pendingSearchEntryChoice?: unknown;
+  pendingTargetChoice?: unknown;
+  libraryChoice?: unknown;
+  libraryManipulationPromptRequest?: unknown;
+  optionalTriggerChoice?: unknown;
+  taxPaymentChoice?: unknown;
+  wardPaymentChoice?: unknown;
+  damageAssignmentChoice?: unknown;
+  triggerOrderChoice?: unknown;
+  discardPhase?: boolean;
+  discardCount?: number;
+  selectedMulliganCardIds?: string[];
+  selectedMulliganBottomIds?: string[];
 }
 
 export interface PlayDrillAttempt {
@@ -71,6 +101,7 @@ export interface PlayDrillAttempt {
   summary: string;
   engine?: SerializedGameStateV1;
   canonicalState?: PlayCanonicalStateRef;
+  decisionContext?: PlayDrillDecisionContext;
 }
 
 export interface PlaySaveSlotRecord {

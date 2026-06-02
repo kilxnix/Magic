@@ -175,6 +175,7 @@ interface GameBoardProps {
   drillBookmarkLabel?: string;
   practiceFocusTags?: string[];
   branchPreviews?: PracticeBranchPreview[];
+  onLoadBranchPreview?: (actionId: string) => void;
   activeDrillLabel?: string | null;
   onSaveDrillAttempt?: () => void;
   onExitDrillAttempt?: () => void;
@@ -2617,6 +2618,7 @@ export function GameBoard({
   drillBookmarkLabel = 'Bookmark This Moment',
   practiceFocusTags = [],
   branchPreviews = [],
+  onLoadBranchPreview,
   activeDrillLabel,
   onSaveDrillAttempt,
   onExitDrillAttempt,
@@ -3686,6 +3688,15 @@ export function GameBoard({
                       {preview.warnings[0] && (
                         <div className="mt-0.5 text-[9px] leading-snug text-amber-100/85">{preview.warnings[0]}</div>
                       )}
+                      {onLoadBranchPreview && preview.resultEngine && (
+                        <button
+                          type="button"
+                          onClick={() => onLoadBranchPreview(preview.actionId)}
+                          className="mt-1 min-h-6 rounded border border-sky-400/35 px-2 text-[9px] font-black uppercase tracking-wider text-sky-100 hover:bg-sky-950/50"
+                        >
+                          Drill This Line
+                        </button>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -3743,6 +3754,15 @@ export function GameBoard({
             <div key={`floating-mobile-preview-${preview.actionId}`} className="mt-1 rounded border border-sky-500/25 bg-sky-950/25 px-2 py-1 text-[10px] text-sky-100">
               <div className="truncate font-black uppercase tracking-wider">{preview.label}</div>
               <div className="leading-snug opacity-85">{preview.summary}</div>
+              {onLoadBranchPreview && preview.resultEngine && (
+                <button
+                  type="button"
+                  onClick={() => onLoadBranchPreview(preview.actionId)}
+                  className="mt-1 min-h-6 rounded border border-sky-400/35 px-2 text-[9px] font-black uppercase tracking-wider text-sky-100"
+                >
+                  Drill Line
+                </button>
+              )}
             </div>
           ))}
           {activeDrillLabel && (
@@ -4090,6 +4110,15 @@ export function GameBoard({
                     {typeof preview.score === 'number' ? ` ${preview.score.toFixed(1)}` : ''}
                   </div>
                   <div className="line-clamp-2 text-[10px] leading-snug opacity-85">{preview.summary}</div>
+                  {onLoadBranchPreview && preview.resultEngine && (
+                    <button
+                      type="button"
+                      onClick={() => onLoadBranchPreview(preview.actionId)}
+                      className="pointer-events-auto mt-1 min-h-6 rounded border border-sky-400/35 px-2 text-[9px] font-black uppercase tracking-wider text-sky-100 transition-colors hover:bg-sky-950/50"
+                    >
+                      Drill This Line
+                    </button>
+                  )}
                 </div>
               ))}
             </div>
@@ -4360,6 +4389,15 @@ export function GameBoard({
                       <span className="font-bold text-stone-100">{preview.label}:</span> {preview.summary}
                       {preview.warnings[0] && (
                         <div className="mt-0.5 text-amber-100/85">{preview.warnings[0]}</div>
+                      )}
+                      {onLoadBranchPreview && preview.resultEngine && (
+                        <button
+                          type="button"
+                          onClick={() => onLoadBranchPreview(preview.actionId)}
+                          className="mt-1 min-h-7 rounded border border-sky-400/35 px-2 text-[9px] font-black uppercase tracking-wider text-sky-100"
+                        >
+                          Drill Line
+                        </button>
                       )}
                     </div>
                   ))}

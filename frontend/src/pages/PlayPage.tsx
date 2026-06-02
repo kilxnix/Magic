@@ -28,6 +28,7 @@ import {
   loadCanonicalPlayStateRef,
   loadCanonicalPlaySlotState,
   putPlaySaveSlot,
+  type PlayDrillDecisionContext,
   type PlayDrillAttempt,
   type PlayDrillBookmark,
   type PlaySaveSlotRecord,
@@ -771,6 +772,80 @@ export function PlayPage() {
     setSaveStatus(`Loaded slot ${record.slot} at drill checkpoint ${sequence}.`);
   };
 
+  const currentDrillDecisionContext = (): PlayDrillDecisionContext => ({
+    currentPrompt,
+    tutorPhase,
+    tutorCards,
+    tutorTitle,
+    tutorPromptRequest: null,
+    tutorRemaining: 0,
+    tutorFilter: undefined,
+    tutorFilterSpec: undefined,
+    tutorTapped: false,
+    tutorShuffle: true,
+    tutorDestination: 'hand',
+    tutorSourceName: currentPrompt?.title || 'Practice Drill',
+    tutorSourceInstanceId: undefined,
+    pendingSearchEntryChoice: null,
+    pendingTargetChoice: null,
+    libraryChoice,
+    libraryManipulationPromptRequest: null,
+    optionalTriggerChoice,
+    taxPaymentChoice,
+    wardPaymentChoice,
+    damageAssignmentChoice,
+    triggerOrderChoice,
+    discardPhase,
+    discardCount,
+    selectedMulliganCardIds,
+    selectedMulliganBottomIds,
+  });
+
+  const buildDrillRestoreSnapshot = (
+    snapshot: ShelectorGameSaveSnapshot,
+    engine: ShelectorGameSaveSnapshot['engine'],
+    sourceName: string,
+    decisionContext?: PlayDrillDecisionContext,
+  ): ShelectorGameSaveSnapshot => ({
+    ...snapshot,
+    savedAt: Date.now(),
+    engine,
+    authorityUpdates: [],
+    engineEventLog: [],
+    engineEventLogSeeds: {},
+    engineEventLogInitialState: engine,
+    lastStateUpdate: null,
+    currentPrompt: (decisionContext?.currentPrompt ?? null) as ShelectorGameSaveSnapshot['currentPrompt'],
+    lastPlayedCard: null,
+    tutorPhase: Boolean(decisionContext?.tutorPhase),
+    tutorCards: (decisionContext?.tutorCards || []) as ShelectorGameSaveSnapshot['tutorCards'],
+    tutorTitle: decisionContext?.tutorTitle || '',
+    tutorPromptRequest: (decisionContext?.tutorPromptRequest ?? null) as ShelectorGameSaveSnapshot['tutorPromptRequest'],
+    tutorRemaining: decisionContext?.tutorRemaining ?? 0,
+    tutorFilter: decisionContext?.tutorFilter,
+    tutorFilterSpec: decisionContext?.tutorFilterSpec as ShelectorGameSaveSnapshot['tutorFilterSpec'],
+    tutorTapped: decisionContext?.tutorTapped ?? false,
+    tutorShuffle: decisionContext?.tutorShuffle ?? true,
+    tutorDestination: (decisionContext?.tutorDestination || 'hand') as ShelectorGameSaveSnapshot['tutorDestination'],
+    tutorSourceName: decisionContext?.tutorSourceName || sourceName,
+    tutorSourceInstanceId: decisionContext?.tutorSourceInstanceId,
+    pendingSearchEntryChoice: (decisionContext?.pendingSearchEntryChoice ?? null) as ShelectorGameSaveSnapshot['pendingSearchEntryChoice'],
+    pendingTargetChoice: (decisionContext?.pendingTargetChoice ?? null) as ShelectorGameSaveSnapshot['pendingTargetChoice'],
+    libraryChoice: (decisionContext?.libraryChoice ?? null) as ShelectorGameSaveSnapshot['libraryChoice'],
+    libraryManipulationPromptRequest: (decisionContext?.libraryManipulationPromptRequest ?? null) as ShelectorGameSaveSnapshot['libraryManipulationPromptRequest'],
+    optionalTriggerChoice: (decisionContext?.optionalTriggerChoice ?? null) as ShelectorGameSaveSnapshot['optionalTriggerChoice'],
+    taxPaymentChoice: (decisionContext?.taxPaymentChoice ?? null) as ShelectorGameSaveSnapshot['taxPaymentChoice'],
+    wardPaymentChoice: (decisionContext?.wardPaymentChoice ?? null) as ShelectorGameSaveSnapshot['wardPaymentChoice'],
+    damageAssignmentChoice: (decisionContext?.damageAssignmentChoice ?? null) as ShelectorGameSaveSnapshot['damageAssignmentChoice'],
+    triggerOrderChoice: (decisionContext?.triggerOrderChoice ?? null) as ShelectorGameSaveSnapshot['triggerOrderChoice'],
+    discardPhase: decisionContext?.discardPhase ?? false,
+    discardCount: decisionContext?.discardCount ?? 0,
+    selectedMulliganCardIds: decisionContext?.selectedMulliganCardIds || [],
+    selectedMulliganBottomIds: decisionContext?.selectedMulliganBottomIds || [],
+    actionError: null,
+    lastEvents: [],
+  });
+
   const loadDrillBookmark = async (record: PlaySaveSlotRecord, bookmark: PlayDrillBookmark) => {
     setSaveError(null);
     const snapshot = record.snapshot as ShelectorGameSaveSnapshot;
@@ -779,45 +854,7 @@ export function PlayPage() {
       setSaveError(`Drill bookmark "${bookmark.label}" is missing its authoritative engine state.`);
       return;
     }
-    const drillSnapshot: ShelectorGameSaveSnapshot = {
-      ...snapshot,
-      savedAt: Date.now(),
-      engine,
-      authorityUpdates: [],
-      engineEventLog: [],
-      engineEventLogSeeds: {},
-      engineEventLogInitialState: engine,
-      lastStateUpdate: null,
-      currentPrompt: null,
-      lastPlayedCard: null,
-      tutorPhase: false,
-      tutorCards: [],
-      tutorTitle: '',
-      tutorPromptRequest: null,
-      tutorRemaining: 0,
-      tutorFilter: undefined,
-      tutorFilterSpec: undefined,
-      tutorTapped: false,
-      tutorShuffle: true,
-      tutorDestination: 'hand',
-      tutorSourceName: 'Drill Bookmark',
-      tutorSourceInstanceId: undefined,
-      pendingSearchEntryChoice: null,
-      pendingTargetChoice: null,
-      libraryChoice: null,
-      libraryManipulationPromptRequest: null,
-      optionalTriggerChoice: null,
-      taxPaymentChoice: null,
-      wardPaymentChoice: null,
-      damageAssignmentChoice: null,
-      triggerOrderChoice: null,
-      discardPhase: false,
-      discardCount: 0,
-      selectedMulliganCardIds: [],
-      selectedMulliganBottomIds: [],
-      actionError: null,
-      lastEvents: [],
-    };
+    const drillSnapshot = buildDrillRestoreSnapshot(snapshot, engine, 'Drill Bookmark', bookmark.decisionContext);
 
     const restored = restoreGameSave(drillSnapshot);
     if (!restored) {
@@ -843,45 +880,7 @@ export function PlayPage() {
       setSaveError(`Drill attempt "${attempt.label}" is missing its authoritative engine state.`);
       return;
     }
-    const drillSnapshot: ShelectorGameSaveSnapshot = {
-      ...snapshot,
-      savedAt: Date.now(),
-      engine,
-      authorityUpdates: [],
-      engineEventLog: [],
-      engineEventLogSeeds: {},
-      engineEventLogInitialState: engine,
-      lastStateUpdate: null,
-      currentPrompt: null,
-      lastPlayedCard: null,
-      tutorPhase: false,
-      tutorCards: [],
-      tutorTitle: '',
-      tutorPromptRequest: null,
-      tutorRemaining: 0,
-      tutorFilter: undefined,
-      tutorFilterSpec: undefined,
-      tutorTapped: false,
-      tutorShuffle: true,
-      tutorDestination: 'hand',
-      tutorSourceName: 'Drill Attempt',
-      tutorSourceInstanceId: undefined,
-      pendingSearchEntryChoice: null,
-      pendingTargetChoice: null,
-      libraryChoice: null,
-      libraryManipulationPromptRequest: null,
-      optionalTriggerChoice: null,
-      taxPaymentChoice: null,
-      wardPaymentChoice: null,
-      damageAssignmentChoice: null,
-      triggerOrderChoice: null,
-      discardPhase: false,
-      discardCount: 0,
-      selectedMulliganCardIds: [],
-      selectedMulliganBottomIds: [],
-      actionError: null,
-      lastEvents: [],
-    };
+    const drillSnapshot = buildDrillRestoreSnapshot(snapshot, engine, 'Drill Attempt', attempt.decisionContext);
 
     const restored = restoreGameSave(drillSnapshot);
     if (!restored) {
@@ -954,6 +953,7 @@ export function PlayPage() {
       step: gameState.step,
       summary: `${summarizeDrillAttempt()} / ${summarizePracticeDecisionContext()}`,
       engine: snapshot.engine,
+      decisionContext: currentDrillDecisionContext(),
     };
 
     const drillBookmarks = record.drillBookmarks.map(bookmark => (
@@ -1000,6 +1000,7 @@ export function PlayPage() {
       source: 'manual',
       focusTags: resolvePracticeMetadata()?.focusTags || [],
       note: summarizePracticeDecisionContext(),
+      decisionContext: currentDrillDecisionContext(),
     };
 
     const drillBookmarks = [...(existing?.drillBookmarks || []), bookmark].slice(-16);
@@ -1773,6 +1774,76 @@ export function PlayPage() {
     });
   }, [step, gameState, legalActions, exportGameSave]);
 
+  const loadBranchPreviewAsDrill = async (actionId: string) => {
+    const preview = branchPreviews.find(candidate => candidate.actionId === actionId);
+    if (!preview?.resultEngine) {
+      setSaveError('That branch preview does not have a restorable engine state.');
+      return false;
+    }
+    const snapshot = exportGameSave();
+    if (!snapshot || !gameState) {
+      setSaveError('No active game to branch from.');
+      return false;
+    }
+    const existing = saveSlotsRef.current[activeSaveSlot - 1];
+    const savedAt = Date.now();
+    const bookmarkId = `${savedAt}-${Math.random().toString(36).slice(2, 8)}`;
+    const attemptId = `${savedAt + 1}-${Math.random().toString(36).slice(2, 8)}`;
+    const label = `T${gameState.turnNumber} ${gameState.step || gameState.phase} branch`;
+    const attempt: PlayDrillAttempt = {
+      id: attemptId,
+      label: `Preview: ${preview.label}`,
+      startedAt: savedAt,
+      savedAt,
+      turnNumber: gameState.turnNumber,
+      phase: gameState.phase,
+      step: gameState.step,
+      summary: `${preview.summary} / ${summarizePracticeDecisionContext()}`,
+      engine: preview.resultEngine,
+    };
+    const bookmark: PlayDrillBookmark = {
+      id: bookmarkId,
+      label,
+      savedAt,
+      turnNumber: gameState.turnNumber,
+      phase: gameState.phase,
+      step: gameState.step,
+      engine: snapshot.engine,
+      source: 'branch-preview',
+      focusTags: resolvePracticeMetadata()?.focusTags || [],
+      note: `Branch source: ${preview.label} / ${summarizePracticeDecisionContext()}`,
+      decisionContext: currentDrillDecisionContext(),
+      attempts: [attempt],
+    };
+    const drillBookmarks = [...(existing?.drillBookmarks || []), bookmark].slice(-16);
+
+    try {
+      const record = buildSaveRecord(activeSaveSlot, snapshot, false, drillBookmarks);
+      await putPlaySaveSlot(record);
+      applySaveSlotRecord(record, activeSaveSlot);
+      await refreshSaveSlots();
+      const drillSnapshot = buildDrillRestoreSnapshot(snapshot, preview.resultEngine, `Branch Preview: ${preview.label}`);
+      const restored = restoreGameSave(drillSnapshot);
+      if (!restored) {
+        setSaveError(`Branch preview "${preview.label}" could not be restored.`);
+        return false;
+      }
+      restoreSlotUi(record);
+      setActiveDrillRun({
+        slot: activeSaveSlot,
+        bookmarkId,
+        label: `${label} / ${attempt.label}`,
+        startedAt: Date.now(),
+      });
+      setSaveError(null);
+      setSaveStatus(`Loaded branch drill "${preview.label}".`);
+      return true;
+    } catch (err: any) {
+      setSaveError(err.message || 'Could not load this preview as a drill.');
+      return false;
+    }
+  };
+
   // ----- RENDER -----
 
   // Game view: floating-table board with review available as an overlay.
@@ -1863,6 +1934,7 @@ export function PlayPage() {
             drillBookmarkLabel="Bookmark This Moment"
             practiceFocusTags={activePracticeFocusTags}
             branchPreviews={branchPreviews}
+            onLoadBranchPreview={loadBranchPreviewAsDrill}
             activeDrillLabel={activeDrillRun?.label || null}
             onSaveDrillAttempt={activeDrillRun ? saveCurrentDrillAttempt : undefined}
             onExitDrillAttempt={activeDrillRun ? exitCurrentDrillAttempt : undefined}
