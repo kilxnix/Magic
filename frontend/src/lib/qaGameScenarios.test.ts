@@ -88,6 +88,7 @@ describe('QA game scenarios', () => {
       blockAction?.kind === 'DeclareBlockers' ? blockAction.blocks : [],
     );
     expect(blocked.ok).toBe(true);
+    if (!blocked.ok) throw new Error(blocked.message);
     state = blocked.state!;
 
     state = passPriority(state);

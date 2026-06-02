@@ -182,9 +182,11 @@ interface GameBoardProps {
 }
 
 /** Compute counter badge entries from a card's counters record */
+const HIDDEN_COUNTER_KEYS = new Set(['_powerMod', '_toughnessMod']);
+
 function getCounterBadges(counters: Record<string, number>): { label: string; count: number }[] {
   return Object.entries(counters)
-    .filter(([, v]) => v > 0)
+    .filter(([key, v]) => v > 0 && !HIDDEN_COUNTER_KEYS.has(key))
     .map(([key, count]) => ({ label: key, count }));
 }
 
@@ -448,7 +450,7 @@ function complexSignalClass(tone: ComplexTurnSignal['tone']): string {
 
 function sortedCounterKey(counters: Record<string, number>): string {
   return Object.entries(counters)
-    .filter(([, count]) => count > 0)
+    .filter(([key, count]) => count > 0 && !HIDDEN_COUNTER_KEYS.has(key))
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([label, count]) => `${label}:${count}`)
     .join(',');

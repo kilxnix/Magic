@@ -40,7 +40,8 @@ function ManaCostBadges({ manaCost }: { manaCost: string }) {
 }
 
 export function CardDetailModal({ cardDef, card, cardFaces, onClose }: CardDetailModalProps) {
-  const counters = Object.entries(card.counters).filter(([, v]) => v > 0);
+  const counters = Object.entries(card.counters)
+    .filter(([name, v]) => v > 0 && name !== '_powerMod' && name !== '_toughnessMod');
   const [showingBack, setShowingBack] = useState(false);
 
   const isFlipCard = cardFaces && cardFaces.length > 1;
