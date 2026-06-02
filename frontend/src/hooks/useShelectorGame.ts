@@ -118,6 +118,7 @@ import {
   type CardFilter,
   parseWardCost,
   type WardCost,
+  populateParsedCache,
 } from 'commander-engine';
 import {
   buildDecisionReview,
@@ -1609,7 +1610,7 @@ function enumerateVirtualActivatedAbilityTargets(state: GameState, playerId: str
 function getManaActionAmount(state: GameState, playerId: string, action: AIAction): number {
   if (action.kind !== 'ActivateManaAbility') return 1;
   const card = state.cards.get(action.cardInstanceId);
-  const def = card ? getCardDefinition(state, card) : undefined;
+  const def = hydrateManaDefinition(card ? getCardDefinition(state, card) : undefined);
   const info = def?.manaProduction;
   if (!info) return 1;
 
@@ -2200,7 +2201,13 @@ function captureLogEntry(
   };
 }
 
+function hydrateManaDefinition(def: CardDefinition | undefined): CardDefinition | undefined {
+  if (!def || def.manaProduction) return def;
+  return populateParsedCache(def);
+}
+
 function manaAbilityActionLabel(def: CardDefinition | undefined, color: ManaColor): string {
+  def = hydrateManaDefinition(def);
   const name = def?.name || 'permanent';
   const mana = def?.manaProduction;
   const manaLabel = manaAbilityDisplayMana(def, color);
