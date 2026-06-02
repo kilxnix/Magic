@@ -394,6 +394,12 @@ function targetLabel(scopedView: RoomScopedView | null | undefined, targetId: st
   return targetId;
 }
 
+function engineTurnLabel(scopedView: RoomScopedView) {
+  if (scopedView.phase === 'precombat_main') return `Turn ${scopedView.turnNumber} - precombat main`;
+  if (scopedView.phase === 'postcombat_main') return `Turn ${scopedView.turnNumber} - postcombat main`;
+  return `Turn ${scopedView.turnNumber} - ${scopedView.phase} / ${scopedView.step}`;
+}
+
 function compactKeywords(keywords: string[] = [], limit = 4) {
   if (keywords.length === 0) return '';
   const visible = keywords.slice(0, limit).join(', ');
@@ -551,7 +557,8 @@ export function MultiplayerPage() {
     if (scopedView.priorityPlayerId !== activeSession.playerId) {
       help.push(`Waiting for ${enginePriorityPlayer?.name || 'the priority player'} to act.`);
     }
-    if (firstLandInHand && !canPlayFirstLand) {
+    const playLandBlockedReason = playLandActionHint && !playLandActionHint.enabled ? playLandActionHint.reason : '';
+    if (firstLandInHand && !canPlayFirstLand && !playLandBlockedReason) {
       help.push('Land plays unlock during your main phase while you have priority.');
     }
     if (!firstLandInHand) {
@@ -561,7 +568,7 @@ export function MultiplayerPage() {
       help.push('No visible mana source is on your battlefield yet.');
     }
     return Array.from(new Set(help)).slice(0, 6);
-  }, [room?.real_game, scopedView, activeSession, activeSpectator, enginePriorityPlayer?.name, firstLandInHand, canPlayFirstLand, firstManaSource]);
+  }, [room?.real_game, scopedView, activeSession, activeSpectator, enginePriorityPlayer?.name, firstLandInHand, canPlayFirstLand, firstManaSource, playLandActionHint]);
   const canDeclareAttackers = Boolean(
     activeSession &&
     scopedView?.legalActions?.find((action) => action.action === 'Declare Attackers')?.enabled,
@@ -2572,7 +2579,7 @@ export function MultiplayerPage() {
                       <div>
                         <div className="text-xs font-black uppercase tracking-[0.16em] text-sky-200">Experimental Real Engine</div>
                         <div className="mt-1 text-2xl font-black text-stone-50">
-                          {scopedView ? `Turn ${scopedView.turnNumber} - ${scopedView.phase} / ${scopedView.step}` : 'Waiting for authority snapshot'}
+                          {scopedView ? engineTurnLabel(scopedView) : 'Waiting for authority snapshot'}
                         </div>
                         <div className="text-sm font-semibold text-sky-100">
                           Authority: {room.real_game.authority_player_name}
