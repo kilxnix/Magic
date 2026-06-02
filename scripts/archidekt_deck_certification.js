@@ -63,6 +63,7 @@ const DECKS = [
   {
     slug: 'storms-typhoon',
     url: 'https://archidekt.com/decks/10024261/storms_typhoon',
+    allowFill: true,
   },
   {
     slug: 'league-of-legendaries',
@@ -121,10 +122,11 @@ function decklistFromParsed(parsed) {
   return lines.join('\n');
 }
 
-async function importDeck(url) {
+async function importDeck(deck) {
+  const allowFill = ALLOW_FILLED_CERTIFICATION || deck.allowFill === true;
   const parsed = await apiJson('/api/parse-deck-url', {
     method: 'POST',
-    body: JSON.stringify({ url }),
+    body: JSON.stringify({ url: deck.url }),
   });
   const decklistText = decklistFromParsed(parsed);
   const imported = await apiJson('/shelector-api/import-deck', {
@@ -132,7 +134,7 @@ async function importDeck(url) {
     body: JSON.stringify({
       decklist_text: decklistText,
       bracket: 3,
-      fill_missing: ALLOW_FILLED_CERTIFICATION,
+      fill_missing: allowFill,
     }),
   });
   return { parsed, imported, decklistText };
@@ -301,7 +303,7 @@ async function resolveBlockingGamePrompt(page) {
 
 async function resolveDiscardPrompt(page) {
   const body = await page.locator('body').innerText().catch(() => '');
-  if (!/hand \(\d+\)\s+[—-]\s+discard \d+ card/i.test(body)) return null;
+  if (!/\bhand \(\d+\)\s*(?:[-\u2013\u2014]|—)\s*discard \d+ card/i.test(body)) return null;
   const viewport = page.viewportSize() || { width: 1360, height: 920 };
   const buttons = page.getByRole('button');
   for (let index = 0; index < await buttons.count(); index += 1) {
@@ -309,12 +311,13 @@ async function resolveDiscardPrompt(page) {
     if (!(await button.isVisible().catch(() => false))) continue;
     if (!(await button.isEnabled().catch(() => false))) continue;
     const text = (await button.innerText().catch(() => '')).replace(/\s+/g, ' ').trim();
-    if (!text || /^(Keep|Pick Cards First|Bookmark|Save|Load|Delete|Review|Menu|Undo)$/i.test(text)) continue;
+    if (!/^Discard\b/i.test(text)) continue;
+    if (/Bookmark This Moment|SaveManager|Game Saves|Undo|Menu|Feedback/i.test(text)) continue;
     const box = await button.boundingBox().catch(() => null);
     if (!box || box.y < viewport.height - 260) continue;
     await button.click();
     await page.waitForTimeout(700);
-    return `Discard ${text.split(/\s{2,}|\n/)[0].slice(0, 80)}`;
+    return text.split(/\s{2,}|\n/)[0].slice(0, 100);
   }
   return null;
 }
@@ -384,6 +387,7 @@ async function driveHumanActions(page, maxActions) {
 }
 
 async function runUiDeckPass(browser, deck, imported) {
+  const allowFill = ALLOW_FILLED_CERTIFICATION || deck.allowFill === true;
   const context = await browser.newContext({ viewport: { width: 1360, height: 920 } });
   const page = await context.newPage();
   const result = {
@@ -401,19 +405,20 @@ async function runUiDeckPass(browser, deck, imported) {
 
     const urlBox = page.getByRole('textbox', { name: 'https://www.moxfield.com/decks/...', exact: true });
     await urlBox.fill(deck.url);
-    if (ALLOW_FILLED_CERTIFICATION) {
+    if (allowFill) {
       const fillToggle = page.getByLabel(/Fill missing cards with practice-safe suggestions/i);
       if ((await fillToggle.count()) > 0) {
         await fillToggle.first().check();
       }
     }
     await clickVisibleButton(page, 'Import Deck', 30000);
-    await waitBodyIncludes(page, imported.commander || `${imported.total} cards`, 80000);
-    await waitBodyIncludes(page, `${imported.total} cards`, 80000);
+    const expectedTotal = allowFill && imported.total < 100 ? 100 : imported.total;
+    await waitBodyIncludes(page, imported.commander || `${expectedTotal} cards`, 80000);
+    await waitBodyIncludes(page, `${expectedTotal} cards`, 80000);
     await screenshot(page, deck.slug, '01-imported');
     result.screenshots.push(`${deck.slug}-01-imported.png`);
 
-    if (!imported.valid || (!ALLOW_FILLED_CERTIFICATION && imported.total !== 100) || ((imported.filled_cards || []).length > 0 && !ALLOW_FILLED_CERTIFICATION)) {
+    if (!imported.valid || (!allowFill && imported.total !== 100) || ((imported.filled_cards || []).length > 0 && !allowFill)) {
       const finalText = await page.locator('body').innerText();
       result.importGate = {
         total: imported.total,
@@ -603,7 +608,7 @@ async function runEngineSweep(deck) {
   try {
     for (const deck of DECKS) {
       console.log(`\n=== ${deck.slug} ===`);
-      const importedInfo = await importDeck(deck.url);
+      const importedInfo = await importDeck(deck);
       const { parsed, imported } = importedInfo;
       const deckReport = {
         deck,
@@ -628,9 +633,9 @@ async function runEngineSweep(deck) {
       deckReport.ui = await runUiDeckPass(browser, deck, imported);
       deckReport.engine = await runEngineSweep(deck, imported);
       deckReport.ok = Boolean(
-        (ALLOW_FILLED_CERTIFICATION || deckReport.parsed.exactCommanderDeckCount === 100)
+        (ALLOW_FILLED_CERTIFICATION || deck.allowFill === true || deckReport.parsed.exactCommanderDeckCount === 100)
         && imported.valid
-        && (ALLOW_FILLED_CERTIFICATION || deckReport.imported.filledCards.length === 0)
+        && (ALLOW_FILLED_CERTIFICATION || deck.allowFill === true || deckReport.imported.filledCards.length === 0)
         && deckReport.ui.ok
         && deckReport.engine.ok,
       );

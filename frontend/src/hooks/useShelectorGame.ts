@@ -30,6 +30,7 @@ import {
   executeEffects,
   parseManaString,
   canPayCost,
+  canPaySpellCost,
   canPayUnrestrictedCost,
   isEffectiveCreature,
   isBlockedBySummoningSicknessForTap,
@@ -1866,6 +1867,69 @@ function findLandsToTap(
   return result;
 }
 
+function applyManaActionsForPayment(
+  state: GameState,
+  playerId: string,
+  manaActions: Extract<AIAction, { kind: 'ActivateManaAbility' }>[],
+): GameState | null {
+  let nextState = state;
+  for (const manaAction of manaActions) {
+    const response = applyClientActionRequest(
+      nextState,
+      createClientActionRequest(nextState, playerId, manaAction, {
+        source: 'system',
+        label: 'auto-pay verification',
+      }),
+    );
+    if (!response.ok || !response.state) return null;
+    nextState = response.state as GameState;
+  }
+  return nextState;
+}
+
+function spellPaymentPlanPaysCost(
+  state: GameState,
+  playerId: string,
+  card: CardInstance,
+  def: CardDefinition,
+  manaCost: ManaCost,
+  manaActions: Extract<AIAction, { kind: 'ActivateManaAbility' }>[],
+): boolean {
+  const plannedState = applyManaActionsForPayment(state, playerId, manaActions);
+  const plannedPlayer = plannedState?.players.find(p => p.id === playerId);
+  if (!plannedState || !plannedPlayer) return false;
+  const plannedCard = plannedState.cards.get(card.instanceId) || card;
+  return canPaySpellCost(plannedPlayer, manaCost, def, plannedCard);
+}
+
+function findSpellPaymentPlan(
+  state: GameState,
+  playerId: string,
+  card: CardInstance,
+  def: CardDefinition,
+  manaCost: ManaCost,
+  manaActions: Extract<AIAction, { kind: 'ActivateManaAbility' }>[],
+): Extract<AIAction, { kind: 'ActivateManaAbility' }>[] | null {
+  const player = state.players.find(p => p.id === playerId);
+  if (!player) return null;
+  if (canPaySpellCost(player, manaCost, def, card)) return [];
+
+  const paymentPlan = findLandsToTap(state, playerId, manaCost, manaActions);
+  if (!paymentPlan) return null;
+  return spellPaymentPlanPaysCost(state, playerId, card, def, manaCost, paymentPlan)
+    ? paymentPlan
+    : null;
+}
+
+function couldPaySpellWithLands(state: GameState, playerId: string, card: CardInstance, def: CardDefinition, manaCost: ManaCost): boolean {
+  const currentActions = getLegalActions(state, playerId);
+  const manaActions = currentActions.filter(
+    (a): a is Extract<AIAction, { kind: 'ActivateManaAbility' }> =>
+      a.kind === 'ActivateManaAbility',
+  );
+  return findSpellPaymentPlan(state, playerId, card, def, manaCost, manaActions) !== null;
+}
+
 function hasAutoTapCastOption(state: GameState, playerId: string, engineActions: AIAction[]): boolean {
   const existingCastIds = new Set(
     engineActions
@@ -1895,7 +1959,7 @@ function hasAutoTapCastOption(state: GameState, playerId: string, engineActions:
       ? getCommanderCastCount(player, card.instanceId) * 2
       : 0;
     const totalCost = reducedSpellCost(state, playerId, def, taxAmount);
-    if (!couldCastWithLands(state, playerId, totalCost)) return false;
+    if (!couldPaySpellWithLands(state, playerId, card, def, totalCost)) return false;
 
     return enumerateVirtualCastTargets(state, playerId, card).length > 0;
   };
@@ -3302,7 +3366,7 @@ export function useShelectorGame() {
             for (const xValue of xValues) {
               // Check if player could pay the reduced cost with available lands.
               const totalCost = reducedSpellCost(engine, humanId, def, 0, xValue ?? 0);
-              const paymentPlan = findLandsToTap(engine, humanId, totalCost, availableManaActions);
+              const paymentPlan = findSpellPaymentPlan(engine, humanId, card, def, totalCost, availableManaActions);
               if (!paymentPlan) continue;
               // Create synthetic cast actions with required targets, including stack targets.
               const targetSets = enumerateVirtualCastTargets(engine, humanId, card, faceCast.faceName);
@@ -3360,7 +3424,7 @@ export function useShelectorGame() {
               : [undefined];
             for (const xValue of xValues) {
               const totalCost = reducedSpellCost(engine, humanId, def, taxAmount, xValue ?? 0);
-              const paymentPlan = findLandsToTap(engine, humanId, totalCost, availableManaActions);
+              const paymentPlan = findSpellPaymentPlan(engine, humanId, card, def, totalCost, availableManaActions);
               if (!paymentPlan) continue;
               const targetSets = enumerateVirtualCastTargets(engine, humanId, card, faceCast.faceName);
               for (const targets of targetSets) {
@@ -8075,11 +8139,11 @@ export function useShelectorGame() {
             const taxAmount = isFromCommandZone ? getCommanderCastCount(player, card.instanceId) * 2 : 0;
             const totalCost = reducedSpellCost(engine, humanId, def, taxAmount);
 
-            if (!canPayCost(player.manaPool, totalCost)) {
+            if (!canPaySpellCost(player, totalCost, def, card)) {
               // Need to auto-tap lands first
               const currentActions = getLegalActions(engine, humanId);
               const manaActions = currentActions.filter(a => a.kind === 'ActivateManaAbility');
-              const landsToTap = findLandsToTap(engine, humanId, totalCost, manaActions);
+              const landsToTap = findSpellPaymentPlan(engine, humanId, card, def, totalCost, manaActions);
 
               if (landsToTap && landsToTap.length > 0) {
                 const tapState = applyAuthoritativePaymentPrompt(

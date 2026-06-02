@@ -296,6 +296,7 @@ export function PlayPage() {
       && qaScenario !== 'complex-combat'
       && qaScenario !== 'modal-choice'
       && qaScenario !== 'generous-gift'
+      && qaScenario !== 'restricted-mana-cast'
       && qaScenario !== 'krenko-skirk'
     ) return;
 
@@ -317,6 +318,7 @@ export function PlayPage() {
         createMulliganSelectionQaState,
         createModalChoiceQaState,
         createSeeBeyondQaState,
+        createRestrictedManaCastQaState,
         createSisayActivationQaState,
         createSisayRawLandsQaState,
         createSpellCopyQaState,
@@ -360,6 +362,8 @@ export function PlayPage() {
           ? createModalChoiceQaState()
           : qaScenario === 'generous-gift'
           ? createGenerousGiftQaState()
+          : qaScenario === 'restricted-mana-cast'
+          ? createRestrictedManaCastQaState()
           : qaScenario === 'krenko-skirk'
           ? createKrenkoSkirkQaState()
           : createSisayActivationQaState();
@@ -399,6 +403,8 @@ export function PlayPage() {
             ? 'Trampling Commander'
             : qaScenario === 'generous-gift'
             ? 'Training Cleric'
+            : qaScenario === 'restricted-mana-cast'
+            ? 'Bird Trainer'
             : 'Sisay, Weatherlight Captain',
           aiCommanderNames: qaScenario === 'complex-combat'
             ? {
@@ -432,6 +438,8 @@ export function PlayPage() {
                   ? 'Modal QA Opponent'
                   : qaScenario === 'generous-gift'
                   ? 'Removal QA Opponent'
+                  : qaScenario === 'restricted-mana-cast'
+                  ? 'Restricted Mana QA Opponent'
                   : qaScenario === 'krenko-skirk'
                   ? 'Krenko QA Opponent'
                   : 'QA Opponent',
@@ -514,6 +522,8 @@ export function PlayPage() {
               ? 'modal choice'
               : qaScenario === 'generous-gift'
               ? 'Generous Gift'
+              : qaScenario === 'restricted-mana-cast'
+              ? 'restricted mana'
               : qaScenario === 'krenko-skirk'
               ? 'Krenko/Skirk'
               : 'Sisay activation'

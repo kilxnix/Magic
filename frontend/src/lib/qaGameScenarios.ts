@@ -1899,6 +1899,111 @@ export function createGenerousGiftQaState(): SerializedGameStateV1 {
   return serializeGameState(state);
 }
 
+export function createRestrictedManaCastQaState(): SerializedGameStateV1 {
+  const trainingCommander = def(
+    'restricted_mana_qa_commander',
+    'Bird Trainer',
+    'Legendary Creature - Bird Advisor',
+    '{1}{W}',
+    '',
+    { cmc: 2, colors: ['W'], color_identity: ['W'], power: 2, toughness: 2 },
+  );
+  const secludedCourtyard = def(
+    'restricted_mana_qa_courtyard',
+    'Secluded Courtyard',
+    'Land',
+    '',
+    'As Secluded Courtyard enters, choose a creature type.\n{T}: Add {C}.\n{T}: Add one mana of any color. Spend this mana only to cast a creature spell of the chosen type or activate an ability of a creature source of the chosen type.',
+    { card_types: ['land'] },
+  );
+  const island = def('restricted_mana_qa_island', 'Island', 'Basic Land - Island', '', '({T}: Add {U}.)', { card_types: ['land'] });
+  const rally = def(
+    'restricted_mana_qa_rally',
+    'Rally of Wings',
+    'Instant',
+    '{1}{W}',
+    'Untap all creatures you control. Creatures you control with flying get +2/+2 until end of turn.',
+    { cmc: 2, colors: ['W'], color_identity: ['W'] },
+  );
+  const bird = def(
+    'restricted_mana_qa_bird',
+    'Training Bird',
+    'Creature - Bird',
+    '{1}{W}',
+    'Flying',
+    { cmc: 2, colors: ['W'], color_identity: ['W'], keywords: ['Flying'], power: 2, toughness: 2 },
+  );
+
+  const state: GameState = {
+    players: [
+      {
+        id: 'human',
+        name: 'Restricted Mana QA Pilot',
+        life: 40,
+        poisonCounters: 0,
+        commanderDamage: {},
+        commanderTax: 0,
+        commanderInstanceId: 'restricted_mana_qa_commander_1',
+        commanderCastCount: 0,
+        manaPool: pool({ W: 1, U: 1 }),
+        restrictedMana: [{
+          color: 'W',
+          amount: 1,
+          restriction: 'creatureTypeSpell',
+          creatureType: 'Bird',
+          sourceInstanceId: 'restricted_mana_qa_courtyard_1',
+        }],
+        hasPlayedLand: false,
+        hasPriority: true,
+        hasLost: false,
+      },
+      {
+        id: 'ai-1',
+        name: 'Restricted Mana QA Opponent',
+        life: 40,
+        poisonCounters: 0,
+        commanderDamage: {},
+        commanderTax: 0,
+        commanderInstanceId: null,
+        commanderCastCount: 0,
+        manaPool: pool(),
+        hasPlayedLand: false,
+        hasPriority: false,
+        hasLost: false,
+      },
+    ],
+    cards: new Map<string, CardInstance>([
+      ['restricted_mana_qa_commander_1', instance('restricted_mana_qa_commander_1', trainingCommander.id, 'human', 'command', { isCommander: true })],
+      ['restricted_mana_qa_courtyard_1', instance('restricted_mana_qa_courtyard_1', secludedCourtyard.id, 'human', 'battlefield', {
+        tapped: true,
+        choices: { chosenCreatureType: 'Bird' },
+      })],
+      ['restricted_mana_qa_island_1', instance('restricted_mana_qa_island_1', island.id, 'human', 'battlefield', { tapped: true })],
+      ['restricted_mana_qa_rally_1', instance('restricted_mana_qa_rally_1', rally.id, 'human', 'hand')],
+      ['restricted_mana_qa_bird_1', instance('restricted_mana_qa_bird_1', bird.id, 'human', 'hand')],
+    ]),
+    cardDefinitions: new Map<string, CardDefinition>([
+      [trainingCommander.id, trainingCommander],
+      [secludedCourtyard.id, secludedCourtyard],
+      [island.id, island],
+      [rally.id, rally],
+      [bird.id, bird],
+    ]),
+    activePlayerIndex: 0,
+    priorityPlayerIndex: 0,
+    phase: 'precombat_main',
+    step: 'upkeep',
+    turnNumber: 2,
+    hasPriorityPassed: [false, false],
+    stack: [],
+    combat: null,
+    battlefieldAbilities: new Map(),
+    pendingTriggers: [],
+  };
+
+  return serializeGameState(state);
+}
+
 export function createDeclareBlockersQaState(): SerializedGameStateV1 {
   const sisay = def(
     'sisay_blocker',

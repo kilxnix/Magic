@@ -22,7 +22,7 @@ import {
 } from 'commander-engine';
 import { groupBattlefieldCards } from '../components/GameBoard';
 import { toSimpleCard } from '../hooks/useShelectorGame';
-import { createBrainGorgersSacrificeQaState, createComplexCombatQaState, createCostReductionQaState, createCreatureManaSicknessQaState, createDeclareBlockersQaState, createEquipmentD20QaState, createEquipmentEquipQaState, createGenerousGiftQaState, createKrenkoSkirkQaState, createLandEntryFetchQaState, createLibraryManipulationQaState, createMagecraftTriggersQaState, createModalChoiceQaState, createMulliganSelectionQaState, createSeeBeyondQaState, createSisayRawLandsQaState, createSpellCopyQaState, createStormGrapeshotQaState, createTokenStackQaState } from './qaGameScenarios';
+import { createBrainGorgersSacrificeQaState, createComplexCombatQaState, createCostReductionQaState, createCreatureManaSicknessQaState, createDeclareBlockersQaState, createEquipmentD20QaState, createEquipmentEquipQaState, createGenerousGiftQaState, createKrenkoSkirkQaState, createLandEntryFetchQaState, createLibraryManipulationQaState, createMagecraftTriggersQaState, createModalChoiceQaState, createMulliganSelectionQaState, createRestrictedManaCastQaState, createSeeBeyondQaState, createSisayRawLandsQaState, createSpellCopyQaState, createStormGrapeshotQaState, createTokenStackQaState } from './qaGameScenarios';
 
 describe('QA game scenarios', () => {
   it('loads raw dual lands with mana actions and reaches Sisay activation after tapping WUBRG', () => {
@@ -223,6 +223,25 @@ describe('QA game scenarios', () => {
       && action.cardInstanceId === 'cost_reduction_qa_bolt_1'
       && action.targets.includes('ai-1'),
     )).toBe(true);
+  });
+
+  it('does not allow type-restricted mana to pay for a noncreature spell', () => {
+    const state = deserializeGameState(createRestrictedManaCastQaState());
+    const actions = getLegalActions(state, 'human');
+
+    expect(state.players[0].manaPool.W).toBe(1);
+    expect(state.players[0].manaPool.U).toBe(1);
+    expect(state.players[0].restrictedMana?.[0]).toMatchObject({
+      color: 'W',
+      restriction: 'creatureTypeSpell',
+      creatureType: 'Bird',
+    });
+    expect(actions.some(action =>
+      action.kind === 'CastSpell' && action.cardInstanceId === 'restricted_mana_qa_bird_1',
+    )).toBe(true);
+    expect(actions.some(action =>
+      action.kind === 'CastSpell' && action.cardInstanceId === 'restricted_mana_qa_rally_1',
+    )).toBe(false);
   });
 
   it('loads Brain Gorgers ETB sacrifice choice and commits the selected creature', () => {
