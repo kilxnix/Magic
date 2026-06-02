@@ -718,6 +718,9 @@ function CardTile({
   return (
     <div
       className={`group relative shrink-0 ${w}`}
+      onPointerEnter={() => onHoverCard?.(card)}
+      onPointerMove={() => onHoverCard?.(card)}
+      onPointerLeave={() => onHoverCard?.(null)}
       onMouseEnter={() => onHoverCard?.(card)}
       onMouseLeave={() => onHoverCard?.(null)}
       onFocus={() => onHoverCard?.(card)}
@@ -933,7 +936,10 @@ function CardHoverPreview({
   const counters = getCounterBadges(card.counters);
 
   return (
-    <div className="pointer-events-none fixed left-1/2 top-1/2 z-[65] max-h-[min(82vh,44rem)] w-[min(26rem,86vw)] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-lg border border-amber-500/35 bg-neutral-950 shadow-2xl shadow-black/45">
+    <div
+      data-testid="card-hover-preview"
+      className="pointer-events-none fixed left-1/2 top-1/2 z-[65] max-h-[min(82vh,44rem)] w-[min(26rem,86vw)] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-lg border border-amber-500/35 bg-neutral-950 shadow-2xl shadow-black/45"
+    >
       <div className="grid grid-cols-[7.5rem_1fr] gap-3 p-3">
         <CardImage
           cardName={card.name}
