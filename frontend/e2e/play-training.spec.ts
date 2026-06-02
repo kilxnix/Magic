@@ -23,9 +23,12 @@ test('play page exposes practice progress and opens a scenario drill', async ({ 
   await expect(progress).toBeVisible();
   await expect(progress.getByText('Practice Progress')).toBeVisible();
   await expect(progress.getByText('No practice history yet')).toBeVisible();
-  await expect(progress.getByRole('button', { name: 'Start Focused Rep' })).toBeVisible();
+  await expect(progress.getByRole('button', { name: 'Start Focused Rep', exact: true })).toBeVisible();
+  const recommendations = page.getByTestId('practice-recommendations');
+  await expect(recommendations).toBeVisible();
+  await expect(recommendations.getByText('Recommended Next Reps')).toBeVisible();
 
-  await progress.getByRole('button', { name: 'Open Drill Scenario' }).click();
+  await progress.getByRole('button', { name: 'Open Drill Scenario', exact: true }).click();
   await expect(page.getByText('Bookmark This Moment')).toBeVisible();
   await expect(page.getByLabel('Game actions').getByText('Complex Combat QA Pilot has')).toBeVisible();
 
@@ -34,4 +37,6 @@ test('play page exposes practice progress and opens a scenario drill', async ({ 
   await page.getByRole('button', { name: 'Saves' }).click();
   await expect(page.getByText('Practice Progress')).toBeVisible();
   await expect(page.getByText('Open Drill')).toBeVisible();
+  await expect(page.getByText('Repeat the latest drill')).toBeVisible();
+  await expect(page.getByRole('button', { name: /Repeat the latest drill/i })).toBeVisible();
 });

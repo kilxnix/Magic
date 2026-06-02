@@ -1439,6 +1439,95 @@ export function PlayPage() {
     ).map(bookmark => ({ record, bookmark })))
       .sort((a, b) => b.bookmark.savedAt - a.bookmark.savedAt)
       .slice(0, compact ? 2 : 4);
+    const latestDrill = recentDrills[0] || null;
+    const bestAttempt = practiceHistory.bestAttempts[0] || null;
+    const xenagosFocused = practiceHistory.archetypes.some(([archetype]) => /xenagos|dragon/i.test(archetype))
+      || practiceHistory.topFocusTags.some(([tag]) => /xenagos|combat|dragon|terror|tutor|dracogenesis/i.test(tag))
+      || selectedPracticePresetId === 'xenagos-dragons';
+    const recommendations: {
+      key: string;
+      title: string;
+      body: string;
+      actionLabel: string;
+      disabled?: boolean;
+      onClick: () => void;
+      tone: 'emerald' | 'fuchsia' | 'amber' | 'sky';
+    }[] = [];
+
+    if (!hasProgress) {
+      recommendations.push({
+        key: 'first-focused-rep',
+        title: 'Start a clean focused rep',
+        body: 'Load a known high-pressure practice shell, clear stale state, and let autosave begin tracking the run.',
+        actionLabel: 'Start Focused Rep',
+        disabled: isImporting || isSpawning || isGeneratingAIDeck,
+        onClick: () => handleStartFocusedXenagosRep(),
+        tone: 'emerald',
+      });
+      recommendations.push({
+        key: 'first-drill',
+        title: 'Open a controlled hard spot',
+        body: 'Jump straight into a drillable complex-combat board instead of playing several turns to reach one.',
+        actionLabel: 'Open Drill Scenario',
+        disabled: isImporting,
+        onClick: () => loadTrainingScenario('complex-combat'),
+        tone: 'fuchsia',
+      });
+    } else {
+      if (latestDrill) {
+        recommendations.push({
+          key: 'repeat-latest-drill',
+          title: 'Repeat the latest drill',
+          body: `${latestDrill.bookmark.label} has ${latestDrill.bookmark.attempts?.length || 0} recorded attempt${latestDrill.bookmark.attempts?.length === 1 ? '' : 's'}. Run it again before moving on.`,
+          actionLabel: 'Repeat Latest Drill',
+          onClick: () => loadDrillBookmark(latestDrill.record, latestDrill.bookmark),
+          tone: 'fuchsia',
+        });
+      } else {
+        recommendations.push({
+          key: 'make-first-drill',
+          title: 'Bookmark the next hard decision',
+          body: 'Your saves exist, but no repeatable drill exists yet. Open a scenario and capture a decision point.',
+          actionLabel: 'Open Scenario Lab',
+          disabled: isImporting,
+          onClick: () => loadTrainingScenario('complex-combat'),
+          tone: 'amber',
+        });
+      }
+
+      if (bestAttempt) {
+        recommendations.push({
+          key: 'compare-best-attempt',
+          title: 'Compare against your best visible line',
+          body: `${bestAttempt.bookmark.label} / ${bestAttempt.attempt.label}: ${bestAttempt.scoreLabel}. Reload it and look for what changed.`,
+          actionLabel: 'Load Best Attempt',
+          onClick: () => loadDrillAttempt(bestAttempt.record, bestAttempt.bookmark, bestAttempt.attempt),
+          tone: 'sky',
+        });
+      } else if (latestDrill) {
+        recommendations.push({
+          key: 'create-first-attempt',
+          title: 'Record an attempt outcome',
+          body: 'Run the saved drill, then use Record Drill Attempt so the panel can compare outcomes instead of only listing bookmarks.',
+          actionLabel: 'Run Saved Drill',
+          onClick: () => loadDrillBookmark(latestDrill.record, latestDrill.bookmark),
+          tone: 'sky',
+        });
+      }
+
+      if (xenagosFocused) {
+        recommendations.push({
+          key: 'xenagos-pressure-drill',
+          title: 'Drill the big combat turn',
+          body: 'Rehearse the branch where triggers, combat math, and damage assignment decide whether the dragon turn is lethal or overextended.',
+          actionLabel: 'Open Combat Drill',
+          disabled: isImporting,
+          onClick: () => loadTrainingScenario('complex-combat'),
+          tone: 'amber',
+        });
+      }
+    }
+    const visibleRecommendations = recommendations.slice(0, compact ? 2 : 3);
 
     if (
       compact
@@ -1508,6 +1597,38 @@ export function PlayPage() {
               >
                 Open Drill Scenario
               </button>
+            </div>
+          </div>
+        )}
+        {saveSlotsReady && visibleRecommendations.length > 0 && (
+          <div data-testid="practice-recommendations" className="my-2 rounded border border-amber-500/20 bg-neutral-950/55 p-2">
+            <div className="mb-2 flex items-center gap-2 text-[10px] font-black uppercase tracking-wider text-amber-200">
+              <Lightbulb className="h-3.5 w-3.5" />
+              Recommended Next Reps
+            </div>
+            <div className={`grid gap-2 ${compact ? '' : 'lg:grid-cols-3'}`}>
+              {visibleRecommendations.map(recommendation => {
+                const toneClass = recommendation.tone === 'emerald'
+                  ? 'border-emerald-500/25 text-emerald-100 hover:bg-emerald-950/35'
+                  : recommendation.tone === 'fuchsia'
+                  ? 'border-fuchsia-500/25 text-fuchsia-100 hover:bg-fuchsia-950/35'
+                  : recommendation.tone === 'sky'
+                  ? 'border-sky-500/25 text-sky-100 hover:bg-sky-950/35'
+                  : 'border-amber-500/25 text-amber-100 hover:bg-amber-950/25';
+                return (
+                  <button
+                    key={recommendation.key}
+                    type="button"
+                    onClick={recommendation.onClick}
+                    disabled={recommendation.disabled}
+                    className={`min-h-[92px] rounded-lg border bg-neutral-950/60 p-3 text-left transition disabled:cursor-not-allowed disabled:opacity-50 ${toneClass}`}
+                  >
+                    <span className="block text-xs font-black">{recommendation.title}</span>
+                    <span className="mt-1 block text-[10px] leading-4 opacity-75">{recommendation.body}</span>
+                    <span className="mt-2 block text-[10px] font-black uppercase tracking-wider opacity-90">{recommendation.actionLabel}</span>
+                  </button>
+                );
+              })}
             </div>
           </div>
         )}
