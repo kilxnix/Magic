@@ -100,7 +100,7 @@ function resumedTalrandStateWithoutAbilityMap(): GameState {
     hasPriorityPassed: [false, false],
     stack: [],
     combat: null,
-    battlefieldAbilities: new Map(),
+    battlefieldAbilities: new Map([['talrand_1', []]]),
     pendingTriggers: [],
   };
 }
@@ -113,7 +113,7 @@ function countDrakes(state: GameState): number {
 }
 
 describe('restoreMissingBattlefieldAbilities', () => {
-  it('rehydrates resumed battlefield triggers so targeted instants still trigger Talrand', () => {
+  it('rehydrates stale resumed battlefield triggers so targeted instants still trigger Talrand', () => {
     let state = restoreMissingBattlefieldAbilities(resumedTalrandStateWithoutAbilityMap());
     expect(state.battlefieldAbilities.get('talrand_1')?.some(ability =>
       ability.trigger.kind === 'CastInstantOrSorcery',
