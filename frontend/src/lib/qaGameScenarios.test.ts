@@ -5,7 +5,7 @@ import {
   tapLandForMana,
   type ManaColor,
 } from 'commander-engine';
-import { createDeclareBlockersQaState, createLandEntryFetchQaState, createLibraryManipulationQaState, createModalChoiceQaState, createSisayRawLandsQaState } from './qaGameScenarios';
+import { createDeclareBlockersQaState, createLandEntryFetchQaState, createLibraryManipulationQaState, createModalChoiceQaState, createSisayRawLandsQaState, createSpellCopyQaState, createStormGrapeshotQaState } from './qaGameScenarios';
 
 describe('QA game scenarios', () => {
   it('loads raw dual lands with mana actions and reaches Sisay activation after tapping WUBRG', () => {
@@ -95,6 +95,30 @@ describe('QA game scenarios', () => {
     )).toBe(true);
     expect(actions.some(action =>
       action.kind === 'CastSpell' && action.cardInstanceId === 'library_qa_consider_1',
+    )).toBe(true);
+  });
+
+  it('loads a storm spell with previous spell count for browser QA', () => {
+    const state = deserializeGameState(createStormGrapeshotQaState());
+    const actions = getLegalActions(state, 'human');
+
+    expect(state.spellsCastThisTurn).toBe(2);
+    expect(actions.some(action =>
+      action.kind === 'CastSpell'
+      && action.cardInstanceId === 'storm_qa_grapeshot_1'
+      && action.targets.includes('ai-1'),
+    )).toBe(true);
+  });
+
+  it('loads a copy-spell target on the stack for browser QA', () => {
+    const state = deserializeGameState(createSpellCopyQaState());
+    const actions = getLegalActions(state, 'human');
+
+    expect(state.stack).toHaveLength(1);
+    expect(actions.some(action =>
+      action.kind === 'CastSpell'
+      && action.cardInstanceId === 'copy_qa_fork_1'
+      && action.targets.includes('copy_qa_bolt_1'),
     )).toBe(true);
   });
 });

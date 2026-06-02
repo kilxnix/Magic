@@ -282,6 +282,8 @@ export function PlayPage() {
       && qaScenario !== 'declare-blockers'
       && qaScenario !== 'land-entry-fetch'
       && qaScenario !== 'library-manipulation'
+      && qaScenario !== 'storm-grapeshot'
+      && qaScenario !== 'spell-copy'
       && qaScenario !== 'modal-choice'
     ) return;
 
@@ -294,6 +296,8 @@ export function PlayPage() {
         createModalChoiceQaState,
         createSisayActivationQaState,
         createSisayRawLandsQaState,
+        createSpellCopyQaState,
+        createStormGrapeshotQaState,
       }) => {
         if (cancelled || qaScenarioLoadedRef.current) return;
         const engine = qaScenario === 'sisay-raw-lands'
@@ -304,6 +308,10 @@ export function PlayPage() {
           ? createLandEntryFetchQaState()
           : qaScenario === 'library-manipulation'
           ? createLibraryManipulationQaState()
+          : qaScenario === 'storm-grapeshot'
+          ? createStormGrapeshotQaState()
+          : qaScenario === 'spell-copy'
+          ? createSpellCopyQaState()
           : qaScenario === 'modal-choice'
           ? createModalChoiceQaState()
           : createSisayActivationQaState();
@@ -318,12 +326,18 @@ export function PlayPage() {
             ? 'Krenko, Mob Boss'
             : qaScenario === 'library-manipulation'
             ? 'Talrand, Sky Summoner'
+            : qaScenario === 'storm-grapeshot' || qaScenario === 'spell-copy'
+            ? 'Vivi Ornitier'
             : 'Sisay, Weatherlight Captain',
           aiCommanderNames: {
             'ai-1': qaScenario === 'declare-blockers'
               ? 'Marchesa, Dealer of Death'
               : qaScenario === 'library-manipulation'
               ? 'Library QA Opponent'
+              : qaScenario === 'storm-grapeshot'
+              ? 'Storm QA Opponent'
+              : qaScenario === 'spell-copy'
+              ? 'Spell Copy QA Opponent'
               : qaScenario === 'modal-choice'
               ? 'Modal QA Opponent'
               : 'QA Opponent',
@@ -379,6 +393,10 @@ export function PlayPage() {
               ? 'land entry/fetch'
               : qaScenario === 'library-manipulation'
               ? 'library manipulation'
+              : qaScenario === 'storm-grapeshot'
+              ? 'storm Grapeshot'
+              : qaScenario === 'spell-copy'
+              ? 'spell copy'
               : qaScenario === 'modal-choice'
               ? 'modal choice'
               : 'Sisay activation'

@@ -623,6 +623,169 @@ export function createLibraryManipulationQaState(): SerializedGameStateV1 {
   return serializeGameState(state);
 }
 
+export function createStormGrapeshotQaState(): SerializedGameStateV1 {
+  const commander = def(
+    'storm_qa_commander',
+    'Vivi Ornitier',
+    'Legendary Creature - Wizard',
+    '{1}{U}{R}',
+    'Whenever you cast an instant or sorcery spell, Vivi Ornitier gets +1/+1 until end of turn.',
+    { cmc: 3, colors: ['U', 'R'], color_identity: ['U', 'R'], power: 0, toughness: 3 },
+  );
+  const grapeshot = def(
+    'storm_qa_grapeshot',
+    'Grapeshot',
+    'Sorcery',
+    '{1}{R}',
+    'Grapeshot deals 1 damage to any target.\nStorm',
+    { cmc: 2, colors: ['R'], color_identity: ['R'] },
+  );
+
+  const state: GameState = {
+    players: [
+      {
+        id: 'human',
+        name: 'Storm QA Pilot',
+        life: 40,
+        poisonCounters: 0,
+        commanderDamage: {},
+        commanderTax: 0,
+        commanderInstanceId: 'storm_qa_commander_1',
+        commanderCastCount: 0,
+        manaPool: pool({ R: 4 }),
+        hasPlayedLand: false,
+        hasPriority: true,
+        hasLost: false,
+      },
+      {
+        id: 'ai-1',
+        name: 'Storm QA Opponent',
+        life: 40,
+        poisonCounters: 0,
+        commanderDamage: {},
+        commanderTax: 0,
+        commanderInstanceId: null,
+        commanderCastCount: 0,
+        manaPool: pool(),
+        hasPlayedLand: false,
+        hasPriority: false,
+        hasLost: false,
+      },
+    ],
+    cards: new Map<string, CardInstance>([
+      ['storm_qa_commander_1', instance('storm_qa_commander_1', commander.id, 'human', 'command', { isCommander: true })],
+      ['storm_qa_grapeshot_1', instance('storm_qa_grapeshot_1', grapeshot.id, 'human', 'hand')],
+    ]),
+    cardDefinitions: new Map<string, CardDefinition>([
+      [commander.id, commander],
+      [grapeshot.id, grapeshot],
+    ]),
+    activePlayerIndex: 0,
+    priorityPlayerIndex: 0,
+    phase: 'precombat_main',
+    step: 'upkeep',
+    turnNumber: 1,
+    spellsCastThisTurn: 2,
+    hasPriorityPassed: [false, false],
+    stack: [],
+    combat: null,
+    battlefieldAbilities: new Map(),
+    pendingTriggers: [],
+  };
+
+  return serializeGameState(state);
+}
+
+export function createSpellCopyQaState(): SerializedGameStateV1 {
+  const commander = def(
+    'copy_qa_commander',
+    'Vivi Ornitier',
+    'Legendary Creature - Wizard',
+    '{1}{U}{R}',
+    'Whenever you cast an instant or sorcery spell, Vivi Ornitier gets +1/+1 until end of turn.',
+    { cmc: 3, colors: ['U', 'R'], color_identity: ['U', 'R'], power: 0, toughness: 3 },
+  );
+  const lightningBolt = def(
+    'copy_qa_bolt',
+    'Lightning Bolt',
+    'Instant',
+    '{R}',
+    'Lightning Bolt deals 3 damage to any target.',
+    { cmc: 1, colors: ['R'], color_identity: ['R'] },
+  );
+  const fork = def(
+    'copy_qa_fork',
+    'Fork',
+    'Instant',
+    '{R}{R}',
+    'Copy target instant or sorcery spell. You may choose new targets for the copy.',
+    { cmc: 2, colors: ['R'], color_identity: ['R'] },
+  );
+
+  const state: GameState = {
+    players: [
+      {
+        id: 'human',
+        name: 'Spell Copy QA Pilot',
+        life: 40,
+        poisonCounters: 0,
+        commanderDamage: {},
+        commanderTax: 0,
+        commanderInstanceId: 'copy_qa_commander_1',
+        commanderCastCount: 0,
+        manaPool: pool({ R: 4 }),
+        hasPlayedLand: false,
+        hasPriority: true,
+        hasLost: false,
+      },
+      {
+        id: 'ai-1',
+        name: 'Spell Copy QA Opponent',
+        life: 40,
+        poisonCounters: 0,
+        commanderDamage: {},
+        commanderTax: 0,
+        commanderInstanceId: null,
+        commanderCastCount: 0,
+        manaPool: pool(),
+        hasPlayedLand: false,
+        hasPriority: false,
+        hasLost: false,
+      },
+    ],
+    cards: new Map<string, CardInstance>([
+      ['copy_qa_commander_1', instance('copy_qa_commander_1', commander.id, 'human', 'command', { isCommander: true })],
+      ['copy_qa_bolt_1', instance('copy_qa_bolt_1', lightningBolt.id, 'human', 'stack')],
+      ['copy_qa_fork_1', instance('copy_qa_fork_1', fork.id, 'human', 'hand')],
+    ]),
+    cardDefinitions: new Map<string, CardDefinition>([
+      [commander.id, commander],
+      [lightningBolt.id, lightningBolt],
+      [fork.id, fork],
+    ]),
+    activePlayerIndex: 0,
+    priorityPlayerIndex: 0,
+    phase: 'precombat_main',
+    step: 'upkeep',
+    turnNumber: 1,
+    spellsCastThisTurn: 1,
+    hasPriorityPassed: [false, false],
+    stack: [{
+      kind: 'Spell',
+      id: 'copy_qa_bolt_stack_1',
+      cardInstanceId: 'copy_qa_bolt_1',
+      casterId: 'human',
+      targets: ['ai-1'],
+      castFromZone: 'hand',
+    }],
+    combat: null,
+    battlefieldAbilities: new Map(),
+    pendingTriggers: [],
+  };
+
+  return serializeGameState(state);
+}
+
 export function createDeclareBlockersQaState(): SerializedGameStateV1 {
   const sisay = def(
     'sisay_blocker',
