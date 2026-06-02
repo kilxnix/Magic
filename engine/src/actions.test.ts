@@ -751,7 +751,7 @@ describe('Land Actions', () => {
       expect(next.players[0].manaPool.R).toBe(1);
       expect(next.cards.get('skirk-1')?.zone).toBe('battlefield');
       expect(next.cards.get('krenko-1')?.zone).toBe('battlefield');
-      expect(next.cards.get('token-1')?.zone).toBe('graveyard');
+      expect(next.cards.has('token-1')).toBe(false);
     });
   });
 

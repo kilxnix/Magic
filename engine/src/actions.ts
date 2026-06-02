@@ -372,27 +372,35 @@ export function tapLandForMana(state: GameState, playerId: string, cardInstanceI
       );
     const sacrificed = candidates[0];
     if (!sacrificed) throw new Error('No sacrifice candidate');
-    const destination = getCommanderDestinationZone(state, sacrificed.instanceId, 'graveyard');
-    newCards.set(sacrificed.instanceId, {
-      ...sacrificed,
-      zone: destination,
-      tapped: false,
-      damage: 0,
-      counters: {},
-    });
+    if (sacrificed.isToken) {
+      newCards.delete(sacrificed.instanceId);
+    } else {
+      const destination = getCommanderDestinationZone(state, sacrificed.instanceId, 'graveyard');
+      newCards.set(sacrificed.instanceId, {
+        ...sacrificed,
+        zone: destination,
+        tapped: false,
+        damage: 0,
+        counters: {},
+      });
+    }
   }
 
   const sourceAfterCosts = newCards.get(cardInstanceId);
   if (sourceAfterCosts && sourceAfterCosts.zone === 'battlefield') {
-    newCards.set(cardInstanceId, {
-      ...sourceAfterCosts,
-      tapped: handExileAbility ? false : def.manaProduction?.isTapAbility ? true : sourceAfterCosts.tapped,
-      zone: handExileAbility
-        ? getCommanderDestinationZone(state, cardInstanceId, 'exile')
-        : requiresSacrifice
-          ? getCommanderDestinationZone(state, cardInstanceId, sacrificeDestination)
-          : sourceAfterCosts.zone,
-    });
+    if (requiresSacrifice && sourceAfterCosts.isToken) {
+      newCards.delete(cardInstanceId);
+    } else {
+      newCards.set(cardInstanceId, {
+        ...sourceAfterCosts,
+        tapped: handExileAbility ? false : def.manaProduction?.isTapAbility ? true : sourceAfterCosts.tapped,
+        zone: handExileAbility
+          ? getCommanderDestinationZone(state, cardInstanceId, 'exile')
+          : requiresSacrifice
+            ? getCommanderDestinationZone(state, cardInstanceId, sacrificeDestination)
+            : sourceAfterCosts.zone,
+      });
+    }
   } else if (handExileAbility || requiresSacrifice) {
     newCards.set(cardInstanceId, {
       ...card,
