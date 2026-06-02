@@ -1414,6 +1414,17 @@ class ReplayReport(BaseModel):
     review: dict[str, Any]
 
 
+class EventLearningReport(BaseModel):
+    schema_version: int = 1
+    event_id: str
+    event_name: str
+    summary: dict[str, Any]
+    match_reports: list[dict[str, Any]]
+    player_insights: list[dict[str, Any]]
+    next_drills: list[dict[str, Any]]
+    replay_coverage: dict[str, Any]
+
+
 class EventSettings(BaseModel):
     rounds: int = Field(3, ge=1, le=12)
     match_wins_required: int = Field(2, ge=1, le=3)
@@ -1814,6 +1825,126 @@ def _build_player_insights(game: dict, decisions: list[dict[str, Any]]) -> list[
     return insights[:12]
 
 
+def _build_replay_next_drills(game: dict, decisions: list[dict[str, Any]], insights: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    drills: list[dict[str, Any]] = []
+
+    def add_drill(
+        drill_id: str,
+        title: str,
+        focus: str,
+        evidence_event_ids: list[str],
+        player_names: Optional[list[str]] = None,
+        confidence: str = "medium",
+    ) -> None:
+        if any(item["id"] == drill_id for item in drills):
+            return
+        drills.append(
+            {
+                "id": drill_id,
+                "title": title,
+                "focus": focus,
+                "evidence_event_ids": list(dict.fromkeys(evidence_event_ids))[:6],
+                "player_names": list(dict.fromkeys(player_names or []))[:4],
+                "confidence": confidence,
+            }
+        )
+
+    pass_warnings = [
+        decision
+        for decision in decisions
+        if decision.get("action_type") == "pass_turn" and decision.get("rating") in {"bad", "blunder"}
+    ]
+    if pass_warnings:
+        add_drill(
+            "turn-conversion",
+            "Replay suspicious passes",
+            "Step through turns where a player passed with visible resources and compare development, discard, or note-taking options.",
+            [decision["event_id"] for decision in pass_warnings],
+            [decision.get("player_name", "Unknown") for decision in pass_warnings],
+            "high",
+        )
+
+    overextension = [
+        decision
+        for decision in decisions
+        if decision.get("action_type") == "play_permanent" and decision.get("rating") in {"okay", "bad", "blunder"}
+    ]
+    if overextension:
+        add_drill(
+            "overextension-checkpoint",
+            "Practice board-commit checkpoints",
+            "Replay large-board turns and mark whether the next card improved your clock or exposed you to a wipe.",
+            [decision["event_id"] for decision in overextension],
+            [decision.get("player_name", "Unknown") for decision in overextension],
+        )
+
+    pressure = [
+        decision
+        for decision in decisions
+        if decision.get("action_type") == "life_pressure"
+    ]
+    if pressure:
+        add_drill(
+            "pressure-math",
+            "Review pressure math",
+            "Use the replay snapshots around life, poison, and commander-damage changes to verify lethal clocks and defensive pivots.",
+            [decision["event_id"] for decision in pressure],
+            [decision.get("player_name", "Unknown") for decision in pressure],
+            "high",
+        )
+
+    board_fidelity = [
+        decision
+        for decision in decisions
+        if decision.get("action_type") in {"create_token", "add_board_object", "zone_move", "hand_management"}
+    ]
+    if len(board_fidelity) >= 3:
+        add_drill(
+            "board-fidelity",
+            "Audit board-state fidelity",
+            "Replay token, zone, and hand-management steps to confirm the shared table captured the exact position future coaching depends on.",
+            [decision["event_id"] for decision in board_fidelity],
+            [decision.get("player_name", "Unknown") for decision in board_fidelity],
+        )
+
+    note_gaps = [
+        insight
+        for insight in insights
+        if insight.get("category") == "Review Quality"
+    ]
+    if note_gaps:
+        add_drill(
+            "hidden-context-notes",
+            "Add hidden-context notes",
+            "Use annotations on tutor, pass, and interaction windows so post-game review can separate good patience from missed actions.",
+            [event_id for insight in note_gaps for event_id in insight.get("evidence_event_ids", [])],
+            [insight.get("player_name", "Unknown") for insight in note_gaps],
+        )
+
+    if len(game.get("log", [])) >= 20 or len(decisions) >= 18:
+        add_drill(
+            "long-game-scan",
+            "Scan the long-game decision spine",
+            "Jump decision-to-decision through the replay and identify the three turns that changed resource balance the most.",
+            [decision["event_id"] for decision in decisions[:8]],
+            [player.get("name", "Unknown") for player in game.get("players", [])],
+            "low",
+        )
+
+    if not drills and decisions:
+        first = decisions[0]
+        add_drill(
+            "first-decision-review",
+            "Review the first tracked decision",
+            "Start with the earliest replay decision, add one annotation explaining intent, then compare available options.",
+            [first["event_id"]],
+            [first.get("player_name", "Unknown")],
+            "low",
+        )
+
+    return drills[:6]
+
+
 def _build_replay_report(room: dict) -> ReplayReport:
     game = room.get("game")
     if not game:
@@ -1837,6 +1968,8 @@ def _build_replay_report(room: dict) -> ReplayReport:
         }
         for annotation in game.get("replay_annotations", [])
     ]
+    player_insights = _build_player_insights(game, decisions)
+    next_drills = _build_replay_next_drills(game, decisions, player_insights)
     summary = {
         "room_id": room["id"],
         "room_name": room["name"],
@@ -1846,6 +1979,7 @@ def _build_replay_report(room: dict) -> ReplayReport:
         "event_count": len(events),
         "decision_count": len(decisions),
         "annotation_count": len(annotations),
+        "next_drill_count": len(next_drills),
         "player_names": [player["name"] for player in game.get("players", [])],
         "commander_names": [player.get("commander") for player in game.get("players", []) if player.get("commander")],
         "grade": grade,
@@ -1866,7 +2000,7 @@ def _build_replay_report(room: dict) -> ReplayReport:
             for event in events
         ],
         decisions=decisions,
-        player_insights=_build_player_insights(game, decisions),
+        player_insights=player_insights,
         annotations=annotations,
         review={
             "evaluator": "shared-tracker-heuristic-v1",
@@ -1883,6 +2017,8 @@ def _build_replay_report(room: dict) -> ReplayReport:
                 *(player["name"] for player in game.get("players", [])),
                 *(player.get("commander") for player in game.get("players", []) if player.get("commander")),
             ],
+            "next_drills": next_drills,
+            "training_surface": "shared-table-replay",
         },
     )
 
@@ -1904,6 +2040,171 @@ def _replay_summary(room: dict) -> ReplaySummary:
         review_confidence=summary["review_confidence"],
         created_at=summary["created_at"],
         updated_at=summary["updated_at"],
+    )
+
+
+def _build_event_learning_report(event: dict) -> EventLearningReport:
+    reported_matches = [match for match in event.get("matches", []) if match.get("status") == "reported" and not match.get("is_bye")]
+    match_reports: list[dict[str, Any]] = []
+    confidence_scores: list[int] = []
+    player_rollup: dict[str, dict[str, Any]] = {}
+    next_drills: list[dict[str, Any]] = []
+    missing_replay_match_ids: list[str] = []
+
+    for match in reported_matches:
+        replay_room_id = match.get("replay_room_id") or match.get("room_id")
+        if not replay_room_id or replay_room_id not in _rooms or not _rooms[replay_room_id].get("game"):
+            missing_replay_match_ids.append(match["id"])
+            continue
+
+        try:
+            report = _build_replay_report(_rooms[replay_room_id])
+        except HTTPException:
+            missing_replay_match_ids.append(match["id"])
+            continue
+
+        summary = report.summary
+        confidence = int(summary.get("review_confidence", 0))
+        confidence_scores.append(confidence)
+        match_reports.append(
+            {
+                "match_id": match["id"],
+                "round": match["round"],
+                "table": match["table"],
+                "players": [
+                    _event_player_name(event, match.get("player1_id")) or "Player 1",
+                    _event_player_name(event, match.get("player2_id")) or "Player 2",
+                ],
+                "score": {
+                    "player1_wins": int((match.get("game_wins") or {}).get(match["player1_id"], 0)),
+                    "player2_wins": int((match.get("game_wins") or {}).get(match.get("player2_id"), 0)),
+                    "draws": int(match.get("game_draws") or 0),
+                },
+                "winner_name": _event_player_name(event, match.get("winner_id")),
+                "room_id": match.get("room_id"),
+                "replay_room_id": replay_room_id,
+                "grade": summary.get("grade"),
+                "review_confidence": confidence,
+                "decision_count": int(summary.get("decision_count", 0)),
+                "annotation_count": int(summary.get("annotation_count", 0)),
+                "top_insight": report.player_insights[0]["message"] if report.player_insights else report.review.get("coaching_summary"),
+            }
+        )
+
+        for decision in report.decisions:
+            player_name = decision.get("player_name", "Unknown")
+            record = player_rollup.setdefault(
+                player_name,
+                {
+                    "player_name": player_name,
+                    "decision_count": 0,
+                    "rating_points": [],
+                    "ratings": {},
+                    "categories": {},
+                    "evidence_event_ids": [],
+                },
+            )
+            record["decision_count"] += 1
+            record["rating_points"].append(_rating_points(decision.get("rating", "okay")))
+            record["ratings"][decision.get("rating", "okay")] = record["ratings"].get(decision.get("rating", "okay"), 0) + 1
+            category = decision.get("action_type", "tracked")
+            record["categories"][category] = record["categories"].get(category, 0) + 1
+            if len(record["evidence_event_ids"]) < 6:
+                record["evidence_event_ids"].append(decision.get("event_id"))
+
+        for insight in report.player_insights:
+            player_name = insight.get("player_name", "Unknown")
+            record = player_rollup.setdefault(
+                player_name,
+                {
+                    "player_name": player_name,
+                    "decision_count": 0,
+                    "rating_points": [],
+                    "ratings": {},
+                    "categories": {},
+                    "evidence_event_ids": [],
+                },
+            )
+            category = insight.get("category", "Review")
+            record["categories"][category] = record["categories"].get(category, 0) + 1
+            for event_id in insight.get("evidence_event_ids", []):
+                if event_id and len(record["evidence_event_ids"]) < 6:
+                    record["evidence_event_ids"].append(event_id)
+
+        for drill in report.review.get("next_drills", []):
+            next_drills.append(
+                {
+                    **drill,
+                    "match_id": match["id"],
+                    "round": match["round"],
+                    "table": match["table"],
+                    "replay_room_id": replay_room_id,
+                }
+            )
+
+    player_insights = []
+    for record in player_rollup.values():
+        points = record.pop("rating_points", [])
+        average = int(sum(points) / max(1, len(points)))
+        top_category = max(record["categories"].items(), key=lambda item: item[1])[0] if record["categories"] else "Review"
+        player_insights.append(
+            {
+                "player_name": record["player_name"],
+                "decision_count": record["decision_count"],
+                "average_score": average,
+                "grade": _grade_from_confidence(average),
+                "primary_focus": top_category,
+                "rating_counts": record["ratings"],
+                "message": (
+                    f"{record['player_name']} has {record['decision_count']} reviewed decisions across attached replays. "
+                    f"Current focus: {top_category}."
+                ),
+                "evidence_event_ids": list(dict.fromkeys(record["evidence_event_ids"]))[:6],
+            }
+        )
+    player_insights.sort(key=lambda item: (-item["decision_count"], item["player_name"].lower()))
+
+    average_confidence = int(sum(confidence_scores) / max(1, len(confidence_scores)))
+    coverage_percent = int(round((len(match_reports) / max(1, len(reported_matches))) * 100))
+    replay_coverage = {
+        "reported_match_count": len(reported_matches),
+        "replay_match_count": len(match_reports),
+        "coverage_percent": coverage_percent,
+        "missing_replay_match_ids": missing_replay_match_ids[:20],
+    }
+    if not next_drills:
+        next_drills.append(
+            {
+                "id": "attach-match-replays",
+                "title": "Attach match replays",
+                "focus": "Report results with replay room IDs so the event can produce coaching, drill targets, and learning trends.",
+                "evidence_event_ids": [],
+                "player_names": [],
+                "confidence": "low",
+            }
+        )
+
+    return EventLearningReport(
+        event_id=event["id"],
+        event_name=event["name"],
+        summary={
+            "event_id": event["id"],
+            "event_name": event["name"],
+            "format": event["format"],
+            "status": event["status"],
+            "player_count": len(event.get("players", [])),
+            "reported_match_count": len(reported_matches),
+            "replay_match_count": len(match_reports),
+            "reviewed_decision_count": sum(int(item.get("decision_count", 0)) for item in match_reports),
+            "average_review_confidence": average_confidence,
+            "grade": _grade_from_confidence(average_confidence),
+            "coverage_percent": coverage_percent,
+            "updated_at": _iso(event["updated_at"]),
+        },
+        match_reports=match_reports,
+        player_insights=player_insights[:16],
+        next_drills=next_drills[:12],
+        replay_coverage=replay_coverage,
     )
 
 
@@ -2490,6 +2791,12 @@ async def create_event(req: CreateEventRequest):
 async def get_event(event_id: str):
     with _lock:
         return _event_detail(_find_event(event_id))
+
+
+@router.get("/events/{event_id}/learning-report", response_model=EventLearningReport)
+async def get_event_learning_report(event_id: str):
+    with _lock:
+        return _build_event_learning_report(_find_event(event_id))
 
 
 @router.post("/events/{event_id}/players", response_model=EventDetail)

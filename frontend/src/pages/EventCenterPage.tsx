@@ -17,11 +17,13 @@ import {
 import {
   EventDetail,
   EventFormat,
+  EventLearningReport,
   EventMatch,
   EventSummary,
   createEvent,
   createEventMatchRoom,
   getEvent,
+  getEventLearningReport,
   listEvents,
   pairNextEventRound,
   postEventAnnouncement,
@@ -71,6 +73,20 @@ function percent(value: number) {
   return `${Math.round(value * 100)}%`;
 }
 
+function gradeTone(grade?: string) {
+  if (grade === 'A') return 'text-emerald-700';
+  if (grade === 'B') return 'text-sky-700';
+  if (grade === 'C') return 'text-amber-700';
+  if (grade === 'D') return 'text-orange-700';
+  return 'text-red-700';
+}
+
+function drillTone(confidence?: string) {
+  if (confidence === 'high') return 'border-emerald-200 bg-emerald-50 text-emerald-950';
+  if (confidence === 'medium') return 'border-sky-200 bg-sky-50 text-sky-950';
+  return 'border-amber-200 bg-amber-50 text-amber-950';
+}
+
 function eventPath(eventId: string) {
   return `/events/${eventId}`;
 }
@@ -98,6 +114,8 @@ export function EventCenterPage() {
   const navigate = useNavigate();
   const [events, setEvents] = useState<EventSummary[]>([]);
   const [event, setEvent] = useState<EventDetail | null>(null);
+  const [learningReport, setLearningReport] = useState<EventLearningReport | null>(null);
+  const [learningLoading, setLearningLoading] = useState(false);
   const [organizerToken, setOrganizerToken] = useState('');
   const [tokenEntry, setTokenEntry] = useState('');
   const [loading, setLoading] = useState(true);
@@ -153,6 +171,28 @@ export function EventCenterPage() {
   useEffect(() => {
     void loadData(eventId);
   }, [eventId]);
+
+  useEffect(() => {
+    if (!event?.id) {
+      setLearningReport(null);
+      return;
+    }
+    let cancelled = false;
+    setLearningLoading(true);
+    getEventLearningReport(event.id)
+      .then((report) => {
+        if (!cancelled) setLearningReport(report);
+      })
+      .catch(() => {
+        if (!cancelled) setLearningReport(null);
+      })
+      .finally(() => {
+        if (!cancelled) setLearningLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [event?.id, event?.updated_at]);
 
   async function runTask(task: () => Promise<EventDetail | void>, success: string) {
     setBusy(true);
@@ -579,6 +619,115 @@ export function EventCenterPage() {
                     </div>
                   )}
                 </div>
+
+                <EventPanel title="Event Learning Report" icon={<Shield className="h-4 w-4" />}>
+                  {learningLoading && (
+                    <div className="rounded-lg border border-dashed border-stone-300 p-4 text-sm font-semibold text-stone-600">
+                      Loading replay learning report...
+                    </div>
+                  )}
+                  {!learningLoading && !learningReport && (
+                    <div className="rounded-lg border border-dashed border-stone-300 p-4 text-sm text-stone-600">
+                      Event learning appears after reported matches include replay room IDs.
+                    </div>
+                  )}
+                  {learningReport && (
+                    <div className="space-y-4" data-testid="event-learning-report">
+                      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                        <Metric label="Replay Coverage" value={`${learningReport.summary.coverage_percent}%`} />
+                        <Metric label="Attached Replays" value={`${learningReport.summary.replay_match_count}/${learningReport.summary.reported_match_count}`} />
+                        <Metric label="Reviewed Decisions" value={`${learningReport.summary.reviewed_decision_count}`} />
+                        <div className="rounded-lg border border-stone-200 bg-stone-50 p-3">
+                          <div className="text-xs font-black uppercase tracking-[0.12em] text-stone-500">Practice Grade</div>
+                          <div className={`mt-2 text-lg font-black ${gradeTone(learningReport.summary.grade)}`}>
+                            {learningReport.summary.grade} · {learningReport.summary.average_review_confidence}%
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
+                        <div className="space-y-3">
+                          <div className="text-xs font-black uppercase tracking-[0.14em] text-stone-500">Next Event Drills</div>
+                          <div className="grid gap-2">
+                            {learningReport.next_drills.slice(0, 4).map((drill) => (
+                              <div key={`${drill.id}-${drill.match_id || 'event'}`} className={`rounded-lg border p-3 text-sm ${drillTone(drill.confidence)}`}>
+                                <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-start">
+                                  <div>
+                                    <div className="font-black">{drill.title}</div>
+                                    <div className="mt-1 leading-6">{drill.focus}</div>
+                                    {drill.round && drill.table && (
+                                      <div className="mt-2 text-xs font-black uppercase tracking-wider opacity-70">
+                                        Round {drill.round} · Table {drill.table}
+                                      </div>
+                                    )}
+                                  </div>
+                                  {drill.replay_room_id && (
+                                    <Link className="shrink-0 rounded-lg bg-stone-950 px-3 py-2 text-xs font-black uppercase text-white" to={`/multiplayer/${drill.replay_room_id}?review=1`}>
+                                      Open Replay
+                                    </Link>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="space-y-3">
+                          <div className="text-xs font-black uppercase tracking-[0.14em] text-stone-500">Player Practice Focus</div>
+                          <div className="grid gap-2">
+                            {learningReport.player_insights.length === 0 && (
+                              <div className="rounded-lg border border-dashed border-stone-300 p-4 text-sm text-stone-600">
+                                Attach finished table replays to generate player-level trends.
+                              </div>
+                            )}
+                            {learningReport.player_insights.slice(0, 5).map((insight) => (
+                              <div key={`${insight.player_name}-${insight.primary_focus}`} className="rounded-lg border border-stone-200 bg-stone-50 p-3 text-sm">
+                                <div className="flex items-center justify-between gap-3">
+                                  <div className="font-black text-stone-950">{insight.player_name}</div>
+                                  <span className={`font-black ${gradeTone(insight.grade)}`}>{insight.grade}</span>
+                                </div>
+                                <div className="mt-1 text-stone-700">{insight.message}</div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+
+                      {learningReport.match_reports.length > 0 && (
+                        <div className="overflow-x-auto">
+                          <table className="w-full min-w-[720px] border-collapse text-left text-sm">
+                            <thead>
+                              <tr className="border-b border-stone-200 text-xs font-black uppercase tracking-[0.12em] text-stone-500">
+                                <th className="py-2 pr-3">Match</th>
+                                <th className="py-2 pr-3">Score</th>
+                                <th className="py-2 pr-3">Review</th>
+                                <th className="py-2 pr-3">Insight</th>
+                                <th className="py-2 pr-3">Replay</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {learningReport.match_reports.map((match) => (
+                                <tr key={match.match_id} className="border-b border-stone-100">
+                                  <td className="py-3 pr-3 font-bold">R{match.round} T{match.table}: {match.players.join(' vs ')}</td>
+                                  <td className="py-3 pr-3">{match.score.player1_wins}-{match.score.player2_wins}{match.score.draws ? `-${match.score.draws}` : ''}</td>
+                                  <td className={`py-3 pr-3 font-black ${gradeTone(match.grade)}`}>{match.grade} · {match.review_confidence}%</td>
+                                  <td className="py-3 pr-3 text-stone-600">{match.top_insight}</td>
+                                  <td className="py-3 pr-3">
+                                    {match.replay_room_id && (
+                                      <Link className="font-black text-amber-800" to={`/multiplayer/${match.replay_room_id}?review=1`}>
+                                        Open
+                                      </Link>
+                                    )}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </EventPanel>
 
                 {event.format === 'draft' && event.draft_pods.length > 0 && (
                   <EventPanel title="Draft Pods" icon={<Users className="h-4 w-4" />}>

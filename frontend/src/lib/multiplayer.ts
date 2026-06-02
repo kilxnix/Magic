@@ -288,6 +288,19 @@ export interface ReplayAnnotation {
   created_at: string;
 }
 
+export interface ReplayNextDrill {
+  id: string;
+  title: string;
+  focus: string;
+  evidence_event_ids: string[];
+  player_names: string[];
+  confidence: 'high' | 'medium' | 'low' | string;
+  match_id?: string;
+  round?: number;
+  table?: number;
+  replay_room_id?: string;
+}
+
 export interface ReplayReport {
   schema_version: number;
   room_id: string;
@@ -302,6 +315,7 @@ export interface ReplayReport {
     event_count: number;
     decision_count: number;
     annotation_count: number;
+    next_drill_count?: number;
     player_names: string[];
     commander_names: string[];
     grade: string;
@@ -321,6 +335,8 @@ export interface ReplayReport {
     llm_assist_status: string;
     coaching_summary: string;
     search_terms: string[];
+    next_drills?: ReplayNextDrill[];
+    training_surface?: string;
   };
 }
 
@@ -454,6 +470,58 @@ export interface EventDetail extends EventSummary {
   highlights: EventHighlight[];
 }
 
+export interface EventLearningReport {
+  schema_version: number;
+  event_id: string;
+  event_name: string;
+  summary: {
+    event_id: string;
+    event_name: string;
+    format: EventFormat;
+    status: EventStatus;
+    player_count: number;
+    reported_match_count: number;
+    replay_match_count: number;
+    reviewed_decision_count: number;
+    average_review_confidence: number;
+    grade: string;
+    coverage_percent: number;
+    updated_at: string;
+  };
+  match_reports: Array<{
+    match_id: string;
+    round: number;
+    table: number;
+    players: string[];
+    score: { player1_wins: number; player2_wins: number; draws: number };
+    winner_name?: string | null;
+    room_id?: string | null;
+    replay_room_id?: string | null;
+    grade: string;
+    review_confidence: number;
+    decision_count: number;
+    annotation_count: number;
+    top_insight?: string;
+  }>;
+  player_insights: Array<{
+    player_name: string;
+    decision_count: number;
+    average_score: number;
+    grade: string;
+    primary_focus: string;
+    rating_counts: Record<string, number>;
+    message: string;
+    evidence_event_ids: string[];
+  }>;
+  next_drills: ReplayNextDrill[];
+  replay_coverage: {
+    reported_match_count: number;
+    replay_match_count: number;
+    coverage_percent: number;
+    missing_replay_match_ids: string[];
+  };
+}
+
 export interface EventWithOrganizer {
   event: EventDetail;
   organizer_token: string;
@@ -584,6 +652,10 @@ export function createEvent(input: CreateEventInput) {
 
 export function getEvent(eventId: string) {
   return apiRequest<EventDetail>(`/events/${encodeURIComponent(eventId)}`);
+}
+
+export function getEventLearningReport(eventId: string) {
+  return apiRequest<EventLearningReport>(`/events/${encodeURIComponent(eventId)}/learning-report`);
 }
 
 export function registerEventPlayer(eventId: string, input: { player_name: string; deck_name?: string }) {

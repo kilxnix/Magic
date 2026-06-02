@@ -326,6 +326,12 @@ function gradeTone(grade?: string) {
   return 'text-red-200';
 }
 
+function drillConfidenceTone(confidence?: string) {
+  if (confidence === 'high') return 'border-emerald-300/30 bg-emerald-300/10 text-emerald-50';
+  if (confidence === 'medium') return 'border-sky-300/30 bg-sky-300/10 text-sky-50';
+  return 'border-amber-300/30 bg-amber-300/10 text-amber-50';
+}
+
 function replayEventLabel(event?: ReplayEvent | null) {
   if (!event) return 'No replay event selected';
   return `T${event.turn_number} ${event.phase} - ${event.player_name}`;
@@ -2215,6 +2221,53 @@ export function MultiplayerPage() {
                                     <div key={`${insight.player_name}-${insight.category}-${index}`} className="rounded border border-violet-300/20 bg-violet-300/10 px-3 py-2 text-xs text-violet-50">
                                       <div className="font-black uppercase tracking-wider text-violet-200">{insight.player_name} - {insight.category}</div>
                                       <div className="mt-1 leading-5">{insight.message}</div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+
+                              <div className="rounded-lg border border-white/10 bg-stone-950 p-3" data-testid="room-next-drills">
+                                <div className="mb-2 flex items-center justify-between gap-2">
+                                  <div className="text-xs font-black uppercase tracking-[0.16em] text-stone-500">Next Drills</div>
+                                  <div className="text-[10px] font-black uppercase tracking-wider text-stone-600">
+                                    {replayReport.review.next_drills?.length || 0} targets
+                                  </div>
+                                </div>
+                                <div className="grid gap-2">
+                                  {(replayReport.review.next_drills || []).length === 0 && (
+                                    <div className="rounded border border-dashed border-white/10 px-3 py-4 text-center text-xs font-semibold text-stone-500">
+                                      More reviewed decisions will generate practice targets.
+                                    </div>
+                                  )}
+                                  {(replayReport.review.next_drills || []).map((drill) => (
+                                    <div key={drill.id} className={`rounded border px-3 py-2 text-xs ${drillConfidenceTone(drill.confidence)}`}>
+                                      <div className="flex items-start justify-between gap-2">
+                                        <div className="min-w-0">
+                                          <div className="font-black uppercase tracking-wider">{drill.title}</div>
+                                          <div className="mt-1 leading-5">{drill.focus}</div>
+                                          {drill.player_names.length > 0 && (
+                                            <div className="mt-2 flex flex-wrap gap-1">
+                                              {drill.player_names.map((name) => (
+                                                <span key={`${drill.id}-${name}`} className="rounded bg-stone-950/70 px-2 py-1 text-[10px] font-black uppercase tracking-wider">
+                                                  {name}
+                                                </span>
+                                              ))}
+                                            </div>
+                                          )}
+                                        </div>
+                                        <span className="shrink-0 rounded bg-stone-950 px-2 py-1 text-[10px] font-black uppercase tracking-wider">
+                                          {drill.confidence}
+                                        </span>
+                                      </div>
+                                      {drill.evidence_event_ids.length > 0 && (
+                                        <button
+                                          type="button"
+                                          onClick={() => setSelectedReplayEventId(drill.evidence_event_ids[0])}
+                                          className="mt-2 min-h-[30px] rounded border border-white/10 px-2 text-[10px] font-black uppercase tracking-wider hover:bg-white/10"
+                                        >
+                                          Jump To Evidence
+                                        </button>
+                                      )}
                                     </div>
                                   ))}
                                 </div>

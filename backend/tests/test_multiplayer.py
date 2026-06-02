@@ -322,6 +322,8 @@ def test_shared_tracker_replay_review_search_and_annotations(monkeypatch):
     assert report["events"][0]["state"]["players"][0]["name"] == "Coach Host"
     assert any(decision["available_options"] for decision in report["decisions"])
     assert report["review"]["evaluator"] == "shared-tracker-heuristic-v1"
+    assert report["summary"]["next_drill_count"] >= 1
+    assert report["review"]["next_drills"][0]["title"]
     assert report["share_url_path"] == f"/multiplayer/{room_id}?review=1"
 
     event_id = report["events"][1]["id"]

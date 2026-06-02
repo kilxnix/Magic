@@ -92,6 +92,71 @@ def test_swiss_event_pairs_reports_standings_and_creates_match_room(monkeypatch)
     assert any(item["id"] == event_id for item in listed.json())
 
 
+def test_event_learning_report_aggregates_attached_replay_rooms(monkeypatch):
+    client = make_client(monkeypatch)
+
+    created = client.post(
+        "/api/multiplayer/events",
+        json={
+            "name": "Replay Swiss",
+            "organizer_name": "Coach",
+            "format": "swiss",
+            "settings": {"rounds": 1, "max_players": 4, "match_wins_required": 2, "round_minutes": 50},
+        },
+    ).json()
+    event_id = created["event"]["id"]
+    token = created["organizer_token"]
+    register_players(client, event_id, ["Ari", "Bea"])
+
+    started = client.post(f"/api/multiplayer/events/{event_id}/start", json={"organizer_token": token}).json()
+    match = started["matches"][0]
+    table = client.post(
+        f"/api/multiplayer/events/{event_id}/matches/{match['id']}/room",
+        json={"organizer_token": token},
+    ).json()
+    room_id = table["room_id"]
+    host_id = table["host_player_id"]
+    guest_id = table["guest_player_id"]
+    deck = {"commander": "Talrand, Sky Summoner", "list": ["Island"] * 99, "colors": ["U"]}
+
+    for player_id, deck_name in ((host_id, "Ari Tempo"), (guest_id, "Bea Control")):
+        assert client.post(
+            f"/api/multiplayer/rooms/{room_id}/seat",
+            json={"player_id": player_id, "ready": True, "deck_name": deck_name, "commander": deck["commander"], "deck": deck},
+        ).status_code == 200
+
+    assert client.post(f"/api/multiplayer/rooms/{room_id}/start", json={"player_id": host_id}).status_code == 200
+    assert client.post(f"/api/multiplayer/rooms/{room_id}/game/action", json={"player_id": host_id, "action": "draw_card"}).status_code == 200
+    assert client.post(
+        f"/api/multiplayer/rooms/{room_id}/game/action",
+        json={"player_id": host_id, "action": "play_permanent", "note": "Rhystic Study"},
+    ).status_code == 200
+    assert client.post(f"/api/multiplayer/rooms/{room_id}/game/action", json={"player_id": guest_id, "action": "concede"}).status_code == 200
+
+    reported = client.post(
+        f"/api/multiplayer/events/{event_id}/matches/{match['id']}/result",
+        json={
+            "organizer_token": token,
+            "player1_wins": 2,
+            "player2_wins": 0,
+            "replay_room_id": room_id,
+            "highlight": "Ari converted early resources into a fast win.",
+        },
+    )
+    assert reported.status_code == 200
+
+    report = client.get(f"/api/multiplayer/events/{event_id}/learning-report")
+    assert report.status_code == 200
+    body = report.json()
+    assert body["summary"]["replay_match_count"] == 1
+    assert body["summary"]["coverage_percent"] == 100
+    assert body["summary"]["reviewed_decision_count"] >= 3
+    assert body["match_reports"][0]["replay_room_id"] == room_id
+    assert body["next_drills"]
+    assert body["next_drills"][0]["replay_room_id"] == room_id
+    assert any(insight["player_name"] == "Ari" for insight in body["player_insights"])
+
+
 def test_draft_event_creates_pods_and_blocks_unsafe_announcements(monkeypatch):
     client = make_client(monkeypatch)
 
