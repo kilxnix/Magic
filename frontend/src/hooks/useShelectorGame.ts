@@ -2452,8 +2452,10 @@ function toSimpleLegalAction(action: AIAction, engineState: GameState): SimpleLe
       let label = 'Done';
       if (engineState.stack.length > 0) {
         label = "Don't Respond";
-      } else if (engineState.phase === 'precombat_main' || engineState.phase === 'postcombat_main') {
-        label = 'End Phase';
+      } else if (engineState.phase === 'precombat_main') {
+        label = 'Go to Combat';
+      } else if (engineState.phase === 'postcombat_main') {
+        label = 'End Turn';
       } else if (engineState.step === 'declare_attackers') {
         label = 'Skip Attacks';
       }
