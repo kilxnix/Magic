@@ -149,6 +149,8 @@ describe('QA game scenarios', () => {
     const state = deserializeGameState(createMagecraftTriggersQaState());
     const actions = getLegalActions(state, 'human');
 
+    expect(state.cards.get('magecraft_qa_commander_1')?.zone).toBe('battlefield');
+    expect(state.battlefieldAbilities.get('magecraft_qa_commander_1')?.length).toBeGreaterThan(0);
     expect(state.battlefieldAbilities.get('magecraft_qa_archmage_1')?.length).toBeGreaterThan(0);
     expect(state.battlefieldAbilities.get('magecraft_qa_storm_kiln_1')?.length).toBeGreaterThan(0);
     expect(state.battlefieldAbilities.get('magecraft_qa_veyran_1')?.length).toBeGreaterThan(0);

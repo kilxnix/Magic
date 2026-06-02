@@ -875,7 +875,7 @@ export function createMagecraftTriggersQaState(): SerializedGameStateV1 {
       },
     ],
     cards: new Map<string, CardInstance>([
-      ['magecraft_qa_commander_1', instance('magecraft_qa_commander_1', commander.id, 'human', 'command', { isCommander: true })],
+      ['magecraft_qa_commander_1', instance('magecraft_qa_commander_1', commander.id, 'human', 'battlefield', { isCommander: true })],
       ['magecraft_qa_opt_1', instance('magecraft_qa_opt_1', opt.id, 'human', 'hand')],
       ['magecraft_qa_archmage_1', instance('magecraft_qa_archmage_1', archmage.id, 'human', 'battlefield')],
       ['magecraft_qa_storm_kiln_1', instance('magecraft_qa_storm_kiln_1', stormKiln.id, 'human', 'battlefield')],
@@ -909,7 +909,7 @@ export function createMagecraftTriggersQaState(): SerializedGameStateV1 {
   };
 
   let withTriggers = state;
-  for (const id of ['magecraft_qa_archmage_1', 'magecraft_qa_storm_kiln_1', 'magecraft_qa_veyran_1']) {
+  for (const id of ['magecraft_qa_commander_1', 'magecraft_qa_archmage_1', 'magecraft_qa_storm_kiln_1', 'magecraft_qa_veyran_1']) {
     withTriggers = registerBattlefieldAbilities(withTriggers, id);
   }
 
