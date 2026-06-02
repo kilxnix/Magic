@@ -2494,10 +2494,15 @@ function GraveyardViewer({
   if (cards.length === 0) return null;
 
   return (
-    <div className="mt-1 relative">
+    <div className="relative z-50 mt-1">
       <button
-        onClick={() => setExpanded(prev => !prev)}
-        className="flex items-center gap-1 text-stone-500 hover:text-stone-300 text-[10px] md:text-xs transition-colors"
+        type="button"
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          setExpanded(prev => !prev);
+        }}
+        className="relative z-50 flex items-center gap-1 rounded px-1 py-0.5 text-stone-500 transition-colors hover:bg-stone-800/80 hover:text-stone-300 text-[10px] md:text-xs"
       >
         {expanded
           ? <ChevronDown className="w-3 h-3" />
@@ -2505,12 +2510,16 @@ function GraveyardViewer({
         <span>{label} Graveyard: {cards.length}</span>
       </button>
       {expanded && (
-        <div className="mt-1 bg-stone-800 border border-stone-700 rounded-lg p-2 max-h-32 overflow-y-auto z-10 relative">
+        <div className="relative z-50 mt-1 max-h-32 overflow-y-auto rounded-lg border border-stone-700 bg-stone-800 p-2 shadow-xl shadow-black/40">
           {cards.map((card, i) => (
             <button
               type="button"
               key={card.instanceId}
-              onClick={() => onInspect(card)}
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                onInspect(card);
+              }}
               onMouseEnter={() => onHoverCard?.(card)}
               onMouseLeave={() => onHoverCard?.(null)}
               onFocus={() => onHoverCard?.(card)}
