@@ -287,6 +287,7 @@ export function PlayPage() {
       && qaScenario !== 'cost-reduction'
       && qaScenario !== 'brain-gorgers-sacrifice'
       && qaScenario !== 'equipment-d20'
+      && qaScenario !== 'equipment-equip'
       && qaScenario !== 'storm-grapeshot'
       && qaScenario !== 'spell-copy'
       && qaScenario !== 'magecraft-triggers'
@@ -304,6 +305,7 @@ export function PlayPage() {
         createComplexCombatQaState,
         createCostReductionQaState,
         createEquipmentD20QaState,
+        createEquipmentEquipQaState,
         createGenerousGiftQaState,
         createKrenkoSkirkQaState,
         createLandEntryFetchQaState,
@@ -336,6 +338,8 @@ export function PlayPage() {
           ? createBrainGorgersSacrificeQaState()
           : qaScenario === 'equipment-d20'
           ? createEquipmentD20QaState()
+          : qaScenario === 'equipment-equip'
+          ? createEquipmentEquipQaState()
           : qaScenario === 'storm-grapeshot'
           ? createStormGrapeshotQaState()
           : qaScenario === 'spell-copy'
@@ -373,6 +377,7 @@ export function PlayPage() {
             : qaScenario === 'brain-gorgers-sacrifice'
             ? 'Doomed Bear'
             : qaScenario === 'equipment-d20'
+              || qaScenario === 'equipment-equip'
             ? 'Goblin Morningstar'
             : qaScenario === 'storm-grapeshot' || qaScenario === 'spell-copy'
             ? 'Vivi Ornitier'
@@ -399,6 +404,7 @@ export function PlayPage() {
                   : qaScenario === 'brain-gorgers-sacrifice'
                   ? 'Brain Gorgers QA Opponent'
                   : qaScenario === 'equipment-d20'
+                    || qaScenario === 'equipment-equip'
                   ? 'Equipment QA Opponent'
                   : qaScenario === 'storm-grapeshot'
                   ? 'Storm QA Opponent'
@@ -474,6 +480,7 @@ export function PlayPage() {
               : qaScenario === 'brain-gorgers-sacrifice'
               ? 'Brain Gorgers sacrifice'
               : qaScenario === 'equipment-d20'
+                || qaScenario === 'equipment-equip'
               ? 'equipment and d20'
               : qaScenario === 'storm-grapeshot'
               ? 'storm Grapeshot'

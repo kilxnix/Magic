@@ -17,7 +17,7 @@ import {
   tryPlayLand,
   type ManaColor,
 } from 'commander-engine';
-import { createBrainGorgersSacrificeQaState, createComplexCombatQaState, createCostReductionQaState, createDeclareBlockersQaState, createEquipmentD20QaState, createGenerousGiftQaState, createKrenkoSkirkQaState, createLandEntryFetchQaState, createLibraryManipulationQaState, createMagecraftTriggersQaState, createModalChoiceQaState, createMulliganSelectionQaState, createSeeBeyondQaState, createSisayRawLandsQaState, createSpellCopyQaState, createStormGrapeshotQaState } from './qaGameScenarios';
+import { createBrainGorgersSacrificeQaState, createComplexCombatQaState, createCostReductionQaState, createDeclareBlockersQaState, createEquipmentD20QaState, createEquipmentEquipQaState, createGenerousGiftQaState, createKrenkoSkirkQaState, createLandEntryFetchQaState, createLibraryManipulationQaState, createMagecraftTriggersQaState, createModalChoiceQaState, createMulliganSelectionQaState, createSeeBeyondQaState, createSisayRawLandsQaState, createSpellCopyQaState, createStormGrapeshotQaState } from './qaGameScenarios';
 
 describe('QA game scenarios', () => {
   it('loads raw dual lands with mana actions and reaches Sisay activation after tapping WUBRG', () => {
@@ -224,14 +224,28 @@ describe('QA game scenarios', () => {
     expect(state.cards.get('brain_gorgers_qa_keeper_elf_1')?.zone).toBe('battlefield');
   });
 
-  it('loads Goblin Morningstar d20 casting and equip actions for browser QA', () => {
-    let state = deserializeGameState(createEquipmentD20QaState());
+  it('loads Goblin Morningstar d20 casting for browser QA', () => {
+    const state = deserializeGameState(createEquipmentD20QaState());
     const actions = getLegalActions(state, 'human');
 
     expect(actions.some(action =>
       action.kind === 'CastSpell'
       && action.cardInstanceId === 'equipment_d20_qa_morningstar_hand_1',
     )).toBe(true);
+    expect(actions.some(action => action.kind === 'Equip')).toBe(false);
+    expect([...state.cards.values()].filter(card =>
+      card.definitionId === 'equipment_d20_qa_morningstar' && card.zone === 'battlefield',
+    )).toHaveLength(0);
+  });
+
+  it('loads Goblin Morningstar equip action for browser QA', () => {
+    let state = deserializeGameState(createEquipmentEquipQaState());
+    const actions = getLegalActions(state, 'human');
+
+    expect(actions.some(action =>
+      action.kind === 'CastSpell'
+      && action.cardInstanceId === 'equipment_d20_qa_morningstar_hand_1',
+    )).toBe(false);
     expect(actions.some(action =>
       action.kind === 'Equip'
       && action.equipmentInstanceId === 'equipment_d20_qa_morningstar_board_1'

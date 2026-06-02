@@ -1,6 +1,7 @@
 import {
   registerBattlefieldAbilities,
   registerContinuousEffect,
+  deserializeGameState,
   serializeGameState,
   type CardDefinition,
   type CardInstance,
@@ -1195,7 +1196,6 @@ export function createEquipmentD20QaState(): SerializedGameStateV1 {
     ],
     cards: new Map<string, CardInstance>([
       ['equipment_d20_qa_morningstar_hand_1', instance('equipment_d20_qa_morningstar_hand_1', morningstar.id, 'human', 'hand')],
-      ['equipment_d20_qa_morningstar_board_1', instance('equipment_d20_qa_morningstar_board_1', morningstar.id, 'human', 'battlefield')],
       ['equipment_d20_qa_bear_1', instance('equipment_d20_qa_bear_1', bear.id, 'human', 'battlefield')],
     ]),
     cardDefinitions: new Map<string, CardDefinition>([
@@ -1214,6 +1214,20 @@ export function createEquipmentD20QaState(): SerializedGameStateV1 {
     pendingTriggers: [],
   };
 
+  return serializeGameState(state);
+}
+
+export function createEquipmentEquipQaState(): SerializedGameStateV1 {
+  const state = deserializeGameState(createEquipmentD20QaState());
+  const morningstarDef = state.cardDefinitions.get('equipment_d20_qa_morningstar');
+  if (!morningstarDef) return serializeGameState(state);
+
+  state.cards.delete('equipment_d20_qa_morningstar_hand_1');
+  state.cards.set(
+    'equipment_d20_qa_morningstar_board_1',
+    instance('equipment_d20_qa_morningstar_board_1', morningstarDef.id, 'human', 'battlefield'),
+  );
+  state.players[0].manaPool = pool({ C: 1 });
   return serializeGameState(state);
 }
 
