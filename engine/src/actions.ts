@@ -71,7 +71,42 @@ export function getAvailableManaColors(state: GameState, cardInstanceId: string)
     return def.manaProduction.colors.filter(color => allowed.has(color));
   }
 
+  if (/commander'?s color identity/i.test(def.oracle_text)) {
+    const commanderIdentity = getCommanderColorIdentity(state, card.ownerId);
+    return def.manaProduction.colors.filter(color => commanderIdentity.has(color));
+  }
+
   return def.manaProduction.colors;
+}
+
+function getCommanderColorIdentity(state: GameState, playerId: string): Set<ManaColor> {
+  const identity = new Set<ManaColor>();
+  const player = state.players.find(candidate => candidate.id === playerId);
+  const commanderIds = new Set<string>([
+    ...(player?.commanderInstanceIds || []),
+    ...(player?.commanderInstanceId ? [player.commanderInstanceId] : []),
+  ]);
+
+  for (const commanderId of commanderIds) {
+    const commander = state.cards.get(commanderId);
+    if (!commander) continue;
+    const def = getCardDefinition(state, commander);
+    for (const color of def.color_identity || []) {
+      if (color !== 'C') identity.add(color);
+    }
+  }
+
+  if (identity.size === 0) {
+    for (const card of state.cards.values()) {
+      if (card.ownerId !== playerId || !card.isCommander) continue;
+      const def = getCardDefinition(state, card);
+      for (const color of def.color_identity || []) {
+        if (color !== 'C') identity.add(color);
+      }
+    }
+  }
+
+  return identity;
 }
 
 function wordOrNumberToInt(value: string): number | undefined {

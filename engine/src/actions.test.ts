@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { playLand, canPlayLand, canPlayLandDetailed, tapLandForMana, drawCards } from './actions';
+import { playLand, canPlayLand, canPlayLandDetailed, tapLandForMana, drawCards, getAvailableManaColors } from './actions';
 import { initGameState, getCardsInZone } from './game-state';
 import { CardDefinition } from './types';
 import { populateParsedCache } from './cards/card-parser-cache';
@@ -339,6 +339,48 @@ describe('Land Actions', () => {
       const next = tapLandForMana(state, 'p1', card.instanceId, 'G');
       expect(next.cards.get(card.instanceId)!.tapped).toBe(true);
       expect(next.players[0].manaPool.G).toBe(1);
+    });
+
+    it('narrows Arcane Signet to the controller commander color identity', () => {
+      const krenkoDef: CardDefinition = {
+        id: 'krenko',
+        name: 'Krenko, Mob Boss',
+        type_line: 'Legendary Creature - Goblin Warrior',
+        oracle_text: '{T}: Create X 1/1 red Goblin creature tokens, where X is the number of Goblins you control.',
+        mana_cost: '{2}{R}{R}',
+        cmc: 4,
+        colors: ['R'],
+        color_identity: ['R'],
+        keywords: [],
+        card_types: ['creature'],
+        power: 3,
+        toughness: 3,
+      };
+      const signetDef = populateParsedCache({
+        id: 'arcane-signet',
+        name: 'Arcane Signet',
+        type_line: 'Artifact',
+        oracle_text: "{T}: Add one mana of any color in your commander's color identity.",
+        mana_cost: '{2}',
+        cmc: 2,
+        colors: [],
+        color_identity: [],
+        keywords: [],
+        card_types: ['artifact'],
+      });
+      let state = initGameState([
+        { playerId: 'p1', name: 'Alice', cards: [krenkoDef, signetDef], commanderId: 'krenko' },
+        { playerId: 'p2', name: 'Bob', cards: [], commanderId: 'cmd2' },
+      ]);
+      const signet = getCardsInZone(state, 'p1', 'library').find(card => card.definitionId === signetDef.id)!;
+      state.cards.set(signet.instanceId, { ...signet, zone: 'battlefield', summoningSick: false });
+
+      expect(getAvailableManaColors(state, signet.instanceId)).toEqual(['R']);
+      expect(() => tapLandForMana(state, 'p1', signet.instanceId, 'W')).toThrow('Cannot produce chosen color');
+
+      const next = tapLandForMana(state, 'p1', signet.instanceId, 'R');
+      expect(next.players[0].manaPool.R).toBe(1);
+      expect(next.cards.get(signet.instanceId)?.tapped).toBe(true);
     });
 
     it('marks mana from snow permanents so it can pay snow costs', () => {
