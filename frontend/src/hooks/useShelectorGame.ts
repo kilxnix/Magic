@@ -5390,14 +5390,14 @@ export function useShelectorGame() {
   );
 
   /** Advance engine past beginning phase to precombat main for turn start */
-  const advanceToPrecombatMain = useCallback((engine: GameState): GameState => {
+  const advanceToPrecombatMain = useCallback((engine: GameState, options: { skipDraw?: boolean } = {}): GameState => {
     let current = engine;
     let safety = 20;
     while (current.phase === 'beginning' && safety-- > 0) {
       if (current.step === 'untap') {
         current = performUntapStepWithAuthority(current);
       }
-      if (current.step === 'draw') {
+      if (current.step === 'draw' && !options.skipDraw) {
         const activePlayer = current.players[current.activePlayerIndex];
         current = drawCardsWithAuthority(current, activePlayer.id, 1);
       }
@@ -5479,7 +5479,7 @@ export function useShelectorGame() {
     addMessage('system', `Turn 1 \u2014 Your precombat main phase.`);
 
     // Advance engine to precombat main
-    const advanced = advanceToPrecombatMain(engineRef.current || engine);
+    const advanced = advanceToPrecombatMain(engineRef.current || engine, { skipDraw: true });
     engineRef.current = advanced as GameStateWithAI;
     resetEngineEventLog(advanced);
 
