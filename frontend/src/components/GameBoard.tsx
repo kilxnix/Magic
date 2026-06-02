@@ -2798,7 +2798,8 @@ export function GameBoard({
     || branchPreviews.length > 0
     || !!activeDrillLabel;
   const smartBookmarkReason = (() => {
-    if (!onBookmarkDrill || gameState.gameOver || mulliganPhase) return '';
+    if (!onBookmarkDrill || gameState.gameOver) return '';
+    if (mulliganPhase) return 'Opening hand mulligan decision';
     if (currentPrompt) return currentPrompt.title || PROMPT_TYPE_LABELS[currentPrompt.type] || 'Current prompt';
     if (triggerOrderChoice?.triggers.length) return `${triggerOrderChoice.triggers.length} triggers waiting`;
     if (damageAssignmentChoice) return 'Combat damage assignment';
