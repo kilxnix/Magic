@@ -40,6 +40,19 @@ const cards: Record<string, ScryfallCard> = {
     power: '4',
     toughness: '3',
   },
+  'Leatherback Baloth': {
+    id: 'leatherback-baloth',
+    name: 'Leatherback Baloth',
+    type_line: 'Creature - Beast',
+    oracle_text: '',
+    mana_cost: '{G}{G}{G}',
+    cmc: 3,
+    colors: ['G'],
+    color_identity: ['G'],
+    keywords: [],
+    power: '4',
+    toughness: '5',
+  },
   'Talrand, Sky Summoner': {
     id: 'talrand',
     name: 'Talrand, Sky Summoner',
@@ -68,7 +81,7 @@ function roomGame() {
         deck: {
           id: 'p1-deck',
           commander: 'Goreclaw, Terror of Qal Sisma',
-          list: ['Forest'],
+          list: ['Leatherback Baloth', 'Forest'],
           colors: ['G'],
           bracket: 2,
           theme: 'stompy',
@@ -146,6 +159,30 @@ describe('room engine games', () => {
     expect(view.legalActions.find(action => action.action === 'Play Land')).toMatchObject({
       enabled: false,
       reason: 'No land plays remaining',
+    });
+  });
+
+  it('does not advertise unpayable visible spells as castable', () => {
+    const state = { ...roomGame(), phase: 'precombat_main' as const };
+    const baloth = Array.from(state.cards.values()).find(card => card.definitionId === 'leatherback-baloth')!;
+    baloth.zone = 'hand';
+    const view = getPlayerView(state, 'p1');
+    const handSpell = view.players
+      .find(player => player.id === 'p1')!
+      .zones.hand.cards!
+      .find(card => card.name === 'Leatherback Baloth')!;
+
+    expect(handSpell).toMatchObject({
+      canCast: false,
+      castReason: 'Insufficient mana in pool',
+    });
+    expect(view.legalActions.find(action => action.action === 'Cast From Hand')).toMatchObject({
+      enabled: false,
+      reason: 'No visible spell is currently legal and payable.',
+    });
+    expect(view.legalActions.find(action => action.action === 'Cast Commander')).toMatchObject({
+      enabled: false,
+      reason: 'Commander is not currently legal and payable.',
     });
   });
 

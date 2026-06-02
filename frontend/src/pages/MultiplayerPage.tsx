@@ -97,6 +97,8 @@ interface RoomScopedCard {
   summoningSick?: boolean;
   castTargetSpecs?: Array<{ id: string; type: string; count: number }>;
   legalTargetIds?: string[];
+  canCast?: boolean;
+  castReason?: string;
 }
 
 interface RoomScopedStackItem {
@@ -525,9 +527,16 @@ export function MultiplayerPage() {
     activeSession &&
     scopedView?.priorityPlayerId === activeSession.playerId &&
     selectedSpellInHand &&
+    selectedSpellInHand.canCast === true &&
     (selectedSpellTargetCount === 0 || selectedSpellTargets.length >= selectedSpellTargetCount),
   );
   const firstCommandSpell = myCommandCards[0];
+  const canCastFirstCommandSpell = Boolean(
+    activeSession &&
+    scopedView?.priorityPlayerId === activeSession.playerId &&
+    firstCommandSpell &&
+    firstCommandSpell.canCast === true,
+  );
   const firstAttacker = myBattlefieldCards.find(canUseVisibleAttacker);
   const firstOpponent = scopedView?.players.find((player) => player.id !== activeSession?.playerId);
   const largeEngineBoard = Boolean(scopedView?.complexity?.largeBoardMode);
@@ -2946,6 +2955,16 @@ export function MultiplayerPage() {
                             </label>
                           </div>
                         )}
+                        {selectedSpellInHand && selectedSpellInHand.castReason && (
+                          <div className="mb-3 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-xs font-bold text-stone-300">
+                            Selected spell: {selectedSpellInHand.castReason}
+                          </div>
+                        )}
+                        {firstCommandSpell && firstCommandSpell.castReason && (
+                          <div className="mb-3 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-xs font-bold text-stone-300">
+                            Commander: {firstCommandSpell.castReason}
+                          </div>
+                        )}
                         {(canDeclareAttackers || canDeclareBlockers) && (
                           <div className="mb-3 grid gap-3 lg:grid-cols-2">
                             {canDeclareAttackers && (
@@ -3081,7 +3100,7 @@ export function MultiplayerPage() {
                           <button
                             type="button"
                             onClick={() => firstCommandSpell && onSubmitRealAction({ kind: 'cast_spell', payload: { card_instance_id: firstCommandSpell.instanceId, targets: [] } })}
-                            disabled={loading || scopedView.priorityPlayerId !== activeSession.playerId || !firstCommandSpell}
+                            disabled={loading || !canCastFirstCommandSpell}
                             className="min-h-[42px] rounded-lg bg-white/10 px-3 text-sm font-black text-stone-100 hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-40"
                           >
                             Cast Commander

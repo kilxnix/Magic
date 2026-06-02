@@ -1,4 +1,4 @@
-import type { CardDefinition, CardInstance, GameState, ManaColor, Player, Zone } from './types';
+import type { CardDefinition, CardInstance, GameState, ManaColor, ManaCost, Player, Zone } from './types';
 import { createPlayer } from './types';
 import { getCardDefinition, getCardsInZone } from './game-state';
 import type { CardLookup, GeneratedDeck } from './cards/deck-loader';
@@ -9,6 +9,7 @@ import { getLegalTargets, getSpellTargetSpecs } from './ai/legal-actions';
 import { hasPlayerDeclaredBlockers } from './combat';
 import type { TargetSpec } from './effects/targets';
 import { canPlayLandDetailed } from './actions';
+import { tryCastSpell } from './actions-public';
 
 export interface RoomGamePlayerConfig {
   id: string;
@@ -46,6 +47,8 @@ export interface PlayerScopedCard {
   isCommander: boolean;
   castTargetSpecs?: TargetSpec[];
   legalTargetIds?: string[];
+  canCast?: boolean;
+  castReason?: string;
 }
 
 export interface PlayerScopedZone {
@@ -298,29 +301,50 @@ function toScopedCard(state: GameState, instance: CardInstance): PlayerScopedCar
   };
 }
 
+const ZERO_MANA_COST: ManaCost = { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0, generic: 0 };
+
 function castTargetInfo(
   state: GameState,
   instance: CardInstance,
   definition: CardDefinition,
-): Pick<PlayerScopedCard, 'castTargetSpecs' | 'legalTargetIds'> {
+): Pick<PlayerScopedCard, 'castTargetSpecs' | 'legalTargetIds' | 'canCast' | 'castReason'> {
   if (!['hand', 'command'].includes(instance.zone)) return {};
   if (definition.card_types.includes('land')) return {};
 
   try {
     const specs = getSpellTargetSpecs(state, instance);
-    if (specs.length === 0) return {};
     const legalTargetIds = Array.from(new Set(
       specs.flatMap(spec => getLegalTargets(state, instance.ownerId, spec)),
     ));
+    const requiredTargetCount = specs.reduce((total, spec) => total + (spec.count || 0), 0);
+    const targets = requiredTargetCount > 0 ? legalTargetIds.slice(0, requiredTargetCount) : [];
+    const targetInfo = specs.length === 0
+      ? {}
+      : {
+          castTargetSpecs: specs.map(spec => ({
+            ...spec,
+            constraints: spec.constraints ? { ...spec.constraints } : undefined,
+          })),
+          legalTargetIds,
+        };
+    if (requiredTargetCount > legalTargetIds.length) {
+      return {
+        ...targetInfo,
+        canCast: false,
+        castReason: 'No legal targets available',
+      };
+    }
+    const result = tryCastSpell(state, instance.ownerId, instance.instanceId, targets, ZERO_MANA_COST);
     return {
-      castTargetSpecs: specs.map(spec => ({
-        ...spec,
-        constraints: spec.constraints ? { ...spec.constraints } : undefined,
-      })),
-      legalTargetIds,
+      ...targetInfo,
+      canCast: result.ok,
+      castReason: result.ok ? 'Castable now' : result.message,
     };
-  } catch {
-    return {};
+  } catch (err) {
+    return {
+      canCast: false,
+      castReason: err instanceof Error ? err.message : 'Cast legality could not be evaluated',
+    };
   }
 }
 
@@ -529,7 +553,9 @@ function legalActionHints(state: GameState, viewerId: string, scopedPlayers: Pla
   const hasLand = Boolean(firstLand);
   const canPlayLand = Boolean(landLegality?.legal);
   const hasSpell = viewer ? hasVisibleCard(viewer, 'hand', card => !card.cardTypes.includes('land')) : false;
+  const hasCastableSpell = viewer ? hasVisibleCard(viewer, 'hand', card => !card.cardTypes.includes('land') && card.canCast === true) : false;
   const hasCommander = viewer ? Boolean(viewer.zones.command.cards?.length) : false;
+  const hasCastableCommander = viewer ? hasVisibleCard(viewer, 'command', card => card.canCast === true) : false;
   const hasManaSource = viewer ? hasVisibleCard(viewer, 'battlefield', canUseVisibleManaSource) : false;
   const canAttack = isActive && state.step === 'declare_attackers' && hasPriority && !state.combat;
   const incomingAttackers = state.combat?.attackers.filter(attack => attack.defendingPlayerId === viewerId).length ?? 0;
@@ -563,13 +589,13 @@ function legalActionHints(state: GameState, viewerId: string, scopedPlayers: Pla
     },
     {
       action: 'Cast From Hand',
-      enabled: hasPriority && hasSpell,
-      reason: !hasPriority ? 'You need priority.' : !hasSpell ? 'No visible nonland card in hand.' : 'The current engine can submit the first visible spell.',
+      enabled: hasPriority && hasCastableSpell,
+      reason: !hasPriority ? 'You need priority.' : !hasSpell ? 'No visible nonland card in hand.' : !hasCastableSpell ? 'No visible spell is currently legal and payable.' : 'A visible spell is currently legal and payable.',
     },
     {
       action: 'Cast Commander',
-      enabled: hasPriority && hasCommander,
-      reason: !hasPriority ? 'You need priority.' : !hasCommander ? 'No commander visible in command zone.' : 'Commander is visible and can be submitted to the authority.',
+      enabled: hasPriority && hasCastableCommander,
+      reason: !hasPriority ? 'You need priority.' : !hasCommander ? 'No commander visible in command zone.' : !hasCastableCommander ? 'Commander is not currently legal and payable.' : 'Commander is currently legal and payable.',
     },
     {
       action: 'Declare Attackers',
