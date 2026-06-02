@@ -73,6 +73,20 @@ function resumedTalrandStateWithoutAbilityMap(): GameState {
     colors: [],
     color_identity: ['U'],
   });
+  const drake = cardDef({
+    id: 'token_drake',
+    name: 'Drake',
+    type_line: 'Token creature - Drake',
+    oracle_text: '',
+    mana_cost: '',
+    cmc: 0,
+    card_types: ['creature'],
+    colors: ['U'],
+    color_identity: ['U'],
+    keywords: ['Flying'],
+    power: 2,
+    toughness: 2,
+  });
 
   return {
     players: [
@@ -82,6 +96,7 @@ function resumedTalrandStateWithoutAbilityMap(): GameState {
     cards: new Map<string, CardInstance>([
       ['talrand_1', card('talrand_1', talrand.id, 'battlefield')],
       ['inspiration_1', card('inspiration_1', inspiration.id, 'hand')],
+      ['token_inst_1', { ...card('token_inst_1', drake.id, 'battlefield'), isToken: true }],
       ['island_1', card('island_1', island.id, 'library')],
       ['island_2', card('island_2', island.id, 'library')],
     ]),
@@ -89,6 +104,7 @@ function resumedTalrandStateWithoutAbilityMap(): GameState {
       [talrand.id, talrand],
       [inspiration.id, inspiration],
       [island.id, island],
+      [drake.id, drake],
     ]),
     activePlayerIndex: 0,
     priorityPlayerIndex: 0,
@@ -115,6 +131,7 @@ function countDrakes(state: GameState): number {
 describe('restoreMissingBattlefieldAbilities', () => {
   it('rehydrates stale resumed battlefield triggers so targeted instants still trigger Talrand', () => {
     let state = restoreMissingBattlefieldAbilities(resumedTalrandStateWithoutAbilityMap());
+    expect(countDrakes(state)).toBe(1);
     expect(state.battlefieldAbilities.get('talrand_1')?.some(ability =>
       ability.trigger.kind === 'CastInstantOrSorcery',
     )).toBe(true);
@@ -125,6 +142,6 @@ describe('restoreMissingBattlefieldAbilities', () => {
     state = putTriggersOnStack(cast.state);
     state = resolveTopOfStack(state);
 
-    expect(countDrakes(state)).toBe(1);
+    expect(countDrakes(state)).toBe(2);
   });
 });

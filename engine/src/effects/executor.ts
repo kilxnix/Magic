@@ -1875,9 +1875,12 @@ function executeCreateToken(
     newCardDefinitions.set(defId, def);
   }
 
-  // Create token instances
+// Create token instances
   for (let i = 0; i < finalCount; i++) {
-    const instanceId = `token_inst_${++tokenInstanceCounter}`;
+    let instanceId = `token_inst_${++tokenInstanceCounter}`;
+    while (newCards.has(instanceId)) {
+      instanceId = `token_inst_${++tokenInstanceCounter}`;
+    }
     const instance: CardInstance = {
       instanceId,
       definitionId: defId,
