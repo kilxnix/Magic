@@ -84,6 +84,36 @@ function practiceAttemptUrl(slot: number, bookmarkId: string, attemptId: string)
   return `/play?loadSlot=${slot}&drillBookmark=${encodeURIComponent(bookmarkId)}&drillAttempt=${encodeURIComponent(attemptId)}`;
 }
 
+function metricFromAttemptSummary(summary: string, label: string): number | null {
+  const match = summary.match(new RegExp(`${label}\\s+(-?\\d+)`, 'i'));
+  return match ? Number(match[1]) : null;
+}
+
+function opponentLifeAverageFromSummary(summary: string): number | null {
+  const opponentSegment = summary
+    .split('/')
+    .map(part => part.trim())
+    .find(part => part.toLowerCase().startsWith('opponents '));
+  if (!opponentSegment) return null;
+  const values = [...opponentSegment.matchAll(/\b(-?\d+)\b/g)].map(match => Number(match[1]));
+  if (!values.length) return null;
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function scorePracticeAttemptSummary(summary: string): { score: number; label: string } {
+  const life = metricFromAttemptSummary(summary, 'You') ?? 0;
+  const hand = metricFromAttemptSummary(summary, 'hand') ?? 0;
+  const board = metricFromAttemptSummary(summary, 'board') ?? 0;
+  const graveyard = metricFromAttemptSummary(summary, 'graveyard') ?? 0;
+  const stack = metricFromAttemptSummary(summary, 'stack') ?? 0;
+  const averageOpponentLife = opponentLifeAverageFromSummary(summary) ?? 40;
+  const score = (life * 1.2) + (board * 3) + (hand * 0.8) + (graveyard * 0.15) - (averageOpponentLife * 0.45) - (stack * 0.5);
+  return {
+    score,
+    label: `score ${score.toFixed(1)} / life ${life} / board ${board} / hand ${hand} / opp avg ${averageOpponentLife.toFixed(1)}`,
+  };
+}
+
 export function AdminConsolePage() {
   const [token, setToken] = useState(() => window.sessionStorage.getItem(ADMIN_TOKEN_STORAGE) || '');
   const [tokenInput, setTokenInput] = useState(token);
@@ -108,11 +138,37 @@ export function AdminConsolePage() {
     const records = practiceSaves.filter((record): record is PlaySaveSlotRecord => Boolean(record));
     const focusCounts = new Map<string, number>();
     const archetypeCounts = new Map<string, number>();
+    const archetypeTrends = new Map<string, {
+      archetype: string;
+      saves: number;
+      bookmarks: number;
+      attempts: number;
+      bestScore: number | null;
+      latestAt: number;
+    }>();
+    const scoredAttempts: Array<{
+      record: PlaySaveSlotRecord;
+      bookmark: NonNullable<PlaySaveSlotRecord['drillBookmarks']>[number];
+      attempt: NonNullable<NonNullable<PlaySaveSlotRecord['drillBookmarks']>[number]['attempts']>[number];
+      score: number;
+      scoreLabel: string;
+    }> = [];
     let bookmarkCount = 0;
     let attemptCount = 0;
     let saveManagerOk = 0;
     for (const record of records) {
       if (record.canonicalManager?.status === 'ok') saveManagerOk += 1;
+      const archetype = record.practice?.archetype || record.commander || 'Unlabeled practice';
+      const trend = archetypeTrends.get(archetype) || {
+        archetype,
+        saves: 0,
+        bookmarks: 0,
+        attempts: 0,
+        bestScore: null,
+        latestAt: 0,
+      };
+      trend.saves += 1;
+      trend.latestAt = Math.max(trend.latestAt, record.savedAt || 0);
       if (record.practice?.archetype) {
         archetypeCounts.set(record.practice.archetype, (archetypeCounts.get(record.practice.archetype) || 0) + 1);
       }
@@ -121,6 +177,23 @@ export function AdminConsolePage() {
       }
       bookmarkCount += record.drillBookmarks?.length || 0;
       attemptCount += record.drillBookmarks?.reduce((sum, bookmark) => sum + (bookmark.attempts?.length || 0), 0) || 0;
+      for (const bookmark of record.drillBookmarks || []) {
+        trend.bookmarks += 1;
+        for (const attempt of bookmark.attempts || []) {
+          trend.attempts += 1;
+          trend.latestAt = Math.max(trend.latestAt, attempt.savedAt || 0);
+          const scored = scorePracticeAttemptSummary(attempt.summary || '');
+          trend.bestScore = trend.bestScore === null ? scored.score : Math.max(trend.bestScore, scored.score);
+          scoredAttempts.push({
+            record,
+            bookmark,
+            attempt,
+            score: scored.score,
+            scoreLabel: scored.label,
+          });
+        }
+      }
+      archetypeTrends.set(archetype, trend);
     }
     return {
       recordCount: records.length,
@@ -129,8 +202,12 @@ export function AdminConsolePage() {
       attemptCount,
       topFocusTags: [...focusCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8),
       archetypes: [...archetypeCounts.entries()].sort((a, b) => b[1] - a[1]),
+      archetypeTrends: [...archetypeTrends.values()].sort((a, b) => b.attempts - a.attempts || b.bookmarks - a.bookmarks || b.saves - a.saves),
       recentAttempts: records.flatMap(record => recentDrillAttempts(record, 6).map(entry => ({ ...entry, record })))
         .sort((a, b) => b.attempt.savedAt - a.attempt.savedAt)
+        .slice(0, 6),
+      topScoredAttempts: scoredAttempts
+        .sort((a, b) => (b.score - a.score) || (b.attempt.savedAt - a.attempt.savedAt))
         .slice(0, 6),
     };
   }, [practiceSaves]);
@@ -420,7 +497,7 @@ export function AdminConsolePage() {
                     className="min-h-10 w-full rounded border border-stone-700 bg-neutral-950 px-3 text-sm text-stone-100 outline-none focus:border-amber-400"
                   />
                 </label>
-                {(practiceAggregate.topFocusTags.length > 0 || practiceAggregate.recentAttempts.length > 0) && (
+                {(practiceAggregate.topFocusTags.length > 0 || practiceAggregate.recentAttempts.length > 0 || practiceAggregate.archetypeTrends.length > 0 || practiceAggregate.topScoredAttempts.length > 0) && (
                   <div className="lg:col-span-2 grid gap-3 lg:grid-cols-2">
                     {practiceAggregate.topFocusTags.length > 0 && (
                       <div className="rounded border border-amber-500/20 bg-amber-950/15 p-3">
@@ -430,6 +507,32 @@ export function AdminConsolePage() {
                             <span key={tag} className="rounded border border-amber-500/30 px-2 py-1 text-[10px] font-bold text-amber-100">
                               {tag} x{count}
                             </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {practiceAggregate.archetypeTrends.length > 0 && (
+                      <div className="rounded border border-fuchsia-500/20 bg-fuchsia-950/15 p-3">
+                        <div className="mb-2 text-[10px] font-black uppercase tracking-wider text-fuchsia-200">Practice Trends</div>
+                        <div className="grid gap-1">
+                          {practiceAggregate.archetypeTrends.slice(0, 4).map(trend => (
+                            <div key={trend.archetype} className="rounded border border-fuchsia-500/15 bg-neutral-950/60 px-2 py-1.5 text-xs">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <span className="font-bold text-fuchsia-100">{trend.archetype}</span>
+                                <span className="text-[10px] font-black uppercase tracking-wider text-fuchsia-100/70">
+                                  {trend.attempts} attempts
+                                </span>
+                              </div>
+                              <div className="mt-1 text-stone-400">
+                                {trend.saves} saves / {trend.bookmarks} drills
+                                {trend.bestScore !== null ? ` / best visible ${trend.bestScore.toFixed(1)}` : ''}
+                              </div>
+                              {trend.latestAt > 0 && (
+                                <div className="mt-0.5 text-[10px] text-stone-500">
+                                  Latest {new Date(trend.latestAt).toLocaleString()}
+                                </div>
+                              )}
+                            </div>
                           ))}
                         </div>
                       </div>
@@ -447,6 +550,26 @@ export function AdminConsolePage() {
                                 className="mt-1 inline-flex rounded border border-sky-500/30 px-2 py-1 text-[10px] font-black uppercase tracking-wider text-sky-100 hover:bg-sky-950/50"
                               >
                                 Load Attempt
+                              </Link>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {practiceAggregate.topScoredAttempts.length > 0 && (
+                      <div className="rounded border border-emerald-500/20 bg-emerald-950/15 p-3">
+                        <div className="mb-2 text-[10px] font-black uppercase tracking-wider text-emerald-200">Best Visible Outcomes</div>
+                        <div className="grid gap-1">
+                          {practiceAggregate.topScoredAttempts.slice(0, 4).map(({ record, bookmark, attempt, scoreLabel }) => (
+                            <div key={`${record.slot}:${bookmark.id}:${attempt.id}:best`} className="rounded border border-emerald-500/20 bg-neutral-950/60 px-2 py-1 text-xs">
+                              <div className="font-bold text-emerald-100">{record.practice?.archetype || record.commander}</div>
+                              <div className="truncate text-stone-400">{bookmark.label} / {attempt.label}</div>
+                              <div className="mt-0.5 text-[10px] font-bold text-emerald-100/80">{scoreLabel}</div>
+                              <Link
+                                to={practiceAttemptUrl(record.slot, bookmark.id, attempt.id)}
+                                className="mt-1 inline-flex rounded border border-emerald-500/30 px-2 py-1 text-[10px] font-black uppercase tracking-wider text-emerald-100 hover:bg-emerald-950/50"
+                              >
+                                Load Best Attempt
                               </Link>
                             </div>
                           ))}
