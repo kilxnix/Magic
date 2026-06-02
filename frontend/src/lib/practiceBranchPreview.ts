@@ -17,6 +17,7 @@ export interface PracticeBranchPreview {
   ok: boolean;
   score?: number;
   summary: string;
+  forecast?: string;
   warnings: string[];
   resultEngine?: SerializedGameStateV1;
 }
@@ -93,6 +94,60 @@ function previewWarnings(label: string, summary: string): string[] {
   return warnings.slice(0, 2);
 }
 
+function cardNameSet(state: ReturnType<typeof deserializeGameState>, playerId: string): Set<string> {
+  const names = new Set<string>();
+  for (const zone of ['hand', 'battlefield', 'command', 'graveyard'] as const) {
+    for (const card of getCardsInZone(state, playerId, zone)) {
+      const definition = getCardDefinition(state, card);
+      names.add(definition.name.toLowerCase());
+    }
+  }
+  return names;
+}
+
+function creaturePower(definition: ReturnType<typeof getCardDefinition>): number {
+  const value = Number(definition.power);
+  return Number.isFinite(value) ? value : 0;
+}
+
+function branchForecast(
+  beforeState: ReturnType<typeof deserializeGameState>,
+  afterState: ReturnType<typeof deserializeGameState>,
+  playerId: string,
+  label: string,
+  summary: string,
+): string | undefined {
+  const names = cardNameSet(afterState, playerId);
+  const text = `${label}\n${summary}\n${[...names].join('\n')}`.toLowerCase();
+  const battlefield = getCardsInZone(afterState, playerId, 'battlefield');
+  const battlefieldDefs = battlefield.map(card => getCardDefinition(afterState, card));
+  const dragonCount = battlefieldDefs.filter(definition => /dragon/i.test(definition.type_line + ' ' + definition.name)).length;
+  const largestCreature = battlefieldDefs
+    .filter(definition => /creature/i.test(definition.type_line))
+    .sort((a, b) => creaturePower(b) - creaturePower(a))[0];
+  const before = visibleBoardSummary(beforeState, playerId);
+  const after = visibleBoardSummary(afterState, playerId);
+
+  if (/tooth and nail|natural order|green sun|tutor|search/.test(text)) {
+    return 'Forecast: this is a setup branch. Judge it by the next payoff creature, ETB damage source, and whether you still hold protection after tutoring.';
+  }
+  if (/dracogenesis|terror of the peaks|twinflame tyrant|dragonhawk|etb/.test(text) || (dragonCount >= 2 && names.has('terror of the peaks'))) {
+    return `Forecast: ${dragonCount} dragon/permanent payoff piece${dragonCount === 1 ? '' : 's'} visible. Trigger order and target choice are likely worth drilling before passing priority.`;
+  }
+  if (/xenagos|attack|combat|anzrag|hellkite charger|savage ventmaw/.test(text)) {
+    return largestCreature
+      ? `Forecast: Xenagos/combat lines hinge on ${largestCreature.name} as the largest visible threat. Compare haste/double-power damage against holding back for interaction.`
+      : 'Forecast: combat branch. Compare immediate damage against leaving blockers and mana for responses.';
+  }
+  if (after.stack > before.stack) {
+    return 'Forecast: this adds stack pressure. Hold priority if the opponent can interact or if trigger/tax choices will change resolution.';
+  }
+  if (after.battlefield > before.battlefield && after.hand < before.hand) {
+    return 'Forecast: board-development branch. Check whether the new permanent improves the next turn enough to justify spending the card now.';
+  }
+  return undefined;
+}
+
 export function buildPracticeBranchPreviews(input: {
   serializedState?: SerializedGameStateV1 | null;
   playerId: string;
@@ -132,6 +187,7 @@ export function buildPracticeBranchPreviews(input: {
         ok: response.ok,
         score: scoreByKind.get(JSON.stringify(action._engineAction)),
         summary,
+        forecast: response.ok ? branchForecast(state, afterState, input.playerId, label, summary) : undefined,
         warnings: previewWarnings(label, summary),
         resultEngine: response.ok ? serializeGameState(afterState) : undefined,
       };

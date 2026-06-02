@@ -3686,6 +3686,9 @@ export function GameBoard({
                         {typeof preview.score === 'number' ? ` (${preview.score.toFixed(1)})` : ''}
                       </div>
                       <div className="text-[10px] leading-snug text-sky-100/80">{preview.summary}</div>
+                      {preview.forecast && (
+                        <div className="mt-0.5 text-[9px] leading-snug text-emerald-100/85">{preview.forecast}</div>
+                      )}
                       {preview.warnings[0] && (
                         <div className="mt-0.5 text-[9px] leading-snug text-amber-100/85">{preview.warnings[0]}</div>
                       )}
@@ -3765,6 +3768,9 @@ export function GameBoard({
                 {typeof preview.score === 'number' ? ` (${preview.score.toFixed(1)})` : ''}
               </div>
               <div className="leading-snug opacity-85">{preview.summary}</div>
+              {preview.forecast && (
+                <div className="mt-0.5 leading-snug text-emerald-100/85">{preview.forecast}</div>
+              )}
               {preview.warnings[0] && (
                 <div className="mt-0.5 leading-snug text-amber-100/85">{preview.warnings[0]}</div>
               )}
@@ -4403,6 +4409,9 @@ export function GameBoard({
                       <span className="font-bold text-stone-100">
                         {preview.label}{typeof preview.score === 'number' ? ` (${preview.score.toFixed(1)})` : ''}:
                       </span> {preview.summary}
+                      {preview.forecast && (
+                        <div className="mt-0.5 text-emerald-100/85">{preview.forecast}</div>
+                      )}
                       {preview.warnings[0] && (
                         <div className="mt-0.5 text-amber-100/85">{preview.warnings[0]}</div>
                       )}

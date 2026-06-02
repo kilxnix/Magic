@@ -95,6 +95,83 @@ const MATCH_SIZES: { label: string; players: number; opponentCount: OpponentCoun
   { label: '1v1v1v1', players: 4, opponentCount: 3 },
 ];
 
+const TRAINING_SCENARIOS = [
+  {
+    id: 'complex-combat',
+    title: 'Complex Combat',
+    focus: 'multi-defender combat',
+    description: 'Practice attacks, blockers, and damage assignment across several opponents.',
+  },
+  {
+    id: 'storm-grapeshot',
+    title: 'Storm Stack',
+    focus: 'storm and triggers',
+    description: 'Start with Vivi and Grapeshot ready so stack, storm, and magecraft pressure are immediate.',
+  },
+  {
+    id: 'token-stack',
+    title: 'Token Board',
+    focus: 'token stacking',
+    description: 'Open a small token board to inspect stacking, counters, and manual correction flow.',
+  },
+  {
+    id: 'land-entry-fetch',
+    title: 'Fetch/Shock Land',
+    focus: 'replacement choices',
+    description: 'Practice fetchland activation and land-entry choices from a controlled board.',
+  },
+  {
+    id: 'equipment-d20',
+    title: 'D20 Equipment',
+    focus: 'dice and equip',
+    description: 'Open Goblin Morningstar lines for d20 and equipment-action checks.',
+  },
+  {
+    id: 'sisay-activation',
+    title: 'Sisay Activation',
+    focus: 'five-color activation',
+    description: 'Jump into a live Sisay board with mana ready and library choices waiting to be tested.',
+  },
+] as const;
+
+type TrainingScenarioId = typeof TRAINING_SCENARIOS[number]['id'];
+
+function metricFromAttemptSummary(summary: string, label: string): number | null {
+  const match = summary.match(new RegExp(`${label}\\s+(-?\\d+)`, 'i'));
+  return match ? Number(match[1]) : null;
+}
+
+function opponentLifeAverageFromSummary(summary: string): number | null {
+  const opponentSegment = summary
+    .split('/')
+    .map(part => part.trim())
+    .find(part => part.toLowerCase().startsWith('opponents '));
+  if (!opponentSegment) return null;
+  const values = [...opponentSegment.matchAll(/\b(-?\d+)\b/g)].map(match => Number(match[1]));
+  if (!values.length) return null;
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function scorePracticeAttemptSummary(summary: string): { score: number; label: string } {
+  const life = metricFromAttemptSummary(summary, 'You') ?? 0;
+  const hand = metricFromAttemptSummary(summary, 'hand') ?? 0;
+  const board = metricFromAttemptSummary(summary, 'board') ?? 0;
+  const graveyard = metricFromAttemptSummary(summary, 'graveyard') ?? 0;
+  const stack = metricFromAttemptSummary(summary, 'stack') ?? 0;
+  const averageOpponentLife = opponentLifeAverageFromSummary(summary) ?? 40;
+  const score = (life * 1.2) + (board * 3) + (hand * 0.8) + (graveyard * 0.15) - (averageOpponentLife * 0.45) - (stack * 0.5);
+  return {
+    score,
+    label: [
+      `score ${score.toFixed(1)}`,
+      `life ${life}`,
+      `board ${board}`,
+      `hand ${hand}`,
+      `opp avg ${averageOpponentLife.toFixed(1)}`,
+    ].join(' / '),
+  };
+}
+
 export function PlayPage() {
   const {
     gameState,
@@ -227,6 +304,36 @@ export function PlayPage() {
   } | null>(null);
   const qaScenarioLoadedRef = useRef(false);
   const playDeepLoadHandledRef = useRef(false);
+  const practiceHistory = useMemo(() => {
+    const records = saveSlots.filter((record): record is PlaySaveSlotRecord => Boolean(record));
+    const attempts = records.flatMap(record => (
+      record.drillBookmarks || []
+    ).flatMap(bookmark => (
+      bookmark.attempts || []
+    ).map(attempt => {
+      const scored = scorePracticeAttemptSummary(attempt.summary || '');
+      return { record, bookmark, attempt, score: scored.score, scoreLabel: scored.label };
+    })));
+    const focusCounts = new Map<string, number>();
+    const archetypeCounts = new Map<string, number>();
+    for (const record of records) {
+      if (record.practice?.archetype) {
+        archetypeCounts.set(record.practice.archetype, (archetypeCounts.get(record.practice.archetype) || 0) + 1);
+      }
+      for (const tag of record.practice?.focusTags || []) {
+        focusCounts.set(tag, (focusCounts.get(tag) || 0) + 1);
+      }
+    }
+    return {
+      records,
+      attempts,
+      bookmarkCount: records.reduce((sum, record) => sum + (record.drillBookmarks?.length || 0), 0),
+      topFocusTags: [...focusCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5),
+      archetypes: [...archetypeCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4),
+      recentAttempts: [...attempts].sort((a, b) => b.attempt.savedAt - a.attempt.savedAt).slice(0, 3),
+      bestAttempts: [...attempts].sort((a, b) => (b.score - a.score) || (b.attempt.savedAt - a.attempt.savedAt)).slice(0, 3),
+    };
+  }, [saveSlots]);
 
   // Load saved deck data
   useEffect(() => {
@@ -947,38 +1054,8 @@ export function PlayPage() {
     return parts.length > 0 ? parts.join(' / ') : 'Manual drill bookmark';
   };
 
-  const metricFromAttemptSummary = (summary: string, label: string): number | null => {
-    const match = summary.match(new RegExp(`${label}\\s+(-?\\d+)`, 'i'));
-    return match ? Number(match[1]) : null;
-  };
-
-  const opponentLifeAverageFromSummary = (summary: string): number | null => {
-    const opponentSegment = summary
-      .split('/')
-      .map(part => part.trim())
-      .find(part => part.toLowerCase().startsWith('opponents '));
-    if (!opponentSegment) return null;
-    const values = [...opponentSegment.matchAll(/\b(-?\d+)\b/g)].map(match => Number(match[1]));
-    if (!values.length) return null;
-    return values.reduce((sum, value) => sum + value, 0) / values.length;
-  };
-
   const scoreDrillAttempt = (attempt: PlayDrillAttempt): { score: number; label: string } => {
-    const life = metricFromAttemptSummary(attempt.summary, 'You') ?? 0;
-    const hand = metricFromAttemptSummary(attempt.summary, 'hand') ?? 0;
-    const board = metricFromAttemptSummary(attempt.summary, 'board') ?? 0;
-    const graveyard = metricFromAttemptSummary(attempt.summary, 'graveyard') ?? 0;
-    const stack = metricFromAttemptSummary(attempt.summary, 'stack') ?? 0;
-    const averageOpponentLife = opponentLifeAverageFromSummary(attempt.summary) ?? 40;
-    const score = (life * 1.2) + (board * 3) + (hand * 0.8) + (graveyard * 0.15) - (averageOpponentLife * 0.45) - (stack * 0.5);
-    const label = [
-      `score ${score.toFixed(1)}`,
-      `life ${life}`,
-      `board ${board}`,
-      `hand ${hand}`,
-      averageOpponentLife !== null ? `opp avg ${averageOpponentLife.toFixed(1)}` : null,
-    ].filter(Boolean).join(' / ');
-    return { score, label };
+    return scorePracticeAttemptSummary(attempt.summary || '');
   };
 
   const rankedDrillAttempts = (attempts: PlayDrillAttempt[] = []): Array<PlayDrillAttempt & { comparisonScore: number; comparisonLabel: string; rank: number }> => (
@@ -1350,6 +1427,89 @@ export function PlayPage() {
     return () => window.clearInterval(interval);
   }, [step, gameState, activeSaveSlot]);
 
+  const renderPracticeHistory = (compact = false) => {
+    if (
+      practiceHistory.records.length === 0
+      && practiceHistory.bookmarkCount === 0
+      && practiceHistory.attempts.length === 0
+    ) {
+      return null;
+    }
+
+    return (
+      <div className={`mb-3 rounded-lg border border-emerald-500/25 bg-emerald-950/15 ${compact ? 'p-2' : 'p-3'}`}>
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <div className="text-[10px] font-black uppercase tracking-wider text-emerald-200">Practice History</div>
+            <div className="text-xs text-emerald-100/70">
+              {practiceHistory.records.length} save{practiceHistory.records.length === 1 ? '' : 's'} / {practiceHistory.bookmarkCount} drill{practiceHistory.bookmarkCount === 1 ? '' : 's'} / {practiceHistory.attempts.length} attempt{practiceHistory.attempts.length === 1 ? '' : 's'}
+            </div>
+          </div>
+          {practiceHistory.archetypes.length > 0 && (
+            <div className="flex max-w-full flex-wrap justify-end gap-1">
+              {practiceHistory.archetypes.map(([archetype, count]) => (
+                <span key={archetype} className="rounded border border-emerald-500/25 bg-neutral-950/55 px-1.5 py-0.5 text-[10px] font-bold text-emerald-100">
+                  {archetype} x{count}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+        {practiceHistory.topFocusTags.length > 0 && (
+          <div className="mb-2 flex flex-wrap gap-1">
+            {practiceHistory.topFocusTags.map(([tag, count]) => (
+              <span key={tag} className="rounded border border-amber-500/25 px-1.5 py-0.5 text-[10px] font-bold text-amber-100">
+                {tag} x{count}
+              </span>
+            ))}
+          </div>
+        )}
+        {(practiceHistory.bestAttempts.length > 0 || practiceHistory.recentAttempts.length > 0) && (
+          <div className="grid gap-2 lg:grid-cols-2">
+            {practiceHistory.bestAttempts.length > 0 && (
+              <div className="rounded border border-emerald-500/20 bg-neutral-950/50 p-2">
+                <div className="mb-1 text-[10px] font-black uppercase tracking-wider text-emerald-200">Best Visible Outcomes</div>
+                <div className="grid gap-1">
+                  {practiceHistory.bestAttempts.map(({ record, bookmark, attempt, scoreLabel }) => (
+                    <button
+                      key={`best-${record.slot}:${bookmark.id}:${attempt.id}`}
+                      type="button"
+                      onClick={() => loadDrillAttempt(record, bookmark, attempt)}
+                      className="min-h-9 rounded border border-emerald-500/25 px-2 py-1 text-left text-[10px] font-bold text-emerald-100 hover:bg-emerald-950/35"
+                      title={attempt.summary}
+                    >
+                      <span className="block truncate">{bookmark.label} / {attempt.label}</span>
+                      <span className="block truncate text-[9px] text-emerald-100/65">{scoreLabel}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {practiceHistory.recentAttempts.length > 0 && (
+              <div className="rounded border border-sky-500/20 bg-neutral-950/50 p-2">
+                <div className="mb-1 text-[10px] font-black uppercase tracking-wider text-sky-200">Recent Attempts</div>
+                <div className="grid gap-1">
+                  {practiceHistory.recentAttempts.map(({ record, bookmark, attempt, scoreLabel }) => (
+                    <button
+                      key={`recent-${record.slot}:${bookmark.id}:${attempt.id}`}
+                      type="button"
+                      onClick={() => loadDrillAttempt(record, bookmark, attempt)}
+                      className="min-h-9 rounded border border-sky-500/25 px-2 py-1 text-left text-[10px] font-bold text-sky-100 hover:bg-sky-950/35"
+                      title={attempt.summary}
+                    >
+                      <span className="block truncate">{record.commander} / {attempt.label}</span>
+                      <span className="block truncate text-[9px] text-sky-100/65">{scoreLabel}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const renderSaveSlots = (compact = false) => (
     <div className={`rounded-xl border border-stone-700 bg-stone-900/95 ${compact ? 'p-3' : 'p-4'} shadow-xl shadow-black/20`}>
       <div className="mb-3 flex items-center justify-between gap-3">
@@ -1387,6 +1547,7 @@ export function PlayPage() {
           {saveError || saveStatus}
         </div>
       )}
+      {renderPracticeHistory(compact)}
       <div className="grid gap-2">
         {saveSlots.map((record, index) => {
           const slot = index + 1;
@@ -1994,6 +2155,129 @@ export function PlayPage() {
 
   const handleStartXenagosMulliganDrill = () => {
     handleStartFocusedXenagosRep('mulligan');
+  };
+
+  const loadTrainingScenario = async (scenarioId: TrainingScenarioId) => {
+    const scenario = TRAINING_SCENARIOS.find(candidate => candidate.id === scenarioId);
+    if (!scenario) return false;
+    setImportError(null);
+    setSaveError(null);
+    setSaveStatus(null);
+    setIsImporting(true);
+    try {
+      const scenarios = await import('../lib/qaGameScenarios');
+      const engine = scenarioId === 'complex-combat'
+        ? scenarios.createComplexCombatQaState()
+        : scenarioId === 'storm-grapeshot'
+        ? scenarios.createStormGrapeshotQaState()
+        : scenarioId === 'token-stack'
+        ? scenarios.createTokenStackQaState()
+        : scenarioId === 'land-entry-fetch'
+        ? scenarios.createLandEntryFetchQaState()
+        : scenarioId === 'equipment-d20'
+        ? scenarios.createEquipmentD20QaState()
+        : scenarios.createSisayActivationQaState();
+      const humanCommander = scenarioId === 'complex-combat'
+        ? 'Trampling Commander'
+        : scenarioId === 'storm-grapeshot'
+        ? 'Vivi Ornitier'
+        : scenarioId === 'token-stack'
+        ? 'Goblin'
+        : scenarioId === 'land-entry-fetch'
+        ? 'Sisay, Weatherlight Captain'
+        : scenarioId === 'equipment-d20'
+        ? 'Goblin Morningstar'
+        : 'Sisay, Weatherlight Captain';
+      const aiCommanderNames: Record<string, string> = scenarioId === 'complex-combat'
+        ? { 'ai-1': 'Left Defender', 'ai-2': 'Middle Defender', 'ai-3': 'Right Defender' }
+        : {
+            'ai-1': scenarioId === 'storm-grapeshot'
+              ? 'Storm QA Opponent'
+              : scenarioId === 'token-stack'
+              ? 'Token QA Opponent'
+              : scenarioId === 'land-entry-fetch'
+              ? 'Fetch QA Opponent'
+              : scenarioId === 'equipment-d20'
+              ? 'Equipment QA Opponent'
+              : 'QA Opponent',
+          };
+      const now = Date.now();
+      const snapshot: ShelectorGameSaveSnapshot = {
+        version: 1,
+        savedAt: now,
+        engine,
+        humanDeck: null,
+        aiDecks: [],
+        humanCommander,
+        aiCommanderNames,
+        humanId: 'human',
+        aiIds: scenarioId === 'complex-combat' ? ['ai-1', 'ai-2', 'ai-3'] : ['ai-1'],
+        opponentInfo: null,
+        chatMessages: [],
+        gameLog: [],
+        authorityUpdates: [],
+        engineEventLog: [],
+        engineEventLogSeeds: {},
+        engineEventLogInitialState: engine,
+        lastStateUpdate: null,
+        currentPrompt: null,
+        lastPlayedCard: null,
+        mulliganPhase: false,
+        mulliganCount: 0,
+        mulliganBottomSelectionActive: false,
+        selectedMulliganCardIds: [],
+        selectedMulliganBottomIds: [],
+        discardPhase: false,
+        discardCount: 0,
+        tutorPhase: false,
+        tutorCards: [],
+        tutorTitle: '',
+        tutorPromptRequest: null,
+        tutorRemaining: 0,
+        tutorFilter: undefined,
+        tutorFilterSpec: undefined,
+        tutorTapped: false,
+        tutorShuffle: true,
+        tutorDestination: 'hand',
+        tutorSourceName: scenario.title,
+        tutorSourceInstanceId: undefined,
+        pendingSearchEntryChoice: null,
+        pendingTargetChoice: null,
+        libraryChoice: null,
+        libraryManipulationPromptRequest: null,
+        optionalTriggerChoice: null,
+        taxPaymentChoice: null,
+        wardPaymentChoice: null,
+        damageAssignmentChoice: null,
+        triggerOrderChoice: null,
+        undosRemaining: 10,
+        coachMode: true,
+        newPlayerMode: false,
+        holdPriority: false,
+        priorityStops,
+        actionError: null,
+        lastEvents: [],
+        endGame: { open: false, kind: 'loss' },
+      };
+      const restored = restoreGameSave(snapshot);
+      if (!restored) {
+        throw new Error(`Could not restore ${scenario.title}.`);
+      }
+      setSelectedPracticePresetId(null);
+      setImportResult(null);
+      setSpawnedOpponents([]);
+      setShowReview(false);
+      setActiveDrillRun(null);
+      setStep('game');
+      setSavePanelOpen(false);
+      setSaveStatus(`Loaded Scenario Lab: ${scenario.title}. Bookmark the decision or save it into a slot when this is the spot you want to drill.`);
+      return true;
+    } catch (err: any) {
+      setSaveError(err.message || 'Could not load that training scenario.');
+      return false;
+    } finally {
+      setIsImporting(false);
+    }
   };
 
   const handleRestartPresetRep = async (deck: BeginnerDeck) => {
@@ -2762,6 +3046,35 @@ export function PlayPage() {
               <p className="mt-2 text-[11px] leading-5 text-amber-100/65">
                 Loads Xenagos, clears the current table, sets Aggressive Shelector, enables coach mode, and opens either a full rep or a focused opening-hand drill.
               </p>
+            </div>
+            <div className="border-b border-amber-500/15 p-3">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <div>
+                  <div className="text-[10px] font-black uppercase tracking-wider text-emerald-200">Scenario Lab</div>
+                  <p className="mt-1 text-[11px] leading-5 text-amber-100/65">
+                    Jump directly into exact hard spots without importing a deck or playing up to the position.
+                  </p>
+                </div>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {TRAINING_SCENARIOS.map(scenario => (
+                  <button
+                    key={scenario.id}
+                    type="button"
+                    onClick={() => loadTrainingScenario(scenario.id)}
+                    disabled={isImporting}
+                    className="min-h-[72px] rounded-lg border border-emerald-500/30 bg-neutral-950 px-3 py-2 text-left transition-colors hover:bg-emerald-950/20 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <span className="flex flex-wrap items-center gap-1.5">
+                      <span className="text-sm font-black text-emerald-100">{scenario.title}</span>
+                      <span className="rounded border border-emerald-500/25 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider text-emerald-200">
+                        {scenario.focus}
+                      </span>
+                    </span>
+                    <span className="mt-1 block text-[11px] leading-5 text-stone-400">{scenario.description}</span>
+                  </button>
+                ))}
+              </div>
             </div>
             <div className="divide-y divide-amber-500/15">
               {PRACTICE_DECKS.map(deck => (
