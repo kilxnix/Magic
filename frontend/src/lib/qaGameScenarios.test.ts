@@ -11,7 +11,7 @@ import {
   tryPlayLand,
   type ManaColor,
 } from 'commander-engine';
-import { createComplexCombatQaState, createDeclareBlockersQaState, createLandEntryFetchQaState, createLibraryManipulationQaState, createMagecraftTriggersQaState, createModalChoiceQaState, createSisayRawLandsQaState, createSpellCopyQaState, createStormGrapeshotQaState } from './qaGameScenarios';
+import { createComplexCombatQaState, createDeclareBlockersQaState, createGenerousGiftQaState, createLandEntryFetchQaState, createLibraryManipulationQaState, createMagecraftTriggersQaState, createModalChoiceQaState, createSisayRawLandsQaState, createSpellCopyQaState, createStormGrapeshotQaState } from './qaGameScenarios';
 
 describe('QA game scenarios', () => {
   it('loads raw dual lands with mana actions and reaches Sisay activation after tapping WUBRG', () => {
@@ -106,6 +106,17 @@ describe('QA game scenarios', () => {
       action.kind === 'CastSpell'
       && action.chosenModes?.[0] === 1
       && action.targets.includes('opponent_sol_ring_1'),
+    )).toBe(true);
+  });
+
+  it('loads Generous Gift with an opponent commander target for browser QA', () => {
+    const state = deserializeGameState(createGenerousGiftQaState());
+    const actions = getLegalActions(state, 'human');
+
+    expect(actions.some(action =>
+      action.kind === 'CastSpell'
+      && action.cardInstanceId === 'generous_gift_1'
+      && action.targets.includes('countered_commander_1'),
     )).toBe(true);
   });
 

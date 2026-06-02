@@ -1082,6 +1082,91 @@ export function createComplexCombatQaState(): SerializedGameStateV1 {
   return serializeGameState(state);
 }
 
+export function createGenerousGiftQaState(): SerializedGameStateV1 {
+  const generousGift = def(
+    'generous_gift_qa',
+    'Generous Gift',
+    'Instant',
+    '{2}{W}',
+    'Destroy target permanent. Its controller creates a 3/3 green Elephant creature token.',
+    { cmc: 3, colors: ['W'], color_identity: ['W'] },
+  );
+  const trainingCleric = def(
+    'training_cleric_qa',
+    'Training Cleric',
+    'Legendary Creature - Human Cleric',
+    '{2}{W}',
+    '',
+    { cmc: 3, colors: ['W'], color_identity: ['W'], power: 2, toughness: 2 },
+  );
+  const counteredCommander = def(
+    'countered_commander_qa',
+    'Countered Commander',
+    'Legendary Creature - Human Soldier',
+    '{1}{G}',
+    '',
+    { cmc: 2, colors: ['G'], color_identity: ['G'], power: 2, toughness: 2 },
+  );
+
+  const state: GameState = {
+    players: [
+      {
+        id: 'human',
+        name: 'Removal QA Pilot',
+        life: 40,
+        poisonCounters: 0,
+        commanderDamage: {},
+        commanderTax: 0,
+        commanderInstanceId: 'training_cleric_1',
+        commanderCastCount: 0,
+        manaPool: { ...pool({ W: 1 }), C: 2 },
+        hasPlayedLand: false,
+        hasPriority: true,
+        hasLost: false,
+      },
+      {
+        id: 'ai-1',
+        name: 'Removal QA Opponent',
+        life: 40,
+        poisonCounters: 0,
+        commanderDamage: {},
+        commanderTax: 0,
+        commanderInstanceId: 'countered_commander_1',
+        commanderCastCount: 1,
+        manaPool: pool(),
+        hasPlayedLand: false,
+        hasPriority: false,
+        hasLost: false,
+      },
+    ],
+    cards: new Map<string, CardInstance>([
+      ['training_cleric_1', instance('training_cleric_1', trainingCleric.id, 'human', 'command', { isCommander: true })],
+      ['generous_gift_1', instance('generous_gift_1', generousGift.id, 'human', 'hand')],
+      ['countered_commander_1', instance('countered_commander_1', counteredCommander.id, 'ai-1', 'battlefield', {
+        isCommander: true,
+        counters: { '+1/+1': 1 },
+      })],
+    ]),
+    cardDefinitions: new Map<string, CardDefinition>([
+      [generousGift.id, generousGift],
+      [trainingCleric.id, trainingCleric],
+      [counteredCommander.id, counteredCommander],
+    ]),
+    activePlayerIndex: 0,
+    priorityPlayerIndex: 0,
+    phase: 'precombat_main',
+    step: 'draw',
+    turnNumber: 3,
+    hasPriorityPassed: [false, false],
+    stack: [],
+    combat: null,
+    battlefieldAbilities: new Map(),
+    pendingTriggers: [],
+  };
+
+  return serializeGameState(state);
+}
+
 export function createDeclareBlockersQaState(): SerializedGameStateV1 {
   const sisay = def(
     'sisay_blocker',

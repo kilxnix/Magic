@@ -287,6 +287,7 @@ export function PlayPage() {
       && qaScenario !== 'magecraft-triggers'
       && qaScenario !== 'complex-combat'
       && qaScenario !== 'modal-choice'
+      && qaScenario !== 'generous-gift'
     ) return;
 
     let cancelled = false;
@@ -294,6 +295,7 @@ export function PlayPage() {
       .then(({
         createDeclareBlockersQaState,
         createComplexCombatQaState,
+        createGenerousGiftQaState,
         createLandEntryFetchQaState,
         createLibraryManipulationQaState,
         createMagecraftTriggersQaState,
@@ -322,6 +324,8 @@ export function PlayPage() {
           ? createComplexCombatQaState()
           : qaScenario === 'modal-choice'
           ? createModalChoiceQaState()
+          : qaScenario === 'generous-gift'
+          ? createGenerousGiftQaState()
           : createSisayActivationQaState();
         const now = Date.now();
         const snapshot: ShelectorGameSaveSnapshot = {
@@ -340,6 +344,8 @@ export function PlayPage() {
             ? 'Vivi Ornitier'
             : qaScenario === 'complex-combat'
             ? 'Trampling Commander'
+            : qaScenario === 'generous-gift'
+            ? 'Training Cleric'
             : 'Sisay, Weatherlight Captain',
           aiCommanderNames: qaScenario === 'complex-combat'
             ? {
@@ -360,6 +366,8 @@ export function PlayPage() {
                   ? 'Magecraft QA Opponent'
                   : qaScenario === 'modal-choice'
                   ? 'Modal QA Opponent'
+                  : qaScenario === 'generous-gift'
+                  ? 'Removal QA Opponent'
                   : 'QA Opponent',
               },
           humanId: 'human',
@@ -423,6 +431,8 @@ export function PlayPage() {
               ? 'complex combat'
               : qaScenario === 'modal-choice'
               ? 'modal choice'
+              : qaScenario === 'generous-gift'
+              ? 'Generous Gift'
               : 'Sisay activation'
           } QA scenario.`);
           setSaveError(null);
