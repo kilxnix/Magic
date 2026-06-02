@@ -17,6 +17,7 @@ import { CardImage } from './CardImage';
 import { CARD_TILE_LAYOUT, FLOATING_TABLE_LAYOUT } from '../lib/gameBoardLayout';
 import { getNewPlayerSuggestion } from '../lib/newPlayerSuggestions';
 import type { PracticeBranchPreview } from '../lib/practiceBranchPreview';
+import { buildTapAllManaPlan } from '../lib/manaTapPlanner';
 
 // Phase display names
 const PHASE_DISPLAY: Record<string, string> = {
@@ -4354,40 +4355,10 @@ export function GameBoard({
             {manaActions.length > 0 && (
               <>
                 <div className="h-px bg-stone-700/80 sm:col-span-2" />
-                {/* Tap All button: pick one action per card, choosing the color that
-                    diversifies the resulting pool (so a Taiga + Mountain produces R + G
-                    instead of R + R). */}
+                {/* Tap All button: pick one action per card, preferring a color spread
+                    that can unlock WUBRG activations instead of duplicating one color. */}
                 {(() => {
-                  const tapAllPlan = (() => {
-                    // Group manaActions by card id; each card produces one tap.
-                    const byCard = new Map<string, SimpleLegalAction[]>();
-                    for (const a of manaActions.filter(action => action.label?.startsWith('Tap '))) {
-                      const cardId = a.cardInstanceId;
-                      if (!cardId) continue;
-                      const arr = byCard.get(cardId) ?? [];
-                      arr.push(a);
-                      byCard.set(cardId, arr);
-                    }
-                    // Order: cards with the FEWEST color choices first (mono-color and
-                    // colorless lock in their color before duals get to choose).
-                    const ordered = [...byCard.entries()].sort(
-                      ([, a], [, b]) => a.length - b.length,
-                    );
-                    const tally: Record<string, number> = { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 };
-                    const plan: SimpleLegalAction[] = [];
-                    for (const [, options] of ordered) {
-                      // Pick the option whose color is currently least represented.
-                      const best = options.reduce((cur, opt) => {
-                        const curColor = (cur._engineAction as { color?: string }).color ?? 'C';
-                        const optColor = (opt._engineAction as { color?: string }).color ?? 'C';
-                        return (tally[optColor] ?? 0) < (tally[curColor] ?? 0) ? opt : cur;
-                      });
-                      const chosenColor = (best._engineAction as { color?: string }).color ?? 'C';
-                      tally[chosenColor] = (tally[chosenColor] ?? 0) + 1;
-                      plan.push(best);
-                    }
-                    return plan;
-                  })();
+                  const tapAllPlan = buildTapAllManaPlan(manaActions);
                   if (tapAllPlan.length <= 1) return null;
                   return (
                     <button
