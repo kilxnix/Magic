@@ -6,6 +6,7 @@ import {
   Ban,
   CheckCircle2,
   Database,
+  Download,
   Megaphone,
   RefreshCw,
   Shield,
@@ -64,10 +65,11 @@ function practiceCheckpointCount(record: PlaySaveSlotRecord): number {
   return Object.keys(snapshot?.engineEventLogSeeds || {}).length + bookmarkCount + attemptCount;
 }
 
-function latestDrillAttempt(record: PlaySaveSlotRecord) {
-  return record.drillBookmarks
-    ?.flatMap(bookmark => (bookmark.attempts || []).map(attempt => ({ bookmark, attempt })))
-    .sort((a, b) => b.attempt.savedAt - a.attempt.savedAt)[0];
+function recentDrillAttempts(record: PlaySaveSlotRecord, limit = 3) {
+  return (record.drillBookmarks || [])
+    .flatMap(bookmark => (bookmark.attempts || []).map(attempt => ({ bookmark, attempt })))
+    .sort((a, b) => b.attempt.savedAt - a.attempt.savedAt)
+    .slice(0, limit);
 }
 
 export function AdminConsolePage() {
@@ -83,12 +85,78 @@ export function AdminConsolePage() {
   const [loading, setLoading] = useState(false);
   const [practiceSaves, setPracticeSaves] = useState<(PlaySaveSlotRecord | null)[]>([]);
   const [practiceSaveError, setPracticeSaveError] = useState<string | null>(null);
+  const [practiceFilter, setPracticeFilter] = useState('');
 
   const selectedRoom = useMemo(
     () => overview?.rooms.find(room => room.id === selectedRoomId) || overview?.rooms[0] || null,
     [overview, selectedRoomId],
   );
   const practiceSaveCount = practiceSaves.filter(Boolean).length;
+  const practiceAggregate = useMemo(() => {
+    const records = practiceSaves.filter((record): record is PlaySaveSlotRecord => Boolean(record));
+    const focusCounts = new Map<string, number>();
+    const archetypeCounts = new Map<string, number>();
+    let bookmarkCount = 0;
+    let attemptCount = 0;
+    let saveManagerOk = 0;
+    for (const record of records) {
+      if (record.canonicalManager?.status === 'ok') saveManagerOk += 1;
+      if (record.practice?.archetype) {
+        archetypeCounts.set(record.practice.archetype, (archetypeCounts.get(record.practice.archetype) || 0) + 1);
+      }
+      for (const tag of record.practice?.focusTags || []) {
+        focusCounts.set(tag, (focusCounts.get(tag) || 0) + 1);
+      }
+      bookmarkCount += record.drillBookmarks?.length || 0;
+      attemptCount += record.drillBookmarks?.reduce((sum, bookmark) => sum + (bookmark.attempts?.length || 0), 0) || 0;
+    }
+    return {
+      recordCount: records.length,
+      saveManagerOk,
+      bookmarkCount,
+      attemptCount,
+      topFocusTags: [...focusCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8),
+      archetypes: [...archetypeCounts.entries()].sort((a, b) => b[1] - a[1]),
+      recentAttempts: records.flatMap(record => recentDrillAttempts(record, 6).map(entry => ({ ...entry, record })))
+        .sort((a, b) => b.attempt.savedAt - a.attempt.savedAt)
+        .slice(0, 6),
+    };
+  }, [practiceSaves]);
+  const filteredPracticeEntries = useMemo(() => {
+    const query = practiceFilter.trim().toLowerCase();
+    return practiceSaves
+      .map((record, index) => ({ record, slot: index + 1 }))
+      .filter(({ record }) => {
+        if (!query) return true;
+        if (!record) return false;
+        const haystack = [
+          record.commander,
+          record.practice?.archetype,
+          ...(record.practice?.focusTags || []),
+          ...(record.practice?.keyCards || []),
+          ...(record.drillBookmarks || []).map(bookmark => `${bookmark.label} ${bookmark.note || ''}`).join(' '),
+        ].filter(Boolean).join(' ').toLowerCase();
+        return haystack.includes(query);
+      });
+  }, [practiceSaves, practiceFilter]);
+
+  const exportPracticeSaves = () => {
+    const payload = {
+      exportedAt: new Date().toISOString(),
+      summary: practiceAggregate,
+      slots: practiceSaves.filter(Boolean),
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `deckreps-practice-saves-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    setNotice('Practice save export downloaded.');
+  };
 
   const refreshPracticeSaves = async () => {
     try {
@@ -292,23 +360,86 @@ export function AdminConsolePage() {
                     Browser-local `/play` save slots from this admin browser, including coaching focus and replay audit health.
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={refreshPracticeSaves}
-                  className="flex min-h-9 items-center justify-center gap-2 rounded border border-stone-700 px-3 text-xs font-bold text-stone-200 hover:border-amber-500/60"
-                >
-                  <RefreshCw className="h-3.5 w-3.5" />
-                  Refresh Saves
-                </button>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={exportPracticeSaves}
+                    disabled={practiceSaveCount === 0}
+                    className="flex min-h-9 items-center justify-center gap-2 rounded border border-sky-500/40 px-3 text-xs font-bold text-sky-100 hover:bg-sky-950/40 disabled:cursor-not-allowed disabled:border-stone-700 disabled:text-stone-500"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    Export
+                  </button>
+                  <button
+                    type="button"
+                    onClick={refreshPracticeSaves}
+                    className="flex min-h-9 items-center justify-center gap-2 rounded border border-stone-700 px-3 text-xs font-bold text-stone-200 hover:border-amber-500/60"
+                  >
+                    <RefreshCw className="h-3.5 w-3.5" />
+                    Refresh Saves
+                  </button>
+                </div>
               </div>
               {practiceSaveError && (
                 <div className="m-4 rounded border border-red-500/40 bg-red-950/40 px-3 py-2 text-sm text-red-100">
                   {practiceSaveError}
                 </div>
               )}
+              <div className="grid gap-3 border-b border-stone-800 p-4 lg:grid-cols-[minmax(0,1fr)_18rem]">
+                <div className="grid gap-2 sm:grid-cols-4">
+                  {[
+                    ['Slots', practiceAggregate.recordCount],
+                    ['Bookmarks', practiceAggregate.bookmarkCount],
+                    ['Attempts', practiceAggregate.attemptCount],
+                    ['SaveManager OK', `${practiceAggregate.saveManagerOk}/${practiceAggregate.recordCount || 0}`],
+                  ].map(([label, value]) => (
+                    <div key={label} className="rounded border border-stone-800 bg-neutral-950 px-3 py-2">
+                      <div className="text-[10px] font-black uppercase tracking-wider text-stone-500">{label}</div>
+                      <div className="mt-1 text-lg font-black text-stone-100">{value}</div>
+                    </div>
+                  ))}
+                </div>
+                <label className="block">
+                  <span className="mb-1 block text-[10px] font-black uppercase tracking-wider text-stone-500">Filter Practice Saves</span>
+                  <input
+                    value={practiceFilter}
+                    onChange={event => setPracticeFilter(event.target.value)}
+                    placeholder="Xenagos, tutor, branch..."
+                    className="min-h-10 w-full rounded border border-stone-700 bg-neutral-950 px-3 text-sm text-stone-100 outline-none focus:border-amber-400"
+                  />
+                </label>
+                {(practiceAggregate.topFocusTags.length > 0 || practiceAggregate.recentAttempts.length > 0) && (
+                  <div className="lg:col-span-2 grid gap-3 lg:grid-cols-2">
+                    {practiceAggregate.topFocusTags.length > 0 && (
+                      <div className="rounded border border-amber-500/20 bg-amber-950/15 p-3">
+                        <div className="mb-2 text-[10px] font-black uppercase tracking-wider text-amber-200">Focus Frequency</div>
+                        <div className="flex flex-wrap gap-1">
+                          {practiceAggregate.topFocusTags.map(([tag, count]) => (
+                            <span key={tag} className="rounded border border-amber-500/30 px-2 py-1 text-[10px] font-bold text-amber-100">
+                              {tag} x{count}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {practiceAggregate.recentAttempts.length > 0 && (
+                      <div className="rounded border border-sky-500/20 bg-sky-950/15 p-3">
+                        <div className="mb-2 text-[10px] font-black uppercase tracking-wider text-sky-200">Recent Practice Attempts</div>
+                        <div className="grid gap-1">
+                          {practiceAggregate.recentAttempts.slice(0, 3).map(({ record, bookmark, attempt }) => (
+                            <div key={`${record.slot}:${bookmark.id}:${attempt.id}`} className="rounded border border-sky-500/20 bg-neutral-950/60 px-2 py-1 text-xs">
+                              <div className="font-bold text-sky-100">{record.commander} / {bookmark.label}</div>
+                              <div className="truncate text-stone-400">{attempt.label} - {attempt.summary}</div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
               <div className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-4">
-                {practiceSaves.map((record, index) => {
-                  const slot = index + 1;
+                {filteredPracticeEntries.map(({ record, slot }) => {
                   const audit = record ? auditPlaySaveSnapshot(record.snapshot) : null;
                   const canonicalAudit = record?.canonicalEngineSave ? auditCanonicalPlayEngineSave(record.canonicalEngineSave) : null;
                   return (
@@ -392,12 +523,17 @@ export function AdminConsolePage() {
                                   {record.drillBookmarks[record.drillBookmarks.length - 1]?.note}
                                 </span>
                               )}
-                              {latestDrillAttempt(record) && (
+                              {recentDrillAttempts(record).length > 0 && (
                                 <span className="mt-2 block rounded border border-sky-500/20 bg-sky-950/30 p-2 text-sky-100">
-                                  Latest attempt: {latestDrillAttempt(record)?.bookmark.label} / {latestDrillAttempt(record)?.attempt.label}
-                                  <span className="mt-1 block text-stone-400">
-                                    {latestDrillAttempt(record)?.attempt.summary}
-                                  </span>
+                                  Recent attempts
+                                  {recentDrillAttempts(record).map(({ bookmark, attempt }) => (
+                                    <span key={`${bookmark.id}:${attempt.id}`} className="mt-1 block rounded border border-sky-500/15 bg-neutral-950/50 p-1.5">
+                                      {bookmark.label} / {attempt.label}
+                                      <span className="mt-0.5 block text-stone-400">
+                                        {attempt.summary}
+                                      </span>
+                                    </span>
+                                  ))}
                                 </span>
                               )}
                             </div>
@@ -461,6 +597,9 @@ export function AdminConsolePage() {
                 })}
                 {practiceSaves.length === 0 && (
                   <div className="text-sm text-stone-500">No browser save slots found.</div>
+                )}
+                {practiceSaves.length > 0 && filteredPracticeEntries.length === 0 && (
+                  <div className="text-sm text-stone-500">No practice saves match this filter.</div>
                 )}
               </div>
             </section>
