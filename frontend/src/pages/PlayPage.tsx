@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef, type ChangeEvent } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, ClipboardPaste, Download, Loader2, Swords, Link as LinkIcon, History, Trash2, Shield, Trophy, Users, Lightbulb, X, Save, FolderOpen, Database, BookmarkPlus, Rocket, Upload } from 'lucide-react';
+import { ArrowLeft, ClipboardPaste, Download, Loader2, Swords, Link as LinkIcon, History, Trash2, Shield, Trophy, Users, Lightbulb, X, Save, FolderOpen, Database, BookmarkPlus, Rocket, Upload, BarChart3, Target } from 'lucide-react';
 import { useShelectorGame, type GameLogEntry, type ImportedCards, type ShelectorGameSaveSnapshot } from '../hooks/useShelectorGame';
 import { GameBoard } from '../components/GameBoard';
 import { GameReview } from '../components/GameReview';
@@ -1428,8 +1428,21 @@ export function PlayPage() {
   }, [step, gameState, activeSaveSlot]);
 
   const renderPracticeHistory = (compact = false) => {
+    const hasProgress = practiceHistory.records.length > 0
+      || practiceHistory.bookmarkCount > 0
+      || practiceHistory.attempts.length > 0;
+    const recentRecords = [...practiceHistory.records]
+      .sort((a, b) => b.savedAt - a.savedAt)
+      .slice(0, compact ? 2 : 4);
+    const recentDrills = practiceHistory.records.flatMap(record => (
+      record.drillBookmarks || []
+    ).map(bookmark => ({ record, bookmark })))
+      .sort((a, b) => b.bookmark.savedAt - a.bookmark.savedAt)
+      .slice(0, compact ? 2 : 4);
+
     if (
-      practiceHistory.records.length === 0
+      compact
+      && practiceHistory.records.length === 0
       && practiceHistory.bookmarkCount === 0
       && practiceHistory.attempts.length === 0
     ) {
@@ -1437,10 +1450,13 @@ export function PlayPage() {
     }
 
     return (
-      <div className={`mb-3 rounded-lg border border-emerald-500/25 bg-emerald-950/15 ${compact ? 'p-2' : 'p-3'}`}>
+      <div data-testid="practice-progress-panel" className={`mb-3 rounded-lg border border-emerald-500/25 bg-emerald-950/15 ${compact ? 'p-2' : 'p-4'}`}>
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <div className="text-[10px] font-black uppercase tracking-wider text-emerald-200">Practice History</div>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-wider text-emerald-200">
+              <BarChart3 className="h-3.5 w-3.5" />
+              Practice Progress
+            </div>
             <div className="text-xs text-emerald-100/70">
               {practiceHistory.records.length} save{practiceHistory.records.length === 1 ? '' : 's'} / {practiceHistory.bookmarkCount} drill{practiceHistory.bookmarkCount === 1 ? '' : 's'} / {practiceHistory.attempts.length} attempt{practiceHistory.attempts.length === 1 ? '' : 's'}
             </div>
@@ -1455,6 +1471,46 @@ export function PlayPage() {
             </div>
           )}
         </div>
+        {!saveSlotsReady && !compact && (
+          <div className="flex min-h-[82px] items-center gap-3 rounded border border-emerald-500/20 bg-neutral-950/45 p-3 text-emerald-100/75">
+            <Loader2 className="h-4 w-4 animate-spin text-emerald-200" />
+            <div>
+              <div className="text-sm font-black text-emerald-100">Loading practice progress</div>
+              <div className="mt-1 text-xs leading-5 text-emerald-100/65">Checking local save slots, drill bookmarks, and recorded attempts.</div>
+            </div>
+          </div>
+        )}
+        {saveSlotsReady && !hasProgress && (
+          <div className="grid gap-3 lg:grid-cols-[1.2fr_0.8fr]">
+            <div className="rounded border border-dashed border-emerald-500/30 bg-neutral-950/45 p-3">
+              <div className="flex items-center gap-2 text-sm font-black text-emerald-100">
+                <Target className="h-4 w-4" />
+                No practice history yet
+              </div>
+              <p className="mt-2 text-xs leading-5 text-emerald-100/70">
+                Start a clean rep or open a Scenario Lab position. Autosave records the session, and Bookmark This Moment turns hard spots into repeatable drills.
+              </p>
+            </div>
+            <div className="grid gap-2">
+              <button
+                type="button"
+                onClick={() => handleStartFocusedXenagosRep()}
+                disabled={isImporting || isSpawning || isGeneratingAIDeck}
+                className="min-h-[42px] rounded-lg bg-emerald-300 px-3 text-xs font-black text-stone-950 transition hover:bg-emerald-200 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Start Focused Rep
+              </button>
+              <button
+                type="button"
+                onClick={() => loadTrainingScenario('complex-combat')}
+                disabled={isImporting}
+                className="min-h-[42px] rounded-lg border border-emerald-500/35 bg-neutral-950 px-3 text-xs font-black text-emerald-100 transition hover:bg-emerald-950/25 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Open Drill Scenario
+              </button>
+            </div>
+          </div>
+        )}
         {practiceHistory.topFocusTags.length > 0 && (
           <div className="mb-2 flex flex-wrap gap-1">
             {practiceHistory.topFocusTags.map(([tag, count]) => (
@@ -1462,6 +1518,58 @@ export function PlayPage() {
                 {tag} x{count}
               </span>
             ))}
+          </div>
+        )}
+        {recentRecords.length > 0 && (
+          <div className="mb-2 rounded border border-emerald-500/20 bg-neutral-950/50 p-2">
+            <div className="mb-1 text-[10px] font-black uppercase tracking-wider text-emerald-200">Resume Practice</div>
+            <div className="grid gap-1 sm:grid-cols-2">
+              {recentRecords.map(record => {
+                const audit = auditPlaySaveSnapshot(record.snapshot);
+                const canonicalAudit = record.canonicalEngineSave ? auditCanonicalPlayEngineSave(record.canonicalEngineSave) : null;
+                const loadBlocked = Boolean(
+                  (canonicalAudit && !canonicalAudit.ok)
+                  || record.canonicalManager?.status === 'missing'
+                  || record.canonicalManager?.status === 'mismatch'
+                  || (!record.canonicalManager && !canonicalAudit && audit.status === 'failed')
+                );
+                return (
+                  <button
+                    key={`resume-${record.slot}`}
+                    type="button"
+                    onClick={() => loadSaveSlot(record)}
+                    disabled={loadBlocked}
+                    className="min-h-11 rounded border border-emerald-500/25 px-2 py-1 text-left text-[10px] font-bold text-emerald-100 hover:bg-emerald-950/35 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <span className="block truncate">Slot {record.slot}: {record.commander}</span>
+                    <span className="block truncate text-[9px] text-emerald-100/65">
+                      Turn {record.turnNumber} / {record.phase} / {new Date(record.savedAt).toLocaleString()}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+        {recentDrills.length > 0 && (
+          <div className="mb-2 rounded border border-fuchsia-500/20 bg-neutral-950/50 p-2">
+            <div className="mb-1 text-[10px] font-black uppercase tracking-wider text-fuchsia-200">Open Drill</div>
+            <div className="grid gap-1 sm:grid-cols-2">
+              {recentDrills.map(({ record, bookmark }) => (
+                <button
+                  key={`drill-${record.slot}:${bookmark.id}`}
+                  type="button"
+                  onClick={() => loadDrillBookmark(record, bookmark)}
+                  className="min-h-11 rounded border border-fuchsia-500/25 px-2 py-1 text-left text-[10px] font-bold text-fuchsia-100 hover:bg-fuchsia-950/35"
+                  title={bookmark.note || bookmark.label}
+                >
+                  <span className="block truncate">{bookmark.label}</span>
+                  <span className="block truncate text-[9px] text-fuchsia-100/65">
+                    Slot {record.slot} / {record.commander} / {bookmark.attempts?.length || 0} attempt{bookmark.attempts?.length === 1 ? '' : 's'}
+                  </span>
+                </button>
+              ))}
+            </div>
           </div>
         )}
         {(practiceHistory.bestAttempts.length > 0 || practiceHistory.recentAttempts.length > 0) && (
@@ -1547,7 +1655,7 @@ export function PlayPage() {
           {saveError || saveStatus}
         </div>
       )}
-      {renderPracticeHistory(compact)}
+      {compact && renderPracticeHistory(true)}
       <div className="grid gap-2">
         {saveSlots.map((record, index) => {
           const slot = index + 1;
@@ -2938,6 +3046,7 @@ export function PlayPage() {
         </div>
 
         <div className="mb-6">
+          {renderPracticeHistory(false)}
           {renderSaveSlots(false)}
         </div>
 
