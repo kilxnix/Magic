@@ -6013,7 +6013,9 @@ export function useShelectorGame() {
 
       const pendingEngineAction = pendingLandChoice.action._engineAction;
       if (pendingEngineAction.kind === 'PlayLand') {
-        submitActionRef.current?.({
+        const engineForChoice = engineRef.current;
+        if (!engineForChoice) return;
+        const completedAction: SimpleLegalAction = {
           ...pendingLandChoice.action,
           _engineAction: {
             ...pendingEngineAction,
@@ -6021,7 +6023,43 @@ export function useShelectorGame() {
               ? { chosenCreatureType: cardInstanceId }
               : { payLifeToEnterUntapped: cardInstanceId === 'pay-life' }),
           },
-        });
+        };
+        const response = applyActionThroughAuthority(
+          engineForChoice,
+          humanIdRef.current,
+          completedAction._engineAction,
+          { source: 'ui', label: completedAction.label },
+        );
+        if (!response.ok || !response.state) {
+          setActionError({
+            reason: response.reason || 'illegal_action',
+            message: response.message || 'That land choice is not legal in the current game state.',
+          });
+          addMessage('system', `Cannot play land: ${response.message || 'That land choice is not legal in the current game state.'}`);
+          syncState();
+          return;
+        }
+
+        let state = response.state as GameState;
+        applyEvents(response.events || [], state);
+        rememberLastPlayedCard(state, completedAction.cardInstanceId, humanIdRef.current, 'Played');
+        addMessage('player', `Played ${completedAction.cardName || 'a land'}.`);
+        appendLog(captureLogEntry(
+          state,
+          humanIdRef.current,
+          aiIdsRef.current,
+          'human',
+          `Played ${completedAction.cardName || 'a land'}`,
+          0,
+        ));
+
+        const loopMessages: { role: ChatMessage['role']; text: string }[] = [];
+        const loopLogEntries: GameLogEntry[] = [];
+        state = advanceGameLoop(state, loopMessages, loopLogEntries);
+        engineRef.current = state as GameStateWithAI;
+        for (const msg of loopMessages) addMessage(msg.role, msg.text);
+        if (loopLogEntries.length > 0) setGameLog(prev => [...prev, ...loopLogEntries]);
+        syncState();
       }
       return;
     }
@@ -6311,7 +6349,17 @@ export function useShelectorGame() {
     syncState();
     return;
 
-  }, [addMessage, appendEnginePromptEventLogRecord, appendLog, recordAuthorityUpdate, syncState, advanceGameLoop]);
+  }, [
+    addMessage,
+    advanceGameLoop,
+    appendEnginePromptEventLogRecord,
+    appendLog,
+    applyActionThroughAuthority,
+    applyEvents,
+    recordAuthorityUpdate,
+    rememberLastPlayedCard,
+    syncState,
+  ]);
 
   /** Cancel the active tutor — useful for "up to N" searches when the user wants
    * fewer than N picks, or to skip the search entirely. */

@@ -2566,6 +2566,51 @@ describe('authority action boundary', () => {
     expect(paidResponse.state?.players.find(player => player.id === 'p1')?.life).toBe(38);
   });
 
+  it('commits Cavern of Souls creature-type choices from hand as the land play', () => {
+    const base = stateWithForestInHand();
+    const cavern = def(
+      'cavern_of_souls_hand',
+      'Cavern of Souls',
+      'Land',
+      '',
+      "As Cavern of Souls enters, choose a creature type.\n{T}: Add {C}.\n{T}: Add one mana of any color. Spend this mana only to cast a creature spell of the chosen type, and that spell can't be countered.",
+    );
+    const state: GameState = {
+      ...base,
+      cards: new Map(base.cards).set(
+        'cavern_of_souls_hand_1',
+        cardInstance('cavern_of_souls_hand_1', cavern.id, 'p1', 'hand'),
+      ),
+      cardDefinitions: new Map(base.cardDefinitions).set(cavern.id, cavern),
+      players: base.players.map(player => player.id === 'p1'
+        ? { ...player, hasPlayedLand: false, landsPlayedThisTurn: 0 }
+        : player),
+    };
+
+    const request = createClientActionRequest(state, 'p1', {
+      kind: 'PlayLand',
+      cardInstanceId: 'cavern_of_souls_hand_1',
+      chosenCreatureType: 'Dragon',
+    }, {
+      id: 'req-cavern-dragon-from-hand',
+      createdAt: 23,
+      label: 'Play Cavern of Souls naming Dragon',
+    });
+    const response = applyClientActionRequest(state, request);
+
+    expect(response.ok).toBe(true);
+    expect(response.state?.cards.get('cavern_of_souls_hand_1')?.zone).toBe('battlefield');
+    expect(response.state?.cards.get('cavern_of_souls_hand_1')?.choices?.chosenCreatureType).toBe('Dragon');
+    expect(response.update?.visibleDiffs).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        kind: 'CardZoneChanged',
+        cardName: 'Cavern of Souls',
+        from: 'hand',
+        to: 'battlefield',
+      }),
+    ]));
+  });
+
   it('offers and resolves Scalding Tarn as a typed fetch-land activation', () => {
     const base = stateWithForestInHand();
     const scaldingTarn = def(
