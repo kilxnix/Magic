@@ -4478,13 +4478,6 @@ export function GameBoard({
               : `Hand (${gameState.humanHand.length})`}
           </div>
           <div className="flex items-center gap-2">
-            <GraveyardViewer
-              cards={gameState.humanGraveyard}
-              label="Your"
-              onInspect={setInspectedCard}
-              onHoverCard={handleCardHover}
-              placement="above"
-            />
           {mulliganPhase && (
             <div className="flex gap-2">
               <button
@@ -4509,6 +4502,16 @@ export function GameBoard({
           )}
           </div>
         </div>
+        {gameState.humanGraveyard.length > 0 && (
+          <div className="-mt-0.5 mb-1 max-w-xs">
+            <GraveyardViewer
+              cards={gameState.humanGraveyard}
+              label="Your"
+              onInspect={setInspectedCard}
+              onHoverCard={handleCardHover}
+            />
+          </div>
+        )}
         {mulliganPhase && (
           <div className="-mt-0.5 mb-1 rounded border border-amber-500/20 bg-amber-950/25 px-2 py-1 text-[10px] font-semibold leading-snug text-amber-100/85">
             {needsMulliganBottomSelection
