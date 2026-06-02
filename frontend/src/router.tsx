@@ -7,11 +7,20 @@ import { PlayPage } from './pages/PlayPage';
 import { ShelectorPage } from './pages/ShelectorPage';
 import { MultiplayerPage } from './pages/MultiplayerPage';
 import { FutureEventsPage } from './pages/FutureEventsPage';
+import { EventCenterPage } from './pages/EventCenterPage';
 import { AdminConsolePage } from './pages/AdminConsolePage';
 import { PrivacyPage } from './pages/PrivacyPage';
 import { TermsPage } from './pages/TermsPage';
 import { ContactPage } from './pages/ContactPage';
 import { HowTrainingWorksPage } from './pages/HowTrainingWorksPage';
+
+function EventsRouteGate() {
+  const params = new URLSearchParams(window.location.search);
+  if (params.has('eventQa') || params.has('learningReport')) {
+    return <EventCenterPage />;
+  }
+  return <FutureEventsPage />;
+}
 
 export const router = createBrowserRouter([
   { path: '/', element: <LandingPage /> },
@@ -21,8 +30,8 @@ export const router = createBrowserRouter([
   { path: '/play', element: <PlayPage /> },
   { path: '/multiplayer', element: <MultiplayerPage /> },
   { path: '/multiplayer/:roomId', element: <MultiplayerPage /> },
-  { path: '/events', element: <FutureEventsPage /> },
-  { path: '/events/:eventId', element: <FutureEventsPage /> },
+  { path: '/events', element: <EventsRouteGate /> },
+  { path: '/events/:eventId', element: <EventsRouteGate /> },
   { path: '/admin', element: <AdminConsolePage /> },
   { path: '/shelector', element: <ShelectorPage /> },
   { path: '/how-training-works', element: <HowTrainingWorksPage /> },
