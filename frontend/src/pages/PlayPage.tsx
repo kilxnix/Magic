@@ -1844,10 +1844,11 @@ export function PlayPage() {
     }
   };
 
-  const handleStartFocusedXenagosRep = async () => {
+  const handleStartFocusedXenagosRep = async (mode: 'rep' | 'mulligan' = 'rep') => {
     const deck = PRACTICE_DECKS.find(candidate => candidate.id === 'practice-xenagos-dragons');
     if (!deck) return;
 
+    const isMulliganDrill = mode === 'mulligan';
     const focusedPersonality = 'Aggressive';
     const focusedOpponentCount: OpponentCount = 1;
     const focusedSpawnMode: 'counter' = 'counter';
@@ -1871,7 +1872,7 @@ export function PlayPage() {
     setSpawnBracket(deck.bracket);
     setPersonality(focusedPersonality);
     setSpawnedOpponents([]);
-    setSpawnProgress('Loading Xenagos practice deck...');
+    setSpawnProgress(isMulliganDrill ? 'Preparing Xenagos mulligan drill...' : 'Loading Xenagos practice deck...');
 
     try {
       const importRes = await fetch(shelectorApiUrl('/import-deck'), {
@@ -1976,7 +1977,9 @@ export function PlayPage() {
       }
 
       setStep('game');
-      setSaveStatus('Started clean Xenagos rep: Aggressive Shelector, coach mode on, focus tags visible.');
+      setSaveStatus(isMulliganDrill
+        ? 'Started Xenagos mulligan drill: choose keep/mulligan decisions from a fresh opening hand, then bookmark or save promising starts.'
+        : 'Started clean Xenagos rep: Aggressive Shelector, coach mode on, focus tags visible.');
     } catch (err: any) {
       setImportError(err.message || 'Failed to start focused Xenagos rep');
       setStep('import');
@@ -1987,6 +1990,10 @@ export function PlayPage() {
       setStarterDeckLoadingId(null);
       setSpawnProgress('');
     }
+  };
+
+  const handleStartXenagosMulliganDrill = () => {
+    handleStartFocusedXenagosRep('mulligan');
   };
 
   const handleRestartPresetRep = async (deck: BeginnerDeck) => {
@@ -2697,19 +2704,21 @@ export function PlayPage() {
           <div className="mb-4 grid gap-2 sm:grid-cols-2">
             <button
               type="button"
-              onClick={() => setStep('standard')}
-              className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-lg border border-red-700/50 bg-red-950/30 px-4 py-2.5 text-sm font-bold text-red-100 transition-colors hover:bg-red-900/40"
+              disabled
+              title="Events are planned for a future release"
+              className="flex min-h-[44px] w-full cursor-not-allowed items-center justify-center gap-2 rounded-lg border border-stone-700 bg-stone-800/60 px-4 py-2.5 text-sm font-bold text-stone-400"
             >
               <Trophy className="h-4 w-4" />
-              Standard Tournament
+              Standard Event · Future Release
             </button>
             <button
               type="button"
-              onClick={() => setStep('draft')}
-              className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-lg border border-amber-700/50 bg-amber-950/30 px-4 py-2.5 text-sm font-bold text-amber-200 transition-colors hover:bg-amber-900/40"
+              disabled
+              title="Events are planned for a future release"
+              className="flex min-h-[44px] w-full cursor-not-allowed items-center justify-center gap-2 rounded-lg border border-stone-700 bg-stone-800/60 px-4 py-2.5 text-sm font-bold text-stone-400"
             >
               <Users className="h-4 w-4" />
-              Draft Tournament
+              Draft Event · Future Release
             </button>
           </div>
 
@@ -2724,20 +2733,34 @@ export function PlayPage() {
               </p>
             </div>
             <div className="border-b border-amber-500/15 p-3">
-              <button
-                type="button"
-                onClick={handleStartFocusedXenagosRep}
-                disabled={isImporting || isSpawning || isGeneratingAIDeck}
-                className="flex w-full min-h-[52px] items-center justify-center gap-2 rounded-lg bg-amber-500 px-4 py-3 text-sm font-black text-stone-950 transition-colors hover:bg-amber-400 disabled:cursor-not-allowed disabled:bg-stone-700 disabled:text-stone-400"
-              >
-                {isImporting || isSpawning || isGeneratingAIDeck ? (
-                  <><Loader2 className="h-4 w-4 animate-spin" />Starting Focused Rep</>
-                ) : (
-                  <><Rocket className="h-4 w-4" />Start Clean Xenagos Rep</>
-                )}
-              </button>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={() => handleStartFocusedXenagosRep()}
+                  disabled={isImporting || isSpawning || isGeneratingAIDeck}
+                  className="flex w-full min-h-[52px] items-center justify-center gap-2 rounded-lg bg-amber-500 px-4 py-3 text-sm font-black text-stone-950 transition-colors hover:bg-amber-400 disabled:cursor-not-allowed disabled:bg-stone-700 disabled:text-stone-400"
+                >
+                  {isImporting || isSpawning || isGeneratingAIDeck ? (
+                    <><Loader2 className="h-4 w-4 animate-spin" />Starting Rep</>
+                  ) : (
+                    <><Rocket className="h-4 w-4" />Start Clean Xenagos Rep</>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleStartXenagosMulliganDrill}
+                  disabled={isImporting || isSpawning || isGeneratingAIDeck}
+                  className="flex w-full min-h-[52px] items-center justify-center gap-2 rounded-lg border border-amber-500/55 bg-stone-950 px-4 py-3 text-sm font-black text-amber-100 transition-colors hover:bg-amber-950/35 disabled:cursor-not-allowed disabled:border-stone-700 disabled:bg-stone-800 disabled:text-stone-500"
+                >
+                  {isImporting || isSpawning || isGeneratingAIDeck ? (
+                    <><Loader2 className="h-4 w-4 animate-spin" />Starting Drill</>
+                  ) : (
+                    <><Shield className="h-4 w-4" />Mulligan Drill</>
+                  )}
+                </button>
+              </div>
               <p className="mt-2 text-[11px] leading-5 text-amber-100/65">
-                Loads Xenagos, clears the current table, sets Aggressive Shelector, enables coach mode, and opens the practice focus HUD.
+                Loads Xenagos, clears the current table, sets Aggressive Shelector, enables coach mode, and opens either a full rep or a focused opening-hand drill.
               </p>
             </div>
             <div className="divide-y divide-amber-500/15">
@@ -3045,25 +3068,27 @@ export function PlayPage() {
                 ))}
                 <button
                   type="button"
-                  onClick={() => setStep('standard')}
-                  className="min-h-[48px] rounded-lg bg-stone-700 px-4 py-2.5 text-left text-stone-300 transition-colors hover:bg-stone-600"
+                  disabled
+                  title="Events are planned for a future release"
+                  className="min-h-[48px] cursor-not-allowed rounded-lg bg-stone-800/70 px-4 py-2.5 text-left text-stone-500"
                 >
                   <span className="flex items-center gap-2 font-bold">
                     <Trophy className="h-4 w-4" />
-                    Standard Tournament
+                    Standard Event
                   </span>
-                  <span className="block text-xs opacity-75">Swiss, 4+ players</span>
+                  <span className="block text-xs opacity-75">Future release</span>
                 </button>
                 <button
                   type="button"
-                  onClick={() => setStep('draft')}
-                  className="min-h-[48px] rounded-lg bg-stone-700 px-4 py-2.5 text-left text-stone-300 transition-colors hover:bg-stone-600"
+                  disabled
+                  title="Events are planned for a future release"
+                  className="min-h-[48px] cursor-not-allowed rounded-lg bg-stone-800/70 px-4 py-2.5 text-left text-stone-500"
                 >
                   <span className="flex items-center gap-2 font-bold">
                     <Trophy className="h-4 w-4" />
-                    Draft Tournament
+                    Draft Event
                   </span>
-                  <span className="block text-xs opacity-75">2-8 players</span>
+                  <span className="block text-xs opacity-75">Future release</span>
                 </button>
               </div>
             </div>
