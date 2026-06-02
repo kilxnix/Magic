@@ -77,7 +77,7 @@ MAX_REAL_GAME_VIEW_BYTES = int(os.getenv("MULTIPLAYER_MAX_VIEW_BYTES", "120000")
 MAX_REAL_GAME_STATE_BYTES = int(os.getenv("MULTIPLAYER_MAX_STATE_BYTES", "1500000"))
 MAX_REAL_GAME_VIEW_DEPTH = int(os.getenv("MULTIPLAYER_MAX_VIEW_DEPTH", "24"))
 MAX_SPECTATORS = int(os.getenv("MULTIPLAYER_MAX_SPECTATORS", "12"))
-REAL_AUTHORITY_STALE_SECONDS = int(os.getenv("MULTIPLAYER_AUTHORITY_STALE_SECONDS", "30"))
+REAL_AUTHORITY_STALE_SECONDS = int(os.getenv("MULTIPLAYER_AUTHORITY_STALE_SECONDS", "120"))
 MAX_EVENT_PLAYERS = int(os.getenv("MULTIPLAYER_MAX_EVENT_PLAYERS", "64"))
 MAX_EVENT_ANNOUNCEMENTS = 80
 ROOM_EXPIRY = timedelta(hours=12)
@@ -2729,8 +2729,15 @@ async def create_room(req: CreateRoomRequest):
 async def get_room(room_id: str):
     with _lock:
         room = _find_room(room_id)
+        real_game = room.get("real_game")
+        authority_before = real_game.get("authority_player_id") if real_game else None
+        log_count_before = len(real_game.get("log", [])) if real_game else 0
         _ensure_real_game_authority_locked(room)
-        _save_rooms_locked()
+        if real_game and (
+            real_game.get("authority_player_id") != authority_before
+            or len(real_game.get("log", [])) != log_count_before
+        ):
+            _save_rooms_locked()
         return _room_detail(room)
 
 
@@ -3064,7 +3071,6 @@ async def get_pending_real_game_actions(room_id: str, player_id: str = Query(...
         if player_id != real_game["authority_player_id"]:
             raise HTTPException(status_code=403, detail="Only the authority player can fetch pending actions")
         _touch_real_authority(room, player_id)
-        _save_rooms_locked()
         return [
             PendingRealGameAction(
                 id=action["id"],
@@ -3091,6 +3097,8 @@ async def submit_real_game_action(room_id: str, req: SubmitRealGameActionRequest
         pending = real_game.setdefault("pending_actions", [])
         if len(pending) >= MAX_PENDING_REAL_ACTIONS:
             raise HTTPException(status_code=429, detail="Too many pending actions; wait for authority sync")
+        if any(action.get("player_id") == req.player_id for action in pending):
+            raise HTTPException(status_code=409, detail="You already have a pending real engine action")
         action = {
             "id": secrets.token_urlsafe(8),
             "player_id": req.player_id,
@@ -3182,10 +3190,15 @@ async def get_real_game_view(room_id: str, player_id: str = Query(...)):
         real_game = room.get("real_game")
         if not real_game:
             raise HTTPException(status_code=409, detail="The real engine session has not started")
-        _ensure_real_game_authority_locked(room)
         _find_authorized_player(room, player_id)
+        if player_id == real_game.get("authority_player_id"):
+            _touch_real_authority(room, player_id)
+        else:
+            authority_before = real_game.get("authority_player_id")
+            _ensure_real_game_authority_locked(room)
+            if real_game.get("authority_player_id") != authority_before:
+                _save_rooms_locked()
         authority = _real_authority_seat(room)
-        _save_rooms_locked()
         return RealGameViewResponse(
             status=real_game["status"],
             revision=real_game.get("revision", 0),

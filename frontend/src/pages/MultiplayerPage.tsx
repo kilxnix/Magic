@@ -467,10 +467,16 @@ export function MultiplayerPage() {
   const [spectatorDelaySeconds, setSpectatorDelaySeconds] = useState(0);
   const [tableNote, setTableNote] = useState('');
   const [engineNotice, setEngineNotice] = useState('');
+  const [realActionPending, setRealActionPending] = useState(false);
   const engineStateRef = useRef<GameState | null>(null);
   const engineRoomRef = useRef('');
   const engineRevisionRef = useRef(0);
   const engineProcessingRef = useRef(false);
+  const roomRef = useRef<RoomDetail | null>(null);
+  const activeSessionRef = useRef<RoomSession | null>(null);
+  const processRealPendingActionsRef = useRef<(() => Promise<void>) | null>(null);
+  const realActionSubmittedRevisionRef = useRef(0);
+  const realActionUnlockTimerRef = useRef<number | null>(null);
 
   const activeSession = session && room && session.roomId === room.id ? session : null;
   const activeSpectator = !activeSession && spectatorSession && room && spectatorSession.roomId === room.id ? spectatorSession : null;
@@ -497,6 +503,7 @@ export function MultiplayerPage() {
     : [];
   const effectiveRealGameView = activeSpectator ? spectatorRealGameView : realGameView;
   const scopedView = asRoomScopedView(effectiveRealGameView);
+  const realActionBusy = loading || realActionPending;
   const myScopedPlayer = scopedView?.players.find((player) => player.id === activeSession?.playerId);
   const firstLandInHand = myScopedPlayer?.zones.hand.cards?.find((card) => card.cardTypes.includes('land'));
   const playLandActionHint = scopedView?.legalActions?.find((action) => action.action === 'Play Land');
@@ -592,6 +599,11 @@ export function MultiplayerPage() {
     activeSession &&
     scopedView?.legalActions?.find((action) => action.action === 'Pass Priority')?.enabled,
   );
+
+  useEffect(() => {
+    roomRef.current = room;
+    activeSessionRef.current = activeSession;
+  }, [room, activeSession]);
 
   useEffect(() => {
     if (spellsInHand.length > 0 && !spellsInHand.some((card) => card.instanceId === selectedSpellCardId)) {
@@ -692,7 +704,7 @@ export function MultiplayerPage() {
       refreshRoom(room.id).catch(() => {
         // Poll quietly; explicit actions surface errors.
       });
-    }, 2500);
+    }, 1500);
     return () => window.clearInterval(interval);
   }, [room?.id]);
 
@@ -777,7 +789,7 @@ export function MultiplayerPage() {
       }
     }
     pollView();
-    const interval = window.setInterval(pollView, 2500);
+    const interval = window.setInterval(pollView, 1000);
     return () => {
       cancelled = true;
       window.clearInterval(interval);
@@ -800,7 +812,7 @@ export function MultiplayerPage() {
       }
     }
     pollSpectatorView();
-    const interval = window.setInterval(pollSpectatorView, 2500);
+    const interval = window.setInterval(pollSpectatorView, 1000);
     return () => {
       cancelled = true;
       window.clearInterval(interval);
@@ -808,29 +820,53 @@ export function MultiplayerPage() {
   }, [room?.id, room?.real_game?.revision, activeSpectator?.spectatorId]);
 
   useEffect(() => {
+    if (!realActionPending) return;
+    if (!room?.real_game) {
+      setRealActionPending(false);
+      if (realActionUnlockTimerRef.current) window.clearTimeout(realActionUnlockTimerRef.current);
+      realActionUnlockTimerRef.current = null;
+      return;
+    }
+    if ((room.real_game.revision || 0) > realActionSubmittedRevisionRef.current) {
+      setRealActionPending(false);
+      if (realActionUnlockTimerRef.current) window.clearTimeout(realActionUnlockTimerRef.current);
+      realActionUnlockTimerRef.current = null;
+    }
+  }, [realActionPending, room?.real_game?.revision, room?.real_game]);
+
+  useEffect(() => {
     if (!room?.real_game || !activeSession || !isAuthority) return;
     let cancelled = false;
 
     async function ensureEngine() {
-      if (!room?.id || !activeSession) return;
-      if (engineRoomRef.current === room.id && engineStateRef.current) return;
-      const payload = await getRealGameStartPayload(room.id, activeSession.playerId);
+      const currentRoom = roomRef.current;
+      const currentSession = activeSessionRef.current;
+      if (!currentRoom?.real_game || !currentSession) return;
+      if (currentRoom.real_game.authority_player_id !== currentSession.playerId) return;
+      if (engineRoomRef.current === currentRoom.id && engineStateRef.current) return;
+      const payload = await getRealGameStartPayload(currentRoom.id, currentSession.playerId);
       if (cancelled) return;
       engineStateRef.current = await createRoomEngineState(payload);
-      engineRoomRef.current = room.id;
-      engineRevisionRef.current = Math.max(room.real_game?.revision || 0, 0);
-      await publishAuthoritySnapshot(room.id, [], {}, ['Engine state initialized with hidden player views.']);
+      engineRoomRef.current = currentRoom.id;
+      engineRevisionRef.current = Math.max(currentRoom.real_game?.revision || 0, 0);
+      await publishAuthoritySnapshot(currentRoom.id, [], {}, ['Engine state initialized with hidden player views.']);
       setEngineNotice('Authority engine is live in this browser.');
     }
 
     async function processPendingActions() {
-      if (!room?.id || !activeSession || engineProcessingRef.current) return;
+      const currentRoom = roomRef.current;
+      const currentSession = activeSessionRef.current;
+      if (!currentRoom?.real_game || !currentSession || engineProcessingRef.current) return;
+      if (currentRoom.real_game.authority_player_id !== currentSession.playerId) return;
       engineProcessingRef.current = true;
       try {
         await ensureEngine();
         const state = engineStateRef.current;
         if (!state) return;
-        const pending = await getPendingRealGameActions(room.id, activeSession.playerId);
+        const latestRoom = roomRef.current;
+        const latestSession = activeSessionRef.current;
+        if (!latestRoom?.real_game || !latestSession || latestRoom.real_game.authority_player_id !== latestSession.playerId) return;
+        const pending = await getPendingRealGameActions(latestRoom.id, latestSession.playerId);
         if (cancelled || pending.length === 0) return;
 
         const completed: string[] = [];
@@ -852,7 +888,7 @@ export function MultiplayerPage() {
           }
         }
         engineStateRef.current = nextState;
-        await publishAuthoritySnapshot(room.id, completed, rejected, events);
+        await publishAuthoritySnapshot(latestRoom.id, completed, rejected, events);
       } catch (err) {
         setEngineNotice(err instanceof Error ? err.message : 'Authority engine sync failed.');
       } finally {
@@ -860,13 +896,31 @@ export function MultiplayerPage() {
       }
     }
 
+    processRealPendingActionsRef.current = processPendingActions;
     processPendingActions();
-    const interval = window.setInterval(processPendingActions, 1500);
+    const interval = window.setInterval(processPendingActions, 1000);
     return () => {
       cancelled = true;
+      if (processRealPendingActionsRef.current === processPendingActions) {
+        processRealPendingActionsRef.current = null;
+      }
       window.clearInterval(interval);
     };
-  }, [room?.id, room?.real_game?.authority_player_name, activeSession?.playerId, isAuthority]);
+  }, [room?.id, activeSession?.playerId, isAuthority]);
+
+  useEffect(() => {
+    if (!room?.real_game?.pending_action_count || !activeSession || !isAuthority) return;
+    const wake = window.setTimeout(() => {
+      void processRealPendingActionsRef.current?.();
+    }, 0);
+    const retry = window.setTimeout(() => {
+      void processRealPendingActionsRef.current?.();
+    }, 1200);
+    return () => {
+      window.clearTimeout(wake);
+      window.clearTimeout(retry);
+    };
+  }, [room?.real_game?.pending_action_count, room?.real_game?.revision, activeSession?.playerId, isAuthority]);
 
   const popularTags = useMemo(
     () => Array.from(new Set([...defaultTags, ...rooms.flatMap((item) => item.tags)])).slice(0, 10),
@@ -1195,10 +1249,11 @@ export function MultiplayerPage() {
     events: string[] = [],
   ) {
     const state = engineStateRef.current;
-    if (!state || !activeSession) return;
-    engineRevisionRef.current += 1;
+    const publisherSession = activeSessionRef.current;
+    if (!state || !publisherSession) return;
+    engineRevisionRef.current = Math.max(engineRevisionRef.current, roomRef.current?.real_game?.revision || 0) + 1;
     const nextRoom = await publishRealGameSnapshot(roomIdToPublish, {
-      player_id: activeSession.playerId,
+      player_id: publisherSession.playerId,
       revision: engineRevisionRef.current,
       views: createRoomScopedViews(state),
       engine_state: serializeGameState(state),
@@ -1210,16 +1265,37 @@ export function MultiplayerPage() {
   }
 
   async function onSubmitRealAction(action: RealGameAction) {
-    if (!room || !activeSession) return;
-    await runAction(async () => {
+    if (!room || !activeSession || realActionPending) return;
+    setError('');
+    setNotice('');
+    setLoading(true);
+    const submittedRevision = realGameView?.revision ?? room.real_game?.revision ?? 0;
+    realActionSubmittedRevisionRef.current = submittedRevision;
+    if (realActionUnlockTimerRef.current) window.clearTimeout(realActionUnlockTimerRef.current);
+    setRealActionPending(true);
+    realActionUnlockTimerRef.current = window.setTimeout(() => {
+      setRealActionPending(false);
+      realActionUnlockTimerRef.current = null;
+    }, 10000);
+    try {
       await submitRealGameAction(room.id, {
         player_id: activeSession.playerId,
         action,
-        view_revision: realGameView?.revision ?? room.real_game?.revision ?? 0,
+        view_revision: submittedRevision,
       });
       setNotice('Real engine action submitted to the authority browser.');
-      await refreshRoom(room.id);
-    });
+      void refreshRoom(room.id).catch(() => {
+        // Polling will recover room state; action submission already succeeded.
+      });
+      if (isAuthority) {
+        void processRealPendingActionsRef.current?.();
+      }
+    } catch (err) {
+      setRealActionPending(false);
+      setError(err instanceof Error ? err.message : 'Something went wrong');
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function onGameAction(
@@ -3008,7 +3084,7 @@ export function MultiplayerPage() {
                                     kind: 'declare_attackers',
                                     payload: { attackers: [{ cardInstanceId: selectedAttacker.instanceId, defendingPlayerId: selectedDefender.id }] },
                                   })}
-                                  disabled={loading || !selectedAttacker || !selectedDefender}
+                                  disabled={realActionBusy || !selectedAttacker || !selectedDefender}
                                   className="mt-3 min-h-[42px] w-full rounded-lg bg-red-300 px-3 text-sm font-black text-stone-950 hover:bg-red-200 disabled:cursor-not-allowed disabled:opacity-40"
                                 >
                                   Declare Selected Attacker
@@ -3057,7 +3133,7 @@ export function MultiplayerPage() {
                                     kind: 'declare_blockers',
                                     payload: { blockers: [{ cardInstanceId: selectedBlocker.instanceId, blockingAttackerId: selectedBlockedAttacker.id }] },
                                   })}
-                                  disabled={loading || !selectedBlocker || !selectedBlockedAttacker}
+                                  disabled={realActionBusy || !selectedBlocker || !selectedBlockedAttacker}
                                   className="mt-3 min-h-[42px] w-full rounded-lg bg-indigo-300 px-3 text-sm font-black text-stone-950 hover:bg-indigo-200 disabled:cursor-not-allowed disabled:opacity-40"
                                 >
                                   Declare Selected Blocker
@@ -3070,7 +3146,7 @@ export function MultiplayerPage() {
                           <button
                             type="button"
                             onClick={() => onSubmitRealAction({ kind: 'pass_priority' })}
-                            disabled={loading || !canPassPriority}
+                            disabled={realActionBusy || !canPassPriority}
                             className="min-h-[42px] rounded-lg bg-amber-300 px-3 text-sm font-black text-stone-950 hover:bg-amber-200 disabled:cursor-not-allowed disabled:opacity-40"
                           >
                             Pass Priority
@@ -3078,7 +3154,7 @@ export function MultiplayerPage() {
                           <button
                             type="button"
                             onClick={() => firstLandInHand && onSubmitRealAction({ kind: 'play_land', payload: { card_instance_id: firstLandInHand.instanceId } })}
-                            disabled={loading || !canPlayFirstLand}
+                            disabled={realActionBusy || !canPlayFirstLand}
                             className="min-h-[42px] rounded-lg bg-emerald-300 px-3 text-sm font-black text-stone-950 hover:bg-emerald-200 disabled:cursor-not-allowed disabled:opacity-40"
                           >
                             Play First Land
@@ -3086,7 +3162,7 @@ export function MultiplayerPage() {
                           <button
                             type="button"
                             onClick={() => firstManaSource && onSubmitRealAction({ kind: 'tap_mana', payload: { card_instance_id: firstManaSource.instanceId, color: realManaColor } })}
-                            disabled={loading || scopedView.priorityPlayerId !== activeSession.playerId || !firstManaSource}
+                            disabled={realActionBusy || scopedView.priorityPlayerId !== activeSession.playerId || !firstManaSource}
                             className="min-h-[42px] rounded-lg bg-sky-300 px-3 text-sm font-black text-stone-950 hover:bg-sky-200 disabled:cursor-not-allowed disabled:opacity-40"
                           >
                             Tap First Mana Source
@@ -3094,7 +3170,7 @@ export function MultiplayerPage() {
                           <button
                             type="button"
                             onClick={() => selectedSpellInHand && onSubmitRealAction({ kind: 'cast_spell', payload: { card_instance_id: selectedSpellInHand.instanceId, targets: selectedSpellTargets } })}
-                            disabled={loading || !canCastSelectedSpell}
+                            disabled={realActionBusy || !canCastSelectedSpell}
                             className="min-h-[42px] rounded-lg bg-violet-300 px-3 text-sm font-black text-stone-950 hover:bg-violet-200 disabled:cursor-not-allowed disabled:opacity-40"
                           >
                             Cast Selected Spell
@@ -3102,7 +3178,7 @@ export function MultiplayerPage() {
                           <button
                             type="button"
                             onClick={() => firstCommandSpell && onSubmitRealAction({ kind: 'cast_spell', payload: { card_instance_id: firstCommandSpell.instanceId, targets: [] } })}
-                            disabled={loading || !canCastFirstCommandSpell}
+                            disabled={realActionBusy || !canCastFirstCommandSpell}
                             className="min-h-[42px] rounded-lg bg-white/10 px-3 text-sm font-black text-stone-100 hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-40"
                           >
                             Cast Commander
@@ -3110,7 +3186,7 @@ export function MultiplayerPage() {
                           <button
                             type="button"
                             onClick={() => onSubmitRealAction({ kind: 'declare_attackers', payload: { attackers: [] } })}
-                            disabled={loading || !canDeclareAttackers}
+                            disabled={realActionBusy || !canDeclareAttackers}
                             className="min-h-[42px] rounded-lg bg-white/10 px-3 text-sm font-black text-stone-100 hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-40"
                           >
                             No Attacks
@@ -3121,7 +3197,7 @@ export function MultiplayerPage() {
                               kind: 'declare_attackers',
                               payload: { attackers: [{ cardInstanceId: firstAttacker.instanceId, defendingPlayerId: firstOpponent.id }] },
                             })}
-                            disabled={loading || !canDeclareAttackers || !firstAttacker || !firstOpponent}
+                            disabled={realActionBusy || !canDeclareAttackers || !firstAttacker || !firstOpponent}
                             className="min-h-[42px] rounded-lg bg-red-300 px-3 text-sm font-black text-stone-950 hover:bg-red-200 disabled:cursor-not-allowed disabled:opacity-40"
                           >
                             Attack First Creature
@@ -3129,7 +3205,7 @@ export function MultiplayerPage() {
                           <button
                             type="button"
                             onClick={() => onSubmitRealAction({ kind: 'declare_blockers', payload: { blockers: [] } })}
-                            disabled={loading || !canDeclareBlockers}
+                            disabled={realActionBusy || !canDeclareBlockers}
                             className="min-h-[42px] rounded-lg bg-white/10 px-3 text-sm font-black text-stone-100 hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-40"
                           >
                             No Blocks

@@ -95,18 +95,26 @@ function assert(condition, message) {
 }
 
 async function apiJson(pathname, options = {}) {
-  const response = await fetch(`${API_BASE_URL}${pathname}`, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(options.headers || {}),
-    },
-  });
-  const text = await response.text();
-  if (!response.ok) {
-    throw new Error(`API ${pathname} returned ${response.status}: ${text}`);
+  let lastError = null;
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const response = await fetch(`${API_BASE_URL}${pathname}`, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(options.headers || {}),
+      },
+    });
+    const text = await response.text();
+    if (response.ok) {
+      return text ? JSON.parse(text) : null;
+    }
+    lastError = new Error(`API ${pathname} returned ${response.status}: ${text}`);
+    if (![502, 503, 504, 429].includes(response.status)) {
+      throw lastError;
+    }
+    await sleep(1500 + attempt * 1500);
   }
-  return text ? JSON.parse(text) : null;
+  throw lastError || new Error(`API ${pathname} failed`);
 }
 
 function decklistFromParsed(parsed) {

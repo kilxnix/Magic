@@ -507,13 +507,6 @@ def test_real_engine_session_routes_actions_and_scoped_views(monkeypatch):
     assert tap_mana.status_code == 200
     assert tap_mana.json()["action"]["kind"] == "tap_mana"
 
-    cast_spell = client.post(
-        f"/api/multiplayer/rooms/{room_id}/real-game/action",
-        json={"player_id": host_id, "action": {"kind": "cast_spell", "payload": {"card_instance_id": "room_card_2", "targets": []}}},
-    )
-    assert cast_spell.status_code == 200
-    assert cast_spell.json()["action"]["kind"] == "cast_spell"
-
     snapshot = client.post(
         f"/api/multiplayer/rooms/{room_id}/real-game/snapshot",
         json={
@@ -559,12 +552,35 @@ def test_real_engine_session_routes_actions_and_scoped_views(monkeypatch):
                 },
                 guest_id: {"viewerId": guest_id, "players": []},
             },
-            "completed_action_ids": [action_id, tap_mana.json()["id"], cast_spell.json()["id"]],
+            "completed_action_ids": [action_id, tap_mana.json()["id"]],
             "events": ["Guest passed priority."],
         },
     )
     assert snapshot.status_code == 200
     assert snapshot.json()["real_game"]["pending_action_count"] == 0
+
+    cast_spell = client.post(
+        f"/api/multiplayer/rooms/{room_id}/real-game/action",
+        json={"player_id": host_id, "action": {"kind": "cast_spell", "payload": {"card_instance_id": "room_card_2", "targets": []}}},
+    )
+    assert cast_spell.status_code == 200
+    assert cast_spell.json()["action"]["kind"] == "cast_spell"
+
+    cast_snapshot = client.post(
+        f"/api/multiplayer/rooms/{room_id}/real-game/snapshot",
+        json={
+            "player_id": host_id,
+            "revision": 2,
+            "views": {
+                host_id: {"viewerId": host_id, "players": []},
+                guest_id: {"viewerId": guest_id, "players": []},
+            },
+            "completed_action_ids": [cast_spell.json()["id"]],
+            "events": ["Authority cast a spell."],
+        },
+    )
+    assert cast_snapshot.status_code == 200
+    assert cast_snapshot.json()["real_game"]["pending_action_count"] == 0
 
     restored_payload = client.get(f"/api/multiplayer/rooms/{room_id}/real-game/start-payload", params={"player_id": host_id})
     assert restored_payload.status_code == 200
@@ -581,7 +597,7 @@ def test_real_engine_session_routes_actions_and_scoped_views(monkeypatch):
         f"/api/multiplayer/rooms/{room_id}/real-game/snapshot",
         json={
             "player_id": host_id,
-            "revision": 2,
+            "revision": 3,
             "views": {
                 host_id: {"viewerId": host_id, "players": []},
                 guest_id: {"viewerId": guest_id, "players": []},
@@ -599,22 +615,10 @@ def test_real_engine_session_routes_actions_and_scoped_views(monkeypatch):
 
     guest_view = client.get(f"/api/multiplayer/rooms/{room_id}/real-game/view", params={"player_id": guest_id})
     assert guest_view.status_code == 200
-    assert guest_view.json()["revision"] == 2
+    assert guest_view.json()["revision"] == 3
     assert guest_view.json()["view"]["viewerId"] == guest_id
 
     stale_action = client.post(
-        f"/api/multiplayer/rooms/{room_id}/real-game/action",
-        json={
-            "player_id": guest_id,
-            "view_revision": 1,
-            "action": {"kind": "pass_priority"},
-        },
-    )
-    assert stale_action.status_code == 200
-    after_stale = client.get(f"/api/multiplayer/rooms/{room_id}")
-    assert after_stale.json()["real_game"]["pending_action_count"] == 1
-
-    current_action = client.post(
         f"/api/multiplayer/rooms/{room_id}/real-game/action",
         json={
             "player_id": guest_id,
@@ -622,7 +626,20 @@ def test_real_engine_session_routes_actions_and_scoped_views(monkeypatch):
             "action": {"kind": "pass_priority"},
         },
     )
-    assert current_action.status_code == 200
+    assert stale_action.status_code == 200
+    after_stale = client.get(f"/api/multiplayer/rooms/{room_id}")
+    assert after_stale.json()["real_game"]["pending_action_count"] == 1
+
+    duplicate_action = client.post(
+        f"/api/multiplayer/rooms/{room_id}/real-game/action",
+        json={
+            "player_id": guest_id,
+            "view_revision": 2,
+            "action": {"kind": "pass_priority"},
+        },
+    )
+    assert duplicate_action.status_code == 409
+    assert duplicate_action.json()["detail"] == "You already have a pending real engine action"
 
 
 def test_real_engine_authority_fails_over_when_authority_disconnects(monkeypatch):
@@ -694,7 +711,9 @@ def test_real_engine_authority_fails_over_when_heartbeat_stales(monkeypatch):
             json={"player_id": player_id, "ready": True, "deck_name": name, "commander": deck["commander"], "deck": deck},
         )
     client.post(f"/api/multiplayer/rooms/{room_id}/start-real-game", json={"player_id": host_id})
-    multiplayer._rooms[room_id]["real_game"]["authority_last_seen_at"] = multiplayer._now() - timedelta(seconds=90)
+    multiplayer._rooms[room_id]["real_game"]["authority_last_seen_at"] = multiplayer._now() - timedelta(
+        seconds=multiplayer.REAL_AUTHORITY_STALE_SECONDS + 30
+    )
 
     view = client.get(f"/api/multiplayer/rooms/{room_id}/real-game/view", params={"player_id": guest_id})
     assert view.status_code == 200

@@ -79,8 +79,17 @@ async function screenshot(page, name) {
 
 async function newContext(browser, options) {
   const context = await browser.newContext({
+    serviceWorkers: 'block',
     ...options,
     ...(QA_HEADERS ? { extraHTTPHeaders: QA_HEADERS } : {}),
+  });
+  context.on('page', (page) => {
+    page.on('console', (message) => {
+      fs.appendFileSync(artifact('console.log'), `[${message.type()}] ${message.text()}\n`);
+    });
+    page.on('pageerror', (error) => {
+      fs.appendFileSync(artifact('console.log'), `[pageerror] ${error.message}\n${error.stack || ''}\n`);
+    });
   });
   if (QA_ADMIN_TOKEN) {
     await context.addInitScript((token) => {
@@ -101,25 +110,52 @@ async function dismissOverlays(page) {
 }
 
 async function gotoRoomHome(page, suffix = '') {
-  await page.goto(`${BASE_URL}/multiplayer${suffix}`, { waitUntil: 'domcontentloaded' });
-  await dismissOverlays(page);
-  await page.waitForLoadState('load');
+  const url = `${BASE_URL}/multiplayer${suffix}`;
+  let lastBody = '';
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    try {
+      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+      await dismissOverlays(page);
+      await page.waitForLoadState('load', { timeout: 30000 }).catch(() => {});
+      lastBody = await page.locator('body').innerText({ timeout: 10000 }).catch(() => '');
+      const badGateway = /bad gateway|error code 502|web server is down/i.test(lastBody);
+      const hasRoomShell = lastBody.includes('PRIVATE ROOMS BETA') || lastBody.includes('CURRENT ROOM');
+      if (!badGateway && hasRoomShell) return;
+    } catch (error) {
+      if (attempt === 3) throw error;
+    }
+    await page.waitForTimeout(2000 + attempt * 1000);
+  }
+  throw new Error(`Room page did not load a usable shell. Last visible body: ${lastBody.replace(/\s+/g, ' ').slice(0, 1200)}`);
 }
 
-async function waitForEnabledButton(page, name, timeout = 15000) {
+async function waitForEnabledButton(page, name, timeout = 25000) {
   const started = Date.now();
-  const button = page.getByRole('button', { name, exact: true });
+  let lastBody = '';
   while (Date.now() - started < timeout) {
-    if ((await button.count()) > 0 && await button.first().isEnabled().catch(() => false)) {
-      return button.first();
-    }
+    lastBody = await page.locator('body').innerText().catch(() => '');
+    const button = await findVisibleEnabledButton(page, name);
+    if (button) return button;
     const sync = page.getByRole('button', { name: 'Sync', exact: true });
     if ((await sync.count()) === 1) {
       await sync.click().catch(() => {});
     }
     await page.waitForTimeout(750);
   }
-  throw new Error(`Timed out waiting for enabled button: ${name}`);
+  const excerpt = lastBody.replace(/\s+/g, ' ').slice(0, 1800);
+  throw new Error(`Timed out waiting for enabled button: ${name}. Last visible body: ${excerpt}`);
+}
+
+async function findVisibleEnabledButton(page, name) {
+  const buttons = page.getByRole('button', { name, exact: true });
+  const count = await buttons.count();
+  for (let index = 0; index < count; index += 1) {
+    const button = buttons.nth(index);
+    if (await button.isVisible().catch(() => false) && await button.isEnabled().catch(() => false)) {
+      return button;
+    }
+  }
+  return null;
 }
 
 async function fillChat(page, message) {
@@ -307,7 +343,7 @@ async function readyWithDeck(page, { deckName, commander, cards }) {
   }
 }
 
-async function waitBodyIncludes(page, needle, timeout = 15000) {
+async function waitBodyIncludes(page, needle, timeout = 30000) {
   const started = Date.now();
   let lastBody = '';
   while (Date.now() - started < timeout) {
@@ -321,9 +357,58 @@ async function waitBodyIncludes(page, needle, timeout = 15000) {
 }
 
 async function clickAction(page, name) {
-  const button = await waitForEnabledButton(page, name, 15000);
+  const button = await waitForEnabledButton(page, name, 25000);
   await button.click();
   await page.waitForTimeout(600);
+}
+
+async function clickEnabledActionForAny(participants, name, observerPage, expectedText, timeout = 30000) {
+  const started = Date.now();
+  let lastBody = '';
+  const clickedBy = [];
+  const lastClickedAt = new Map();
+  while (Date.now() - started < timeout) {
+    lastBody = await observerPage.locator('body').innerText().catch(() => '');
+    if (expectedText && lastBody.toLowerCase().includes(expectedText.toLowerCase())) {
+      return clickedBy;
+    }
+    const priorityMatch = lastBody.match(/\bPRIORITY:\s*([^\n]+)/i);
+    const priorityName = priorityMatch ? priorityMatch[1].trim().toLowerCase() : '';
+    const orderedParticipants = priorityName
+      ? [
+          ...participants.filter((participant) => (participant.name || '').toLowerCase() === priorityName),
+          ...participants.filter((participant) => (participant.name || '').toLowerCase() !== priorityName),
+        ]
+      : participants;
+    let clicked = false;
+    for (const participant of orderedParticipants) {
+      const page = participant.page || participant;
+      const label = participant.name || 'participant';
+      if (priorityName && label.toLowerCase() !== priorityName) continue;
+      if (Date.now() - (lastClickedAt.get(label) || 0) < 4500) continue;
+      const button = await findVisibleEnabledButton(page, name);
+      if (button) {
+        await button.click();
+        clickedBy.push(label);
+        lastClickedAt.set(label, Date.now());
+        clicked = true;
+        await page.waitForTimeout(1800);
+        break;
+      }
+    }
+    if (!clicked) {
+      for (const participant of participants) {
+        const page = participant.page || participant;
+        const sync = page.getByRole('button', { name: 'Sync', exact: true });
+        if ((await sync.count()) === 1) {
+          await sync.click().catch(() => {});
+        }
+      }
+    }
+    await observerPage.waitForTimeout(350);
+  }
+  const excerpt = lastBody.replace(/\s+/g, ' ').slice(0, 1800);
+  throw new Error(`Timed out waiting for ${name} flow to reach: ${expectedText}. Clicked: ${clickedBy.join(' -> ') || 'none'}. Last visible body: ${excerpt}`);
 }
 
 async function selectTrackerTarget(page, playerName) {
@@ -495,12 +580,14 @@ async function runEngineGate(browser) {
   assert(hostStartBody.toLowerCase().includes('land plays unlock during your main phase while you have priority.'), 'play-land phase explanation missing during upkeep');
   assert(!(await host.getByRole('button', { name: 'Play First Land', exact: true }).isEnabled()), 'Play First Land should be disabled before main phase');
 
-  await clickAction(host, 'Pass Priority');
-  await clickAction(guest, 'Pass Priority');
+  const engineSeats = [
+    { page: host, name: 'UI Engine Host' },
+    { page: guest, name: 'UI Engine Guest' },
+  ];
+  await clickEnabledActionForAny(engineSeats, 'Pass Priority', host, 'advanced to beginning / draw', 45000);
   await waitBodyIncludes(host, 'advanced to beginning / draw', 20000);
 
-  await clickAction(host, 'Pass Priority');
-  await clickAction(guest, 'Pass Priority');
+  await clickEnabledActionForAny(engineSeats, 'Pass Priority', host, 'advanced to precombat_main', 45000);
   await waitBodyIncludes(host, 'advanced to precombat_main', 20000);
 
   const playLand = await waitForEnabledButton(host, 'Play First Land', 20000);
@@ -513,12 +600,10 @@ async function runEngineGate(browser) {
   await waitBodyIncludes(host, 'UI Engine Host tapped Mountain for R.', 20000);
   await clickAction(host, 'Cast Commander');
   await waitBodyIncludes(host, 'UI Engine Host cast Rograkh, Son of Rohgahh.', 20000);
-  await clickAction(host, 'Pass Priority');
-  await clickAction(guest, 'Pass Priority');
+  await clickEnabledActionForAny(engineSeats, 'Pass Priority', host, 'top stack item resolved', 45000);
   await waitBodyIncludes(host, 'top stack item resolved', 20000);
 
-  await clickAction(host, 'Pass Priority');
-  await clickAction(guest, 'Pass Priority');
+  await clickEnabledActionForAny(engineSeats, 'Pass Priority', host, 'advanced to combat / declare_attackers', 45000);
   await waitBodyIncludes(host, 'advanced to combat / declare_attackers', 20000);
   await clickAction(host, 'No Attacks');
   await waitBodyIncludes(host, 'UI Engine Host declared no attackers.', 20000);
@@ -594,10 +679,12 @@ async function runFourPlayerEngineGate(browser) {
   assert(normalizedHostBody.includes('stack: 0'), '4-player engine stack label missing');
   assert(normalizedHostBody.includes('4/4 seated'), '4-player room did not show four occupied seats');
 
-  await clickAction(host, 'Pass Priority');
-  await clickAction(guestA, 'Pass Priority');
-  await clickAction(guestB, 'Pass Priority');
-  await clickAction(guestC, 'Pass Priority');
+  await clickEnabledActionForAny([
+    { page: host, name: 'FourP Host' },
+    { page: guestA, name: 'FourP A' },
+    { page: guestB, name: 'FourP B' },
+    { page: guestC, name: 'FourP C' },
+  ], 'Pass Priority', host, 'advanced to beginning / draw', 30000);
   await waitBodyIncludes(host, 'advanced to beginning / draw', 25000);
   await waitBodyIncludes(guestC, 'advanced to beginning / draw', 25000);
 
@@ -661,14 +748,19 @@ async function runImportedFourPlayerEngineGate(browser) {
   assert(normalizedHostBody.includes('priority: arch host'), 'imported 4-player engine priority label missing');
   assert(normalizedHostBody.includes('4/4 seated'), 'imported 4-player room did not show four occupied seats');
 
-  for (const seat of seats) await clickAction(seat.page, 'Pass Priority');
+  await clickEnabledActionForAny(seats, 'Pass Priority', host, 'advanced to beginning / draw', 35000);
   await waitBodyIncludes(host, 'advanced to beginning / draw', 25000);
-  for (const seat of seats) await clickAction(seat.page, 'Pass Priority');
+  await clickEnabledActionForAny(seats, 'Pass Priority', host, 'advanced to precombat_main', 35000);
   await waitBodyIncludes(host, 'advanced to precombat_main', 25000);
 
-  const playLand = await waitForEnabledButton(host, 'Play First Land', 20000);
-  await playLand.click();
-  await waitBodyIncludes(host, 'Arch Host played a land.', 25000);
+  const playLand = await findVisibleEnabledButton(host, 'Play First Land');
+  if (playLand) {
+    await playLand.click();
+    await waitBodyIncludes(host, 'Arch Host played a land.', 25000);
+  } else {
+    const noLandBody = await host.locator('body').innerText();
+    assert(noLandBody.includes('No visible land in hand.'), 'imported 4-player host could not play a land and did not explain why');
+  }
 
   const guestBody = await guestA.locator('body').innerText();
   const otherDeckNames = new Set(

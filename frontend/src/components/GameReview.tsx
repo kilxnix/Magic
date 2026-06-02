@@ -111,10 +111,24 @@ function replayAuditReviewEntry(
     phase: finalState.phase,
     manaSpent: 0,
     timestamp: Number.MAX_SAFE_INTEGER - 1,
-    playByPlay: audit.message,
+    playByPlay: audit.ok
+      ? audit.message
+      : [
+          audit.message,
+          audit.developerMessage,
+          audit.reason ? `Reason: ${audit.reason}` : '',
+          audit.failedEventSequence !== undefined ? `Event: ${audit.failedEventSequence}` : '',
+        ].filter(Boolean).join(' - '),
     rulesAudit: {
       severity: audit.ok ? 'info' : 'error',
-      reason: audit.message,
+      reason: audit.ok
+        ? audit.message
+        : [
+            audit.message,
+            audit.developerMessage,
+            audit.reason ? `Reason: ${audit.reason}` : '',
+            audit.failedEventSequence !== undefined ? `Event: ${audit.failedEventSequence}` : '',
+          ].filter(Boolean).join(' - '),
     },
     ...stats,
   }];
