@@ -3729,7 +3729,7 @@ export function GameBoard({
           </div>
           {practiceFocusTags.length > 0 && (
             <div className="flex flex-wrap gap-1">
-              {practiceFocusTags.slice(0, 4).map(tag => (
+              {practiceFocusTags.slice(0, 5).map(tag => (
                 <span key={tag} className="rounded border border-amber-500/30 px-1.5 py-0.5 text-[9px] font-bold text-amber-100">
                   {tag}
                 </span>
@@ -3740,9 +3740,16 @@ export function GameBoard({
             <div className="mt-2 rounded border border-fuchsia-500/30 bg-fuchsia-950/35 px-2 py-1 text-[10px] text-fuchsia-100">
               <div className="font-black uppercase tracking-wider">Smart Checkpoint</div>
               <div>{smartBookmarkReason}</div>
+              <button
+                type="button"
+                onClick={onBookmarkDrill}
+                className="mt-1 min-h-7 rounded bg-fuchsia-500 px-2 text-[9px] font-black uppercase text-neutral-950"
+              >
+                Bookmark This Decision
+              </button>
             </div>
           )}
-          {complexTurnSignals.slice(0, 2).map(signal => (
+          {complexTurnSignals.slice(0, 4).map(signal => (
             <div
               key={`floating-mobile-${signal.label}:${signal.detail}`}
               className={`mt-1 rounded border px-2 py-1 text-[10px] ${complexSignalClass(signal.tone)}`}
@@ -3751,10 +3758,16 @@ export function GameBoard({
               <div className="leading-snug opacity-85">{signal.detail}</div>
             </div>
           ))}
-          {branchPreviews.slice(0, 2).map(preview => (
+          {branchPreviews.slice(0, 3).map(preview => (
             <div key={`floating-mobile-preview-${preview.actionId}`} className="mt-1 rounded border border-sky-500/25 bg-sky-950/25 px-2 py-1 text-[10px] text-sky-100">
-              <div className="truncate font-black uppercase tracking-wider">{preview.label}</div>
+              <div className="truncate font-black uppercase tracking-wider">
+                {preview.label}
+                {typeof preview.score === 'number' ? ` (${preview.score.toFixed(1)})` : ''}
+              </div>
               <div className="leading-snug opacity-85">{preview.summary}</div>
+              {preview.warnings[0] && (
+                <div className="mt-0.5 leading-snug text-amber-100/85">{preview.warnings[0]}</div>
+              )}
               {onLoadBranchPreview && preview.resultEngine && (
                 <button
                   type="button"
@@ -4365,7 +4378,7 @@ export function GameBoard({
                 <div className="rounded border border-amber-500/25 bg-amber-950/25 px-2 py-1.5">
                   <div className="mb-1 text-[10px] font-black uppercase tracking-wider text-amber-200">Practice Focus</div>
                   <div className="flex flex-wrap gap-1">
-                    {practiceFocusTags.slice(0, 4).map(tag => (
+                    {practiceFocusTags.slice(0, 5).map(tag => (
                       <span key={tag} className="rounded border border-amber-500/30 px-1.5 py-0.5 text-[9px] font-bold text-amber-100">
                         {tag}
                       </span>
@@ -4373,7 +4386,7 @@ export function GameBoard({
                   </div>
                 </div>
               )}
-              {complexTurnSignals.slice(0, 2).map(signal => (
+              {complexTurnSignals.slice(0, 4).map(signal => (
                 <div
                   key={`mobile-${signal.label}:${signal.detail}`}
                   className={`rounded border px-2 py-1.5 ${complexSignalClass(signal.tone)}`}
@@ -4387,7 +4400,9 @@ export function GameBoard({
                   <div className="text-[10px] font-black uppercase tracking-wider text-sky-200">Branch Preview</div>
                   {branchPreviews.slice(0, 3).map(preview => (
                     <div key={`mobile-preview-${preview.actionId}`} className="mt-1 text-[10px] leading-snug text-sky-100/85">
-                      <span className="font-bold text-stone-100">{preview.label}:</span> {preview.summary}
+                      <span className="font-bold text-stone-100">
+                        {preview.label}{typeof preview.score === 'number' ? ` (${preview.score.toFixed(1)})` : ''}:
+                      </span> {preview.summary}
                       {preview.warnings[0] && (
                         <div className="mt-0.5 text-amber-100/85">{preview.warnings[0]}</div>
                       )}
