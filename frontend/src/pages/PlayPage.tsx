@@ -1056,6 +1056,8 @@ export function PlayPage() {
           const canonicalAudit = record?.canonicalEngineSave ? auditCanonicalPlayEngineSave(record.canonicalEngineSave) : null;
           const checkpointSequence = record ? latestCheckpointSequence(record) : null;
           const managerStatus = record?.canonicalManager?.status;
+          const canonicalManagerVerified = managerStatus === 'ok';
+          const showLegacyReplayAudit = Boolean(audit && (!canonicalManagerVerified || audit.ok));
           const loadBlocked = Boolean(
             record && (
               (canonicalAudit && !canonicalAudit.ok)
@@ -1092,7 +1094,7 @@ export function PlayPage() {
                       {record.practice.focusTags.length > 0 ? ` - ${record.practice.focusTags.slice(0, 2).join(', ')}` : ''}
                     </span>
                   )}
-                  {(audit || canonicalAudit || record?.canonicalManager) && (
+                  {(showLegacyReplayAudit || canonicalAudit || record?.canonicalManager) && (
                     <span className="mt-1 flex flex-wrap gap-1">
                       {record?.canonicalManager && (
                         <span className={`inline-flex rounded border px-1.5 py-0.5 text-[11px] font-black uppercase tracking-wide ${
@@ -1124,7 +1126,7 @@ export function PlayPage() {
                             : 'Engine missing'}
                         </span>
                       )}
-                      {audit && (
+                      {showLegacyReplayAudit && audit && (
                         <span className={`inline-flex rounded border px-1.5 py-0.5 text-[11px] font-black uppercase tracking-wide ${
                           audit.ok
                             ? 'border-emerald-500/40 bg-emerald-950/30 text-emerald-200'
