@@ -491,12 +491,13 @@ export function MultiplayerPage() {
   const scopedView = asRoomScopedView(effectiveRealGameView);
   const myScopedPlayer = scopedView?.players.find((player) => player.id === activeSession?.playerId);
   const firstLandInHand = myScopedPlayer?.zones.hand.cards?.find((card) => card.cardTypes.includes('land'));
+  const playLandActionHint = scopedView?.legalActions?.find((action) => action.action === 'Play Land');
   const canPlayFirstLand = Boolean(
     firstLandInHand &&
     scopedView &&
     activeSession &&
     scopedView.priorityPlayerId === activeSession.playerId &&
-    ['precombat_main', 'postcombat_main'].includes(scopedView.phase),
+    playLandActionHint?.enabled,
   );
   const isAuthority = Boolean(activeSession && room?.real_game?.authority_player_id === activeSession.playerId);
   const currentTrackerPlayer = room?.game?.players.find((player) => player.name === activeSession?.playerName);

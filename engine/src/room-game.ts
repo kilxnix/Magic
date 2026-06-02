@@ -8,6 +8,7 @@ import { getKeywordsForInstance, instanceHasKeyword, type Keyword } from './keyw
 import { getLegalTargets, getSpellTargetSpecs } from './ai/legal-actions';
 import { hasPlayerDeclaredBlockers } from './combat';
 import type { TargetSpec } from './effects/targets';
+import { canPlayLandDetailed } from './actions';
 
 export interface RoomGamePlayerConfig {
   id: string;
@@ -522,7 +523,11 @@ function legalActionHints(state: GameState, viewerId: string, scopedPlayers: Pla
   const isActive = state.players[state.activePlayerIndex]?.id === viewerId;
   const isMain = state.phase === 'precombat_main' || state.phase === 'postcombat_main';
   const stackEmpty = state.stack.length === 0;
-  const hasLand = viewer ? hasVisibleCard(viewer, 'hand', card => card.cardTypes.includes('land')) : false;
+  const firstLand = getCardsInZone(state, viewerId, 'hand')
+    .find(card => getCardDefinition(state, card).card_types.includes('land'));
+  const landLegality = firstLand ? canPlayLandDetailed(state, viewerId, firstLand.instanceId) : null;
+  const hasLand = Boolean(firstLand);
+  const canPlayLand = Boolean(landLegality?.legal);
   const hasSpell = viewer ? hasVisibleCard(viewer, 'hand', card => !card.cardTypes.includes('land')) : false;
   const hasCommander = viewer ? Boolean(viewer.zones.command.cards?.length) : false;
   const hasManaSource = viewer ? hasVisibleCard(viewer, 'battlefield', canUseVisibleManaSource) : false;
@@ -548,8 +553,8 @@ function legalActionHints(state: GameState, viewerId: string, scopedPlayers: Pla
     },
     {
       action: 'Play Land',
-      enabled: hasPriority && isActive && isMain && stackEmpty && hasLand,
-      reason: !hasPriority ? 'You need priority.' : !isActive ? 'Only the active player can play lands.' : !isMain ? 'Lands use main-phase timing.' : !stackEmpty ? 'The stack must be empty.' : !hasLand ? 'No visible land in hand.' : 'Main phase, empty stack, land available.',
+      enabled: canPlayLand,
+      reason: !hasPriority ? 'You need priority.' : !isActive ? 'Only the active player can play lands.' : !isMain ? 'Lands use main-phase timing.' : !stackEmpty ? 'The stack must be empty.' : !hasLand ? 'No visible land in hand.' : landLegality && !landLegality.legal ? landLegality.reason : 'Main phase, empty stack, land available.',
     },
     {
       action: 'Tap Mana',

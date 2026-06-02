@@ -134,6 +134,21 @@ describe('room engine games', () => {
     }
   });
 
+  it('does not advertise another land play after the turn land drop is used', () => {
+    const state = { ...roomGame(), phase: 'precombat_main' as const };
+    const land = getCardsInZone(state, 'p1', 'hand').find(card => card.definitionId === 'forest')!;
+    const result = tryPlayLand(state, 'p1', land.instanceId);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const view = getPlayerView(result.state, 'p1');
+    expect(view.legalActions.find(action => action.action === 'Play Land')).toMatchObject({
+      enabled: false,
+      reason: 'No land plays remaining',
+    });
+  });
+
   it('explains stack items and available actions in scoped views', () => {
     const state = { ...roomGame(), phase: 'precombat_main' as const };
     const commander = getCardsInZone(state, 'p1', 'command')[0];
