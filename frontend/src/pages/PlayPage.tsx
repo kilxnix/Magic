@@ -787,33 +787,36 @@ export function PlayPage() {
     setSaveStatus(`Loaded slot ${record.slot} at drill checkpoint ${sequence}.`);
   };
 
-  const currentDrillDecisionContext = (): PlayDrillDecisionContext => ({
-    currentPrompt,
-    tutorPhase,
-    tutorCards,
-    tutorTitle,
-    tutorPromptRequest: null,
-    tutorRemaining: 0,
-    tutorFilter: undefined,
-    tutorFilterSpec: undefined,
-    tutorTapped: false,
-    tutorShuffle: true,
-    tutorDestination: 'hand',
-    tutorSourceName: currentPrompt?.title || 'Practice Drill',
-    tutorSourceInstanceId: undefined,
-    pendingSearchEntryChoice: null,
-    pendingTargetChoice: null,
-    libraryChoice,
-    libraryManipulationPromptRequest: null,
-    optionalTriggerChoice,
-    taxPaymentChoice,
-    wardPaymentChoice,
-    damageAssignmentChoice,
-    triggerOrderChoice,
-    discardPhase,
-    discardCount,
-    selectedMulliganCardIds,
-    selectedMulliganBottomIds,
+  const currentDrillDecisionContext = (snapshot?: ShelectorGameSaveSnapshot | null): PlayDrillDecisionContext => ({
+    currentPrompt: snapshot?.currentPrompt ?? currentPrompt,
+    mulliganPhase: snapshot?.mulliganPhase ?? mulliganPhase,
+    mulliganCount: snapshot?.mulliganCount ?? mulliganCount,
+    mulliganBottomSelectionActive: snapshot?.mulliganBottomSelectionActive ?? false,
+    tutorPhase: snapshot?.tutorPhase ?? tutorPhase,
+    tutorCards: snapshot?.tutorCards ?? tutorCards,
+    tutorTitle: snapshot?.tutorTitle ?? tutorTitle,
+    tutorPromptRequest: snapshot?.tutorPromptRequest ?? null,
+    tutorRemaining: snapshot?.tutorRemaining ?? 0,
+    tutorFilter: snapshot?.tutorFilter,
+    tutorFilterSpec: snapshot?.tutorFilterSpec,
+    tutorTapped: snapshot?.tutorTapped ?? false,
+    tutorShuffle: snapshot?.tutorShuffle ?? true,
+    tutorDestination: snapshot?.tutorDestination ?? 'hand',
+    tutorSourceName: snapshot?.tutorSourceName || snapshot?.currentPrompt?.title || currentPrompt?.title || 'Practice Drill',
+    tutorSourceInstanceId: snapshot?.tutorSourceInstanceId,
+    pendingSearchEntryChoice: snapshot?.pendingSearchEntryChoice ?? null,
+    pendingTargetChoice: snapshot?.pendingTargetChoice ?? null,
+    libraryChoice: snapshot?.libraryChoice ?? libraryChoice,
+    libraryManipulationPromptRequest: snapshot?.libraryManipulationPromptRequest ?? null,
+    optionalTriggerChoice: snapshot?.optionalTriggerChoice ?? optionalTriggerChoice,
+    taxPaymentChoice: snapshot?.taxPaymentChoice ?? taxPaymentChoice,
+    wardPaymentChoice: snapshot?.wardPaymentChoice ?? wardPaymentChoice,
+    damageAssignmentChoice: snapshot?.damageAssignmentChoice ?? damageAssignmentChoice,
+    triggerOrderChoice: snapshot?.triggerOrderChoice ?? triggerOrderChoice,
+    discardPhase: snapshot?.discardPhase ?? discardPhase,
+    discardCount: snapshot?.discardCount ?? discardCount,
+    selectedMulliganCardIds: snapshot?.selectedMulliganCardIds ?? selectedMulliganCardIds,
+    selectedMulliganBottomIds: snapshot?.selectedMulliganBottomIds ?? selectedMulliganBottomIds,
   });
 
   const buildDrillRestoreSnapshot = (
@@ -832,6 +835,9 @@ export function PlayPage() {
     lastStateUpdate: null,
     currentPrompt: (decisionContext?.currentPrompt ?? null) as ShelectorGameSaveSnapshot['currentPrompt'],
     lastPlayedCard: null,
+    mulliganPhase: decisionContext?.mulliganPhase ?? false,
+    mulliganCount: decisionContext?.mulliganCount ?? 0,
+    mulliganBottomSelectionActive: decisionContext?.mulliganBottomSelectionActive ?? false,
     tutorPhase: Boolean(decisionContext?.tutorPhase),
     tutorCards: (decisionContext?.tutorCards || []) as ShelectorGameSaveSnapshot['tutorCards'],
     tutorTitle: decisionContext?.tutorTitle || '',
@@ -941,6 +947,54 @@ export function PlayPage() {
     return parts.length > 0 ? parts.join(' / ') : 'Manual drill bookmark';
   };
 
+  const metricFromAttemptSummary = (summary: string, label: string): number | null => {
+    const match = summary.match(new RegExp(`${label}\\s+(-?\\d+)`, 'i'));
+    return match ? Number(match[1]) : null;
+  };
+
+  const opponentLifeAverageFromSummary = (summary: string): number | null => {
+    const opponentSegment = summary
+      .split('/')
+      .map(part => part.trim())
+      .find(part => part.toLowerCase().startsWith('opponents '));
+    if (!opponentSegment) return null;
+    const values = [...opponentSegment.matchAll(/\b(-?\d+)\b/g)].map(match => Number(match[1]));
+    if (!values.length) return null;
+    return values.reduce((sum, value) => sum + value, 0) / values.length;
+  };
+
+  const scoreDrillAttempt = (attempt: PlayDrillAttempt): { score: number; label: string } => {
+    const life = metricFromAttemptSummary(attempt.summary, 'You') ?? 0;
+    const hand = metricFromAttemptSummary(attempt.summary, 'hand') ?? 0;
+    const board = metricFromAttemptSummary(attempt.summary, 'board') ?? 0;
+    const graveyard = metricFromAttemptSummary(attempt.summary, 'graveyard') ?? 0;
+    const stack = metricFromAttemptSummary(attempt.summary, 'stack') ?? 0;
+    const averageOpponentLife = opponentLifeAverageFromSummary(attempt.summary) ?? 40;
+    const score = (life * 1.2) + (board * 3) + (hand * 0.8) + (graveyard * 0.15) - (averageOpponentLife * 0.45) - (stack * 0.5);
+    const label = [
+      `score ${score.toFixed(1)}`,
+      `life ${life}`,
+      `board ${board}`,
+      `hand ${hand}`,
+      averageOpponentLife !== null ? `opp avg ${averageOpponentLife.toFixed(1)}` : null,
+    ].filter(Boolean).join(' / ');
+    return { score, label };
+  };
+
+  const rankedDrillAttempts = (attempts: PlayDrillAttempt[] = []): Array<PlayDrillAttempt & { comparisonScore: number; comparisonLabel: string; rank: number }> => (
+    attempts
+      .map(attempt => {
+        const comparison = scoreDrillAttempt(attempt);
+        return {
+          ...attempt,
+          comparisonScore: comparison.score,
+          comparisonLabel: comparison.label,
+        };
+      })
+      .sort((a, b) => (b.comparisonScore - a.comparisonScore) || (b.savedAt - a.savedAt))
+      .map((attempt, index) => ({ ...attempt, rank: index + 1 }))
+  );
+
   const saveCurrentDrillAttempt = async () => {
     if (!activeDrillRun) {
       setSaveError('Load a drill bookmark before saving an attempt.');
@@ -968,12 +1022,12 @@ export function PlayPage() {
       step: gameState.step,
       summary: `${summarizeDrillAttempt()} / ${summarizePracticeDecisionContext()}`,
       engine: snapshot.engine,
-      decisionContext: currentDrillDecisionContext(),
+      decisionContext: currentDrillDecisionContext(snapshot),
     };
 
     const drillBookmarks = record.drillBookmarks.map(bookmark => (
       bookmark.id === activeDrillRun.bookmarkId
-        ? { ...bookmark, attempts: [...(bookmark.attempts || []), attempt].slice(-12) }
+        ? { ...bookmark, attempts: [...(bookmark.attempts || []), attempt].slice(-24) }
         : bookmark
     ));
     try {
@@ -1015,7 +1069,7 @@ export function PlayPage() {
       source: 'manual',
       focusTags: resolvePracticeMetadata()?.focusTags || [],
       note: summarizePracticeDecisionContext(),
-      decisionContext: currentDrillDecisionContext(),
+      decisionContext: currentDrillDecisionContext(snapshot),
     };
 
     const drillBookmarks = [...(existing?.drillBookmarks || []), bookmark].slice(-16);
@@ -1046,7 +1100,11 @@ export function PlayPage() {
     }
   };
 
-  const exportDrillBookmark = (record: PlaySaveSlotRecord, bookmark: PlayDrillBookmark) => {
+  const slugForDownload = (value: string): string => (
+    value.replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase() || 'drill'
+  );
+
+  const downloadPortableDrill = (record: PlaySaveSlotRecord, bookmark: PlayDrillBookmark, label: string) => {
     const payload = {
       schema: 'deckreps-practice-drill-v1',
       exportedAt: new Date().toISOString(),
@@ -1059,12 +1117,60 @@ export function PlayPage() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `deckreps-drill-${record.commander.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-${bookmark.label.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.json`;
+    link.download = `deckreps-drill-${slugForDownload(record.commander)}-${slugForDownload(label)}.json`;
     document.body.appendChild(link);
     link.click();
     link.remove();
     URL.revokeObjectURL(url);
-    setSaveStatus(`Exported drill "${bookmark.label}".`);
+  };
+
+  const exportDrillBookmark = async (record: PlaySaveSlotRecord, bookmark: PlayDrillBookmark) => {
+    try {
+      const engine = bookmark.engine || await loadCanonicalPlayStateRef(bookmark.canonicalState);
+      if (!engine) {
+        throw new Error(`Drill "${bookmark.label}" is missing its portable engine state.`);
+      }
+      const portableBookmark: PlayDrillBookmark = {
+        ...bookmark,
+        engine,
+        canonicalState: undefined,
+        attempts: [],
+      };
+      downloadPortableDrill(record, portableBookmark, bookmark.label);
+      setSaveError(null);
+      setSaveStatus(`Exported drill "${bookmark.label}".`);
+    } catch (err: any) {
+      setSaveError(err.message || 'Could not export that drill.');
+    }
+  };
+
+  const exportDrillAttempt = async (record: PlaySaveSlotRecord, bookmark: PlayDrillBookmark, attempt: PlayDrillAttempt) => {
+    try {
+      const engine = attempt.engine || await loadCanonicalPlayStateRef(attempt.canonicalState);
+      if (!engine) {
+        throw new Error(`Attempt "${attempt.label}" is missing its portable engine state.`);
+      }
+      const portableBookmark: PlayDrillBookmark = {
+        ...bookmark,
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        label: `${bookmark.label} / ${attempt.label}`,
+        savedAt: Date.now(),
+        turnNumber: attempt.turnNumber,
+        phase: attempt.phase,
+        step: attempt.step,
+        engine,
+        canonicalState: undefined,
+        source: bookmark.source || 'manual',
+        note: attempt.summary,
+        decisionContext: attempt.decisionContext || bookmark.decisionContext,
+        attempts: [],
+      };
+      downloadPortableDrill(record, portableBookmark, portableBookmark.label);
+      setSaveError(null);
+      setSaveStatus(`Exported attempt "${attempt.label}".`);
+    } catch (err: any) {
+      setSaveError(err.message || 'Could not export that drill attempt.');
+    }
   };
 
   const importDrillBookmark = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -1456,33 +1562,79 @@ export function PlayPage() {
                           {bookmark.note && (
                             <div className="mt-1 truncate text-[10px] text-fuchsia-100/65">{bookmark.note}</div>
                           )}
-                          {bookmark.attempts?.length ? (
-                            <div className="mt-1 rounded border border-sky-500/20 bg-sky-950/15 p-1">
-                              <div className="mb-1 flex items-center justify-between gap-2 text-[9px] font-black uppercase tracking-wider text-sky-200/85">
-                                <span>Recent Attempts</span>
-                                <span>{bookmark.attempts.length}</span>
+                          {bookmark.attempts?.length ? (() => {
+                            const rankedAttempts = rankedDrillAttempts(bookmark.attempts);
+                            const latestAttempt = [...bookmark.attempts].sort((a, b) => b.savedAt - a.savedAt)[0];
+                            const bestAttempt = rankedAttempts[0];
+                            return (
+                              <div className="mt-1 rounded border border-sky-500/20 bg-sky-950/15 p-1">
+                                <div className="mb-1 flex items-center justify-between gap-2 text-[9px] font-black uppercase tracking-wider text-sky-200/85">
+                                  <span>Compare Attempts</span>
+                                  <span>{bookmark.attempts?.length}</span>
+                                </div>
+                                {bestAttempt && (
+                                  <div className="mb-1 rounded border border-emerald-500/25 bg-emerald-950/20 p-1 text-[9px] text-emerald-100">
+                                    <div className="font-black uppercase tracking-wide">Best visible outcome</div>
+                                    <div className="truncate">{bestAttempt.label} / {bestAttempt.comparisonLabel}</div>
+                                    <div className="mt-1 flex gap-1">
+                                      <button
+                                        type="button"
+                                        onClick={() => loadDrillAttempt(record, bookmark, bestAttempt)}
+                                        className="min-h-6 flex-1 rounded border border-emerald-500/40 px-1 font-bold text-emerald-50 hover:bg-emerald-950/40"
+                                      >
+                                        Load Best
+                                      </button>
+                                      {latestAttempt && latestAttempt.id !== bestAttempt.id && (
+                                        <button
+                                          type="button"
+                                          onClick={() => loadDrillAttempt(record, bookmark, latestAttempt)}
+                                          className="min-h-6 flex-1 rounded border border-sky-500/40 px-1 font-bold text-sky-50 hover:bg-sky-950/40"
+                                        >
+                                          Load Latest
+                                        </button>
+                                      )}
+                                    </div>
+                                  </div>
+                                )}
+                                <div className="max-h-44 overflow-y-auto pr-1">
+                                  <div className="grid gap-1">
+                                    {rankedAttempts.map(attempt => (
+                                      <div
+                                        key={attempt.id}
+                                        className="rounded border border-sky-500/25 bg-neutral-950/55 p-1"
+                                        title={attempt.summary}
+                                      >
+                                        <div className="flex gap-1">
+                                          <button
+                                            type="button"
+                                            onClick={() => loadDrillAttempt(record, bookmark, attempt)}
+                                            className="min-h-7 min-w-0 flex-1 rounded border border-sky-500/40 px-2 text-left text-[10px] font-bold text-sky-100 hover:bg-sky-950/40"
+                                          >
+                                            <span className="block truncate">
+                                              #{attempt.rank} {attempt.label}
+                                            </span>
+                                            <span className="block truncate text-[9px] font-semibold text-sky-100/60">
+                                              T{attempt.turnNumber} {attempt.step || attempt.phase} / {attempt.comparisonLabel}
+                                            </span>
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => exportDrillAttempt(record, bookmark, attempt)}
+                                            className="flex min-h-7 w-7 shrink-0 items-center justify-center rounded border border-sky-500/40 text-sky-100 hover:bg-sky-950/40"
+                                            aria-label={`Export drill attempt ${attempt.label}`}
+                                            title="Export this attempt"
+                                          >
+                                            <Download className="h-3 w-3" />
+                                          </button>
+                                        </div>
+                                        <div className="mt-1 line-clamp-2 text-[9px] text-sky-100/55">{attempt.summary}</div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
                               </div>
-                              <div className="grid gap-1">
-                                {bookmark.attempts.slice(-3).reverse().map((attempt, attemptIndex) => (
-                                  <button
-                                    key={attempt.id}
-                                    type="button"
-                                    onClick={() => loadDrillAttempt(record, bookmark, attempt)}
-                                    className="min-h-7 rounded border border-sky-500/40 px-2 text-left text-[10px] font-bold text-sky-100 hover:bg-sky-950/40"
-                                    title={attempt.summary}
-                                  >
-                                    <span className="block truncate">
-                                      {attemptIndex === 0 ? 'Latest: ' : ''}
-                                      {attempt.label}
-                                    </span>
-                                    <span className="block truncate text-[9px] font-semibold text-sky-100/60">
-                                      T{attempt.turnNumber} {attempt.step || attempt.phase}
-                                    </span>
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-                          ) : null}
+                            );
+                          })() : null}
                         </div>
                       ))}
                     </div>
@@ -2193,6 +2345,7 @@ export function PlayPage() {
       step: gameState.step,
       summary: `${preview.summary} / ${summarizePracticeDecisionContext()}`,
       engine: preview.resultEngine,
+      decisionContext: currentDrillDecisionContext(snapshot),
     };
     const bookmark: PlayDrillBookmark = {
       id: bookmarkId,
@@ -2205,7 +2358,7 @@ export function PlayPage() {
       source: 'branch-preview',
       focusTags: resolvePracticeMetadata()?.focusTags || [],
       note: `Branch source: ${preview.label} / ${summarizePracticeDecisionContext()}`,
-      decisionContext: currentDrillDecisionContext(),
+      decisionContext: currentDrillDecisionContext(snapshot),
       attempts: [attempt],
     };
     const drillBookmarks = [...(existing?.drillBookmarks || []), bookmark].slice(-16);

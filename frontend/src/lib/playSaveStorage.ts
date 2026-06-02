@@ -63,6 +63,9 @@ export interface PlayDrillBookmark {
 
 export interface PlayDrillDecisionContext {
   currentPrompt?: unknown;
+  mulliganPhase?: boolean;
+  mulliganCount?: number;
+  mulliganBottomSelectionActive?: boolean;
   tutorPhase?: boolean;
   tutorCards?: unknown[];
   tutorTitle?: string;
