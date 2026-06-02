@@ -2476,10 +2476,12 @@ function GraveyardViewer({
   cards,
   label,
   onInspect,
+  onHoverCard,
 }: {
   cards: SimpleCard[];
   label: string;
   onInspect: (card: SimpleCard) => void;
+  onHoverCard?: (card: SimpleCard | null) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
 
@@ -2503,6 +2505,10 @@ function GraveyardViewer({
               type="button"
               key={card.instanceId}
               onClick={() => onInspect(card)}
+              onMouseEnter={() => onHoverCard?.(card)}
+              onMouseLeave={() => onHoverCard?.(null)}
+              onFocus={() => onHoverCard?.(card)}
+              onBlur={() => onHoverCard?.(null)}
               className="flex w-full items-center justify-between gap-2 border-b border-stone-700/50 py-1 text-left text-[10px] text-stone-300 transition-colors last:border-0 hover:text-amber-200 md:text-xs"
             >
               <span className="truncate">{i + 1}. {card.name}</span>
@@ -3807,7 +3813,7 @@ export function GameBoard({
         </div>
 
         {/* AI Graveyard */}
-        <GraveyardViewer cards={selectedAiGraveyard} label={selectedOpponentLabel} onInspect={setInspectedCard} />
+        <GraveyardViewer cards={selectedAiGraveyard} label={selectedOpponentLabel} onInspect={setInspectedCard} onHoverCard={handleCardHover} />
       </div>
 
       {/* Stack Area */}
@@ -3876,6 +3882,10 @@ export function GameBoard({
                   key={item.id}
                   type="button"
                   onClick={() => setInspectedCard(item.card!)}
+                  onMouseEnter={() => handleCardHover(item.card!)}
+                  onMouseLeave={() => handleCardHover(null)}
+                  onFocus={() => handleCardHover(item.card!)}
+                  onBlur={() => handleCardHover(null)}
                   className={`${className} text-left ${
                     targetAction
                       ? 'border-sky-400/70 bg-sky-950/70 text-sky-100 ring-2 ring-sky-400/35 hover:border-sky-300 hover:bg-sky-900/70 focus:ring-sky-400/60'
@@ -3899,6 +3909,10 @@ export function GameBoard({
           <button
             type="button"
             onClick={() => setInspectedCard(lastPlayedCard.card)}
+            onMouseEnter={() => handleCardHover(lastPlayedCard.card)}
+            onMouseLeave={() => handleCardHover(null)}
+            onFocus={() => handleCardHover(lastPlayedCard.card)}
+            onBlur={() => handleCardHover(null)}
             className="max-w-full rounded border border-red-500/40 bg-neutral-950/85 px-3 py-1.5 text-left shadow-lg shadow-black/25 backdrop-blur transition-colors hover:border-red-300/80 hover:bg-neutral-900 focus:outline-none focus:ring-2 focus:ring-red-400/60 sm:max-w-64"
             title={`Inspect ${lastPlayedCard.card.name}`}
             aria-label={`Inspect last played card: ${lastPlayedCard.card.name}`}
@@ -4142,7 +4156,7 @@ export function GameBoard({
         </div>
 
         {/* Human Graveyard */}
-        <GraveyardViewer cards={gameState.humanGraveyard} label="Your" onInspect={setInspectedCard} />
+        <GraveyardViewer cards={gameState.humanGraveyard} label="Your" onInspect={setInspectedCard} onHoverCard={handleCardHover} />
       </div>
 
       {/* Action chooser: roomy on desktop, capped near the hand on mobile. */}
