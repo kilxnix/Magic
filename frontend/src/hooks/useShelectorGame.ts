@@ -6019,6 +6019,7 @@ export function useShelectorGame() {
       if (pendingEngineAction.kind === 'PlayLand') {
         const engineForChoice = engineRef.current;
         if (!engineForChoice) return;
+        resetLoopDetector();
         const completedAction: SimpleLegalAction = {
           ...pendingLandChoice.action,
           _engineAction: {
@@ -7243,6 +7244,8 @@ export function useShelectorGame() {
         addMessage('system', `Finish ${pendingStackNamedCardChoiceRef.current.sourceName} card-name choice first.`);
         return;
       }
+
+      resetLoopDetector();
 
       if (action.kind === 'SkipRestOfTurn') {
         skipRestOfTurn();
