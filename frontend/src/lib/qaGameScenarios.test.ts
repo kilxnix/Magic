@@ -6,15 +6,18 @@ import {
   checkStateBasedActions,
   createDamageAssignmentPromptRequest,
   createSelectCardsPromptRequest,
+  getEffectivePower,
   getLegalActions,
+  instanceHasKeyword,
   resetLoopDetector,
   resolveCombatDamage,
   resolveTopOfStack,
   tapLandForMana,
+  tryEquip,
   tryPlayLand,
   type ManaColor,
 } from 'commander-engine';
-import { createBrainGorgersSacrificeQaState, createComplexCombatQaState, createCostReductionQaState, createDeclareBlockersQaState, createGenerousGiftQaState, createKrenkoSkirkQaState, createLandEntryFetchQaState, createLibraryManipulationQaState, createMagecraftTriggersQaState, createModalChoiceQaState, createMulliganSelectionQaState, createSeeBeyondQaState, createSisayRawLandsQaState, createSpellCopyQaState, createStormGrapeshotQaState } from './qaGameScenarios';
+import { createBrainGorgersSacrificeQaState, createComplexCombatQaState, createCostReductionQaState, createDeclareBlockersQaState, createEquipmentD20QaState, createGenerousGiftQaState, createKrenkoSkirkQaState, createLandEntryFetchQaState, createLibraryManipulationQaState, createMagecraftTriggersQaState, createModalChoiceQaState, createMulliganSelectionQaState, createSeeBeyondQaState, createSisayRawLandsQaState, createSpellCopyQaState, createStormGrapeshotQaState } from './qaGameScenarios';
 
 describe('QA game scenarios', () => {
   it('loads raw dual lands with mana actions and reaches Sisay activation after tapping WUBRG', () => {
@@ -219,6 +222,29 @@ describe('QA game scenarios', () => {
     expect(state.cards.get('brain_gorgers_qa_1')?.zone).toBe('battlefield');
     expect(state.cards.get('brain_gorgers_qa_doomed_bear_1')?.zone).toBe('graveyard');
     expect(state.cards.get('brain_gorgers_qa_keeper_elf_1')?.zone).toBe('battlefield');
+  });
+
+  it('loads Goblin Morningstar d20 casting and equip actions for browser QA', () => {
+    let state = deserializeGameState(createEquipmentD20QaState());
+    const actions = getLegalActions(state, 'human');
+
+    expect(actions.some(action =>
+      action.kind === 'CastSpell'
+      && action.cardInstanceId === 'equipment_d20_qa_morningstar_hand_1',
+    )).toBe(true);
+    expect(actions.some(action =>
+      action.kind === 'Equip'
+      && action.equipmentInstanceId === 'equipment_d20_qa_morningstar_board_1'
+      && action.targetCreatureId === 'equipment_d20_qa_bear_1',
+    )).toBe(true);
+
+    const equipped = tryEquip(state, 'human', 'equipment_d20_qa_morningstar_board_1', 'equipment_d20_qa_bear_1');
+    expect(equipped.ok).toBe(true);
+    if (!equipped.ok) return;
+    state = equipped.state;
+    expect(state.cards.get('equipment_d20_qa_morningstar_board_1')?.attachedTo).toBe('equipment_d20_qa_bear_1');
+    expect(getEffectivePower(state, 'equipment_d20_qa_bear_1')).toBe(3);
+    expect(instanceHasKeyword(state, 'equipment_d20_qa_bear_1', 'Trample')).toBe(true);
   });
 
   it('loads a storm spell with previous spell count for browser QA', () => {

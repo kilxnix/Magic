@@ -5,6 +5,13 @@
  */
 
 import type { AIPersonality, AIDifficulty } from '../ai/types';
+import type {
+  EquipCostInfo,
+  EquipmentBonusInfo,
+  ManaProductionInfo,
+  SearchAbilityInfo,
+  UnlessTaxInfo,
+} from '../effects/ast';
 
 /**
  * Current save version. Increment on breaking schema changes.
@@ -122,6 +129,12 @@ export interface SerializedCardDefinitionV1 {
   power?: number;
   toughness?: number;
   card_types: string[];
+  isEquipment?: boolean;
+  equipCost?: EquipCostInfo;
+  equipmentBonus?: EquipmentBonusInfo;
+  manaProduction?: ManaProductionInfo;
+  searchAbility?: SearchAbilityInfo;
+  unlessTax?: UnlessTaxInfo;
   faces?: Array<{
     id: string;
     name: string;

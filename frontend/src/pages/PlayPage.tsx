@@ -286,6 +286,7 @@ export function PlayPage() {
       && qaScenario !== 'mulligan-selection'
       && qaScenario !== 'cost-reduction'
       && qaScenario !== 'brain-gorgers-sacrifice'
+      && qaScenario !== 'equipment-d20'
       && qaScenario !== 'storm-grapeshot'
       && qaScenario !== 'spell-copy'
       && qaScenario !== 'magecraft-triggers'
@@ -302,6 +303,7 @@ export function PlayPage() {
         createBrainGorgersSacrificeQaState,
         createComplexCombatQaState,
         createCostReductionQaState,
+        createEquipmentD20QaState,
         createGenerousGiftQaState,
         createKrenkoSkirkQaState,
         createLandEntryFetchQaState,
@@ -332,6 +334,8 @@ export function PlayPage() {
           ? createCostReductionQaState()
           : qaScenario === 'brain-gorgers-sacrifice'
           ? createBrainGorgersSacrificeQaState()
+          : qaScenario === 'equipment-d20'
+          ? createEquipmentD20QaState()
           : qaScenario === 'storm-grapeshot'
           ? createStormGrapeshotQaState()
           : qaScenario === 'spell-copy'
@@ -368,6 +372,8 @@ export function PlayPage() {
             ? 'Stormcatch Mentor'
             : qaScenario === 'brain-gorgers-sacrifice'
             ? 'Doomed Bear'
+            : qaScenario === 'equipment-d20'
+            ? 'Goblin Morningstar'
             : qaScenario === 'storm-grapeshot' || qaScenario === 'spell-copy'
             ? 'Vivi Ornitier'
             : qaScenario === 'magecraft-triggers'
@@ -392,6 +398,8 @@ export function PlayPage() {
                   ? 'See Beyond QA Opponent'
                   : qaScenario === 'brain-gorgers-sacrifice'
                   ? 'Brain Gorgers QA Opponent'
+                  : qaScenario === 'equipment-d20'
+                  ? 'Equipment QA Opponent'
                   : qaScenario === 'storm-grapeshot'
                   ? 'Storm QA Opponent'
                   : qaScenario === 'spell-copy'
@@ -465,6 +473,8 @@ export function PlayPage() {
               ? 'cost reduction'
               : qaScenario === 'brain-gorgers-sacrifice'
               ? 'Brain Gorgers sacrifice'
+              : qaScenario === 'equipment-d20'
+              ? 'equipment and d20'
               : qaScenario === 'storm-grapeshot'
               ? 'storm Grapeshot'
               : qaScenario === 'spell-copy'

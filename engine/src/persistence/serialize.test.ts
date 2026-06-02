@@ -61,6 +61,12 @@ function addCard(
     power: def.power ?? 2,
     toughness: def.toughness ?? 2,
     faces: def.faces,
+    isEquipment: def.isEquipment,
+    equipCost: def.equipCost,
+    equipmentBonus: def.equipmentBonus,
+    manaProduction: def.manaProduction,
+    searchAbility: def.searchAbility,
+    unlessTax: def.unlessTax,
   };
 
   state.cardDefinitions.set(fullDef.id, fullDef);
@@ -228,6 +234,32 @@ describe('serializeGameState / deserializeGameState', () => {
     expect(def!.name).toBe('Grizzly Bears');
     expect(def!.mana_cost).toBe('{1}{G}');
     expect(def!.power).toBe(2);
+  });
+
+  it('round-trips parsed card metadata used by equipment and activated actions', () => {
+    const state = createTestState();
+
+    addCard(state, 'morningstar1', 'p1', 'battlefield', {
+      id: 'goblin-morningstar',
+      name: 'Goblin Morningstar',
+      type_line: 'Artifact - Equipment',
+      oracle_text: 'Equipped creature gets +1/+0 and has trample. Equip {1}.',
+      mana_cost: '{1}{R}',
+      cmc: 2,
+      colors: [],
+      color_identity: ['R'],
+      card_types: ['artifact'],
+      isEquipment: true,
+      equipCost: { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0, generic: 1 },
+      equipmentBonus: { power: 1, toughness: 0, keywords: ['Trample'] },
+    });
+
+    const restored = deserializeGameState(serializeGameState(state));
+    const def = restored.cardDefinitions.get('goblin-morningstar');
+
+    expect(def?.isEquipment).toBe(true);
+    expect(def?.equipCost).toEqual({ W: 0, U: 0, B: 0, R: 0, G: 0, C: 0, generic: 1 });
+    expect(def?.equipmentBonus).toEqual({ power: 1, toughness: 0, keywords: ['Trample'] });
   });
 
   it('round-trips stack items correctly', () => {

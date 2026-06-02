@@ -178,6 +178,18 @@ function serializeCardDefinition(def: CardDefinition): SerializedCardDefinitionV
     power: def.power,
     toughness: def.toughness,
     card_types: [...def.card_types],
+    isEquipment: def.isEquipment,
+    equipCost: def.equipCost ? { ...def.equipCost } : undefined,
+    equipmentBonus: def.equipmentBonus
+      ? {
+          power: def.equipmentBonus.power,
+          toughness: def.equipmentBonus.toughness,
+          keywords: [...def.equipmentBonus.keywords],
+        }
+      : undefined,
+    manaProduction: def.manaProduction ? { ...def.manaProduction } : undefined,
+    searchAbility: def.searchAbility ? { ...def.searchAbility } : undefined,
+    unlessTax: def.unlessTax ? { ...def.unlessTax } : undefined,
     faces: def.faces?.map(face => ({
       id: face.id,
       name: face.name,
@@ -211,6 +223,18 @@ function deserializeCardDefinition(data: SerializedCardDefinitionV1): CardDefini
     power: data.power,
     toughness: data.toughness,
     card_types: data.card_types as CardDefinition['card_types'],
+    isEquipment: data.isEquipment,
+    equipCost: data.equipCost ? { ...data.equipCost } : undefined,
+    equipmentBonus: data.equipmentBonus
+      ? {
+          power: data.equipmentBonus.power,
+          toughness: data.equipmentBonus.toughness,
+          keywords: [...data.equipmentBonus.keywords],
+        }
+      : undefined,
+    manaProduction: data.manaProduction ? { ...data.manaProduction } : undefined,
+    searchAbility: data.searchAbility ? { ...data.searchAbility } : undefined,
+    unlessTax: data.unlessTax ? { ...data.unlessTax } : undefined,
     faces: data.faces?.map(face => ({
       id: face.id,
       name: face.name,

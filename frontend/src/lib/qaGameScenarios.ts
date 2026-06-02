@@ -1137,6 +1137,86 @@ export function createBrainGorgersSacrificeQaState(): SerializedGameStateV1 {
   return serializeGameState(state);
 }
 
+export function createEquipmentD20QaState(): SerializedGameStateV1 {
+  const morningstar = def(
+    'equipment_d20_qa_morningstar',
+    'Goblin Morningstar',
+    'Artifact - Equipment',
+    '{1}{R}',
+    'When Goblin Morningstar enters the battlefield, roll a d20.\n1-9 | Create a 1/1 red Goblin creature token.\n10-20 | Create a 1/1 red Goblin creature token, then attach Goblin Morningstar to it.\nEquipped creature gets +1/+0 and has trample.\nEquip {1}',
+    {
+      cmc: 2,
+      colors: [],
+      color_identity: ['R'],
+      isEquipment: true,
+      equipCost: { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0, generic: 1 },
+      equipmentBonus: { power: 1, toughness: 0, keywords: ['Trample'] },
+    },
+  );
+  const bear = def(
+    'equipment_d20_qa_bear',
+    'Training Bear',
+    'Creature - Bear',
+    '{1}{G}',
+    '',
+    { cmc: 2, colors: ['G'], color_identity: ['G'], power: 2, toughness: 2 },
+  );
+
+  const state: GameState = {
+    players: [
+      {
+        id: 'human',
+        name: 'Equipment QA Pilot',
+        life: 40,
+        poisonCounters: 0,
+        commanderDamage: {},
+        commanderTax: 0,
+        commanderInstanceId: null,
+        commanderCastCount: 0,
+        manaPool: pool({ R: 1, C: 2 }),
+        hasPlayedLand: false,
+        hasPriority: true,
+        hasLost: false,
+      },
+      {
+        id: 'ai-1',
+        name: 'Equipment QA Opponent',
+        life: 40,
+        poisonCounters: 0,
+        commanderDamage: {},
+        commanderTax: 0,
+        commanderInstanceId: null,
+        commanderCastCount: 0,
+        manaPool: pool(),
+        hasPlayedLand: false,
+        hasPriority: false,
+        hasLost: false,
+      },
+    ],
+    cards: new Map<string, CardInstance>([
+      ['equipment_d20_qa_morningstar_hand_1', instance('equipment_d20_qa_morningstar_hand_1', morningstar.id, 'human', 'hand')],
+      ['equipment_d20_qa_morningstar_board_1', instance('equipment_d20_qa_morningstar_board_1', morningstar.id, 'human', 'battlefield')],
+      ['equipment_d20_qa_bear_1', instance('equipment_d20_qa_bear_1', bear.id, 'human', 'battlefield')],
+    ]),
+    cardDefinitions: new Map<string, CardDefinition>([
+      [morningstar.id, morningstar],
+      [bear.id, bear],
+    ]),
+    activePlayerIndex: 0,
+    priorityPlayerIndex: 0,
+    phase: 'precombat_main',
+    step: 'upkeep',
+    turnNumber: 1,
+    hasPriorityPassed: [false, false],
+    stack: [],
+    combat: null,
+    battlefieldAbilities: new Map(),
+    pendingTriggers: [],
+  };
+
+  return serializeGameState(state);
+}
+
 export function createStormGrapeshotQaState(): SerializedGameStateV1 {
   const commander = def(
     'storm_qa_commander',
