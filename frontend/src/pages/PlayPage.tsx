@@ -272,7 +272,8 @@ export function PlayPage() {
   }, []);
 
   useEffect(() => {
-    if (!import.meta.env.DEV || qaScenarioLoadedRef.current || typeof window === 'undefined') return;
+    const qaScenariosEnabled = import.meta.env.DEV || import.meta.env.VITE_ENABLE_QA_SCENARIOS === 'true';
+    if (!qaScenariosEnabled || qaScenarioLoadedRef.current || typeof window === 'undefined') return;
     const params = new URLSearchParams(window.location.search);
     const qaScenario = params.get('qa');
     if (
