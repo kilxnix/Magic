@@ -1093,6 +1093,15 @@ describe('starter deck full-card QA', () => {
     state = resolveCombatDamage(state);
 
     expect(state.players.find(player => player.id === 'p2')?.life).toBe(35);
+
+    state = advanceStep({ ...state, step: 'cleanup', phase: 'ending' });
+
+    expect(getEffectivePower(state, goreclaw)).toBe(4);
+    expect(getEffectivePower(state, terra)).toBe(8);
+    expect(state.cards.get(goreclaw)?.counters['_powerMod']).toBeUndefined();
+    expect(state.cards.get(terra)?.counters['_powerMod']).toBeUndefined();
+    expect(instanceHasKeyword(state, goreclaw, 'Trample')).toBe(false);
+    expect(instanceHasKeyword(state, terra, 'Trample')).toBe(true);
   });
 
   it('deals combat damage for every starter commander through public attack and block actions', () => {

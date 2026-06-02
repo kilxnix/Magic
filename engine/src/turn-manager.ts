@@ -3,6 +3,7 @@ import { checkTriggersForEvent } from './stack';
 import { pruneDamagePreventionEffects } from './effects/replacement';
 import { pruneGameOutcomePreventionEffects } from './game-outcome';
 import { getCardDefinition } from './game-state';
+import { cleanupDamage } from './state-based';
 
 export const STEP_ORDER: Step[] = [
   'untap', 'upkeep', 'draw',
@@ -97,6 +98,7 @@ export function advanceStep(state: GameState): GameState {
 export function advanceToNextTurn(state: GameState): GameState {
   state = pruneDamagePreventionEffects(state);
   state = pruneGameOutcomePreventionEffects(state);
+  state = cleanupDamage(state);
   const playerCount = state.players.length;
   let nextIndex = (state.activePlayerIndex + 1) % playerCount;
 
