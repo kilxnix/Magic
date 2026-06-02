@@ -769,7 +769,7 @@ export function toSimpleCard(inst: CardInstance, def: CardDefinition, engine?: G
     isCommander: inst.isCommander,
     counters: inst.counters,
     damage: inst.damage || 0,
-    isToken: inst.isToken === true || inst.instanceId.startsWith('token_inst_'),
+    isToken: inst.isToken === true || inst.instanceId.startsWith('token_inst_') || /\bToken\b/i.test(def.type_line),
     attachedTo: inst.attachedTo,
   };
 }
@@ -2206,9 +2206,8 @@ function manaAbilityActionLabel(def: CardDefinition | undefined, color: ManaColo
   if (mana?.activationZone === 'hand') {
     return `Exile ${name} for ${color}`;
   }
-  if (mana?.sacrificeFilter) {
-    const filter = mana.sacrificeFilter as { subtypes?: string[]; types?: string[] };
-    const sacrificeName = filter.subtypes?.[0] || filter.types?.[0] || 'permanent';
+  const sacrificeName = sacrificeManaSubject(def);
+  if (sacrificeName) {
     return `Sacrifice ${sacrificeName} with ${name} for ${color}`;
   }
   if (mana?.requiresSacrifice) {
@@ -2223,14 +2222,27 @@ function manaAbilityActionLabel(def: CardDefinition | undefined, color: ManaColo
 function manaAbilityLogVerb(def: CardDefinition | undefined): string {
   const mana = def?.manaProduction;
   if (mana?.activationZone === 'hand') return 'Exiled';
-  if (mana?.sacrificeFilter) {
-    const filter = mana.sacrificeFilter as { subtypes?: string[]; types?: string[] };
-    const sacrificeName = filter.subtypes?.[0] || filter.types?.[0] || 'permanent';
+  const sacrificeName = sacrificeManaSubject(def);
+  if (sacrificeName) {
     return `Sacrificed a ${sacrificeName} with`;
   }
   if (mana?.requiresSacrifice) return 'Sacrificed';
   if (mana?.isTapAbility === false) return 'Activated';
   return 'Tapped';
+}
+
+function sacrificeManaSubject(def: CardDefinition | undefined): string | null {
+  const filter = def?.manaProduction?.sacrificeFilter as { subtypes?: string[]; types?: string[] } | undefined;
+  if (filter) {
+    return filter.subtypes?.[0] || filter.types?.[0] || 'permanent';
+  }
+  const sacrificeMatch = def?.oracle_text.match(/Sacrifice\s+(?:a|an|another)?\s*([^:]+):\s*Add/i);
+  if (!sacrificeMatch) return null;
+  return sacrificeMatch[1]
+    .replace(/\bcreature\b/gi, '')
+    .replace(/\btoken\b/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim() || 'permanent';
 }
 
 /** Convert engine AIAction to SimpleLegalAction for the UI */
