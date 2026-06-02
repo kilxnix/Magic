@@ -372,7 +372,16 @@ function executeDestroy(state: GameState, targetId: string): GameState {
   const destZone = getDeathDestination(state, targetId, card);
   if (!destZone) return state;
   const newCards = new Map(state.cards);
-  newCards.set(targetId, { ...card, zone: destZone, damage: 0, deathtouchDamage: undefined, tapped: false });
+  newCards.set(targetId, {
+    ...card,
+    zone: destZone,
+    damage: 0,
+    deathtouchDamage: undefined,
+    tapped: false,
+    counters: {},
+    grantedKeywords: undefined,
+    lostKeywords: undefined,
+  });
 
   return pruneDetachedEffects({ ...state, cards: newCards });
 }

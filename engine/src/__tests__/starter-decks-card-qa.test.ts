@@ -23,6 +23,8 @@ import {
 } from '../actions-public';
 import { getLegalActions, getLegalTargets, getSpellTargetSpecs } from '../ai/legal-actions';
 import { getEffectivePower } from '../effects/continuous';
+import { executeEffects } from '../effects/executor';
+import { getOverride } from '../effects/overrides';
 import { instanceHasKeyword } from '../keywords';
 import { declareAttackers, declareBlockers, resolveCombatDamage } from '../combat';
 import { createPlayer, emptyManaPool, type CardDefinition, type CardInstance, type GameState, type ManaColor, type Zone } from '../types';
@@ -1102,6 +1104,35 @@ describe('starter deck full-card QA', () => {
     expect(state.cards.get(terra)?.counters['_powerMod']).toBeUndefined();
     expect(instanceHasKeyword(state, goreclaw, 'Trample')).toBe(false);
     expect(instanceHasKeyword(state, terra, 'Trample')).toBe(true);
+  });
+
+  it('resolves Generous Gift token ownership and clears commander counters on zone change', () => {
+    let state = makeState();
+    const goreclaw = addCard(state, 'Goreclaw, Terror of Qal Sisma', 'battlefield', 'p1', {
+      isCommander: true,
+      summoningSick: false,
+      counters: { '+1/+1': 1 },
+    });
+    const generousGift = getDef('Generous Gift');
+    const override = getOverride(generousGift.id, generousGift.name);
+
+    expect(override).toBeTruthy();
+    expect(override?.kind).toBe('Spell');
+    if (!override || override.kind !== 'Spell') return;
+
+    state = executeEffects(state, override.effects, 'p2', [goreclaw], override.targets);
+
+    const movedCommander = state.cards.get(goreclaw);
+    expect(movedCommander?.zone).toBe('command');
+    expect(movedCommander?.counters).toEqual({});
+
+    const elephants = [...state.cards.values()].filter(card => {
+      const def = state.cardDefinitions.get(card.definitionId);
+      return card.zone === 'battlefield' && card.isToken && def?.name === 'Elephant';
+    });
+
+    expect(elephants).toHaveLength(1);
+    expect(elephants[0].ownerId).toBe('p1');
   });
 
   it('deals combat damage for every starter commander through public attack and block actions', () => {

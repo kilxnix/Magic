@@ -433,7 +433,7 @@ registerOverrideByName("Teferi's Protection", {
 // Batch 1 — Removal
 // =============================================================================
 
-// Generous Gift — Destroy target permanent, create 3/3 green Elephant token
+// Generous Gift — Destroy target permanent. Its controller creates a 3/3 green Elephant token.
 registerOverrideByName('Generous Gift', {
   kind: 'Spell',
   effects: [
@@ -443,7 +443,7 @@ registerOverrideByName('Generous Gift', {
     },
     {
       kind: 'CreateToken',
-      controller: { kind: 'Controller' },
+      controller: { kind: 'TargetController', targetId: 'target_1' },
       token: {
         name: 'Elephant',
         colors: ['G'],
