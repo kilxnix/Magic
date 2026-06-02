@@ -285,6 +285,7 @@ export function PlayPage() {
       && qaScenario !== 'storm-grapeshot'
       && qaScenario !== 'spell-copy'
       && qaScenario !== 'magecraft-triggers'
+      && qaScenario !== 'complex-combat'
       && qaScenario !== 'modal-choice'
     ) return;
 
@@ -292,6 +293,7 @@ export function PlayPage() {
     import('../lib/qaGameScenarios')
       .then(({
         createDeclareBlockersQaState,
+        createComplexCombatQaState,
         createLandEntryFetchQaState,
         createLibraryManipulationQaState,
         createMagecraftTriggersQaState,
@@ -316,6 +318,8 @@ export function PlayPage() {
           ? createSpellCopyQaState()
           : qaScenario === 'magecraft-triggers'
           ? createMagecraftTriggersQaState()
+          : qaScenario === 'complex-combat'
+          ? createComplexCombatQaState()
           : qaScenario === 'modal-choice'
           ? createModalChoiceQaState()
           : createSisayActivationQaState();
@@ -334,24 +338,32 @@ export function PlayPage() {
             ? 'Vivi Ornitier'
             : qaScenario === 'magecraft-triggers'
             ? 'Vivi Ornitier'
+            : qaScenario === 'complex-combat'
+            ? 'Trampling Commander'
             : 'Sisay, Weatherlight Captain',
-          aiCommanderNames: {
-            'ai-1': qaScenario === 'declare-blockers'
-              ? 'Marchesa, Dealer of Death'
-              : qaScenario === 'library-manipulation'
-              ? 'Library QA Opponent'
-              : qaScenario === 'storm-grapeshot'
-              ? 'Storm QA Opponent'
-              : qaScenario === 'spell-copy'
-              ? 'Spell Copy QA Opponent'
-              : qaScenario === 'magecraft-triggers'
-              ? 'Magecraft QA Opponent'
-              : qaScenario === 'modal-choice'
-              ? 'Modal QA Opponent'
-              : 'QA Opponent',
-          },
+          aiCommanderNames: qaScenario === 'complex-combat'
+            ? {
+                'ai-1': 'Left Defender',
+                'ai-2': 'Middle Defender',
+                'ai-3': 'Right Defender',
+              }
+            : {
+                'ai-1': qaScenario === 'declare-blockers'
+                  ? 'Marchesa, Dealer of Death'
+                  : qaScenario === 'library-manipulation'
+                  ? 'Library QA Opponent'
+                  : qaScenario === 'storm-grapeshot'
+                  ? 'Storm QA Opponent'
+                  : qaScenario === 'spell-copy'
+                  ? 'Spell Copy QA Opponent'
+                  : qaScenario === 'magecraft-triggers'
+                  ? 'Magecraft QA Opponent'
+                  : qaScenario === 'modal-choice'
+                  ? 'Modal QA Opponent'
+                  : 'QA Opponent',
+              },
           humanId: 'human',
-          aiIds: ['ai-1'],
+          aiIds: qaScenario === 'complex-combat' ? ['ai-1', 'ai-2', 'ai-3'] : ['ai-1'],
           opponentInfo: null,
           chatMessages: [],
           gameLog: [],
@@ -407,6 +419,8 @@ export function PlayPage() {
               ? 'spell copy'
               : qaScenario === 'magecraft-triggers'
               ? 'magecraft triggers'
+              : qaScenario === 'complex-combat'
+              ? 'complex combat'
               : qaScenario === 'modal-choice'
               ? 'modal choice'
               : 'Sisay activation'

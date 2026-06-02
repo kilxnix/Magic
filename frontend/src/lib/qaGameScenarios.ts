@@ -906,6 +906,172 @@ export function createMagecraftTriggersQaState(): SerializedGameStateV1 {
   return serializeGameState(withTriggers);
 }
 
+export function createComplexCombatQaState(): SerializedGameStateV1 {
+  const tramplingCommander = def(
+    'complex_combat_commander',
+    'Trampling Commander',
+    'Legendary Creature - Giant',
+    '{5}{G}{G}',
+    'Trample',
+    { cmc: 7, colors: ['G'], color_identity: ['G'], power: 7, toughness: 7, keywords: ['Trample'] },
+  );
+  const twinHealer = def(
+    'complex_combat_twin_healer',
+    'Twin Healer',
+    'Creature - Cleric',
+    '{1}{W}',
+    'Double strike, lifelink',
+    { cmc: 2, colors: ['W'], color_identity: ['W'], power: 2, toughness: 2, keywords: ['Double Strike', 'Lifelink'] },
+  );
+  const venomCharger = def(
+    'complex_combat_venom_charger',
+    'Venom Charger',
+    'Creature - Beast',
+    '{1}{G}{G}',
+    'Deathtouch, trample',
+    { cmc: 3, colors: ['G'], color_identity: ['G'], power: 3, toughness: 3, keywords: ['Deathtouch', 'Trample'] },
+  );
+  const bearBlocker = def(
+    'complex_combat_bear',
+    'Bear Blocker',
+    'Creature - Bear',
+    '{1}{G}',
+    '',
+    { cmc: 2, colors: ['G'], color_identity: ['G'], power: 2, toughness: 2 },
+  );
+  const wallBlocker = def(
+    'complex_combat_wall',
+    'Wall Blocker',
+    'Creature - Wall',
+    '{3}',
+    'Defender',
+    { cmc: 3, power: 0, toughness: 4 },
+  );
+  const colossus = def(
+    'complex_combat_colossus',
+    'Large Blocker',
+    'Creature - Giant',
+    '{5}{G}',
+    '',
+    { cmc: 6, colors: ['G'], color_identity: ['G'], power: 6, toughness: 6 },
+  );
+  const observerCommander = def(
+    'complex_combat_observer_commander',
+    'Observer Commander',
+    'Legendary Creature - Advisor',
+    '{2}',
+    '',
+    { cmc: 2, power: 2, toughness: 2 },
+  );
+
+  const state: GameState = {
+    players: [
+      {
+        id: 'human',
+        name: 'Complex Combat QA Pilot',
+        life: 40,
+        poisonCounters: 0,
+        commanderDamage: {},
+        commanderTax: 0,
+        commanderInstanceId: 'complex_combat_commander_1',
+        commanderCastCount: 1,
+        manaPool: pool(),
+        hasPlayedLand: false,
+        hasPriority: true,
+        hasLost: false,
+      },
+      {
+        id: 'ai-1',
+        name: 'Left Defender',
+        life: 40,
+        poisonCounters: 0,
+        commanderDamage: {},
+        commanderTax: 0,
+        commanderInstanceId: 'complex_combat_observer_1',
+        commanderCastCount: 0,
+        manaPool: pool(),
+        hasPlayedLand: false,
+        hasPriority: false,
+        hasLost: false,
+      },
+      {
+        id: 'ai-2',
+        name: 'Middle Defender',
+        life: 40,
+        poisonCounters: 0,
+        commanderDamage: {},
+        commanderTax: 0,
+        commanderInstanceId: 'complex_combat_observer_2',
+        commanderCastCount: 0,
+        manaPool: pool(),
+        hasPlayedLand: false,
+        hasPriority: false,
+        hasLost: false,
+      },
+      {
+        id: 'ai-3',
+        name: 'Right Defender',
+        life: 40,
+        poisonCounters: 0,
+        commanderDamage: {},
+        commanderTax: 0,
+        commanderInstanceId: 'complex_combat_observer_3',
+        commanderCastCount: 0,
+        manaPool: pool(),
+        hasPlayedLand: false,
+        hasPriority: false,
+        hasLost: false,
+      },
+    ],
+    cards: new Map<string, CardInstance>([
+      ['complex_combat_commander_1', instance('complex_combat_commander_1', tramplingCommander.id, 'human', 'battlefield', { isCommander: true })],
+      ['complex_combat_twin_healer_1', instance('complex_combat_twin_healer_1', twinHealer.id, 'human', 'battlefield')],
+      ['complex_combat_venom_charger_1', instance('complex_combat_venom_charger_1', venomCharger.id, 'human', 'battlefield')],
+      ['complex_combat_bear_1', instance('complex_combat_bear_1', bearBlocker.id, 'ai-1', 'battlefield')],
+      ['complex_combat_wall_1', instance('complex_combat_wall_1', wallBlocker.id, 'ai-1', 'battlefield')],
+      ['complex_combat_colossus_1', instance('complex_combat_colossus_1', colossus.id, 'ai-3', 'battlefield')],
+      ['complex_combat_observer_1', instance('complex_combat_observer_1', observerCommander.id, 'ai-1', 'command', { isCommander: true })],
+      ['complex_combat_observer_2', instance('complex_combat_observer_2', observerCommander.id, 'ai-2', 'command', { isCommander: true })],
+      ['complex_combat_observer_3', instance('complex_combat_observer_3', observerCommander.id, 'ai-3', 'command', { isCommander: true })],
+    ]),
+    cardDefinitions: new Map<string, CardDefinition>([
+      [tramplingCommander.id, tramplingCommander],
+      [twinHealer.id, twinHealer],
+      [venomCharger.id, venomCharger],
+      [bearBlocker.id, bearBlocker],
+      [wallBlocker.id, wallBlocker],
+      [colossus.id, colossus],
+      [observerCommander.id, observerCommander],
+    ]),
+    activePlayerIndex: 0,
+    priorityPlayerIndex: 0,
+    phase: 'combat',
+    step: 'combat_damage',
+    turnNumber: 6,
+    hasPriorityPassed: [false, false, false, false],
+    stack: [],
+    combat: {
+      attackers: [
+        { cardInstanceId: 'complex_combat_commander_1', defendingPlayerId: 'ai-1' },
+        { cardInstanceId: 'complex_combat_twin_healer_1', defendingPlayerId: 'ai-2' },
+        { cardInstanceId: 'complex_combat_venom_charger_1', defendingPlayerId: 'ai-3' },
+      ],
+      blockers: [
+        { cardInstanceId: 'complex_combat_bear_1', blockingAttackerId: 'complex_combat_commander_1' },
+        { cardInstanceId: 'complex_combat_wall_1', blockingAttackerId: 'complex_combat_commander_1' },
+        { cardInstanceId: 'complex_combat_colossus_1', blockingAttackerId: 'complex_combat_venom_charger_1' },
+      ],
+      blockersDeclared: true,
+      blockersDeclaredBy: ['ai-1', 'ai-2', 'ai-3'],
+      damageAssignment: new Map(),
+    },
+    battlefieldAbilities: new Map(),
+    pendingTriggers: [],
+  };
+
+  return serializeGameState(state);
+}
+
 export function createDeclareBlockersQaState(): SerializedGameStateV1 {
   const sisay = def(
     'sisay_blocker',

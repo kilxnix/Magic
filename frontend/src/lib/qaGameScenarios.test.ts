@@ -1,11 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import {
   deserializeGameState,
+  applyDamageAssignmentPromptResponse,
+  checkStateBasedActions,
+  createDamageAssignmentPromptRequest,
   getLegalActions,
+  resolveCombatDamage,
   tapLandForMana,
   type ManaColor,
 } from 'commander-engine';
-import { createDeclareBlockersQaState, createLandEntryFetchQaState, createLibraryManipulationQaState, createMagecraftTriggersQaState, createModalChoiceQaState, createSisayRawLandsQaState, createSpellCopyQaState, createStormGrapeshotQaState } from './qaGameScenarios';
+import { createComplexCombatQaState, createDeclareBlockersQaState, createLandEntryFetchQaState, createLibraryManipulationQaState, createMagecraftTriggersQaState, createModalChoiceQaState, createSisayRawLandsQaState, createSpellCopyQaState, createStormGrapeshotQaState } from './qaGameScenarios';
 
 describe('QA game scenarios', () => {
   it('loads raw dual lands with mana actions and reaches Sisay activation after tapping WUBRG', () => {
@@ -132,5 +136,41 @@ describe('QA game scenarios', () => {
     expect(actions.some(action =>
       action.kind === 'CastSpell' && action.cardInstanceId === 'magecraft_qa_opt_1',
     )).toBe(true);
+  });
+
+  it('loads a four-player complex combat damage assignment state for browser QA', () => {
+    const state = deserializeGameState(createComplexCombatQaState());
+    const request = createDamageAssignmentPromptRequest(state, 'human', { id: 'test_damage_assignment' });
+
+    expect(state.players).toHaveLength(4);
+    expect(state.step).toBe('combat_damage');
+    expect(state.combat?.attackers).toHaveLength(3);
+    expect(request.groups).toHaveLength(1);
+    expect(request.groups[0].attackerName).toBe('Trampling Commander');
+    expect(request.groups[0].blockers.map(blocker => blocker.blockerName)).toEqual([
+      'Bear Blocker',
+      'Wall Blocker',
+    ]);
+
+    const response = applyDamageAssignmentPromptResponse(state, request, {
+      requestId: request.id,
+      kind: 'DamageAssignment',
+      playerId: 'human',
+      orders: [{
+        attackerId: 'complex_combat_commander_1',
+        blockerIds: ['complex_combat_bear_1', 'complex_combat_wall_1'],
+      }],
+    });
+    expect(response.ok).toBe(true);
+
+    const damaged = checkStateBasedActions(resolveCombatDamage(response.state!));
+    expect(damaged.players.find(player => player.id === 'human')?.life).toBe(44);
+    expect(damaged.players.find(player => player.id === 'ai-1')?.life).toBe(39);
+    expect(damaged.players.find(player => player.id === 'ai-1')?.commanderDamage.complex_combat_commander_1).toBe(1);
+    expect(damaged.players.find(player => player.id === 'ai-2')?.life).toBe(36);
+    expect(damaged.players.find(player => player.id === 'ai-3')?.life).toBe(38);
+    expect(damaged.cards.get('complex_combat_bear_1')?.zone).toBe('graveyard');
+    expect(damaged.cards.get('complex_combat_wall_1')?.zone).toBe('graveyard');
+    expect(damaged.cards.get('complex_combat_colossus_1')?.zone).toBe('graveyard');
   });
 });
