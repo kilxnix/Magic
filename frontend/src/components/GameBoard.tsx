@@ -2921,6 +2921,7 @@ export function GameBoard({
                     <button
                       type="button"
                       aria-label={`View ${displayCard.name}`}
+                      onFocus={() => setInspectedCard(displayCard)}
                       onClick={() => setInspectedCard(displayCard)}
                       className="min-h-7 rounded border border-neutral-700 bg-neutral-900/90 px-1 text-[10px] font-bold text-stone-300 transition-colors hover:border-amber-400 hover:text-amber-200"
                     >
