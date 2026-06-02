@@ -767,6 +767,111 @@ export function createLibraryManipulationQaState(): SerializedGameStateV1 {
   return serializeGameState(state);
 }
 
+export function createSeeBeyondQaState(): SerializedGameStateV1 {
+  const commander = def(
+    'see_beyond_commander',
+    'Talrand, Sky Summoner',
+    'Legendary Creature - Merfolk Wizard',
+    '{2}{U}{U}',
+    'Whenever you cast an instant or sorcery spell, create a 2/2 blue Drake creature token with flying.',
+    { cmc: 4, colors: ['U'], color_identity: ['U'], power: 2, toughness: 2 },
+  );
+  const seeBeyond = def(
+    'see_beyond',
+    'See Beyond',
+    'Sorcery',
+    '{1}{U}',
+    'Draw two cards, then shuffle a card from your hand into your library.',
+    { cmc: 2, colors: ['U'], color_identity: ['U'] },
+  );
+  const merfolk = def(
+    'see_beyond_merfolk',
+    'Coral Merfolk',
+    'Creature - Merfolk',
+    '{1}{U}',
+    '',
+    { cmc: 2, colors: ['U'], color_identity: ['U'], power: 2, toughness: 1 },
+  );
+  const guard = def(
+    'see_beyond_guard',
+    'Maritime Guard',
+    'Creature - Merfolk Soldier',
+    '{1}{U}',
+    '',
+    { cmc: 2, colors: ['U'], color_identity: ['U'], power: 1, toughness: 3 },
+  );
+  const drawOne = def('see_beyond_draw_one', 'Drawn Card One', 'Creature - Fish', '{U}', '', { cmc: 1, colors: ['U'], color_identity: ['U'], power: 1, toughness: 1 });
+  const drawTwo = def('see_beyond_draw_two', 'Drawn Card Two', 'Creature - Fish', '{U}', '', { cmc: 1, colors: ['U'], color_identity: ['U'], power: 1, toughness: 1 });
+  const libraryRest = def('see_beyond_rest', 'Library Rest', 'Creature - Fish', '{U}', '', { cmc: 1, colors: ['U'], color_identity: ['U'], power: 1, toughness: 1 });
+  const island = def('see_beyond_island', 'Island', 'Basic Land - Island', '', '({T}: Add {U}.)', { card_types: ['land'] });
+
+  const state: GameState = {
+    players: [
+      {
+        id: 'human',
+        name: 'See Beyond QA Pilot',
+        life: 40,
+        poisonCounters: 0,
+        commanderDamage: {},
+        commanderTax: 0,
+        commanderInstanceId: 'see_beyond_commander_1',
+        commanderCastCount: 0,
+        manaPool: pool({ U: 2 }),
+        hasPlayedLand: false,
+        hasPriority: true,
+        hasLost: false,
+      },
+      {
+        id: 'ai-1',
+        name: 'See Beyond QA Opponent',
+        life: 40,
+        poisonCounters: 0,
+        commanderDamage: {},
+        commanderTax: 0,
+        commanderInstanceId: null,
+        commanderCastCount: 0,
+        manaPool: pool(),
+        hasPlayedLand: false,
+        hasPriority: false,
+        hasLost: false,
+      },
+    ],
+    cards: new Map<string, CardInstance>([
+      ['see_beyond_commander_1', instance('see_beyond_commander_1', commander.id, 'human', 'command', { isCommander: true })],
+      ['see_beyond_1', instance('see_beyond_1', seeBeyond.id, 'human', 'hand')],
+      ['see_beyond_merfolk_1', instance('see_beyond_merfolk_1', merfolk.id, 'human', 'hand')],
+      ['see_beyond_guard_1', instance('see_beyond_guard_1', guard.id, 'human', 'hand')],
+      ['see_beyond_draw_one_1', instance('see_beyond_draw_one_1', drawOne.id, 'human', 'library')],
+      ['see_beyond_draw_two_1', instance('see_beyond_draw_two_1', drawTwo.id, 'human', 'library')],
+      ['see_beyond_rest_1', instance('see_beyond_rest_1', libraryRest.id, 'human', 'library')],
+      ['see_beyond_island_1', instance('see_beyond_island_1', island.id, 'human', 'battlefield')],
+      ['see_beyond_island_2', instance('see_beyond_island_2', island.id, 'human', 'battlefield')],
+    ]),
+    cardDefinitions: new Map<string, CardDefinition>([
+      [commander.id, commander],
+      [seeBeyond.id, seeBeyond],
+      [merfolk.id, merfolk],
+      [guard.id, guard],
+      [drawOne.id, drawOne],
+      [drawTwo.id, drawTwo],
+      [libraryRest.id, libraryRest],
+      [island.id, island],
+    ]),
+    activePlayerIndex: 0,
+    priorityPlayerIndex: 0,
+    phase: 'precombat_main',
+    step: 'upkeep',
+    turnNumber: 1,
+    hasPriorityPassed: [false, false],
+    stack: [],
+    combat: null,
+    battlefieldAbilities: new Map(),
+    pendingTriggers: [],
+  };
+
+  return serializeGameState(state);
+}
+
 export function createStormGrapeshotQaState(): SerializedGameStateV1 {
   const commander = def(
     'storm_qa_commander',

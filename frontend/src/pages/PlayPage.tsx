@@ -282,6 +282,7 @@ export function PlayPage() {
       && qaScenario !== 'declare-blockers'
       && qaScenario !== 'land-entry-fetch'
       && qaScenario !== 'library-manipulation'
+      && qaScenario !== 'see-beyond'
       && qaScenario !== 'storm-grapeshot'
       && qaScenario !== 'spell-copy'
       && qaScenario !== 'magecraft-triggers'
@@ -302,6 +303,7 @@ export function PlayPage() {
         createLibraryManipulationQaState,
         createMagecraftTriggersQaState,
         createModalChoiceQaState,
+        createSeeBeyondQaState,
         createSisayActivationQaState,
         createSisayRawLandsQaState,
         createSpellCopyQaState,
@@ -316,6 +318,8 @@ export function PlayPage() {
           ? createLandEntryFetchQaState()
           : qaScenario === 'library-manipulation'
           ? createLibraryManipulationQaState()
+          : qaScenario === 'see-beyond'
+          ? createSeeBeyondQaState()
           : qaScenario === 'storm-grapeshot'
           ? createStormGrapeshotQaState()
           : qaScenario === 'spell-copy'
@@ -344,6 +348,8 @@ export function PlayPage() {
             ? 'Krenko, Mob Boss'
             : qaScenario === 'library-manipulation'
             ? 'Talrand, Sky Summoner'
+            : qaScenario === 'see-beyond'
+            ? 'Talrand, Sky Summoner'
             : qaScenario === 'storm-grapeshot' || qaScenario === 'spell-copy'
             ? 'Vivi Ornitier'
             : qaScenario === 'magecraft-triggers'
@@ -364,6 +370,8 @@ export function PlayPage() {
                   ? 'Marchesa, Dealer of Death'
                   : qaScenario === 'library-manipulation'
                   ? 'Library QA Opponent'
+                  : qaScenario === 'see-beyond'
+                  ? 'See Beyond QA Opponent'
                   : qaScenario === 'storm-grapeshot'
                   ? 'Storm QA Opponent'
                   : qaScenario === 'spell-copy'
@@ -429,6 +437,8 @@ export function PlayPage() {
               ? 'land entry/fetch'
               : qaScenario === 'library-manipulation'
               ? 'library manipulation'
+              : qaScenario === 'see-beyond'
+              ? 'See Beyond'
               : qaScenario === 'storm-grapeshot'
               ? 'storm Grapeshot'
               : qaScenario === 'spell-copy'

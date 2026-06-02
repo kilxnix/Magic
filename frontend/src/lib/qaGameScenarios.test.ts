@@ -11,7 +11,7 @@ import {
   tryPlayLand,
   type ManaColor,
 } from 'commander-engine';
-import { createComplexCombatQaState, createDeclareBlockersQaState, createGenerousGiftQaState, createKrenkoSkirkQaState, createLandEntryFetchQaState, createLibraryManipulationQaState, createMagecraftTriggersQaState, createModalChoiceQaState, createSisayRawLandsQaState, createSpellCopyQaState, createStormGrapeshotQaState } from './qaGameScenarios';
+import { createComplexCombatQaState, createDeclareBlockersQaState, createGenerousGiftQaState, createKrenkoSkirkQaState, createLandEntryFetchQaState, createLibraryManipulationQaState, createMagecraftTriggersQaState, createModalChoiceQaState, createSeeBeyondQaState, createSisayRawLandsQaState, createSpellCopyQaState, createStormGrapeshotQaState } from './qaGameScenarios';
 
 describe('QA game scenarios', () => {
   it('loads raw dual lands with mana actions and reaches Sisay activation after tapping WUBRG', () => {
@@ -149,6 +149,17 @@ describe('QA game scenarios', () => {
     expect(actions.some(action =>
       action.kind === 'CastSpell' && action.cardInstanceId === 'library_qa_consider_1',
     )).toBe(true);
+  });
+
+  it('loads See Beyond with enough mana and selectable hand cards for browser QA', () => {
+    const state = deserializeGameState(createSeeBeyondQaState());
+    const actions = getLegalActions(state, 'human');
+
+    expect(actions.some(action =>
+      action.kind === 'CastSpell' && action.cardInstanceId === 'see_beyond_1',
+    )).toBe(true);
+    expect([...state.cards.values()].filter(card => card.ownerId === 'human' && card.zone === 'hand')).toHaveLength(3);
+    expect([...state.cards.values()].filter(card => card.ownerId === 'human' && card.zone === 'library')).toHaveLength(3);
   });
 
   it('loads a storm spell with previous spell count for browser QA', () => {
