@@ -54,7 +54,7 @@ export interface PlayDrillBookmark {
   step?: string;
   engine?: SerializedGameStateV1;
   canonicalState?: PlayCanonicalStateRef;
-  source?: 'manual' | 'checkpoint' | 'branch-preview';
+  source?: 'manual' | 'checkpoint' | 'branch-preview' | 'review';
   focusTags?: string[];
   note?: string;
   decisionContext?: PlayDrillDecisionContext;

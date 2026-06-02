@@ -484,6 +484,7 @@ export interface GameLogEntry {
   timestamp: number;
   playByPlay?: string;
   decision?: DecisionReview;
+  drillSeed?: SerializedGameStateV1;
   rulesAudit?: {
     severity: 'info' | 'warning' | 'error';
     reason: string;
@@ -2260,6 +2261,7 @@ function captureLogEntry(
   manaSpent: number,
   specificPlayerId?: string,
   decision?: DecisionReview,
+  drillSeed?: SerializedGameStateV1,
 ): GameLogEntry {
   const humanPlayer = engine.players.find(p => p.id === humanId);
 
@@ -2311,6 +2313,7 @@ function captureLogEntry(
     timestamp: Date.now(),
     playByPlay: player === 'human' ? playByPlayFromDecision(action, decision) : `${action}.`,
     decision,
+    drillSeed,
   };
 }
 
@@ -7746,8 +7749,12 @@ export function useShelectorGame() {
         // Capture review data before applying the action so post-game grading
         // can compare the chosen line against the available alternatives.
         let decisionReview: DecisionReview | undefined;
+        let reviewDrillSeed: SerializedGameStateV1 | undefined;
         try {
           decisionReview = buildDecisionReview(engine, humanIdRef.current, action, legalActions);
+          if (decisionReview) {
+            reviewDrillSeed = serializeGameState(engine);
+          }
         } catch {
           // Review capture is optional and must not break gameplay.
         }
@@ -8466,6 +8473,7 @@ export function useShelectorGame() {
             'human', humanAction, manaSpent,
             undefined,
             decisionReview,
+            reviewDrillSeed,
           ));
         }
 

@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, ClipboardPaste, Download, Loader2, Swords, Link as LinkIcon, History, Trash2, Shield, Trophy, Users, Lightbulb, X, Save, FolderOpen, Database, BookmarkPlus, Rocket } from 'lucide-react';
-import { useShelectorGame, type ImportedCards, type ShelectorGameSaveSnapshot } from '../hooks/useShelectorGame';
+import { useShelectorGame, type GameLogEntry, type ImportedCards, type ShelectorGameSaveSnapshot } from '../hooks/useShelectorGame';
 import { GameBoard } from '../components/GameBoard';
 import { GameReview } from '../components/GameReview';
 import { EndGameModal } from '../components/shelector/EndGameModal';
@@ -1052,6 +1052,69 @@ export function PlayPage() {
     setSaveStatus(`Exported drill "${bookmark.label}".`);
   };
 
+  const loadReviewEntryAsDrill = async (entry: GameLogEntry) => {
+    const snapshot = exportGameSave();
+    if (!snapshot || !gameState) {
+      setSaveError('No active reviewed game to drill from.');
+      return false;
+    }
+    if (!entry.drillSeed) {
+      setSaveError('That review entry does not have a restorable pre-decision state.');
+      return false;
+    }
+
+    const existing = saveSlotsRef.current[activeSaveSlot - 1];
+    const savedAt = Date.now();
+    const bookmarkId = `${savedAt}-${Math.random().toString(36).slice(2, 8)}`;
+    const label = `T${entry.turnNumber} review`;
+    const noteParts = [
+      `Review source: ${entry.action}`,
+      entry.decision?.best ? `Best line: ${entry.decision.best.label}` : null,
+      entry.decision ? `Selected: ${entry.decision.selected.label}` : null,
+      entry.playByPlay || entry.rulesAudit?.reason || null,
+    ].filter(Boolean);
+    const bookmark: PlayDrillBookmark = {
+      id: bookmarkId,
+      label,
+      savedAt,
+      turnNumber: entry.turnNumber,
+      phase: entry.phase,
+      step: entry.decision?.step || entry.phase,
+      engine: entry.drillSeed,
+      source: 'review',
+      focusTags: resolvePracticeMetadata()?.focusTags || [],
+      note: noteParts.join(' / '),
+    };
+    const drillBookmarks = [...(existing?.drillBookmarks || []), bookmark].slice(-16);
+
+    try {
+      const record = buildSaveRecord(activeSaveSlot, snapshot, false, drillBookmarks);
+      await putPlaySaveSlot(record);
+      applySaveSlotRecord(record, activeSaveSlot);
+      await refreshSaveSlots();
+      const drillSnapshot = buildDrillRestoreSnapshot(snapshot, entry.drillSeed, `Review Drill: ${entry.action}`);
+      const restored = restoreGameSave(drillSnapshot);
+      if (!restored) {
+        setSaveError(`Review drill "${entry.action}" could not be restored.`);
+        return false;
+      }
+      restoreSlotUi(record);
+      setShowReview(false);
+      setActiveDrillRun({
+        slot: activeSaveSlot,
+        bookmarkId,
+        label: `${label} / ${entry.action}`,
+        startedAt: Date.now(),
+      });
+      setSaveError(null);
+      setSaveStatus(`Loaded review drill "${entry.action}".`);
+      return true;
+    } catch (err: any) {
+      setSaveError(err.message || 'Could not load this review entry as a drill.');
+      return false;
+    }
+  };
+
   useEffect(() => {
     if (step !== 'game' || !gameState) return;
     const timeout = window.setTimeout(() => {
@@ -2007,6 +2070,7 @@ export function PlayPage() {
             engineEventLog={engineEventLog}
             engineEventLogSeeds={engineEventLogSeeds}
             engineEventLogInitialState={engineEventLogInitialState}
+            onDrillEntry={loadReviewEntryAsDrill}
             onClose={() => setShowReview(false)}
           />
         )}

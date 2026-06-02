@@ -6,7 +6,7 @@
  */
 
 import { useState, useMemo } from 'react';
-import { X, ChevronRight } from 'lucide-react';
+import { X, ChevronRight, BookmarkPlus } from 'lucide-react';
 import type { GameLogEntry, SimpleGameState } from '../hooks/useShelectorGame';
 import { auditPlaySaveSnapshot } from '../lib/playSaveAudit';
 import { ratingFromDecisionDelta, xenagosPracticeNoteFromDecision } from '../lib/turnReview';
@@ -450,6 +450,7 @@ export interface GameReviewProps {
   engineEventLog?: EngineEventLogRecord[];
   engineEventLogSeeds?: Record<number, SerializedGameStateV1>;
   engineEventLogInitialState?: SerializedGameStateV1 | null;
+  onDrillEntry?: (entry: GameLogEntry) => void;
 }
 
 // ========== Component ==========
@@ -464,6 +465,7 @@ export function GameReview({
   engineEventLog,
   engineEventLogSeeds,
   engineEventLogInitialState,
+  onDrillEntry,
 }: GameReviewProps) {
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [filterPlayer, setFilterPlayer] = useState<'all' | 'human' | 'ai'>('human');
@@ -506,6 +508,7 @@ export function GameReview({
 
   const selectedEntry = selectedIndex !== null ? ratedEntries[selectedIndex] : null;
   const selectedXenagosInsights = selectedEntry ? xenagosEntryInsights(selectedEntry) : [];
+  const canDrillSelectedEntry = Boolean(selectedEntry?.drillSeed && onDrillEntry);
 
   // Determine result text
   const isFinished = finalState.gameOver || winner !== null;
@@ -778,6 +781,17 @@ export function GameReview({
                                 </div>
                               )}
 
+                              {canDrillSelectedEntry && selectedEntry && (
+                                <button
+                                  type="button"
+                                  onClick={() => onDrillEntry?.(selectedEntry)}
+                                  className="flex w-full items-center justify-center gap-2 rounded-lg border border-amber-500/40 bg-amber-500 px-3 py-2 text-xs font-black text-neutral-950 shadow-sm transition hover:bg-amber-400"
+                                >
+                                  <BookmarkPlus className="h-4 w-4" />
+                                  Drill This Decision
+                                </button>
+                              )}
+
                               {/* Counter Analysis */}
                               {selectedEntry.counterAnalysis && (
                                 <div className="rounded-lg border border-purple-700/50 bg-purple-900/20 px-3 py-2">
@@ -924,6 +938,17 @@ export function GameReview({
                       ))}
                     </div>
                   </div>
+                )}
+
+                {canDrillSelectedEntry && selectedEntry && (
+                  <button
+                    type="button"
+                    onClick={() => onDrillEntry?.(selectedEntry)}
+                    className="flex w-full items-center justify-center gap-2 rounded-lg border border-amber-500/40 bg-amber-500 px-4 py-3 text-sm font-black text-neutral-950 shadow-sm transition hover:bg-amber-400"
+                  >
+                    <BookmarkPlus className="h-4 w-4" />
+                    Drill This Decision
+                  </button>
                 )}
 
                 {/* Counter Analysis */}
