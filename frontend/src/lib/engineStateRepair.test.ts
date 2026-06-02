@@ -87,6 +87,17 @@ function resumedTalrandStateWithoutAbilityMap(): GameState {
     power: 2,
     toughness: 2,
   });
+  const existingStackSpell = cardDef({
+    id: 'existing_stack_spell',
+    name: 'Existing Stack Spell',
+    type_line: 'Instant',
+    oracle_text: 'Draw a card.',
+    mana_cost: '{U}',
+    cmc: 1,
+    card_types: ['instant'],
+    colors: ['U'],
+    color_identity: ['U'],
+  });
 
   return {
     players: [
@@ -97,6 +108,7 @@ function resumedTalrandStateWithoutAbilityMap(): GameState {
       ['talrand_1', card('talrand_1', talrand.id, 'battlefield')],
       ['inspiration_1', card('inspiration_1', inspiration.id, 'hand')],
       ['token_inst_1', { ...card('token_inst_1', drake.id, 'battlefield'), isToken: true }],
+      ['existing_stack_spell_1', card('existing_stack_spell_1', existingStackSpell.id, 'stack')],
       ['island_1', card('island_1', island.id, 'library')],
       ['island_2', card('island_2', island.id, 'library')],
     ]),
@@ -105,6 +117,7 @@ function resumedTalrandStateWithoutAbilityMap(): GameState {
       [inspiration.id, inspiration],
       [island.id, island],
       [drake.id, drake],
+      [existingStackSpell.id, existingStackSpell],
     ]),
     activePlayerIndex: 0,
     priorityPlayerIndex: 0,
@@ -114,7 +127,13 @@ function resumedTalrandStateWithoutAbilityMap(): GameState {
     spellsCastThisTurn: 0,
     playersWhoAttackedThisTurn: [],
     hasPriorityPassed: [false, false],
-    stack: [],
+    stack: [{
+      kind: 'Spell',
+      id: 'stack_1',
+      cardInstanceId: 'existing_stack_spell_1',
+      casterId: 'p1',
+      targets: [],
+    }],
     combat: null,
     battlefieldAbilities: new Map([['talrand_1', []]]),
     pendingTriggers: [],
@@ -139,7 +158,11 @@ describe('restoreMissingBattlefieldAbilities', () => {
     const cast = tryCastSpell(state, 'p1', 'inspiration_1', ['p1'], NO_PAYMENT);
     expect(cast.ok, cast.ok ? undefined : cast.message).toBe(true);
     if (!cast.ok) throw new Error(cast.message);
+    const castStackIds = cast.state.stack.map(item => item.id);
+    expect(new Set(castStackIds).size).toBe(castStackIds.length);
     state = putTriggersOnStack(cast.state);
+    const triggerStackIds = state.stack.map(item => item.id);
+    expect(new Set(triggerStackIds).size).toBe(triggerStackIds.length);
     state = resolveTopOfStack(state);
 
     expect(countDrakes(state)).toBe(2);

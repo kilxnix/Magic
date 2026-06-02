@@ -19,6 +19,14 @@ const PERMANENT_TYPES = ['creature', 'artifact', 'enchantment', 'planeswalker', 
 
 let stackCounter = 0;
 
+function nextStackObjectId(state: GameState): string {
+  let id = `stack_${++stackCounter}`;
+  while (state.stack.some(item => item.id === id)) {
+    id = `stack_${++stackCounter}`;
+  }
+  return id;
+}
+
 export interface CastSpellOptions {
   chosenModes?: number[];
   namedCardChoices?: Record<string, string>;
@@ -675,7 +683,7 @@ function castCascadeHitWithoutPaying(
 
   const stackItem: SpellStackItem = {
     kind: 'Spell',
-    id: `stack_${++stackCounter}`,
+    id: nextStackObjectId(state),
     cardInstanceId: hit.instanceId,
     casterId: playerId,
     targets: [],
@@ -739,7 +747,7 @@ function createSpellCopyOnStack(
 ): GameState {
   const copyItem: SpellStackItem = {
     ...sourceItem,
-    id: `stack_${++stackCounter}`,
+    id: nextStackObjectId(state),
     casterId: controllerId,
     targets: [...targets],
     isCopy: true,
@@ -1233,7 +1241,7 @@ export function castSpell(
   // Add to stack
   const stackItem: SpellStackItem = {
     kind: 'Spell',
-    id: `stack_${++stackCounter}`,
+    id: nextStackObjectId(state),
     cardInstanceId,
     casterId: playerId,
     targets,
