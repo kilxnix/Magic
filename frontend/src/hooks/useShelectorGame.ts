@@ -2574,6 +2574,27 @@ function collapseTargetedActions(
   return collapsed;
 }
 
+function legalActionIdentity(action: SimpleLegalAction): string {
+  return [
+    action.kind,
+    action.label,
+    action.paymentPreview || '',
+    JSON.stringify(action._engineAction),
+  ].join('|');
+}
+
+function dedupeSimpleActions(actions: SimpleLegalAction[]): SimpleLegalAction[] {
+  const seen = new Set<string>();
+  const result: SimpleLegalAction[] = [];
+  for (const action of actions) {
+    const key = legalActionIdentity(action);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(action);
+  }
+  return result;
+}
+
 // ========== Hook ==========
 
 export function useShelectorGame() {
@@ -3398,7 +3419,7 @@ export function useShelectorGame() {
         });
       }
 
-      const visibleActions = collapseTargetedActions(simpleActions, engine);
+      const visibleActions = collapseTargetedActions(dedupeSimpleActions(simpleActions), engine);
       setLegalActions(visibleActions);
       setCurrentPrompt(buildVisibleActionPrompt(engine, humanIdRef.current, visibleActions));
     } else {
