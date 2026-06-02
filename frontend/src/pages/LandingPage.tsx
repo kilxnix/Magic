@@ -77,13 +77,19 @@ export function LandingPage() {
               <Users className="h-4 w-4" />
               Rooms
             </Link>
-            <Link
-              to="/events"
-              className="hidden min-h-[40px] items-center gap-2 rounded-lg px-3 text-sm font-semibold text-stone-200 transition hover:bg-white/10 lg:inline-flex"
+            <button
+              type="button"
+              disabled
+              aria-disabled="true"
+              title="Events are planned for a future release"
+              className="hidden min-h-[40px] cursor-not-allowed items-center gap-2 rounded-lg px-3 text-sm font-semibold text-stone-500 opacity-75 lg:inline-flex"
             >
               <Trophy className="h-4 w-4" />
               Events
-            </Link>
+              <span className="rounded-full border border-stone-500/40 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-stone-400">
+                Future
+              </span>
+            </button>
             <Link
               to="/play"
               className="inline-flex min-h-[40px] items-center gap-2 rounded-lg bg-amber-300 px-3 text-sm font-bold text-stone-950 transition hover:bg-amber-200 sm:px-4"
@@ -189,13 +195,19 @@ export function LandingPage() {
                 <Users className="h-5 w-5" />
                 Host a Room
               </Link>
-              <Link
-                to="/events"
-                className="inline-flex min-h-[48px] w-full items-center justify-center gap-2 rounded-lg border border-amber-200/40 bg-amber-100/10 px-6 text-sm font-black text-amber-100 backdrop-blur transition hover:bg-amber-100/15 sm:w-auto"
+              <button
+                type="button"
+                disabled
+                aria-disabled="true"
+                title="Events are planned for a future release"
+                className="inline-flex min-h-[48px] w-full cursor-not-allowed items-center justify-center gap-2 rounded-lg border border-amber-200/25 bg-amber-100/5 px-6 text-sm font-black text-amber-100/55 backdrop-blur sm:w-auto"
               >
                 <Trophy className="h-5 w-5" />
-                Run an Event
-              </Link>
+                <span>Events</span>
+                <span className="rounded-full border border-amber-200/25 px-2 py-0.5 text-[10px] uppercase tracking-wide">
+                  Future release
+                </span>
+              </button>
             </div>
 
             <div className="mt-7 w-full max-w-sm overflow-hidden rounded-lg border border-white/10 bg-stone-950/70 p-3 text-left shadow-2xl shadow-black/40 backdrop-blur sm:hidden">

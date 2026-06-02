@@ -6,7 +6,7 @@ import { OptimizerPage } from './pages/OptimizerPage';
 import { PlayPage } from './pages/PlayPage';
 import { ShelectorPage } from './pages/ShelectorPage';
 import { MultiplayerPage } from './pages/MultiplayerPage';
-import { EventCenterPage } from './pages/EventCenterPage';
+import { FutureEventsPage } from './pages/FutureEventsPage';
 import { AdminConsolePage } from './pages/AdminConsolePage';
 import { PrivacyPage } from './pages/PrivacyPage';
 import { TermsPage } from './pages/TermsPage';
@@ -21,8 +21,8 @@ export const router = createBrowserRouter([
   { path: '/play', element: <PlayPage /> },
   { path: '/multiplayer', element: <MultiplayerPage /> },
   { path: '/multiplayer/:roomId', element: <MultiplayerPage /> },
-  { path: '/events', element: <EventCenterPage /> },
-  { path: '/events/:eventId', element: <EventCenterPage /> },
+  { path: '/events', element: <FutureEventsPage /> },
+  { path: '/events/:eventId', element: <FutureEventsPage /> },
   { path: '/admin', element: <AdminConsolePage /> },
   { path: '/shelector', element: <ShelectorPage /> },
   { path: '/how-training-works', element: <HowTrainingWorksPage /> },
