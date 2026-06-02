@@ -44,6 +44,12 @@ function def(
     power: options.power,
     toughness: options.toughness,
     card_types: options.card_types ?? cardTypes(typeLine),
+    isEquipment: options.isEquipment,
+    equipCost: options.equipCost,
+    equipmentBonus: options.equipmentBonus,
+    manaProduction: options.manaProduction,
+    searchAbility: options.searchAbility,
+    unlessTax: options.unlessTax,
   };
 }
 
@@ -538,6 +544,133 @@ export function createModalChoiceQaState(): SerializedGameStateV1 {
   };
 
   return serializeGameState(state);
+}
+
+export function createKrenkoSkirkQaState(): SerializedGameStateV1 {
+  const krenko = def(
+    'krenko_skirk_qa_krenko',
+    'Krenko, Mob Boss',
+    'Legendary Creature - Goblin Warrior',
+    '{2}{R}{R}',
+    '{T}: Create X 1/1 red Goblin creature tokens, where X is the number of Goblins you control.',
+    { cmc: 4, colors: ['R'], color_identity: ['R'], power: 3, toughness: 3 },
+  );
+  const skirk = def(
+    'krenko_skirk_qa_skirk',
+    'Skirk Prospector',
+    'Creature - Goblin',
+    '{R}',
+    'Sacrifice a Goblin: Add {R}.',
+    {
+      cmc: 1,
+      colors: ['R'],
+      color_identity: ['R'],
+      power: 1,
+      toughness: 1,
+      manaProduction: {
+        colors: ['R'],
+        amounts: { R: 1 },
+        isTapAbility: false,
+        requiresSacrifice: false,
+        sacrificeFilter: { subtypes: ['Goblin'] },
+      },
+    },
+  );
+  const impactTremors = def(
+    'krenko_skirk_qa_impact_tremors',
+    'Impact Tremors',
+    'Enchantment',
+    '{1}{R}',
+    'Whenever a creature enters the battlefield under your control, Impact Tremors deals 1 damage to each opponent.',
+    { cmc: 2, colors: ['R'], color_identity: ['R'] },
+  );
+  const goblinToken = def(
+    'krenko_skirk_qa_goblin_token',
+    'Goblin',
+    'Token Creature - Goblin',
+    '',
+    '',
+    { colors: ['R'], color_identity: ['R'], power: 1, toughness: 1 },
+  );
+  const mountain = def('krenko_skirk_qa_mountain', 'Mountain', 'Basic Land - Mountain', '', '({T}: Add {R}.)', {
+    card_types: ['land'],
+    manaProduction: {
+      colors: ['R'],
+      amounts: { R: 1 },
+      isTapAbility: true,
+      requiresSacrifice: false,
+    },
+  });
+
+  const state: GameState = {
+    players: [
+      {
+        id: 'human',
+        name: 'Krenko QA Pilot',
+        life: 40,
+        poisonCounters: 0,
+        commanderDamage: {},
+        commanderTax: 0,
+        commanderInstanceId: 'krenko_skirk_qa_krenko_1',
+        commanderCastCount: 1,
+        manaPool: pool(),
+        hasPlayedLand: false,
+        hasPriority: true,
+        hasLost: false,
+      },
+      {
+        id: 'ai-1',
+        name: 'Krenko QA Opponent',
+        life: 40,
+        poisonCounters: 0,
+        commanderDamage: {},
+        commanderTax: 0,
+        commanderInstanceId: null,
+        commanderCastCount: 0,
+        manaPool: pool(),
+        hasPlayedLand: false,
+        hasPriority: false,
+        hasLost: false,
+      },
+    ],
+    cards: new Map<string, CardInstance>([
+      ['krenko_skirk_qa_krenko_1', instance('krenko_skirk_qa_krenko_1', krenko.id, 'human', 'battlefield', {
+        isCommander: true,
+        summoningSick: false,
+      })],
+      ['krenko_skirk_qa_skirk_1', instance('krenko_skirk_qa_skirk_1', skirk.id, 'human', 'battlefield', {
+        summoningSick: false,
+      })],
+      ['krenko_skirk_qa_impact_tremors_1', instance('krenko_skirk_qa_impact_tremors_1', impactTremors.id, 'human', 'battlefield')],
+      ['krenko_skirk_qa_mountain_1', instance('krenko_skirk_qa_mountain_1', mountain.id, 'human', 'battlefield')],
+      ['krenko_skirk_qa_goblin_1', instance('krenko_skirk_qa_goblin_1', goblinToken.id, 'human', 'battlefield', { isToken: true })],
+      ['krenko_skirk_qa_goblin_2', instance('krenko_skirk_qa_goblin_2', goblinToken.id, 'human', 'battlefield', { isToken: true })],
+    ]),
+    cardDefinitions: new Map<string, CardDefinition>([
+      [krenko.id, krenko],
+      [skirk.id, skirk],
+      [impactTremors.id, impactTremors],
+      [goblinToken.id, goblinToken],
+      [mountain.id, mountain],
+    ]),
+    activePlayerIndex: 0,
+    priorityPlayerIndex: 0,
+    phase: 'precombat_main',
+    step: 'upkeep',
+    turnNumber: 4,
+    hasPriorityPassed: [false, false],
+    stack: [],
+    combat: null,
+    battlefieldAbilities: new Map(),
+    pendingTriggers: [],
+  };
+
+  let withAbilities = state;
+  for (const id of ['krenko_skirk_qa_krenko_1', 'krenko_skirk_qa_impact_tremors_1']) {
+    withAbilities = registerBattlefieldAbilities(withAbilities, id);
+  }
+
+  return serializeGameState(withAbilities);
 }
 
 export function createLibraryManipulationQaState(): SerializedGameStateV1 {

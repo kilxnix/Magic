@@ -288,6 +288,7 @@ export function PlayPage() {
       && qaScenario !== 'complex-combat'
       && qaScenario !== 'modal-choice'
       && qaScenario !== 'generous-gift'
+      && qaScenario !== 'krenko-skirk'
     ) return;
 
     let cancelled = false;
@@ -296,6 +297,7 @@ export function PlayPage() {
         createDeclareBlockersQaState,
         createComplexCombatQaState,
         createGenerousGiftQaState,
+        createKrenkoSkirkQaState,
         createLandEntryFetchQaState,
         createLibraryManipulationQaState,
         createMagecraftTriggersQaState,
@@ -326,6 +328,8 @@ export function PlayPage() {
           ? createModalChoiceQaState()
           : qaScenario === 'generous-gift'
           ? createGenerousGiftQaState()
+          : qaScenario === 'krenko-skirk'
+          ? createKrenkoSkirkQaState()
           : createSisayActivationQaState();
         const now = Date.now();
         const snapshot: ShelectorGameSaveSnapshot = {
@@ -335,6 +339,8 @@ export function PlayPage() {
           humanDeck: null,
           aiDecks: [],
           humanCommander: qaScenario === 'modal-choice'
+            ? 'Krenko, Mob Boss'
+            : qaScenario === 'krenko-skirk'
             ? 'Krenko, Mob Boss'
             : qaScenario === 'library-manipulation'
             ? 'Talrand, Sky Summoner'
@@ -368,6 +374,8 @@ export function PlayPage() {
                   ? 'Modal QA Opponent'
                   : qaScenario === 'generous-gift'
                   ? 'Removal QA Opponent'
+                  : qaScenario === 'krenko-skirk'
+                  ? 'Krenko QA Opponent'
                   : 'QA Opponent',
               },
           humanId: 'human',
@@ -433,6 +441,8 @@ export function PlayPage() {
               ? 'modal choice'
               : qaScenario === 'generous-gift'
               ? 'Generous Gift'
+              : qaScenario === 'krenko-skirk'
+              ? 'Krenko/Skirk'
               : 'Sisay activation'
           } QA scenario.`);
           setSaveError(null);

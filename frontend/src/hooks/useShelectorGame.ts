@@ -2200,6 +2200,39 @@ function captureLogEntry(
   };
 }
 
+function manaAbilityActionLabel(def: CardDefinition | undefined, color: ManaColor): string {
+  const name = def?.name || 'permanent';
+  const mana = def?.manaProduction;
+  if (mana?.activationZone === 'hand') {
+    return `Exile ${name} for ${color}`;
+  }
+  if (mana?.sacrificeFilter) {
+    const filter = mana.sacrificeFilter as { subtypes?: string[]; types?: string[] };
+    const sacrificeName = filter.subtypes?.[0] || filter.types?.[0] || 'permanent';
+    return `Sacrifice ${sacrificeName} with ${name} for ${color}`;
+  }
+  if (mana?.requiresSacrifice) {
+    return `Sacrifice ${name} for ${color}`;
+  }
+  if (mana?.isTapAbility === false) {
+    return `Activate ${name} for ${color}`;
+  }
+  return `Tap ${name} for ${color}`;
+}
+
+function manaAbilityLogVerb(def: CardDefinition | undefined): string {
+  const mana = def?.manaProduction;
+  if (mana?.activationZone === 'hand') return 'Exiled';
+  if (mana?.sacrificeFilter) {
+    const filter = mana.sacrificeFilter as { subtypes?: string[]; types?: string[] };
+    const sacrificeName = filter.subtypes?.[0] || filter.types?.[0] || 'permanent';
+    return `Sacrificed a ${sacrificeName} with`;
+  }
+  if (mana?.requiresSacrifice) return 'Sacrificed';
+  if (mana?.isTapAbility === false) return 'Activated';
+  return 'Tapped';
+}
+
 /** Convert engine AIAction to SimpleLegalAction for the UI */
 function toSimpleLegalAction(action: AIAction, engineState: GameState): SimpleLegalAction {
   switch (action.kind) {
@@ -2229,14 +2262,11 @@ function toSimpleLegalAction(action: AIAction, engineState: GameState): SimpleLe
     case 'ActivateManaAbility': {
       const inst = engineState.cards.get(action.cardInstanceId);
       const def = inst ? getCardDefinition(engineState, inst) : undefined;
-      const verb = def?.manaProduction?.activationZone === 'hand'
-        ? 'Exile'
-        : 'Tap';
       return {
         kind: 'ActivateManaAbility',
         cardInstanceId: action.cardInstanceId,
         cardName: def?.name,
-        label: `${verb} ${def?.name || 'permanent'} for ${action.color}`,
+        label: manaAbilityActionLabel(def, action.color),
         _engineAction: action,
       };
     }
@@ -3395,7 +3425,7 @@ export function useShelectorGame() {
         } else if (a.kind === 'ActivateManaAbility') {
           const inst = state.cards.get(a.cardInstanceId);
           const def = inst ? getCardDefinition(state, inst) : undefined;
-          messages.push({ role: 'shelector', text: `Tapped ${def?.name || 'a permanent'} for mana. Floating: ${aiPoolStr}` });
+          messages.push({ role: 'shelector', text: `${manaAbilityLogVerb(def)} ${def?.name || 'a permanent'} for mana. Floating: ${aiPoolStr}` });
         } else if (a.kind === 'DeclareAttackers') {
           if (a.attacks.length > 0) {
             const names = a.attacks.map(atk => {
@@ -8200,7 +8230,9 @@ export function useShelectorGame() {
             }
           }
           const gainStr = gained.length > 0 ? gained.join(' ') : '+1 mana';
-          addMessage('player', `Tapped ${action.cardName || 'a permanent'} (${gainStr}). Floating: ${poolStr}`);
+          const activatedInst = action.cardInstanceId ? newState.cards.get(action.cardInstanceId) : undefined;
+          const activatedDef = activatedInst ? getCardDefinition(newState, activatedInst) : undefined;
+          addMessage('player', `${manaAbilityLogVerb(activatedDef)} ${action.cardName || 'a permanent'} (${gainStr}). Floating: ${poolStr}`);
         }
         // Note: ActivateManaAbility now has narration for manual tapping
 

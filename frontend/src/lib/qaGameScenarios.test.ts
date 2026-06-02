@@ -11,7 +11,7 @@ import {
   tryPlayLand,
   type ManaColor,
 } from 'commander-engine';
-import { createComplexCombatQaState, createDeclareBlockersQaState, createGenerousGiftQaState, createLandEntryFetchQaState, createLibraryManipulationQaState, createMagecraftTriggersQaState, createModalChoiceQaState, createSisayRawLandsQaState, createSpellCopyQaState, createStormGrapeshotQaState } from './qaGameScenarios';
+import { createComplexCombatQaState, createDeclareBlockersQaState, createGenerousGiftQaState, createKrenkoSkirkQaState, createLandEntryFetchQaState, createLibraryManipulationQaState, createMagecraftTriggersQaState, createModalChoiceQaState, createSisayRawLandsQaState, createSpellCopyQaState, createStormGrapeshotQaState } from './qaGameScenarios';
 
 describe('QA game scenarios', () => {
   it('loads raw dual lands with mana actions and reaches Sisay activation after tapping WUBRG', () => {
@@ -117,6 +117,25 @@ describe('QA game scenarios', () => {
       action.kind === 'CastSpell'
       && action.cardInstanceId === 'generous_gift_1'
       && action.targets.includes('countered_commander_1'),
+    )).toBe(true);
+  });
+
+  it('loads Krenko, Impact Tremors, stacked Goblins, and Skirk sacrifice mana for browser QA', () => {
+    const state = deserializeGameState(createKrenkoSkirkQaState());
+    const actions = getLegalActions(state, 'human');
+    const goblins = [...state.cards.values()].filter(card => {
+      const def = state.cardDefinitions.get(card.definitionId);
+      return card.zone === 'battlefield' && card.ownerId === 'human' && /goblin/i.test(def?.type_line || '');
+    });
+
+    expect(goblins).toHaveLength(4);
+    expect(actions.some(action =>
+      action.kind === 'ActivateAbility' && action.cardInstanceId === 'krenko_skirk_qa_krenko_1',
+    )).toBe(true);
+    expect(actions.some(action =>
+      action.kind === 'ActivateManaAbility'
+      && action.cardInstanceId === 'krenko_skirk_qa_skirk_1'
+      && action.color === 'R',
     )).toBe(true);
   });
 
