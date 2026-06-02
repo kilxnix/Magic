@@ -320,6 +320,22 @@ describe('tryTapLandForMana', () => {
     ]);
   });
 
+  it('keeps Cavern colorless mana unrestricted alongside chosen-type colored mana', () => {
+    let state = makeTestState({});
+    const cavernId = addHandCavern(state);
+    const playResult = tryPlayLand(state, 'human', cavernId, { chosenCreatureType: 'Elf' });
+    expect(playResult.ok).toBe(true);
+    if (!playResult.ok) return;
+    state = playResult.state;
+
+    const manaResult = tryTapLandForMana(state, 'human', cavernId, 'C');
+
+    expect(manaResult.ok).toBe(true);
+    if (!manaResult.ok) return;
+    expect(manaResult.state.players[0].manaPool.C).toBe(1);
+    expect(manaResult.state.players[0].restrictedMana ?? []).toEqual([]);
+  });
+
   it('models Blacker Lotus as a one-shot silver-bordered mana source exiled after use', () => {
     const state = makeTestState({});
     const lotusId = addBattlefieldBlackerLotus(state);

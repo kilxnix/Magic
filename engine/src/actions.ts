@@ -21,7 +21,7 @@ import {
   entersTheBattlefieldTapped,
   getOptionalUntappedLifeCost,
 } from './permanent-entry';
-import type { ActivatedAbility, Effect } from './effects/ast';
+import type { ActivatedAbility, Effect, ManaProductionInfo } from './effects/ast';
 import { validateTargetChoices, type TargetSpec } from './effects/targets';
 import { applyWardForStackItem } from './ward';
 import { playerCanPayLife } from './game-outcome';
@@ -52,12 +52,14 @@ export function getAvailableManaColors(state: GameState, cardInstanceId: string)
   const card = state.cards.get(cardInstanceId);
   if (!card) return [];
   let def = getCardDefinition(state, card);
-  if (!def.manaProduction) {
+  if (!def.manaProduction && !def.manaProductions?.length) {
     def = populateParsedCache(def);
   }
-  if (!def.manaProduction) return [];
+  const manaProductions = getManaProductions(def);
+  if (manaProductions.length === 0) return [];
   if (!manaActivationConditionMet(state, card.ownerId, cardInstanceId, def.oracle_text)) return [];
 
+  const colors = new Set<ManaColor>();
   if (/add one mana of any of the exiled card'?s colors/i.test(def.oracle_text)) {
     const allowed = new Set<ManaColor>();
     for (const imprintedId of card.choices?.imprintedCardIds || []) {
@@ -68,15 +70,37 @@ export function getAvailableManaColors(state: GameState, cardInstanceId: string)
         allowed.add(color);
       }
     }
-    return def.manaProduction.colors.filter(color => allowed.has(color));
+    for (const production of manaProductions) {
+      for (const color of production.colors) {
+        if (allowed.has(color)) colors.add(color);
+      }
+    }
+    return [...colors];
   }
 
   if (/commander'?s color identity/i.test(def.oracle_text)) {
     const commanderIdentity = getCommanderColorIdentity(state, card.ownerId);
-    return def.manaProduction.colors.filter(color => commanderIdentity.has(color));
+    for (const production of manaProductions) {
+      for (const color of production.colors) {
+        if (commanderIdentity.has(color)) colors.add(color);
+      }
+    }
+    return [...colors];
   }
 
-  return def.manaProduction.colors;
+  for (const production of manaProductions) {
+    for (const color of production.colors) colors.add(color);
+  }
+  return [...colors];
+}
+
+function getManaProductions(def: { manaProduction?: ManaProductionInfo; manaProductions?: ManaProductionInfo[] }): ManaProductionInfo[] {
+  if (def.manaProductions?.length) return def.manaProductions;
+  return def.manaProduction ? [def.manaProduction] : [];
+}
+
+function selectManaProductionForColor(def: { manaProduction?: ManaProductionInfo; manaProductions?: ManaProductionInfo[] }, color: ManaColor): ManaProductionInfo | undefined {
+  return getManaProductions(def).find(production => production.colors.includes(color));
 }
 
 function getCommanderColorIdentity(state: GameState, playerId: string): Set<ManaColor> {
@@ -332,7 +356,7 @@ export function tapLandForMana(state: GameState, playerId: string, cardInstanceI
   if (card.ownerId !== playerId) throw new Error('Not your card');
 
   let def = getCardDefinition(state, card);
-  if (!def.manaProduction) {
+  if (!def.manaProduction || !def.manaProductions?.length) {
     const parsedDef = populateParsedCache(def);
     if (parsedDef.manaProduction) {
       const hydratedDefinitions = new Map(state.cardDefinitions);
@@ -341,24 +365,25 @@ export function tapLandForMana(state: GameState, playerId: string, cardInstanceI
       def = parsedDef;
     }
   }
-  if (!def.manaProduction) throw new Error('Card has no mana ability');
+  const manaProduction = selectManaProductionForColor(def, color);
+  if (!manaProduction) throw new Error('Card has no mana ability');
   if (!getAvailableManaColors(state, cardInstanceId).includes(color)) throw new Error('Cannot produce chosen color');
 
-  const handExileAbility = def.manaProduction?.activationZone === 'hand'
-    && def.manaProduction?.requiresExileFromHand === true;
+  const handExileAbility = manaProduction.activationZone === 'hand'
+    && manaProduction.requiresExileFromHand === true;
   if (handExileAbility) {
     if (card.zone !== 'hand') throw new Error('Card not in hand');
   } else {
     if (card.zone !== 'battlefield') throw new Error('Card not on battlefield');
-    if (def.manaProduction?.isTapAbility && card.tapped) throw new Error('Card already tapped');
-    if (def.manaProduction?.isTapAbility && isBlockedBySummoningSicknessForTap(state, cardInstanceId)) {
+    if (manaProduction.isTapAbility && card.tapped) throw new Error('Card already tapped');
+    if (manaProduction.isTapAbility && isBlockedBySummoningSicknessForTap(state, cardInstanceId)) {
       throw new Error('Summoning sick');
     }
   }
 
   const amountForColor = (manaColor: ManaColor): number => {
-    let amount = def.manaProduction?.amounts[manaColor] ?? 1;
-    if (def.manaProduction?.amountScale === 'creaturesYouControl') {
+    let amount = manaProduction.amounts[manaColor] ?? 1;
+    if (manaProduction.amountScale === 'creaturesYouControl') {
       amount *= [...state.cards.values()].filter(instance => {
         if (instance.ownerId !== playerId || instance.zone !== 'battlefield') return false;
         const cardDef = getCardDefinition(state, instance);
@@ -368,7 +393,7 @@ export function tapLandForMana(state: GameState, playerId: string, cardInstanceI
     amount *= manaProductionMultiplier(state, playerId, cardInstanceId);
     return amount;
   };
-  const producedMana = (def.manaProduction?.producesAllColors ? def.manaProduction.colors : [color])
+  const producedMana = (manaProduction.producesAllColors ? manaProduction.colors : [color])
     .map(manaColor => ({ color: manaColor, amount: amountForColor(manaColor) }))
     .filter(entry => entry.amount > 0);
 
@@ -376,11 +401,11 @@ export function tapLandForMana(state: GameState, playerId: string, cardInstanceI
   // move the paid permanent away as part of activation. A few silver-bordered
   // old-text cards say to remove the pieces from the game, which we model as
   // exile rather than graveyard.
-  const requiresSacrifice = def.manaProduction?.requiresSacrifice === true;
-  const sacrificeDestination = def.manaProduction?.exileAfterUse ? 'exile' : 'graveyard';
+  const requiresSacrifice = manaProduction.requiresSacrifice === true;
+  const sacrificeDestination = manaProduction.exileAfterUse ? 'exile' : 'graveyard';
 
   const newCards = new Map(state.cards);
-  if (def.manaProduction?.requiresDiscardHand) {
+  if (manaProduction.requiresDiscardHand) {
     for (const [id, handCard] of newCards) {
       if (handCard.ownerId !== playerId || handCard.zone !== 'hand') continue;
       newCards.set(id, {
@@ -393,7 +418,7 @@ export function tapLandForMana(state: GameState, playerId: string, cardInstanceI
     }
   }
 
-  const sacrificeFilter = def.manaProduction?.sacrificeFilter;
+  const sacrificeFilter = manaProduction.sacrificeFilter;
   if (sacrificeFilter) {
     const candidates = [...newCards.values()]
       .filter(candidate => {
@@ -428,7 +453,7 @@ export function tapLandForMana(state: GameState, playerId: string, cardInstanceI
     } else {
       newCards.set(cardInstanceId, {
         ...sourceAfterCosts,
-        tapped: handExileAbility ? false : def.manaProduction?.isTapAbility ? true : sourceAfterCosts.tapped,
+        tapped: handExileAbility ? false : manaProduction.isTapAbility ? true : sourceAfterCosts.tapped,
         zone: handExileAbility
           ? getCommanderDestinationZone(state, cardInstanceId, 'exile')
           : requiresSacrifice
@@ -463,7 +488,7 @@ export function tapLandForMana(state: GameState, playerId: string, cardInstanceI
           }
           : {}),
       };
-      withMana = addRestrictedMana(withMana, produced.color, produced.amount, def.manaProduction?.restriction, {
+      withMana = addRestrictedMana(withMana, produced.color, produced.amount, manaProduction.restriction, {
         sourceInstanceId: cardInstanceId,
         creatureType: card.choices?.chosenCreatureType,
         snow: sourceProducesSnowMana,
@@ -483,7 +508,7 @@ export function tapLandForMana(state: GameState, playerId: string, cardInstanceI
 
   let resultState: GameState = { ...state, cards: newCards, players: newPlayers };
   const sourceTappedForMana = !handExileAbility
-    && def.manaProduction?.isTapAbility === true
+    && manaProduction.isTapAbility === true
     && card.zone === 'battlefield'
     && !card.tapped
     && resultState.cards.get(cardInstanceId)?.tapped === true;

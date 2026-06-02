@@ -581,6 +581,26 @@ describe('getLegalActions', () => {
       }]);
     });
 
+    it('generates both unrestricted colorless and restricted colored Cavern of Souls mana actions', () => {
+      const state = createTestState({ priorityPlayerIndex: 0 });
+
+      addCard(state, 'cavern1', 'p1', 'battlefield', {
+        name: 'Cavern of Souls',
+        type_line: 'Land',
+        oracle_text: "As Cavern of Souls enters, choose a creature type.\n{T}: Add {C}.\n{T}: Add one mana of any color. Spend this mana only to cast a creature spell of the chosen type, and that spell can't be countered.",
+        card_types: ['land'],
+      });
+      state.cards.get('cavern1')!.choices = { chosenCreatureType: 'Human' };
+
+      const actions = getLegalActions(state, 'p1');
+      const manaColors = actions
+        .filter(a => a.kind === 'ActivateManaAbility' && a.cardInstanceId === 'cavern1')
+        .map(a => a.kind === 'ActivateManaAbility' ? a.color : null)
+        .sort();
+
+      expect(manaColors).toEqual(['B', 'C', 'G', 'R', 'U', 'W']);
+    });
+
     it('generates mana actions for creature mana abilities', () => {
       const state = createTestState({ priorityPlayerIndex: 0 });
 

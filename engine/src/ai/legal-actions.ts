@@ -564,7 +564,7 @@ function generateManaActions(state: GameState, playerId: string): ActivateManaAb
   const battlefield = getCardsInZone(state, playerId, 'battlefield');
   for (const card of battlefield) {
     let def = getCardDefinition(state, card);
-    if (!def.manaProduction) {
+    if (!def.manaProduction || !def.manaProductions?.length) {
       def = populateParsedCache(def);
     }
 

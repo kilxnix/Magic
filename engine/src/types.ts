@@ -49,6 +49,7 @@ export interface CardDefinition {
   equipCost?: EquipCostInfo;
   equipmentBonus?: EquipmentBonusInfo;
   manaProduction?: ManaProductionInfo;
+  manaProductions?: ManaProductionInfo[];
   searchAbility?: SearchAbilityInfo;
   unlessTax?: UnlessTaxInfo;
 }

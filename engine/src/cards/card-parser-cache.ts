@@ -26,13 +26,15 @@ export function populateParsedCache(def: CardDefinition): CardDefinition {
   const oracle = def.oracle_text.toLowerCase();
   const typeLine = def.type_line.toLowerCase();
   const manaOracle = stripParentheticalReminderText(oracle);
+  const manaProductions = parseManaProductions(manaOracle, typeLine);
 
   return {
     ...def,
     isEquipment: typeLineHasSubtype(def.type_line, 'equipment'),
     equipCost: parseEquipCost(oracle),
     equipmentBonus: parseEquipmentBonus(oracle),
-    manaProduction: parseManaProduction(manaOracle, typeLine),
+    manaProduction: manaProductions[0],
+    ...(manaProductions.length > 0 ? { manaProductions } : {}),
     searchAbility: parseSearchAbility(oracle),
     unlessTax: parseUnlessTax(oracle),
   };
@@ -109,7 +111,7 @@ function parseEquipmentBonus(oracle: string): EquipmentBonusInfo | undefined {
 
 // ========== Mana Production ==========
 
-function parseManaProduction(oracle: string, typeLine: string): ManaProductionInfo | undefined {
+function parseManaProductions(oracle: string, typeLine: string): ManaProductionInfo[] {
   const parseSacrificeFilter = (word: string): CardFilter => {
     const subtypeMap: Record<string, string> = {
       goblin: 'Goblin', goblins: 'Goblin',
@@ -216,36 +218,36 @@ function parseManaProduction(oracle: string, typeLine: string): ManaProductionIn
   if (subtypeColors.length > 0) {
     const amounts: Record<string, number> = {};
     for (const c of subtypeColors) amounts[c] = 1;
-    return {
+    return [{
       colors: subtypeColors,
       amounts,
       isTapAbility: true,
       requiresSacrifice: false,
       activationZone: 'battlefield',
       ...(restriction ? { restriction } : {}),
-    };
+    }];
   }
 
   const exileHandAdd = oracle.match(/exile\s+[^:]+?\s+from your hand:\s*add\s+([^."\n]+)/i);
   if (exileHandAdd) {
-    return parseAddPart(exileHandAdd[1], {
+    return [parseAddPart(exileHandAdd[1], {
       isTapAbility: false,
       requiresSacrifice: false,
       activationZone: 'hand',
       requiresExileFromHand: true,
-    });
+    })];
   }
 
   const sacrificePermanentAdd = oracle.match(/sacrifice\s+(?:a|an)\s+([a-z]+):\s*add\s+([^."\n]+)/i);
   if (sacrificePermanentAdd) {
-    return {
+    return [{
       ...parseAddPart(sacrificePermanentAdd[2], {
         isTapAbility: false,
         requiresSacrifice: false,
         activationZone: 'battlefield',
       }),
       sacrificeFilter: parseSacrificeFilter(sacrificePermanentAdd[1]),
-    };
+    }];
   }
 
   const scoreManaCandidate = (info: ManaProductionInfo): number => {
@@ -282,19 +284,28 @@ function parseManaProduction(oracle: string, typeLine: string): ManaProductionIn
   if (tapCandidates.length === 0) {
     const selfSacrificeAdd = oracle.match(/(?:discard\s+your\s+hand,\s*)?sacrifice\s+(?!a\b|an\b)[^:]+:\s*add\s+([^."\n]+)/i);
     if (selfSacrificeAdd) {
-      return parseAddPart(selfSacrificeAdd[1], {
+      return [parseAddPart(selfSacrificeAdd[1], {
         isTapAbility: false,
         requiresSacrifice: true,
         activationZone: 'battlefield',
         ...(/discard\s+your\s+hand/i.test(selfSacrificeAdd[0])
           ? { requiresDiscardHand: true }
           : {}),
-      });
+      })];
     }
-    return undefined;
+    return [];
   }
 
-  return tapCandidates.sort((a, b) => scoreManaCandidate(b) - scoreManaCandidate(a))[0];
+  const normalizedTapCandidates = tapCandidates.length > 1
+    ? tapCandidates.map(candidate => {
+      const isStandaloneColorless = candidate.colors.length === 1
+        && candidate.colors[0] === 'C'
+        && candidate.producesAllColors !== true;
+      return isStandaloneColorless ? { ...candidate, restriction: undefined } : candidate;
+    })
+    : tapCandidates;
+
+  return normalizedTapCandidates.sort((a, b) => scoreManaCandidate(b) - scoreManaCandidate(a));
 }
 
 // ========== Search Ability ==========

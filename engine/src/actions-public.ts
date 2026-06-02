@@ -256,7 +256,7 @@ export function tryTapLandForMana(
   if (!card) return fail('card_not_found', 'Card not found');
   if (card.ownerId !== playerId) return fail('card_not_found', 'Not your card');
   const rawDef = getCardDefinition(state, card);
-  const parsedDef = rawDef.manaProduction ? rawDef : populateParsedCache(rawDef);
+  const parsedDef = rawDef.manaProduction && rawDef.manaProductions?.length ? rawDef : populateParsedCache(rawDef);
   const manaProduction = parsedDef.manaProduction;
   const handExileAbility = manaProduction?.activationZone === 'hand'
     && manaProduction.requiresExileFromHand === true;
