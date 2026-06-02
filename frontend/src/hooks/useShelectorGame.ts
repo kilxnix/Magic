@@ -129,6 +129,7 @@ import {
 } from '../lib/turnReview';
 import { shelectorApiUrl } from '../lib/api';
 import { findUnsupportedEngineCards, formatUnsupportedEngineCards } from '../lib/enginePreflight';
+import { restoreMissingBattlefieldAbilities } from '../lib/engineStateRepair';
 import { typeLineHasSupertype, typeLineHasType, typeLineSectionTerms } from '../lib/typeLine';
 
 // ========== End-Game Modal State (Task 27 — game-reliability-refactor) ==========
@@ -8511,12 +8512,13 @@ export function useShelectorGame() {
       setActionError(null);
       setLastEvents([]);
       setEndGame({ open: false, kind: 'loss' });
-      const restored = deserializeGameState(snapshot.engine) as GameStateWithAI;
+      let restored = deserializeGameState(snapshot.engine) as GameStateWithAI;
       const aiIdSet = new Set(snapshot.aiIds || []);
       restored.players = restored.players.map(player => ({
         ...player,
         isAI: aiIdSet.has(player.id),
       }));
+      restored = restoreMissingBattlefieldAbilities(restored);
 
       engineRef.current = restored;
       humanDeckRef.current = snapshot.humanDeck;

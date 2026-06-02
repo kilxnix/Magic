@@ -818,10 +818,20 @@ describe('starter deck full-card QA', () => {
     expect(tokenCount(state, 'p1', 'Drake')).toBe(1);
     state = resolveTopOfStack(state);
 
+    const inspiration = addCard(state, 'Inspiration', 'hand');
+    addCard(state, 'Island', 'library');
+    addCard(state, 'Island', 'library');
+    const castInspiration = tryCastSpell(giveMana(state), 'p1', inspiration, ['p1'], NO_PAYMENT);
+    expect(castInspiration.ok, castInspiration.ok ? undefined : castInspiration.message).toBe(true);
+    state = putTriggersOnStack(castInspiration.state);
+    state = resolveTopOfStack(state);
+    expect(tokenCount(state, 'p1', 'Drake')).toBe(2);
+    state = resolveTopOfStack(state);
+
     const invocation = addCard(state, "Talrand's Invocation", 'hand');
     state = castAndResolve(state, invocation);
     state = resolveAllPendingTriggers(state);
-    expect(tokenCount(state, 'p1', 'Drake')).toBe(4);
+    expect(tokenCount(state, 'p1', 'Drake')).toBe(5);
 
     const stackTarget = addCard(state, 'Ponder', 'stack', 'p2');
     state = {
