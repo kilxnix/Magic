@@ -100,6 +100,7 @@ export function fingerprint(state: GameState): string {
   }
   const sortedZones = [...zoneCounts.entries()].sort().map(([k, v]) => `${k}=${v}`);
   parts.push(...sortedZones);
+  parts.push(`turn:${state.turnNumber}`);
   parts.push(`phase:${state.phase}:${state.step}`);
   parts.push(`stack:${state.stack.length}`);
   parts.push(`active:${state.activePlayerIndex}`);

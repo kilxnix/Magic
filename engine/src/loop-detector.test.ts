@@ -43,6 +43,18 @@ describe('LoopDetector state_repeat', () => {
     expect(detector.observe(s2, 'a')).toBeNull();
     expect(detector.observe(s3, 'a')).toBeNull();
   });
+
+  it('normal repeated board shapes on later turns do not flag a loop', () => {
+    const detector = new LoopDetector();
+    for (let turn = 1; turn <= 8; turn += 1) {
+      const state = makeTestState({});
+      state.turnNumber = turn;
+      state.phase = 'precombat_main';
+      state.step = 'upkeep';
+      state.activePlayerIndex = 0;
+      expect(detector.observe(state, 'turn')).toBeNull();
+    }
+  });
 });
 
 describe('LoopDetector unbounded_growth', () => {
