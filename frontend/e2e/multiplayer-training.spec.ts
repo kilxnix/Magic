@@ -3,6 +3,8 @@ import { expect, request, test, type APIRequestContext, type APIResponse, type P
 const hostCommander = 'Goreclaw, Terror of Qal Sisma';
 const guestCommander = 'Talrand, Sky Summoner';
 
+test.describe.configure({ mode: 'serial' });
+
 function deckList(cardName: string) {
   return Array.from({ length: 99 }, () => `1x ${cardName}`).join('\n');
 }
@@ -41,10 +43,10 @@ async function createRoomThroughUi(page: Page) {
   };
 }
 
-async function joinRoomThroughUi(page: Page, roomId: string, password: string) {
+async function joinRoomThroughUi(page: Page, roomId: string, password: string, playerName = 'E2E Guest') {
   await page.goto(`/multiplayer/${roomId}?e2e=shared-training`);
   await closeAlpha(page);
-  await page.getByLabel('Your name').fill('E2E Guest');
+  await page.getByLabel('Your name').fill(playerName);
   await page.getByPlaceholder('If required', { exact: true }).fill(password);
   await page.getByRole('button', { name: 'Join Room' }).click();
   await expect(page.getByText('You joined the room.')).toBeVisible();
@@ -230,5 +232,79 @@ test('shared room training loop is playable, replayable, and mobile-readable', a
     await guestContext.close();
     await mobileContext.close();
     await eventContext.close();
+  }
+});
+
+test('four-player shared tracker seats a full pod and cycles turns', async ({ browser, baseURL }) => {
+  const contexts = await Promise.all([
+    browser.newContext(),
+    browser.newContext(),
+    browser.newContext(),
+    browser.newContext(),
+  ]);
+  const [host, playerTwo, playerThree, playerFour] = await Promise.all(contexts.map((context) => context.newPage()));
+  let roomId = '';
+  let hostPlayerId = '';
+
+  try {
+    const created = await createRoomThroughUi(host);
+    roomId = created.roomId;
+    hostPlayerId = created.hostPlayerId;
+
+    await joinRoomThroughUi(playerTwo, roomId, created.password, 'E2E Player Two');
+    await joinRoomThroughUi(playerThree, roomId, created.password, 'E2E Player Three');
+    await joinRoomThroughUi(playerFour, roomId, created.password, 'E2E Player Four');
+
+    await lockSeat(host, {
+      deckName: 'E2E Host Stompy',
+      commander: hostCommander,
+      list: deckList('Forest'),
+    });
+    await lockSeat(playerTwo, {
+      deckName: 'E2E Player Two Spells',
+      commander: guestCommander,
+      list: deckList('Island'),
+    });
+    await lockSeat(playerThree, {
+      deckName: 'E2E Player Three Aggro',
+      commander: 'Aurelia, the Warleader',
+      list: deckList('Mountain'),
+    });
+    await lockSeat(playerFour, {
+      deckName: 'E2E Player Four Value',
+      commander: 'Muldrotha, the Gravetide',
+      list: deckList('Swamp'),
+    });
+
+    await host.reload();
+    await expect(host.getByText('4/4 seated - waiting', { exact: true })).toBeVisible();
+    await expect(host.getByText('99 cards locked')).toHaveCount(4);
+    await host.getByRole('button', { name: 'Start Shared Table' }).click();
+    await expect(host.getByText('Shared table started.', { exact: true })).toBeVisible();
+
+    await clickUnique(host, 'Draw');
+    await clickUnique(host, 'Pass Turn');
+
+    const turnPages = [
+      { page: playerTwo, turn: 2 },
+      { page: playerThree, turn: 3 },
+      { page: playerFour, turn: 4 },
+    ];
+    for (const { page, turn } of turnPages) {
+      await page.reload();
+      await expect(page.getByText(`Turn ${turn} - beginning`)).toBeVisible();
+      await clickUnique(page, 'Draw');
+      await clickUnique(page, 'Pass Turn');
+    }
+
+    await host.reload();
+    await expect(host.getByText('Turn 5 - beginning')).toBeVisible();
+    await expect(host.getByText(`Current turn: ${created.hostName}`, { exact: true })).toBeVisible();
+    await expect(host.getByText('Game Log')).toBeVisible();
+  } finally {
+    if (baseURL && roomId && hostPlayerId) {
+      await closeRoomForQa(baseURL, roomId, hostPlayerId).catch(() => {});
+    }
+    await Promise.all(contexts.map((context) => context.close()));
   }
 });
