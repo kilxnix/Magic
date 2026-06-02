@@ -1712,6 +1712,179 @@ export function PlayPage() {
     }
   };
 
+  const handleRestartPresetRep = async (deck: BeginnerDeck) => {
+    const restartOpponentCount = opponentCount;
+    const restartSpawnMode = spawnMode;
+    const restartSpawnBracket = spawnBracket || deck.bracket;
+    const restartColorFilter = { ...colorFilter };
+    const restartPersonality = personality;
+
+    newGame();
+    setStarterDeckLoadingId(deck.id);
+    setIsImporting(true);
+    setIsSpawning(true);
+    setIsGeneratingAIDeck(false);
+    setImportError(null);
+    setSaveError(null);
+    setSaveStatus(null);
+    setActiveDrillRun(null);
+    setShowReview(false);
+    setSelectedPracticePresetId(deck.id);
+    setDeckText(deck.decklist);
+    setImportTab('text');
+    setNewPlayerMode(deck.audience !== 'practice');
+    setCoachMode(true);
+    setOpponentCount(restartOpponentCount);
+    setSpawnMode(restartSpawnMode);
+    setSpawnBracket(restartSpawnBracket);
+    setColorFilter(restartColorFilter);
+    setPersonality(restartPersonality);
+    setSpawnedOpponents([]);
+    setSpawnProgress(`Reloading ${deck.name}...`);
+
+    try {
+      const importRes = await fetch(shelectorApiUrl('/import-deck'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          decklist_text: deck.decklist,
+          bracket: deck.bracket,
+          fill_missing: true,
+        }),
+      });
+      if (!importRes.ok) throw new Error(`Preset import failed (${importRes.status})`);
+      const data: DeckImportResult = await importRes.json();
+      setImportResult(data);
+      if (!data.valid) {
+        throw new Error(data.errors[0] || `${deck.name} did not import as a valid Commander deck.`);
+      }
+
+      if (data.commander) {
+        addToDeckHistory(data.commander, deck.decklist);
+        cacheSet('last_deck_text', deck.decklist, 30 * 24 * 60 * 60 * 1000);
+        cacheSet('last_deck_result', data, 30 * 24 * 60 * 60 * 1000);
+      }
+
+      const humanCommander = data.commander || '';
+      const humanCommanderFace = humanCommander.split(' // ')[0]?.trim();
+      const humanCommanderData = data.card_data[humanCommander]
+        || (humanCommanderFace ? data.card_data[humanCommanderFace] : undefined);
+      const avoidColors = Object.entries(restartColorFilter)
+        .filter(([, value]) => value)
+        .map(([color]) => color);
+      const opponents: SpawnedOpponent[] = [];
+      const aiDecks: ImportedCards[] = [];
+      const usedCommanders = new Set<string>();
+
+      for (let i = 0; i < restartOpponentCount; i++) {
+        let opponent: SpawnedOpponent | null = null;
+        let aiDeck: AIDeckResponse | null = null;
+
+        for (let attempt = 0; attempt < 6; attempt++) {
+          setSpawnProgress(`Picking opponent ${i + 1}/${restartOpponentCount}...`);
+          const spawnRes = await fetch(shelectorApiUrl('/spawn-opponent'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              mode: restartSpawnMode,
+              bracket: restartSpawnBracket,
+              avoid_colors: avoidColors,
+              human_commander: humanCommander || null,
+              human_colors: humanCommanderData?.color_identity || [],
+              personality: restartPersonality,
+            }),
+          });
+          if (!spawnRes.ok) throw new Error(`Failed to spawn opponent (${spawnRes.status})`);
+          const candidate: SpawnedOpponent = {
+            ...(await spawnRes.json()),
+            personality: restartPersonality,
+          };
+          const key = candidate.commander.toLowerCase();
+          if (usedCommanders.has(key) && attempt < 5) continue;
+
+          setIsGeneratingAIDeck(true);
+          setSpawnProgress(`Building ${candidate.commander} (${i + 1}/${restartOpponentCount})...`);
+          const aiRes = await fetch(shelectorApiUrl('/generate-ai-deck'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              commander: candidate.commander,
+              bracket: restartSpawnBracket,
+            }),
+          });
+          if (!aiRes.ok) {
+            if (attempt === 5) {
+              throw new Error(`Failed to generate AI deck (${aiRes.status})`);
+            }
+            continue;
+          }
+
+          opponent = candidate;
+          aiDeck = await aiRes.json() as AIDeckResponse;
+          usedCommanders.add(key);
+          break;
+        }
+
+        if (!opponent || !aiDeck) throw new Error('Failed to prepare an opponent');
+        opponents.push(opponent);
+        setSpawnedOpponents([...opponents]);
+        aiDecks.push({
+          commander: aiDeck.commander,
+          cards: aiDeck.cards,
+          lands: aiDeck.lands,
+          cardData: aiDeck.card_data,
+        });
+      }
+
+      const unsupported = findUnsupportedEngineCards([
+        {
+          label: deck.name,
+          commander: humanCommander,
+          cards: data.cards,
+          lands: data.lands,
+          sideboard: data.sideboard || [],
+        },
+        ...aiDecks.map((aiDeck, index) => ({
+          label: `Shelector AI ${index + 1}`,
+          commander: aiDeck.commander,
+          cards: aiDeck.cards,
+          lands: aiDeck.lands,
+          sideboard: [],
+        })),
+      ]);
+      if (unsupported.length > 0) {
+        throw new Error(formatUnsupportedEngineCards(unsupported));
+      }
+
+      const started = startGame(
+        {
+          commander: humanCommander,
+          cards: data.cards,
+          lands: data.lands,
+          sideboard: data.sideboard || [],
+          cardData: data.card_data,
+        },
+        aiDecks,
+        { aiDifficulty: restartSpawnBracket },
+      );
+      if (!started) {
+        throw new Error('Failed to initialize the repeated practice game.');
+      }
+
+      setStep('game');
+      setSaveStatus(`Repeated ${deck.name}: ${restartOpponentCount + 1} players, ${restartPersonality} Shelector, coach mode on.`);
+    } catch (err: any) {
+      setImportError(err.message || 'Failed to repeat this preset rep.');
+      setStep('import');
+    } finally {
+      setIsImporting(false);
+      setIsSpawning(false);
+      setIsGeneratingAIDeck(false);
+      setStarterDeckLoadingId(null);
+      setSpawnProgress('');
+    }
+  };
+
   const handleSpawnAndStart = async () => {
     if (!importResult?.valid) return;
     setIsSpawning(true);
@@ -2045,6 +2218,17 @@ export function PlayPage() {
                 label: 'Review',
                 onSelect: () => setShowReview(true),
               },
+              ...(activePracticeDeck
+                ? [{
+                    id: 'repeat-current-preset',
+                    label: 'Repeat Current Rep',
+                    detail: `${activePracticeDeck.name} / ${personality}`,
+                    onSelect: () => {
+                      setSavePanelOpen(false);
+                      handleRestartPresetRep(activePracticeDeck);
+                    },
+                  }]
+                : []),
               ...(activePracticeDeck?.id === 'practice-xenagos-dragons'
                 ? [{
                     id: 'restart-focused-xenagos',
