@@ -5130,6 +5130,7 @@ export function useShelectorGame() {
   // Initialize a new game with real decks for all players
   const startGame = useCallback(
     (importedCards?: ImportedCards, aiDeckDataArray?: ImportedCards | ImportedCards[], options?: StartGameOptions): boolean => {
+      resetLoopDetector();
       setError(null);
       setChatMessages([]);
       setGameLog([]);
@@ -8402,6 +8403,7 @@ export function useShelectorGame() {
       if (!snapshot || snapshot.version !== 1) {
         throw new Error('Unsupported save snapshot');
       }
+      resetLoopDetector();
       const restored = deserializeGameState(snapshot.engine) as GameStateWithAI;
       const aiIdSet = new Set(snapshot.aiIds || []);
       restored.players = restored.players.map(player => ({
