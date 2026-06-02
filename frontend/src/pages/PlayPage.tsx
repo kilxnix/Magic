@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, ClipboardPaste, Loader2, Swords, Link as LinkIcon, History, Trash2, Shield, Trophy, Users, Lightbulb, X, Save, FolderOpen, Database, BookmarkPlus, Rocket } from 'lucide-react';
+import { ArrowLeft, ClipboardPaste, Download, Loader2, Swords, Link as LinkIcon, History, Trash2, Shield, Trophy, Users, Lightbulb, X, Save, FolderOpen, Database, BookmarkPlus, Rocket } from 'lucide-react';
 import { useShelectorGame, type ImportedCards, type ShelectorGameSaveSnapshot } from '../hooks/useShelectorGame';
 import { GameBoard } from '../components/GameBoard';
 import { GameReview } from '../components/GameReview';
@@ -1031,6 +1031,27 @@ export function PlayPage() {
     }
   };
 
+  const exportDrillBookmark = (record: PlaySaveSlotRecord, bookmark: PlayDrillBookmark) => {
+    const payload = {
+      schema: 'deckreps-practice-drill-v1',
+      exportedAt: new Date().toISOString(),
+      commander: record.commander,
+      slot: record.slot,
+      practice: record.practice,
+      bookmark,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `deckreps-drill-${record.commander.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-${bookmark.label.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.json`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    setSaveStatus(`Exported drill "${bookmark.label}".`);
+  };
+
   useEffect(() => {
     if (step !== 'game' || !gameState) return;
     const timeout = window.setTimeout(() => {
@@ -1223,16 +1244,27 @@ export function PlayPage() {
                     <div className="grid gap-1 sm:grid-cols-2">
                       {record.drillBookmarks.slice(-6).reverse().map(bookmark => (
                         <div key={bookmark.id} className="rounded border border-fuchsia-500/20 bg-neutral-950/50 p-1.5">
-                          <button
-                            type="button"
-                            onClick={() => loadDrillBookmark(record, bookmark)}
-                            className="flex min-h-8 w-full items-center gap-1 rounded border border-fuchsia-500/40 px-2 text-left text-xs font-bold text-fuchsia-100 hover:bg-fuchsia-950/40"
-                            title={bookmark.note || bookmark.label}
-                          >
-                            <BookmarkPlus className="h-3.5 w-3.5 shrink-0" />
-                            <span className="min-w-0 flex-1 truncate">{bookmark.label}</span>
-                            {bookmark.attempts?.length ? <span className="shrink-0 text-[10px] text-fuchsia-100/70">{bookmark.attempts.length}</span> : null}
-                          </button>
+                          <div className="flex gap-1">
+                            <button
+                              type="button"
+                              onClick={() => loadDrillBookmark(record, bookmark)}
+                              className="flex min-h-8 min-w-0 flex-1 items-center gap-1 rounded border border-fuchsia-500/40 px-2 text-left text-xs font-bold text-fuchsia-100 hover:bg-fuchsia-950/40"
+                              title={bookmark.note || bookmark.label}
+                            >
+                              <BookmarkPlus className="h-3.5 w-3.5 shrink-0" />
+                              <span className="min-w-0 flex-1 truncate">{bookmark.label}</span>
+                              {bookmark.attempts?.length ? <span className="shrink-0 text-[10px] text-fuchsia-100/70">{bookmark.attempts.length}</span> : null}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => exportDrillBookmark(record, bookmark)}
+                              className="flex min-h-8 w-8 shrink-0 items-center justify-center rounded border border-sky-500/40 text-sky-100 hover:bg-sky-950/40"
+                              aria-label={`Export drill ${bookmark.label}`}
+                              title="Export drill JSON"
+                            >
+                              <Download className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
                           {bookmark.note && (
                             <div className="mt-1 truncate text-[10px] text-fuchsia-100/65">{bookmark.note}</div>
                           )}
