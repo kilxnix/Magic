@@ -370,7 +370,7 @@ export function PlayPage() {
           authorityUpdates: [],
           engineEventLog: [],
           engineEventLogSeeds: {},
-          engineEventLogInitialState: null,
+          engineEventLogInitialState: engine,
           lastStateUpdate: null,
           currentPrompt: null,
           lastPlayedCard: null,
