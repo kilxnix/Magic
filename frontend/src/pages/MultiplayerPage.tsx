@@ -555,9 +555,7 @@ export function MultiplayerPage() {
   const enginePriorityPlayer = scopedView?.players.find((player) => player.id === scopedView.priorityPlayerId);
   const engineActionHelp = useMemo(() => {
     if (!room?.real_game || !scopedView) return [];
-    const help: string[] = (scopedView.legalActions || [])
-      .filter((action) => !action.enabled)
-      .map((action) => `${action.action}: ${action.reason}`);
+    const help: string[] = [];
     if (activeSpectator) {
       help.push('Spectators can watch priority, stack, and board state but cannot submit game actions.');
       return help;
@@ -567,8 +565,12 @@ export function MultiplayerPage() {
       help.push(`Waiting for ${enginePriorityPlayer?.name || 'the priority player'} to act.`);
     }
     const playLandBlockedReason = playLandActionHint && !playLandActionHint.enabled ? playLandActionHint.reason : '';
-    if (firstLandInHand && !canPlayFirstLand && !playLandBlockedReason) {
+    if (firstLandInHand && !canPlayFirstLand) {
       help.push('Land plays unlock during your main phase while you have priority.');
+      if (playLandBlockedReason) help.push(`Play Land: ${playLandBlockedReason}`);
+    }
+    for (const action of scopedView.legalActions || []) {
+      if (!action.enabled) help.push(`${action.action}: ${action.reason}`);
     }
     if (!firstLandInHand) {
       help.push('No visible land is available in your hand.');
