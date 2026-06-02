@@ -5,7 +5,7 @@ import {
   tapLandForMana,
   type ManaColor,
 } from 'commander-engine';
-import { createDeclareBlockersQaState, createLandEntryFetchQaState, createLibraryManipulationQaState, createModalChoiceQaState, createSisayRawLandsQaState, createSpellCopyQaState, createStormGrapeshotQaState } from './qaGameScenarios';
+import { createDeclareBlockersQaState, createLandEntryFetchQaState, createLibraryManipulationQaState, createMagecraftTriggersQaState, createModalChoiceQaState, createSisayRawLandsQaState, createSpellCopyQaState, createStormGrapeshotQaState } from './qaGameScenarios';
 
 describe('QA game scenarios', () => {
   it('loads raw dual lands with mana actions and reaches Sisay activation after tapping WUBRG', () => {
@@ -119,6 +119,18 @@ describe('QA game scenarios', () => {
       action.kind === 'CastSpell'
       && action.cardInstanceId === 'copy_qa_fork_1'
       && action.targets.includes('copy_qa_bolt_1'),
+    )).toBe(true);
+  });
+
+  it('loads magecraft trigger permanents for browser QA', () => {
+    const state = deserializeGameState(createMagecraftTriggersQaState());
+    const actions = getLegalActions(state, 'human');
+
+    expect(state.battlefieldAbilities.get('magecraft_qa_archmage_1')?.length).toBeGreaterThan(0);
+    expect(state.battlefieldAbilities.get('magecraft_qa_storm_kiln_1')?.length).toBeGreaterThan(0);
+    expect(state.battlefieldAbilities.get('magecraft_qa_veyran_1')?.length).toBeGreaterThan(0);
+    expect(actions.some(action =>
+      action.kind === 'CastSpell' && action.cardInstanceId === 'magecraft_qa_opt_1',
     )).toBe(true);
   });
 });

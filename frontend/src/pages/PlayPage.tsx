@@ -284,6 +284,7 @@ export function PlayPage() {
       && qaScenario !== 'library-manipulation'
       && qaScenario !== 'storm-grapeshot'
       && qaScenario !== 'spell-copy'
+      && qaScenario !== 'magecraft-triggers'
       && qaScenario !== 'modal-choice'
     ) return;
 
@@ -293,6 +294,7 @@ export function PlayPage() {
         createDeclareBlockersQaState,
         createLandEntryFetchQaState,
         createLibraryManipulationQaState,
+        createMagecraftTriggersQaState,
         createModalChoiceQaState,
         createSisayActivationQaState,
         createSisayRawLandsQaState,
@@ -312,6 +314,8 @@ export function PlayPage() {
           ? createStormGrapeshotQaState()
           : qaScenario === 'spell-copy'
           ? createSpellCopyQaState()
+          : qaScenario === 'magecraft-triggers'
+          ? createMagecraftTriggersQaState()
           : qaScenario === 'modal-choice'
           ? createModalChoiceQaState()
           : createSisayActivationQaState();
@@ -328,6 +332,8 @@ export function PlayPage() {
             ? 'Talrand, Sky Summoner'
             : qaScenario === 'storm-grapeshot' || qaScenario === 'spell-copy'
             ? 'Vivi Ornitier'
+            : qaScenario === 'magecraft-triggers'
+            ? 'Vivi Ornitier'
             : 'Sisay, Weatherlight Captain',
           aiCommanderNames: {
             'ai-1': qaScenario === 'declare-blockers'
@@ -338,6 +344,8 @@ export function PlayPage() {
               ? 'Storm QA Opponent'
               : qaScenario === 'spell-copy'
               ? 'Spell Copy QA Opponent'
+              : qaScenario === 'magecraft-triggers'
+              ? 'Magecraft QA Opponent'
               : qaScenario === 'modal-choice'
               ? 'Modal QA Opponent'
               : 'QA Opponent',
@@ -397,6 +405,8 @@ export function PlayPage() {
               ? 'storm Grapeshot'
               : qaScenario === 'spell-copy'
               ? 'spell copy'
+              : qaScenario === 'magecraft-triggers'
+              ? 'magecraft triggers'
               : qaScenario === 'modal-choice'
               ? 'modal choice'
               : 'Sisay activation'

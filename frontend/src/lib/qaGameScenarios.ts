@@ -1,4 +1,5 @@
 import {
+  registerBattlefieldAbilities,
   registerContinuousEffect,
   serializeGameState,
   type CardDefinition,
@@ -784,6 +785,125 @@ export function createSpellCopyQaState(): SerializedGameStateV1 {
   };
 
   return serializeGameState(state);
+}
+
+export function createMagecraftTriggersQaState(): SerializedGameStateV1 {
+  const commander = def(
+    'magecraft_qa_commander',
+    'Vivi Ornitier',
+    'Legendary Creature - Wizard',
+    '{1}{U}{R}',
+    'Whenever you cast an instant or sorcery spell, Vivi Ornitier gets +1/+1 until end of turn.',
+    { cmc: 3, colors: ['U', 'R'], color_identity: ['U', 'R'], power: 0, toughness: 3 },
+  );
+  const opt = def(
+    'magecraft_qa_opt',
+    'Opt',
+    'Instant',
+    '{U}',
+    'Scry 1.\nDraw a card.',
+    { cmc: 1, colors: ['U'], color_identity: ['U'] },
+  );
+  const archmage = def(
+    'magecraft_qa_archmage',
+    'Archmage Emeritus',
+    'Creature - Human Wizard',
+    '{2}{U}{U}',
+    'Magecraft - Whenever you cast or copy an instant or sorcery spell, draw a card.',
+    { cmc: 4, colors: ['U'], color_identity: ['U'], power: 2, toughness: 2 },
+  );
+  const stormKiln = def(
+    'magecraft_qa_storm_kiln',
+    'Storm-Kiln Artist',
+    'Creature - Dwarf Shaman',
+    '{3}{R}',
+    'Magecraft - Whenever you cast or copy an instant or sorcery spell, create a Treasure token.',
+    { cmc: 4, colors: ['R'], color_identity: ['R'], power: 2, toughness: 2 },
+  );
+  const veyran = def(
+    'magecraft_qa_veyran',
+    'Veyran, Voice of Duality',
+    'Legendary Creature - Efreet Wizard',
+    '{1}{U}{R}',
+    'Magecraft - Whenever you cast or copy an instant or sorcery spell, Veyran, Voice of Duality gets +1/+1 until end of turn.\nIf you casting or copying an instant or sorcery spell causes a triggered ability of a permanent you control to trigger, that ability triggers an additional time.',
+    { cmc: 3, colors: ['U', 'R'], color_identity: ['U', 'R'], power: 2, toughness: 2 },
+  );
+  const island = def('magecraft_qa_island', 'Island', 'Basic Land - Island', '', '({T}: Add {U}.)', { card_types: ['land'] });
+  const mountain = def('magecraft_qa_mountain', 'Mountain', 'Basic Land - Mountain', '', '({T}: Add {R}.)', { card_types: ['land'] });
+  const forest = def('magecraft_qa_forest', 'Forest', 'Basic Land - Forest', '', '({T}: Add {G}.)', { card_types: ['land'] });
+  const plains = def('magecraft_qa_plains', 'Plains', 'Basic Land - Plains', '', '({T}: Add {W}.)', { card_types: ['land'] });
+
+  const state: GameState = {
+    players: [
+      {
+        id: 'human',
+        name: 'Magecraft QA Pilot',
+        life: 40,
+        poisonCounters: 0,
+        commanderDamage: {},
+        commanderTax: 0,
+        commanderInstanceId: 'magecraft_qa_commander_1',
+        commanderCastCount: 0,
+        manaPool: pool({ U: 4 }),
+        hasPlayedLand: false,
+        hasPriority: true,
+        hasLost: false,
+      },
+      {
+        id: 'ai-1',
+        name: 'Magecraft QA Opponent',
+        life: 40,
+        poisonCounters: 0,
+        commanderDamage: {},
+        commanderTax: 0,
+        commanderInstanceId: null,
+        commanderCastCount: 0,
+        manaPool: pool(),
+        hasPlayedLand: false,
+        hasPriority: false,
+        hasLost: false,
+      },
+    ],
+    cards: new Map<string, CardInstance>([
+      ['magecraft_qa_commander_1', instance('magecraft_qa_commander_1', commander.id, 'human', 'command', { isCommander: true })],
+      ['magecraft_qa_opt_1', instance('magecraft_qa_opt_1', opt.id, 'human', 'hand')],
+      ['magecraft_qa_archmage_1', instance('magecraft_qa_archmage_1', archmage.id, 'human', 'battlefield')],
+      ['magecraft_qa_storm_kiln_1', instance('magecraft_qa_storm_kiln_1', stormKiln.id, 'human', 'battlefield')],
+      ['magecraft_qa_veyran_1', instance('magecraft_qa_veyran_1', veyran.id, 'human', 'battlefield')],
+      ['magecraft_qa_island_1', instance('magecraft_qa_island_1', island.id, 'human', 'library')],
+      ['magecraft_qa_mountain_1', instance('magecraft_qa_mountain_1', mountain.id, 'human', 'library')],
+      ['magecraft_qa_forest_1', instance('magecraft_qa_forest_1', forest.id, 'human', 'library')],
+      ['magecraft_qa_plains_1', instance('magecraft_qa_plains_1', plains.id, 'human', 'library')],
+    ]),
+    cardDefinitions: new Map<string, CardDefinition>([
+      [commander.id, commander],
+      [opt.id, opt],
+      [archmage.id, archmage],
+      [stormKiln.id, stormKiln],
+      [veyran.id, veyran],
+      [island.id, island],
+      [mountain.id, mountain],
+      [forest.id, forest],
+      [plains.id, plains],
+    ]),
+    activePlayerIndex: 0,
+    priorityPlayerIndex: 0,
+    phase: 'precombat_main',
+    step: 'upkeep',
+    turnNumber: 1,
+    hasPriorityPassed: [false, false],
+    stack: [],
+    combat: null,
+    battlefieldAbilities: new Map(),
+    pendingTriggers: [],
+  };
+
+  let withTriggers = state;
+  for (const id of ['magecraft_qa_archmage_1', 'magecraft_qa_storm_kiln_1', 'magecraft_qa_veyran_1']) {
+    withTriggers = registerBattlefieldAbilities(withTriggers, id);
+  }
+
+  return serializeGameState(withTriggers);
 }
 
 export function createDeclareBlockersQaState(): SerializedGameStateV1 {
