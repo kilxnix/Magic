@@ -2895,6 +2895,7 @@ export function GameBoard({
                   const targetAction = targetableCard ? getTargetAction(targetableCard) : undefined;
                   const displayCard = playableCard || untappableCard || targetableCard || group.card;
                   return (
+                    <div key={group.key} className="flex shrink-0 flex-col gap-1">
                     <CardTile
                       key={group.key}
                       card={displayCard}
@@ -2917,6 +2918,15 @@ export function GameBoard({
                       }
                       onInspect={() => setInspectedCard(displayCard)}
                     />
+                    <button
+                      type="button"
+                      aria-label={`View ${displayCard.name}`}
+                      onClick={() => setInspectedCard(displayCard)}
+                      className="min-h-7 rounded border border-neutral-700 bg-neutral-900/90 px-1 text-[10px] font-bold text-stone-300 transition-colors hover:border-amber-400 hover:text-amber-200"
+                    >
+                      View
+                    </button>
+                    </div>
                   );
                 })}
               </div>
