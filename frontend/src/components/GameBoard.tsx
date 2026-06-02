@@ -7,6 +7,7 @@
  */
 
 import { useEffect, useState } from 'react';
+import type { PointerEvent } from 'react';
 import type { DamageAssignmentChoice, LibraryManipulationChoice, OptionalTriggerChoice, PriorityStopKey, PriorityStops, SimpleGameState, SimpleLegalAction, SimpleCard, LastPlayedCard, TaxPaymentChoice, TriggerOrderChoiceState, WardPaymentChoice } from '../hooks/useShelectorGame';
 import type { DamageAssignmentOrder } from 'commander-engine';
 import type { EnginePrompt, EngineStateUpdate } from 'commander-engine';
@@ -452,6 +453,14 @@ function sortedCounterKey(counters: Record<string, number>): string {
     .join(',');
 }
 
+function normalizedKeywordKey(keywords?: string[]): string {
+  return (keywords || [])
+    .map(keyword => keyword.trim().toLowerCase())
+    .filter(Boolean)
+    .sort()
+    .join(',');
+}
+
 function normalizedTokenTypeLine(typeLine: string): string {
   return typeLine
     .toLowerCase()
@@ -468,6 +477,7 @@ function battlefieldStackKey(card: SimpleCard, row: BattlefieldRowKey, stackLand
       card.tapped ? 'tapped' : 'untapped',
       card.power ?? '',
       card.toughness ?? '',
+      normalizedKeywordKey(card.keywords),
       card.damage || 0,
       sortedCounterKey(card.counters),
     ].join('|');
@@ -657,6 +667,7 @@ function CardTile({
   onHoverCard,
   compact,
   inspectable,
+  inspectOnPointerDown,
   selected,
   selectedLabel,
   stackCount = 1,
@@ -670,6 +681,7 @@ function CardTile({
   onHoverCard?: (card: SimpleCard | null) => void;
   compact?: boolean;
   inspectable?: boolean;
+  inspectOnPointerDown?: boolean;
   selected?: boolean;
   selectedLabel?: string;
   stackCount?: number;
@@ -683,6 +695,13 @@ function CardTile({
   const buttonSpacing = compact ? CARD_TILE_LAYOUT.compactButton : CARD_TILE_LAYOUT.defaultButton;
   const titleClass = compact ? CARD_TILE_LAYOUT.compactTitle : CARD_TILE_LAYOUT.defaultTitle;
   const metaClass = compact ? CARD_TILE_LAYOUT.compactMeta : CARD_TILE_LAYOUT.defaultMeta;
+  const keywordBadges = (card.keywords || []).filter(Boolean).slice(0, compact ? 2 : 4);
+  const openInspectOnPointerDown = (event: PointerEvent) => {
+    if (!inspectOnPointerDown || !onInspect) return;
+    event.preventDefault();
+    event.stopPropagation();
+    onInspect();
+  };
 
   // Border color: playable > token > default
   const borderClass = selected
@@ -706,6 +725,7 @@ function CardTile({
       <button
         type="button"
         onClick={onClick}
+        onPointerDown={openInspectOnPointerDown}
         disabled={!playable && !onClick}
         aria-pressed={selected ? true : undefined}
         title={
@@ -755,6 +775,18 @@ function CardTile({
 
         {/* Power/Toughness or Land indicator */}
         <div className="mt-auto pt-0.5 md:pt-1">
+          {keywordBadges.length > 0 && (
+            <div className="mb-0.5 flex flex-wrap gap-0.5">
+              {keywordBadges.map(keyword => (
+                <span
+                  key={keyword}
+                  className="rounded bg-sky-950/80 px-1 text-[6px] font-bold uppercase leading-tight text-sky-200 md:text-[7px]"
+                >
+                  {keyword}
+                </span>
+              ))}
+            </div>
+          )}
           {isCreature && card.power != null && card.toughness != null && (
             <div className="text-right text-stone-200 font-bold text-xs md:text-sm">
               {card.power}/{card.toughness}
@@ -848,6 +880,11 @@ function CardTile({
           type="button"
           aria-label={`Inspect ${card.name}`}
           title="Inspect card"
+          onPointerDown={event => {
+            event.preventDefault();
+            event.stopPropagation();
+            onInspect();
+          }}
           onClick={event => {
             event.stopPropagation();
             onInspect();
@@ -925,6 +962,11 @@ function CardHoverPreview({
             {card.tapped && <span className="rounded bg-orange-950 px-1.5 py-0.5 text-orange-200">Tapped</span>}
             {card.isCommander && <span className="rounded bg-amber-950 px-1.5 py-0.5 text-amber-200">Commander</span>}
             {card.isToken && <span className="rounded bg-violet-950 px-1.5 py-0.5 text-violet-200">Token</span>}
+            {(card.keywords || []).map(keyword => (
+              <span key={keyword} className="rounded bg-sky-950 px-1.5 py-0.5 text-sky-200">
+                {keyword}
+              </span>
+            ))}
             {counters.map(({ label, count }) => (
               <span key={label} className="rounded bg-green-950 px-1.5 py-0.5 text-green-200">
                 {label}: {count}
@@ -1096,6 +1138,11 @@ function CardInspectorModal({
                   token
                 </span>
               )}
+              {(card.keywords || []).map(keyword => (
+                <span key={keyword} className="rounded border border-sky-700/60 bg-sky-950/60 px-2 py-1 text-sky-200">
+                  {keyword}
+                </span>
+              ))}
               {counters.map(({ label, count }) => (
                 <span key={label} className="rounded border border-green-700/60 bg-green-950/60 px-2 py-1 text-green-200">
                   {label}: {count}
@@ -2856,6 +2903,7 @@ export function GameBoard({
                       targetLabel={targetAction?.label}
                       compact={owner === 'ai'}
                       inspectable
+                      inspectOnPointerDown={!playableCard && !untappableCard && !targetAction}
                       stackCount={group.cards.length}
                       onHoverCard={handleCardHover}
                       onClick={

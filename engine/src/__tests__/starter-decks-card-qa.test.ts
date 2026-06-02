@@ -606,6 +606,7 @@ describe('starter deck full-card QA', () => {
 
   it('exercises starter mana sources and creature summoning-sickness rules', () => {
     let state = makeState();
+    addCard(state, 'Goreclaw, Terror of Qal Sisma', 'command', 'p1', { isCommander: true, summoningSick: false });
     const forest = addCard(state, 'Forest', 'battlefield', 'p1', { summoningSick: false });
     const mountain = addCard(state, 'Mountain', 'battlefield', 'p1', { summoningSick: false });
     const island = addCard(state, 'Island', 'battlefield', 'p1', { summoningSick: false });
@@ -1024,6 +1025,12 @@ describe('starter deck full-card QA', () => {
     moveRuntimeCard(blue, 'human', 'Opt', 'hand');
     blue = castLegalRuntimeSpell(blue, 'Opt', { U: 1 });
     expect(runtimeTokenCount(blue, 'human', 'Drake')).toBe(1);
+    const drake = [...blue.cards.values()].find(card => {
+      const def = blue.cardDefinitions.get(card.definitionId);
+      return card.ownerId === 'human' && card.zone === 'battlefield' && def?.name === 'Drake';
+    });
+    expect(drake).toBeDefined();
+    expect(blue.cardDefinitions.get(drake!.definitionId)?.keywords).toContain('Flying');
   });
 
   it('exposes starter interaction spells as legal targeted actions when the stack or board asks for them', () => {

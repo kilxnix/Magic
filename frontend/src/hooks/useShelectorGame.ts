@@ -201,6 +201,7 @@ export interface SimpleCard {
   manaCost: string;
   typeLine: string;
   oracleText: string;
+  keywords: string[];
   power?: number;
   toughness?: number;
   tapped: boolean;
@@ -761,6 +762,7 @@ export function toSimpleCard(inst: CardInstance, def: CardDefinition, engine?: G
     manaCost: def.mana_cost,
     typeLine: def.type_line,
     oracleText: def.oracle_text,
+    keywords: def.keywords || [],
     power,
     toughness,
     tapped: inst.tapped,
