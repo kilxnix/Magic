@@ -71,6 +71,7 @@ function instance(
     counters: options.counters ?? {},
     damage: options.damage ?? 0,
     isCommander: options.isCommander ?? false,
+    isToken: options.isToken ?? false,
   };
 }
 
@@ -1228,6 +1229,68 @@ export function createEquipmentEquipQaState(): SerializedGameStateV1 {
     instance('equipment_d20_qa_morningstar_board_1', morningstarDef.id, 'human', 'battlefield'),
   );
   state.players[0].manaPool = pool({ C: 1 });
+  return serializeGameState(state);
+}
+
+export function createTokenStackQaState(): SerializedGameStateV1 {
+  const goblin = def(
+    'token_stack_qa_goblin',
+    'Goblin',
+    'Token creature - Goblin',
+    '',
+    '',
+    { cmc: 0, colors: ['R'], color_identity: ['R'], power: 1, toughness: 1 },
+  );
+
+  const state: GameState = {
+    players: [
+      {
+        id: 'human',
+        name: 'Token QA Pilot',
+        life: 40,
+        poisonCounters: 0,
+        commanderDamage: {},
+        commanderTax: 0,
+        commanderInstanceId: null,
+        commanderCastCount: 0,
+        manaPool: pool(),
+        hasPlayedLand: false,
+        hasPriority: true,
+        hasLost: false,
+      },
+      {
+        id: 'ai-1',
+        name: 'Token QA Opponent',
+        life: 40,
+        poisonCounters: 0,
+        commanderDamage: {},
+        commanderTax: 0,
+        commanderInstanceId: null,
+        commanderCastCount: 0,
+        manaPool: pool(),
+        hasPlayedLand: false,
+        hasPriority: false,
+        hasLost: false,
+      },
+    ],
+    cards: new Map<string, CardInstance>([
+      ['token_stack_qa_goblin_1', instance('token_stack_qa_goblin_1', goblin.id, 'human', 'battlefield', { isToken: true })],
+      ['token_stack_qa_goblin_2', instance('token_stack_qa_goblin_2', goblin.id, 'human', 'battlefield', { isToken: true })],
+      ['token_stack_qa_goblin_3', instance('token_stack_qa_goblin_3', goblin.id, 'human', 'battlefield', { isToken: true })],
+    ]),
+    cardDefinitions: new Map<string, CardDefinition>([[goblin.id, goblin]]),
+    activePlayerIndex: 0,
+    priorityPlayerIndex: 0,
+    phase: 'precombat_main',
+    step: 'upkeep',
+    turnNumber: 1,
+    hasPriorityPassed: [false, false],
+    stack: [],
+    combat: null,
+    battlefieldAbilities: new Map(),
+    pendingTriggers: [],
+  };
+
   return serializeGameState(state);
 }
 

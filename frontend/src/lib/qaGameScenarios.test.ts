@@ -17,7 +17,9 @@ import {
   tryPlayLand,
   type ManaColor,
 } from 'commander-engine';
-import { createBrainGorgersSacrificeQaState, createComplexCombatQaState, createCostReductionQaState, createDeclareBlockersQaState, createEquipmentD20QaState, createEquipmentEquipQaState, createGenerousGiftQaState, createKrenkoSkirkQaState, createLandEntryFetchQaState, createLibraryManipulationQaState, createMagecraftTriggersQaState, createModalChoiceQaState, createMulliganSelectionQaState, createSeeBeyondQaState, createSisayRawLandsQaState, createSpellCopyQaState, createStormGrapeshotQaState } from './qaGameScenarios';
+import { groupBattlefieldCards } from '../components/GameBoard';
+import { toSimpleCard } from '../hooks/useShelectorGame';
+import { createBrainGorgersSacrificeQaState, createComplexCombatQaState, createCostReductionQaState, createDeclareBlockersQaState, createEquipmentD20QaState, createEquipmentEquipQaState, createGenerousGiftQaState, createKrenkoSkirkQaState, createLandEntryFetchQaState, createLibraryManipulationQaState, createMagecraftTriggersQaState, createModalChoiceQaState, createMulliganSelectionQaState, createSeeBeyondQaState, createSisayRawLandsQaState, createSpellCopyQaState, createStormGrapeshotQaState, createTokenStackQaState } from './qaGameScenarios';
 
 describe('QA game scenarios', () => {
   it('loads raw dual lands with mana actions and reaches Sisay activation after tapping WUBRG', () => {
@@ -259,6 +261,19 @@ describe('QA game scenarios', () => {
     expect(state.cards.get('equipment_d20_qa_morningstar_board_1')?.attachedTo).toBe('equipment_d20_qa_bear_1');
     expect(getEffectivePower(state, 'equipment_d20_qa_bear_1')).toBe(3);
     expect(instanceHasKeyword(state, 'equipment_d20_qa_bear_1', 'Trample')).toBe(true);
+  });
+
+  it('stacks matching tokens for browser QA', () => {
+    const state = deserializeGameState(createTokenStackQaState());
+    const cards = [...state.cards.values()]
+      .filter(card => card.zone === 'battlefield')
+      .map(card => toSimpleCard(card, state.cardDefinitions.get(card.definitionId)!, state));
+
+    expect(cards).toHaveLength(3);
+    const groups = groupBattlefieldCards(cards, true);
+    expect(groups.creatures).toHaveLength(1);
+    expect(groups.creatures[0].card.name).toBe('Goblin');
+    expect(groups.creatures[0].cards).toHaveLength(3);
   });
 
   it('loads a storm spell with previous spell count for browser QA', () => {

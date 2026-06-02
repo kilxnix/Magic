@@ -288,6 +288,7 @@ export function PlayPage() {
       && qaScenario !== 'brain-gorgers-sacrifice'
       && qaScenario !== 'equipment-d20'
       && qaScenario !== 'equipment-equip'
+      && qaScenario !== 'token-stack'
       && qaScenario !== 'storm-grapeshot'
       && qaScenario !== 'spell-copy'
       && qaScenario !== 'magecraft-triggers'
@@ -318,6 +319,7 @@ export function PlayPage() {
         createSisayRawLandsQaState,
         createSpellCopyQaState,
         createStormGrapeshotQaState,
+        createTokenStackQaState,
       }) => {
         if (cancelled || qaScenarioLoadedRef.current) return;
         const engine = qaScenario === 'sisay-raw-lands'
@@ -340,6 +342,8 @@ export function PlayPage() {
           ? createEquipmentD20QaState()
           : qaScenario === 'equipment-equip'
           ? createEquipmentEquipQaState()
+          : qaScenario === 'token-stack'
+          ? createTokenStackQaState()
           : qaScenario === 'storm-grapeshot'
           ? createStormGrapeshotQaState()
           : qaScenario === 'spell-copy'
@@ -379,6 +383,8 @@ export function PlayPage() {
             : qaScenario === 'equipment-d20'
               || qaScenario === 'equipment-equip'
             ? 'Goblin Morningstar'
+            : qaScenario === 'token-stack'
+            ? 'Goblin'
             : qaScenario === 'storm-grapeshot' || qaScenario === 'spell-copy'
             ? 'Vivi Ornitier'
             : qaScenario === 'magecraft-triggers'
@@ -406,6 +412,8 @@ export function PlayPage() {
                   : qaScenario === 'equipment-d20'
                     || qaScenario === 'equipment-equip'
                   ? 'Equipment QA Opponent'
+                  : qaScenario === 'token-stack'
+                  ? 'Token QA Opponent'
                   : qaScenario === 'storm-grapeshot'
                   ? 'Storm QA Opponent'
                   : qaScenario === 'spell-copy'
@@ -482,6 +490,8 @@ export function PlayPage() {
               : qaScenario === 'equipment-d20'
                 || qaScenario === 'equipment-equip'
               ? 'equipment and d20'
+              : qaScenario === 'token-stack'
+              ? 'token stack'
               : qaScenario === 'storm-grapeshot'
               ? 'storm Grapeshot'
               : qaScenario === 'spell-copy'
