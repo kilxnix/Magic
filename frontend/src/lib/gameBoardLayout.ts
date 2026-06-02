@@ -7,7 +7,7 @@ export const FLOATING_TABLE_LAYOUT = {
   opponentStrip: 'relative z-10 max-h-[29svh] shrink-0 overflow-y-auto overscroll-contain border-b border-neutral-800/70 bg-neutral-950/50 px-2 pb-1 pt-1 backdrop-blur-sm md:max-h-none md:px-4',
   actionsDock: 'absolute inset-x-2 bottom-[calc(env(safe-area-inset-bottom)+12.95rem)] z-40 max-h-[7.75rem] overflow-y-auto overscroll-contain rounded-lg border border-amber-500/35 bg-neutral-950/95 px-2 py-2 shadow-2xl shadow-black/45 backdrop-blur md:left-auto md:right-3 md:bottom-[12.95rem] md:w-[min(34rem,44vw)] md:max-h-[15rem] md:px-3',
   phaseDock: 'absolute inset-x-2 bottom-[calc(env(safe-area-inset-bottom)+9.05rem)] z-40 max-h-[3.35rem] overflow-y-auto overscroll-contain rounded-lg border border-neutral-700/75 bg-neutral-950/95 px-2 py-1 shadow-xl shadow-black/35 backdrop-blur md:inset-x-3 md:bottom-[9.2rem] md:max-h-[3.4rem] md:px-3',
-  handDock: 'absolute inset-x-2 bottom-[calc(env(safe-area-inset-bottom)+0.5rem)] z-30 max-h-[8.25rem] overflow-hidden rounded-lg border border-neutral-700/70 bg-neutral-950/95 px-2 py-1.5 shadow-2xl shadow-black/40 backdrop-blur md:inset-x-3 md:bottom-3 md:max-h-none md:px-3',
+  handDock: 'absolute inset-x-2 bottom-[calc(env(safe-area-inset-bottom)+0.5rem)] z-50 max-h-[8.25rem] overflow-hidden rounded-lg border border-neutral-700/70 bg-neutral-950/95 px-2 py-1.5 shadow-2xl shadow-black/40 backdrop-blur md:inset-x-3 md:bottom-3 md:max-h-none md:px-3',
 } as const;
 
 export const CARD_TILE_LAYOUT = {
