@@ -1368,6 +1368,18 @@ export function registerBattlefieldAbilities(state: GameState, instanceId: strin
 
   // Parse oracle text — may contain multiple abilities across sentences
   // Split oracle text by newlines to parse each ability line separately
+  let addedOracleEtb = false;
+  if (!override || override.kind !== 'ETB') {
+    const parsedFullOracle = parseOracleText(normalizeOracleText(def.oracle_text, def.name));
+    if (parsedFullOracle.kind === 'ETB') {
+      abilitiesToAdd.push({
+        ...(parsedFullOracle.ability as TriggeredAbilityRef),
+        targets: parsedFullOracle.targets,
+      });
+      addedOracleEtb = true;
+    }
+  }
+
   const lines = def.oracle_text.split('\n');
   for (const line of lines) {
     const trimmed = line.trim();
@@ -1378,7 +1390,7 @@ export function registerBattlefieldAbilities(state: GameState, instanceId: strin
 
     if (parsed.kind === 'ETB') {
       // Only add if we didn't already get an override for ETB
-      if (!override || override.kind !== 'ETB') {
+      if ((!override || override.kind !== 'ETB') && !addedOracleEtb) {
         abilitiesToAdd.push({
           ...(parsed.ability as TriggeredAbilityRef),
           targets: parsed.targets,
@@ -1439,7 +1451,12 @@ export function createETBTriggers(state: GameState, instanceId: string): GameSta
   if (override && override.kind === 'ETB') {
     targetSpecs = override.targets;
   } else {
+    const fullOracleParsed = parseOracleText(normalizeOracleText(def.oracle_text, def.name));
+    if (fullOracleParsed.kind === 'ETB') {
+      targetSpecs = fullOracleParsed.targets;
+    }
     for (const line of def.oracle_text.split('\n')) {
+      if (targetSpecs.length > 0) break;
       const parsed = parseOracleText(normalizeOracleText(line.trim(), def.name));
       if (parsed.kind === 'ETB') {
         targetSpecs = parsed.targets;

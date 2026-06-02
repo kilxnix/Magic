@@ -745,6 +745,54 @@ describe('Stack', () => {
       expect(state.cards.get(brain.instanceId)?.zone).toBe('graveyard');
     });
 
+    it('registers and resolves multiline d20 ETB tables on equipment', () => {
+      const morningstar: CardDefinition = {
+        id: 'goblin-morningstar-multiline',
+        name: 'Goblin Morningstar',
+        type_line: 'Artifact - Equipment',
+        oracle_text: 'When Goblin Morningstar enters the battlefield, roll a d20.\n1-9 | Create a 1/1 red Goblin creature token.\n10-20 | Create a 1/1 red Goblin creature token, then attach Goblin Morningstar to it.\nEquipped creature gets +1/+0 and has trample.\nEquip {1}',
+        mana_cost: '{1}{R}',
+        cmc: 2,
+        colors: [],
+        color_identity: ['R'],
+        keywords: [],
+        card_types: ['artifact'],
+        isEquipment: true,
+        equipCost: { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0, generic: 1 },
+        equipmentBonus: { power: 1, toughness: 0, keywords: ['Trample'] },
+      };
+      const decks = [
+        { playerId: 'p1', name: 'Alice', cards: [morningstar], commanderId: 'cmd1' },
+        { playerId: 'p2', name: 'Bob', cards: [], commanderId: 'cmd2' },
+      ];
+      let state = initGameState(decks);
+      const card = getCardsInZone(state, 'p1', 'library')[0];
+      state.cards.set(card.instanceId, { ...card, zone: 'hand' });
+      state = { ...state, phase: 'precombat_main' as any };
+      state.players[0].manaPool = { W: 0, U: 0, B: 0, R: 1, G: 0, C: 1 };
+
+      state = castSpell(state, 'p1', card.instanceId);
+      state = resolveTopOfStack(state);
+
+      expect(state.cards.get(card.instanceId)?.zone).toBe('battlefield');
+      expect(state.pendingTriggers).toHaveLength(1);
+      expect(state.pendingTriggers[0].ability.effects[0]).toMatchObject({ kind: 'RollD20' });
+
+      state = putTriggersOnStack(state);
+      expect(state.stack).toHaveLength(1);
+      state = resolveTopOfStack(state);
+
+      const tokens = [...state.cards.values()].filter(token => token.isToken && token.zone === 'battlefield');
+      expect(tokens).toHaveLength(1);
+      expect(state.cardDefinitions.get(tokens[0].definitionId)?.name).toBe('Goblin');
+      expect(state.diceRolls).toHaveLength(1);
+      expect(state.diceRolls?.[0]).toEqual(expect.objectContaining({
+        sourceInstanceId: card.instanceId,
+        sourceName: 'Goblin Morningstar',
+        sides: 20,
+      }));
+    });
+
     it('multiple spells stack in LIFO order', () => {
       const bolt1: CardDefinition = { ...makeInstant(), id: 'bolt-1' };
       const bolt2: CardDefinition = { ...makeInstant(), id: 'bolt-2' };
