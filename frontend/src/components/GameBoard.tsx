@@ -452,12 +452,19 @@ function sortedCounterKey(counters: Record<string, number>): string {
     .join(',');
 }
 
+function normalizedTokenTypeLine(typeLine: string): string {
+  return typeLine
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
 function battlefieldStackKey(card: SimpleCard, row: BattlefieldRowKey, stackLands: boolean): string | null {
   if (card.isToken && !card.attachedTo && (!card.attachments || card.attachments.length === 0)) {
     return [
       'token',
       card.name,
-      card.typeLine,
+      normalizedTokenTypeLine(card.typeLine),
       card.tapped ? 'tapped' : 'untapped',
       card.power ?? '',
       card.toughness ?? '',
