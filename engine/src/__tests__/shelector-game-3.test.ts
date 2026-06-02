@@ -543,7 +543,8 @@ describe('Shelector Game 3: WHITE Tokens vs BLACK Removal (30 turns)', () => {
               } else {
                 acts.push(`Cast ${sname}`);
               }
-            } catch {
+            } catch (e: any) {
+              acts.push(`[CAST FAIL: ${sname} - ${e.message}]`);
               break;
             }
           }
@@ -582,8 +583,8 @@ describe('Shelector Game 3: WHITE Tokens vs BLACK Removal (30 turns)', () => {
         }
 
         // --- COMBAT: DECLARE BLOCKERS ---
-        state = advanceStep(state); // -> declare_blockers
-        {
+        state = advanceStep(state);
+        if (state.step === 'declare_blockers') {
           const defendId = isW ? B : W;
           const blkOptions = getLegalActions(state, defendId)
             .filter(a => a.kind === 'DeclareBlockers');
@@ -628,45 +629,45 @@ describe('Shelector Game 3: WHITE Tokens vs BLACK Removal (30 turns)', () => {
           }
           state = passPriority(state);
           state = passPriority(state);
+
+          // --- FIRST STRIKE DAMAGE ---
+          state = advanceStep(state);
+          state = passPriority(state);
+          state = passPriority(state);
+
+          // --- COMBAT DAMAGE ---
+          state = advanceStep(state);
+          const wLifePre = state.players[0].life;
+          const bLifePre = state.players[1].life;
+
+          if (state.combat && state.combat.attackers.length > 0) {
+            state = resolveCombatDamage(state);
+            state = checkStateBasedActions(state);
+          }
+
+          const wLifePost = state.players[0].life;
+          const bLifePost = state.players[1].life;
+
+          // Track life changes (could be positive from lifelink)
+          const bLifeChange = bLifePre - bLifePost; // positive = lost life
+          const wLifeChange = wLifePre - wLifePost; // positive = lost life
+
+          if (bLifeChange > 0) {
+            dmgDealt[W] += bLifeChange;
+            acts.push(`>> WHITE dealt ${bLifeChange} damage to BLACK (${bLifePost} life)`);
+          } else if (bLifeChange < 0) {
+            acts.push(`>> BLACK gained ${-bLifeChange} life from lifelink (${bLifePost} life)`);
+          }
+          if (wLifeChange > 0) {
+            dmgDealt[B] += wLifeChange;
+            acts.push(`>> BLACK dealt ${wLifeChange} damage to WHITE (${wLifePost} life)`);
+          } else if (wLifeChange < 0) {
+            acts.push(`>> WHITE gained ${-wLifeChange} life from lifelink (${wLifePost} life)`);
+          }
+
+          state = passPriority(state);
+          state = passPriority(state);
         }
-
-        // --- FIRST STRIKE DAMAGE ---
-        state = advanceStep(state);
-        state = passPriority(state);
-        state = passPriority(state);
-
-        // --- COMBAT DAMAGE ---
-        state = advanceStep(state);
-        const wLifePre = state.players[0].life;
-        const bLifePre = state.players[1].life;
-
-        if (state.combat && state.combat.attackers.length > 0) {
-          state = resolveCombatDamage(state);
-          state = checkStateBasedActions(state);
-        }
-
-        const wLifePost = state.players[0].life;
-        const bLifePost = state.players[1].life;
-
-        // Track life changes (could be positive from lifelink)
-        const bLifeChange = bLifePre - bLifePost; // positive = lost life
-        const wLifeChange = wLifePre - wLifePost; // positive = lost life
-
-        if (bLifeChange > 0) {
-          dmgDealt[W] += bLifeChange;
-          acts.push(`>> WHITE dealt ${bLifeChange} damage to BLACK (${bLifePost} life)`);
-        } else if (bLifeChange < 0) {
-          acts.push(`>> BLACK gained ${-bLifeChange} life from lifelink (${bLifePost} life)`);
-        }
-        if (wLifeChange > 0) {
-          dmgDealt[B] += wLifeChange;
-          acts.push(`>> BLACK dealt ${wLifeChange} damage to WHITE (${wLifePost} life)`);
-        } else if (wLifeChange < 0) {
-          acts.push(`>> WHITE gained ${-wLifeChange} life from lifelink (${wLifePost} life)`);
-        }
-
-        state = passPriority(state);
-        state = passPriority(state);
 
         // --- END OF COMBAT ---
         state = advanceStep(state);
@@ -698,8 +699,11 @@ describe('Shelector Game 3: WHITE Tokens vs BLACK Removal (30 turns)', () => {
         log.push(`  [Board] W: ${afterW} creatures (${wTokens} tokens) | B: ${afterB} creatures`);
         log.push('');
 
-        // Advance to next turn
-        state = advanceStep(state);
+        // Advance to next turn if cleanup was the last step reached. Empty
+        // combat can already put us at the next turn after the cleanup advance.
+        if (state.step === 'cleanup') {
+          state = advanceStep(state);
+        }
 
         // Check game over
         if (state.players[0].hasLost || state.players[1].hasLost) {

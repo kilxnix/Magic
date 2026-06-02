@@ -376,79 +376,82 @@ describe('Shelector Game 2: Green Midrange Mirror', () => {
         gameLog.push(`    [ATTACK] No attacks declared`);
       }
 
-      // Pass priority after attackers
+      // Pass priority after attackers. If no attackers were declared, the
+      // engine skips the empty blocker/damage windows to end_of_combat.
       state = passPriority(state);
       state = passPriority(state);
-      state = advanceStep(state); // -> declare_blockers
+      state = advanceStep(state);
 
       // ===== 6. DECLARE BLOCKERS =====
-      const defenderConfig = isP1 ? p2Config : p1Config;
-      const blockResult = runAITurn(state, defenderConfig, 10);
-      state = blockResult.finalState;
+      if (state.step === 'declare_blockers') {
+        const defenderConfig = isP1 ? p2Config : p1Config;
+        const blockResult = runAITurn(state, defenderConfig, 10);
+        state = blockResult.finalState;
 
-      let blockerCount = 0;
-      for (const d of blockResult.decisions) {
-        if (d.action.kind === 'DeclareBlockers' && d.action.blocks.length > 0) {
-          blockerCount = d.action.blocks.length;
-          for (const blk of d.action.blocks) {
-            const blockerInst = state.cards.get(blk.cardInstanceId);
-            const blockerDef = blockerInst ? state.cardDefinitions.get(blockerInst.definitionId) : undefined;
-            const attackerInst = state.cards.get(blk.blockingAttackerId);
-            const attackerDef2 = attackerInst ? state.cardDefinitions.get(attackerInst.definitionId) : undefined;
-            gameLog.push(`    [BLOCK] ${blockerDef?.name} blocks ${attackerDef2?.name}`);
+        let blockerCount = 0;
+        for (const d of blockResult.decisions) {
+          if (d.action.kind === 'DeclareBlockers' && d.action.blocks.length > 0) {
+            blockerCount = d.action.blocks.length;
+            for (const blk of d.action.blocks) {
+              const blockerInst = state.cards.get(blk.cardInstanceId);
+              const blockerDef = blockerInst ? state.cardDefinitions.get(blockerInst.definitionId) : undefined;
+              const attackerInst = state.cards.get(blk.blockingAttackerId);
+              const attackerDef2 = attackerInst ? state.cardDefinitions.get(attackerInst.definitionId) : undefined;
+              gameLog.push(`    [BLOCK] ${blockerDef?.name} blocks ${attackerDef2?.name}`);
+            }
           }
         }
-      }
 
-      if (blockerCount === 0 && attackerCount > 0) {
-        gameLog.push(`    [BLOCK] No blocks`);
-      }
+        if (blockerCount === 0 && attackerCount > 0) {
+          gameLog.push(`    [BLOCK] No blocks`);
+        }
 
-      state = passPriority(state);
-      state = passPriority(state);
-      state = advanceStep(state); // -> first_strike_damage
+        state = passPriority(state);
+        state = passPriority(state);
+        state = advanceStep(state); // -> first_strike_damage
 
-      // ===== 7. FIRST STRIKE DAMAGE =====
-      state = passPriority(state);
-      state = passPriority(state);
-      state = advanceStep(state); // -> combat_damage
+        // ===== 7. FIRST STRIKE DAMAGE =====
+        state = passPriority(state);
+        state = passPriority(state);
+        state = advanceStep(state); // -> combat_damage
 
-      // ===== 8. COMBAT DAMAGE =====
-      const lifeBefore: Record<string, number> = {};
-      for (const p of state.players) {
-        lifeBefore[p.id] = p.life;
-      }
-
-      if (state.combat && state.combat.attackers.length > 0) {
-        state = resolveCombatDamage(state);
-        state = checkStateBasedActions(state);
-
-        // Log damage
+        // ===== 8. COMBAT DAMAGE =====
+        const lifeBefore: Record<string, number> = {};
         for (const p of state.players) {
-          const dmg = lifeBefore[p.id] - p.life;
-          if (dmg > 0) {
-            const pLabel = p.id === p1Id ? 'P1' : 'P2';
-            gameLog.push(`    [DAMAGE] ${pLabel} took ${dmg} combat damage (${lifeBefore[p.id]} -> ${p.life})`);
-            totalDamageDealt += dmg;
+          lifeBefore[p.id] = p.life;
+        }
+
+        if (state.combat && state.combat.attackers.length > 0) {
+          state = resolveCombatDamage(state);
+          state = checkStateBasedActions(state);
+
+          // Log damage
+          for (const p of state.players) {
+            const dmg = lifeBefore[p.id] - p.life;
+            if (dmg > 0) {
+              const pLabel = p.id === p1Id ? 'P1' : 'P2';
+              gameLog.push(`    [DAMAGE] ${pLabel} took ${dmg} combat damage (${lifeBefore[p.id]} -> ${p.life})`);
+              totalDamageDealt += dmg;
+            }
+          }
+
+          // Check for creatures that died in combat
+          const p1Grave = getCardsInZone(state, p1Id, 'graveyard').filter(c =>
+            getCardDefinition(state, c).card_types.includes('creature'));
+          const p2Grave = getCardsInZone(state, p2Id, 'graveyard').filter(c =>
+            getCardDefinition(state, c).card_types.includes('creature'));
+          // We only report deaths that happened this combat (graveyard changes)
+        } else {
+          // Make sure combat is cleared if empty
+          if (state.combat && state.combat.attackers.length === 0) {
+            state = { ...state, combat: null };
           }
         }
 
-        // Check for creatures that died in combat
-        const p1Grave = getCardsInZone(state, p1Id, 'graveyard').filter(c =>
-          getCardDefinition(state, c).card_types.includes('creature'));
-        const p2Grave = getCardsInZone(state, p2Id, 'graveyard').filter(c =>
-          getCardDefinition(state, c).card_types.includes('creature'));
-        // We only report deaths that happened this combat (graveyard changes)
-      } else {
-        // Make sure combat is cleared if empty
-        if (state.combat && state.combat.attackers.length === 0) {
-          state = { ...state, combat: null };
-        }
+        state = passPriority(state);
+        state = passPriority(state);
+        state = advanceStep(state); // -> end_of_combat
       }
-
-      state = passPriority(state);
-      state = passPriority(state);
-      state = advanceStep(state); // -> end_of_combat
 
       // ===== 9. END OF COMBAT =====
       state = passPriority(state);

@@ -54,6 +54,23 @@ function makeMustAttack(id: string = 'must-attack'): CardDefinition {
   };
 }
 
+function makeDeathtouchAttacker(id: string = 'dt-attacker'): CardDefinition {
+  return {
+    id,
+    name: 'Body Launderer Test',
+    type_line: 'Creature - Ogre Rogue',
+    oracle_text: 'Deathtouch',
+    mana_cost: '{2}{B}{B}',
+    cmc: 4,
+    colors: ['B'],
+    color_identity: ['B'],
+    keywords: ['Deathtouch'],
+    card_types: ['creature'],
+    power: 3,
+    toughness: 3,
+  };
+}
+
 function makePropaganda(): CardDefinition {
   return {
     id: 'propaganda',
@@ -449,7 +466,7 @@ describe("Combat Damage", () => {
     expect(next.players[1].life).toBe(36); // 40 - 2 - 2
   });
 
-  it("blocked attacker deals damage to blocker (damage marked)", () => {
+  it("blocked creatures with lethal damage die before the next action window", () => {
     const decks = [
       { playerId: "p1", name: "Alice", cards: [makeBear("bear-1")], commanderId: "cmd1" },
       { playerId: "p2", name: "Bob", cards: [makeBear("bear-3")], commanderId: "cmd2" },
@@ -471,12 +488,41 @@ describe("Combat Damage", () => {
     ]);
     state = resolveCombatDamage(state);
 
-    // Both deal damage to each other
-    expect(state.cards.get(p1Bear.instanceId)!.damage).toBe(2);
-    expect(state.cards.get(p2Bear.instanceId)!.damage).toBe(2);
+    // Both deal lethal damage and SBAs move them before the next action window.
+    expect(state.cards.get(p1Bear.instanceId)!.zone).toBe('graveyard');
+    expect(state.cards.get(p2Bear.instanceId)!.zone).toBe('graveyard');
+    expect(state.cards.get(p1Bear.instanceId)!.damage).toBe(0);
+    expect(state.cards.get(p2Bear.instanceId)!.damage).toBe(0);
     // No player damage — attacker was blocked
     expect(state.players[1].life).toBe(40);
     // Combat cleared
+    expect(state.combat).toBeNull();
+  });
+
+  it("removes a blocker dealt lethal deathtouch combat damage", () => {
+    const decks = [
+      { playerId: "p1", name: "Attacker", cards: [makeDeathtouchAttacker("body-launderer")], commanderId: "cmd1" },
+      { playerId: "p2", name: "Defender", cards: [makeBear("sisay-like")], commanderId: "cmd2" },
+    ];
+    let state = initGameState(decks);
+    for (const [id, card] of state.cards) {
+      state.cards.set(id, { ...card, zone: "battlefield", summoningSick: false });
+    }
+    state = { ...state, phase: "combat", step: "declare_attackers" };
+
+    const attacker = getCardsInZone(state, "p1", "battlefield")[0];
+    const blocker = getCardsInZone(state, "p2", "battlefield")[0];
+    state = declareAttackers(state, "p1", [
+      { cardInstanceId: attacker.instanceId, defendingPlayerId: "p2" },
+    ]);
+    state = declareBlockers(state, "p2", [
+      { cardInstanceId: blocker.instanceId, blockingAttackerId: attacker.instanceId },
+    ]);
+    state = resolveCombatDamage(state);
+
+    expect(state.cards.get(blocker.instanceId)?.zone).toBe("graveyard");
+    expect(state.cards.get(blocker.instanceId)?.damage).toBe(0);
+    expect(state.players.find(player => player.id === "p2")?.life).toBe(40);
     expect(state.combat).toBeNull();
   });
 
@@ -506,8 +552,10 @@ describe("Combat Damage", () => {
     ]);
     state = resolveCombatDamage(state);
 
+    expect(state.cards.get(blocker.instanceId)!.zone).toBe('battlefield');
     expect(state.cards.get(blocker.instanceId)!.damage).toBe(0);
-    expect(state.cards.get(attacker.instanceId)!.damage).toBe(2);
+    expect(state.cards.get(attacker.instanceId)!.zone).toBe('graveyard');
+    expect(state.cards.get(attacker.instanceId)!.damage).toBe(0);
     expect(state.players[1].life).toBe(40);
   });
 
@@ -547,8 +595,10 @@ describe("Combat Damage", () => {
     ]);
     state = resolveCombatDamage(state);
 
-    // Big bear deals 4 to blocker, gets 2 back. Player takes no damage.
-    expect(state.cards.get(smallBlocker.instanceId)!.damage).toBe(4);
+    // Big bear deals lethal damage to blocker, gets 2 back. Player takes no damage.
+    expect(state.cards.get(smallBlocker.instanceId)!.zone).toBe('graveyard');
+    expect(state.cards.get(smallBlocker.instanceId)!.damage).toBe(0);
+    expect(state.cards.get(bigCreature.instanceId)!.zone).toBe('battlefield');
     expect(state.cards.get(bigCreature.instanceId)!.damage).toBe(2);
     expect(state.players[1].life).toBe(40);
   });
@@ -891,9 +941,11 @@ describe("First Strike / Double Strike Combat", () => {
     ]);
     state = resolveCombatDamage(state);
 
-    // Both deal 2 damage to each other simultaneously
-    expect(state.cards.get(attacker.instanceId)!.damage).toBe(2);
-    expect(state.cards.get(blocker.instanceId)!.damage).toBe(2);
+    // Both deal lethal damage to each other simultaneously and die to SBAs.
+    expect(state.cards.get(attacker.instanceId)!.zone).toBe('graveyard');
+    expect(state.cards.get(blocker.instanceId)!.zone).toBe('graveyard');
+    expect(state.cards.get(attacker.instanceId)!.damage).toBe(0);
+    expect(state.cards.get(blocker.instanceId)!.damage).toBe(0);
     // No player damage
     expect(state.players[1].life).toBe(40);
     // Combat cleared
@@ -963,10 +1015,11 @@ describe("First Strike / Double Strike Combat", () => {
     ]);
     state = resolveCombatDamage(state);
 
-    // Double striker takes 2 damage from blocker (blocker deals in normal step)
-    expect(state.cards.get(attacker.instanceId)!.damage).toBe(2);
-    // Blocker takes 4 total damage (2 first strike + 2 normal)
-    expect(state.cards.get(blocker.instanceId)!.damage).toBe(4);
+    // Both creatures take lethal damage across the two damage steps and die to SBAs.
+    expect(state.cards.get(attacker.instanceId)!.zone).toBe('graveyard');
+    expect(state.cards.get(blocker.instanceId)!.zone).toBe('graveyard');
+    expect(state.cards.get(attacker.instanceId)!.damage).toBe(0);
+    expect(state.cards.get(blocker.instanceId)!.damage).toBe(0);
     // No player damage
     expect(state.players[1].life).toBe(40);
   });

@@ -666,7 +666,7 @@ export function resolveCombatDamage(state: GameState): GameState {
 
   if (!hasFirstStrikers) {
     // No first strikers — single damage step (same behavior as before)
-    return resolveDamageStep(state, 'normal');
+    return checkStateBasedActions(resolveDamageStep(state, 'normal'));
   }
 
   // Two-step combat damage:
@@ -678,5 +678,5 @@ export function resolveCombatDamage(state: GameState): GameState {
 
   // 3. Normal damage step (dead creatures from first strike won't deal damage
   //    because resolveDamageStep checks zone === 'battlefield')
-  return resolveDamageStep(afterFirstStrike, 'normal');
+  return checkStateBasedActions(resolveDamageStep(afterFirstStrike, 'normal'));
 }

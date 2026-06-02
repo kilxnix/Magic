@@ -2121,10 +2121,11 @@ function matchModifyPT(tokens: string[], startIndex: number): PatternResult {
     (
       (slice[0] === 'each' && slice[1] === 'creature' && slice[2] === 'you' && slice[3] === 'control')
       || (slice[0] === 'creatures' && slice[1] === 'you' && slice[2] === 'control')
-    )
+    ) &&
+    slice[slice[0] === 'each' ? 4 : 3] === 'with'
   ) {
     let idx = slice[0] === 'each' ? 4 : 3;
-    if (slice[idx] !== 'with' || slice[idx + 1] !== 'power') return null;
+    if (slice[idx + 1] !== 'power') return null;
     const powerValue = Number.parseInt(slice[idx + 2], 10);
     if (Number.isNaN(powerValue) || slice[idx + 3] !== 'or') return null;
     const opWord = slice[idx + 4];
