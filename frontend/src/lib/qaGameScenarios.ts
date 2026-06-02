@@ -922,7 +922,7 @@ export function createStormGrapeshotQaState(): SerializedGameStateV1 {
       },
     ],
     cards: new Map<string, CardInstance>([
-      ['storm_qa_commander_1', instance('storm_qa_commander_1', commander.id, 'human', 'command', { isCommander: true })],
+      ['storm_qa_commander_1', instance('storm_qa_commander_1', commander.id, 'human', 'battlefield', { isCommander: true })],
       ['storm_qa_grapeshot_1', instance('storm_qa_grapeshot_1', grapeshot.id, 'human', 'hand')],
     ]),
     cardDefinitions: new Map<string, CardDefinition>([
@@ -942,7 +942,7 @@ export function createStormGrapeshotQaState(): SerializedGameStateV1 {
     pendingTriggers: [],
   };
 
-  return serializeGameState(state);
+  return serializeGameState(registerBattlefieldAbilities(state, 'storm_qa_commander_1'));
 }
 
 export function createSpellCopyQaState(): SerializedGameStateV1 {
@@ -1003,7 +1003,7 @@ export function createSpellCopyQaState(): SerializedGameStateV1 {
       },
     ],
     cards: new Map<string, CardInstance>([
-      ['copy_qa_commander_1', instance('copy_qa_commander_1', commander.id, 'human', 'command', { isCommander: true })],
+      ['copy_qa_commander_1', instance('copy_qa_commander_1', commander.id, 'human', 'battlefield', { isCommander: true })],
       ['copy_qa_bolt_1', instance('copy_qa_bolt_1', lightningBolt.id, 'human', 'stack')],
       ['copy_qa_fork_1', instance('copy_qa_fork_1', fork.id, 'human', 'hand')],
     ]),
@@ -1032,7 +1032,7 @@ export function createSpellCopyQaState(): SerializedGameStateV1 {
     pendingTriggers: [],
   };
 
-  return serializeGameState(state);
+  return serializeGameState(registerBattlefieldAbilities(state, 'copy_qa_commander_1'));
 }
 
 export function createMagecraftTriggersQaState(): SerializedGameStateV1 {

@@ -167,6 +167,10 @@ describe('QA game scenarios', () => {
     const actions = getLegalActions(state, 'human');
 
     expect(state.spellsCastThisTurn).toBe(2);
+    expect(state.cards.get('storm_qa_commander_1')?.zone).toBe('battlefield');
+    expect(state.battlefieldAbilities.get('storm_qa_commander_1')?.some(ability =>
+      ability.trigger.kind === 'CastInstantOrSorcery',
+    )).toBe(true);
     expect(actions.some(action =>
       action.kind === 'CastSpell'
       && action.cardInstanceId === 'storm_qa_grapeshot_1'
@@ -179,6 +183,10 @@ describe('QA game scenarios', () => {
     const actions = getLegalActions(state, 'human');
 
     expect(state.stack).toHaveLength(1);
+    expect(state.cards.get('copy_qa_commander_1')?.zone).toBe('battlefield');
+    expect(state.battlefieldAbilities.get('copy_qa_commander_1')?.some(ability =>
+      ability.trigger.kind === 'CastInstantOrSorcery',
+    )).toBe(true);
     expect(actions.some(action =>
       action.kind === 'CastSpell'
       && action.cardInstanceId === 'copy_qa_fork_1'
