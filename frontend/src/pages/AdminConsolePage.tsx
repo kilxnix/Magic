@@ -72,6 +72,18 @@ function recentDrillAttempts(record: PlaySaveSlotRecord, limit = 3) {
     .slice(0, limit);
 }
 
+function practiceSlotUrl(slot: number): string {
+  return `/play?loadSlot=${slot}`;
+}
+
+function practiceBookmarkUrl(slot: number, bookmarkId: string): string {
+  return `/play?loadSlot=${slot}&drillBookmark=${encodeURIComponent(bookmarkId)}`;
+}
+
+function practiceAttemptUrl(slot: number, bookmarkId: string, attemptId: string): string {
+  return `/play?loadSlot=${slot}&drillBookmark=${encodeURIComponent(bookmarkId)}&drillAttempt=${encodeURIComponent(attemptId)}`;
+}
+
 export function AdminConsolePage() {
   const [token, setToken] = useState(() => window.sessionStorage.getItem(ADMIN_TOKEN_STORAGE) || '');
   const [tokenInput, setTokenInput] = useState(token);
@@ -430,6 +442,12 @@ export function AdminConsolePage() {
                             <div key={`${record.slot}:${bookmark.id}:${attempt.id}`} className="rounded border border-sky-500/20 bg-neutral-950/60 px-2 py-1 text-xs">
                               <div className="font-bold text-sky-100">{record.commander} / {bookmark.label}</div>
                               <div className="truncate text-stone-400">{attempt.label} - {attempt.summary}</div>
+                              <Link
+                                to={practiceAttemptUrl(record.slot, bookmark.id, attempt.id)}
+                                className="mt-1 inline-flex rounded border border-sky-500/30 px-2 py-1 text-[10px] font-black uppercase tracking-wider text-sky-100 hover:bg-sky-950/50"
+                              >
+                                Load Attempt
+                              </Link>
                             </div>
                           ))}
                         </div>
@@ -486,6 +504,22 @@ export function AdminConsolePage() {
                           <div className="text-xs text-stone-500">
                             Turn {record.turnNumber} / {record.phase} / {new Date(record.savedAt).toLocaleString()}
                           </div>
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            <Link
+                              to={practiceSlotUrl(slot)}
+                              className="inline-flex min-h-8 items-center rounded border border-amber-500/35 px-2.5 text-[10px] font-black uppercase tracking-wider text-amber-100 hover:bg-amber-950/40"
+                            >
+                              Open Save
+                            </Link>
+                            {record.drillBookmarks?.length ? (
+                              <Link
+                                to={practiceBookmarkUrl(slot, record.drillBookmarks[record.drillBookmarks.length - 1].id)}
+                                className="inline-flex min-h-8 items-center rounded border border-fuchsia-500/35 px-2.5 text-[10px] font-black uppercase tracking-wider text-fuchsia-100 hover:bg-fuchsia-950/40"
+                              >
+                                Load Latest Drill
+                              </Link>
+                            ) : null}
+                          </div>
                           {record.practice && (
                             <div className="mt-3 rounded border border-amber-500/20 bg-amber-950/20 p-2">
                               <div className="text-xs font-black uppercase tracking-wider text-amber-200">
@@ -528,7 +562,15 @@ export function AdminConsolePage() {
                                   Recent attempts
                                   {recentDrillAttempts(record).map(({ bookmark, attempt }) => (
                                     <span key={`${bookmark.id}:${attempt.id}`} className="mt-1 block rounded border border-sky-500/15 bg-neutral-950/50 p-1.5">
-                                      {bookmark.label} / {attempt.label}
+                                      <span className="flex flex-wrap items-center justify-between gap-2">
+                                        <span>{bookmark.label} / {attempt.label}</span>
+                                        <Link
+                                          to={practiceAttemptUrl(slot, bookmark.id, attempt.id)}
+                                          className="rounded border border-sky-500/30 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider text-sky-100 hover:bg-sky-950/50"
+                                        >
+                                          Load
+                                        </Link>
+                                      </span>
                                       <span className="mt-0.5 block text-stone-400">
                                         {attempt.summary}
                                       </span>

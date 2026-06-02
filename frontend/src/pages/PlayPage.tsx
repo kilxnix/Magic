@@ -214,6 +214,7 @@ export function PlayPage() {
   const [showReview, setShowReview] = useState(false);
   const [saveSlots, setSaveSlots] = useState<(PlaySaveSlotRecord | null)[]>(() => Array.from({ length: SAVE_SLOT_COUNT }, () => null));
   const saveSlotsRef = useRef(saveSlots);
+  const [saveSlotsReady, setSaveSlotsReady] = useState(false);
   const [activeSaveSlot, setActiveSaveSlot] = useState(1);
   const [savePanelOpen, setSavePanelOpen] = useState(false);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
@@ -225,6 +226,7 @@ export function PlayPage() {
     startedAt: number;
   } | null>(null);
   const qaScenarioLoadedRef = useRef(false);
+  const playDeepLoadHandledRef = useRef(false);
 
   // Load saved deck data
   useEffect(() => {
@@ -257,6 +259,7 @@ export function PlayPage() {
     const slots = await getPlaySaveSlots();
     saveSlotsRef.current = slots;
     setSaveSlots(slots);
+    setSaveSlotsReady(true);
   };
 
   const applySaveSlotRecord = (record: PlaySaveSlotRecord | null, slot: number) => {
@@ -268,6 +271,7 @@ export function PlayPage() {
 
   useEffect(() => {
     refreshSaveSlots().catch(() => {
+      setSaveSlotsReady(true);
       setSaveError('Could not load browser save slots.');
     });
   }, []);
@@ -1114,6 +1118,53 @@ export function PlayPage() {
       return false;
     }
   };
+
+  useEffect(() => {
+    if (playDeepLoadHandledRef.current || !saveSlotsReady || typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const slotParam = params.get('loadSlot');
+    if (!slotParam) return;
+
+    const slot = Number(slotParam);
+    if (!Number.isInteger(slot) || slot < 1 || slot > SAVE_SLOT_COUNT) {
+      playDeepLoadHandledRef.current = true;
+      setSaveError(`Cannot load practice slot "${slotParam}".`);
+      return;
+    }
+
+    const record = saveSlotsRef.current[slot - 1];
+    if (!record) {
+      playDeepLoadHandledRef.current = true;
+      setActiveSaveSlot(slot);
+      setSaveError(`Practice slot ${slot} is empty.`);
+      return;
+    }
+
+    playDeepLoadHandledRef.current = true;
+    setActiveSaveSlot(slot);
+    const bookmarkId = params.get('drillBookmark');
+    const attemptId = params.get('drillAttempt');
+    if (bookmarkId) {
+      const bookmark = record.drillBookmarks?.find(candidate => candidate.id === bookmarkId);
+      if (!bookmark) {
+        setSaveError(`Practice slot ${slot} does not contain that drill bookmark.`);
+        return;
+      }
+      if (attemptId) {
+        const attempt = bookmark.attempts?.find(candidate => candidate.id === attemptId);
+        if (!attempt) {
+          setSaveError(`Drill bookmark "${bookmark.label}" does not contain that attempt.`);
+          return;
+        }
+        loadDrillAttempt(record, bookmark, attempt);
+        return;
+      }
+      loadDrillBookmark(record, bookmark);
+      return;
+    }
+
+    loadSaveSlot(record);
+  }, [saveSlotsReady, saveSlots]);
 
   useEffect(() => {
     if (step !== 'game' || !gameState) return;
