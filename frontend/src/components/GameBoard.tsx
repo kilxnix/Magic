@@ -946,7 +946,7 @@ function CommandZoneStrip({
           {cards.length} {cards.length === 1 ? 'Commander' : 'Commanders'}
         </div>
       </div>
-      <div className="grid gap-1.5 sm:grid-cols-2">
+      <div className={`grid gap-1.5 ${cards.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
         {cards.map(card => {
           const status = getStatus(card);
           const keywordBadges = (card.keywords || []).filter(Boolean).slice(0, 3);
