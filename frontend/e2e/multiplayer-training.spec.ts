@@ -95,20 +95,46 @@ async function passEnginePriority(page: Page) {
   await pass.click();
 }
 
-async function advanceEnginePodToPrecombatMain(priorityPages: Page[], observer: Page = priorityPages[0]) {
-  await expect(observer.getByText('Turn 1 - beginning / upkeep')).toBeVisible({ timeout: 20_000 });
+async function advanceEnginePodToPrecombatMain(priorityPages: Page[], observer: Page = priorityPages[0], turnNumber = 1) {
+  const turnLabel = observer.getByTestId('real-engine-turn-label');
+  if ((await turnLabel.innerText()).trim() === `Turn ${turnNumber} - beginning / untap`) {
+    await passEnginePriorityCycle(priorityPages);
+  }
+  await expect(turnLabel).toHaveText(`Turn ${turnNumber} - beginning / upkeep`, { timeout: 20_000 });
   for (const page of priorityPages) {
     await passEnginePriority(page);
   }
-  await expect(observer.getByText('Turn 1 - beginning / draw')).toBeVisible({ timeout: 20_000 });
+  await expect(turnLabel).toHaveText(`Turn ${turnNumber} - beginning / draw`, { timeout: 20_000 });
   for (const page of priorityPages) {
     await passEnginePriority(page);
   }
-  await expect(observer.getByText('Turn 1 - precombat main')).toBeVisible({ timeout: 20_000 });
+  await expect(turnLabel).toHaveText(`Turn ${turnNumber} - precombat main`, { timeout: 20_000 });
 }
 
 async function advanceEngineToPrecombatMain(host: Page, guest: Page) {
   await advanceEnginePodToPrecombatMain([host, guest], host);
+}
+
+async function passEnginePriorityCycle(priorityPages: Page[]) {
+  for (const page of priorityPages) {
+    await passEnginePriority(page);
+  }
+}
+
+async function advanceEngineEmptyTurn(priorityPages: Page[], observer: Page, nextTurnLabel: string) {
+  await passEnginePriorityCycle(priorityPages);
+  await expect(observer.getByTestId('real-engine-turn-label')).toContainText('declare_attackers', { timeout: 20_000 });
+  const noAttacks = priorityPages[0].getByRole('button', { name: 'No Attacks' });
+  await expect(noAttacks).toBeEnabled({ timeout: 20_000 });
+  await noAttacks.click();
+  await passEnginePriorityCycle(priorityPages);
+  await expect(observer.getByTestId('real-engine-turn-label')).toContainText('end_of_combat', { timeout: 20_000 });
+  await passEnginePriorityCycle(priorityPages);
+  await expect(observer.getByTestId('real-engine-turn-label')).toContainText('postcombat main', { timeout: 20_000 });
+  await passEnginePriorityCycle(priorityPages);
+  await expect(observer.getByTestId('real-engine-turn-label')).toContainText('ending / cleanup', { timeout: 20_000 });
+  await passEnginePriorityCycle(priorityPages);
+  await expect(observer.getByTestId('real-engine-turn-label')).toHaveText(nextTurnLabel, { timeout: 20_000 });
 }
 
 function qaHeaders() {
@@ -455,7 +481,7 @@ test('engine beta applies land and priority actions across two real browser seat
     await passEnginePriority(host);
     await expect(guest.getByTestId('real-engine-priority-player')).toHaveText(`Priority: ${guestSession.playerName}`, { timeout: 20_000 });
     await passEnginePriority(guest);
-    await expect(host.getByText('Turn 1 - combat / declare_attackers')).toBeVisible({ timeout: 20_000 });
+    await expect(host.getByTestId('real-engine-turn-label')).toHaveText('Turn 1 - combat / declare_attackers', { timeout: 20_000 });
     await expect(host.getByTestId('real-engine-log')).toContainText('All players passed; advanced to combat / declare_attackers.');
   } finally {
     if (baseURL && roomId && hostPlayerId) {
@@ -518,6 +544,99 @@ test('engine beta casts a zero-cost spell through stack resolution and reload sy
     await guest.reload();
     await expect(guest.getByText('Mode: Engine Beta')).toBeVisible({ timeout: 20_000 });
     await expect(guest.getByTestId(`real-engine-board-count-${hostSession.playerId}`)).toHaveText('1');
+    await expect(guest.getByTestId(`real-engine-battlefield-${hostSession.playerId}`)).toContainText('Memnite');
+  } finally {
+    if (baseURL && roomId && hostPlayerId) {
+      await closeRoomForQa(baseURL, roomId, hostPlayerId).catch(() => {});
+    }
+    await hostContext.close();
+    await guestContext.close();
+  }
+});
+
+test('engine beta combat can attack, skip blocks, deal damage, and reload sync', async ({ browser, baseURL }) => {
+  const hostContext = await browser.newContext();
+  const guestContext = await browser.newContext();
+  const host = await hostContext.newPage();
+  const guest = await guestContext.newPage();
+  let roomId = '';
+  let hostPlayerId = '';
+
+  try {
+    const created = await createRoomThroughUi(host);
+    roomId = created.roomId;
+    hostPlayerId = created.hostPlayerId;
+    await joinRoomThroughUi(guest, roomId, created.password);
+
+    await lockSeat(host, {
+      deckName: 'E2E Engine Combat Host',
+      commander: hostCommander,
+      list: deckList('Memnite'),
+    });
+    await lockSeat(guest, {
+      deckName: 'E2E Engine Combat Guest',
+      commander: guestCommander,
+      list: deckList('Island'),
+    });
+
+    const hostSession = await roomSession(host);
+    const guestSession = await roomSession(guest);
+
+    await host.reload();
+    await expect(host.getByText('99 cards locked')).toHaveCount(2);
+    await host.getByRole('button', { name: 'Start Engine Beta' }).click();
+    await expect(host.getByText('Mode: Engine Beta')).toBeVisible();
+    await expect(guest.getByText('Mode: Engine Beta')).toBeVisible({ timeout: 20_000 });
+
+    await advanceEngineToPrecombatMain(host, guest);
+    await expect(host.getByRole('button', { name: 'Cast Selected Spell' })).toBeEnabled({ timeout: 20_000 });
+    await host.getByRole('button', { name: 'Cast Selected Spell' }).click();
+    await expect(host.getByTestId('real-engine-stack-size')).toHaveText('Stack: 1', { timeout: 20_000 });
+    await passEnginePriority(host);
+    await passEnginePriority(guest);
+    await expect(host.getByTestId(`real-engine-battlefield-${hostSession.playerId}`)).toContainText('Memnite', { timeout: 20_000 });
+
+    await advanceEngineEmptyTurn([host, guest], host, 'Turn 2 - beginning / untap');
+    await passEnginePriorityCycle([guest, host]);
+    await expect(host.getByTestId('real-engine-turn-label')).toHaveText('Turn 2 - beginning / upkeep', { timeout: 20_000 });
+    await passEnginePriorityCycle([guest, host]);
+    await expect(host.getByTestId('real-engine-turn-label')).toHaveText('Turn 2 - beginning / draw', { timeout: 20_000 });
+    await passEnginePriorityCycle([guest, host]);
+    await expect(host.getByTestId('real-engine-turn-label')).toHaveText('Turn 2 - precombat main', { timeout: 20_000 });
+    await advanceEngineEmptyTurn([guest, host], host, 'Turn 3 - beginning / untap');
+    await advanceEnginePodToPrecombatMain([host, guest], host, 3);
+    await passEnginePriorityCycle([host, guest]);
+    await expect(host.getByTestId('real-engine-turn-label')).toHaveText('Turn 3 - combat / declare_attackers', { timeout: 20_000 });
+
+    const attack = host.getByRole('button', { name: 'Attack First Creature' });
+    await expect(attack).toBeEnabled({ timeout: 20_000 });
+    await attack.click();
+    await expect(host.getByText('Memnite 1/1')).toBeVisible({ timeout: 20_000 });
+    await expect(host.getByText(`Attacking ${guestSession.playerName}`)).toBeVisible({ timeout: 20_000 });
+
+    await passEnginePriority(host);
+    await passEnginePriority(guest);
+    await expect(guest.getByTestId('real-engine-turn-label')).toHaveText('Turn 3 - combat / declare_blockers', { timeout: 20_000 });
+    await passEnginePriority(host);
+    const noBlocks = guest.getByRole('button', { name: 'No Blocks' });
+    await expect(noBlocks).toBeEnabled({ timeout: 20_000 });
+    await noBlocks.click();
+
+    await passEnginePriority(host);
+    await passEnginePriority(guest);
+    await expect(host.getByTestId('real-engine-turn-label')).toHaveText('Turn 3 - combat / first_strike_damage', { timeout: 20_000 });
+    await passEnginePriority(host);
+    await passEnginePriority(guest);
+    await expect(host.getByTestId('real-engine-turn-label')).toHaveText('Turn 3 - combat / combat_damage', { timeout: 20_000 });
+    await passEnginePriority(host);
+    await passEnginePriority(guest);
+
+    await expect(host.getByTestId(`real-engine-life-${guestSession.playerId}`)).toHaveText('39', { timeout: 20_000 });
+    await expect(host.getByTestId('real-engine-log')).toContainText('Combat damage resolved.');
+
+    await guest.reload();
+    await expect(guest.getByText('Mode: Engine Beta')).toBeVisible({ timeout: 20_000 });
+    await expect(guest.getByTestId(`real-engine-life-${guestSession.playerId}`)).toHaveText('39');
     await expect(guest.getByTestId(`real-engine-battlefield-${hostSession.playerId}`)).toContainText('Memnite');
   } finally {
     if (baseURL && roomId && hostPlayerId) {

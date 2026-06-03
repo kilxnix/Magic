@@ -4,6 +4,7 @@ import {
   getPlayerView,
   getCardDefinition,
   initRoomGame,
+  performUntapStep,
   resolveCombatDamage,
   resolveTopOfStack,
   createCardLookup,
@@ -218,7 +219,9 @@ export function applyPendingRoomAction(
             event += ' No combat damage to resolve.';
           }
         }
-        nextState = advanceStep(nextState);
+        nextState = nextState.step === 'untap'
+          ? advanceStep(performUntapStep(nextState))
+          : advanceStep(nextState);
         event += ` All players passed; advanced to ${nextState.phase} / ${nextState.step}.`;
       }
     }

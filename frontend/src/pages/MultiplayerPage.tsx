@@ -2718,7 +2718,7 @@ export function MultiplayerPage() {
                     <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                       <div>
                         <div className="text-xs font-black uppercase tracking-[0.16em] text-sky-200">Experimental Real Engine</div>
-                        <div className="mt-1 text-2xl font-black text-stone-50">
+                        <div data-testid="real-engine-turn-label" className="mt-1 text-2xl font-black text-stone-50">
                           {scopedView ? engineTurnLabel(scopedView) : 'Waiting for authority snapshot'}
                         </div>
                         <div className="text-sm font-semibold text-sky-100">
@@ -2964,7 +2964,7 @@ export function MultiplayerPage() {
                             <div className="grid grid-cols-2 gap-2 text-sm">
                               <div className="rounded bg-white/5 px-3 py-2">
                                 <div className="text-[10px] font-black uppercase tracking-wider text-stone-500">Life</div>
-                                <div className="text-2xl font-black text-stone-50">{player.life}</div>
+                                <div data-testid={`real-engine-life-${player.id}`} className="text-2xl font-black text-stone-50">{player.life}</div>
                               </div>
                               <div className="rounded bg-white/5 px-3 py-2">
                                 <div className="text-[10px] font-black uppercase tracking-wider text-stone-500">Hand</div>
