@@ -27,8 +27,11 @@ test('play page exposes practice progress and opens a scenario drill', async ({ 
   const recommendations = page.getByTestId('practice-recommendations');
   await expect(recommendations).toBeVisible();
   await expect(recommendations.getByText('Recommended Next Reps')).toBeVisible();
+  const scenarioLab = page.getByTestId('scenario-lab-panel');
+  await expect(scenarioLab).toBeVisible();
+  await expect(scenarioLab.getByText('Drill-first setup')).toBeVisible();
 
-  await progress.getByRole('button', { name: 'Open Drill Scenario', exact: true }).click();
+  await scenarioLab.getByRole('button', { name: /Complex Combat/i }).click();
   await expect(page.getByText('Bookmark This Moment')).toBeVisible();
   await expect(page.getByLabel('Game actions').getByText('Complex Combat QA Pilot has')).toBeVisible();
 
