@@ -54,6 +54,13 @@ interface DeckHistoryEntry {
   timestamp: number;
 }
 
+interface ImportedDeckEngineReadiness {
+  partnerCommanders: string[];
+  duplicateRepairApplied: boolean;
+  unsupportedCards: ReturnType<typeof findUnsupportedEngineCards>;
+  filledCards: string[];
+}
+
 interface SpawnedOpponent {
   commander: string;
   deck_name?: string;
@@ -88,6 +95,16 @@ const PERSONALITIES = ['Balanced', 'Aggressive', 'Greedy', 'Political'] as const
 const PRESET_DECKS = [...PRACTICE_DECKS, ...BEGINNER_DECKS];
 
 type OpponentCount = 1 | 2 | 3;
+
+function getPartnerCommanderNames(imported: DeckImportResult | null): string[] {
+  if (!imported?.commander || !imported.commander.includes(' // ')) return [];
+  const parts = imported.commander.split(' // ').map(name => name.trim()).filter(Boolean);
+  if (parts.length < 2) return [];
+  const fullCard = imported.card_data?.[imported.commander];
+  const exactSplitCard = Boolean(fullCard && !parts.every(part => imported.card_data?.[part]));
+  if (exactSplitCard) return [];
+  return parts;
+}
 
 const MATCH_SIZES: { label: string; players: number; opponentCount: OpponentCount }[] = [
   { label: '1v1', players: 2, opponentCount: 1 },
@@ -334,6 +351,23 @@ export function PlayPage() {
       bestAttempts: [...attempts].sort((a, b) => (b.score - a.score) || (b.attempt.savedAt - a.attempt.savedAt)).slice(0, 3),
     };
   }, [saveSlots]);
+
+  const importEngineReadiness = useMemo<ImportedDeckEngineReadiness | null>(() => {
+    if (!importResult) return null;
+    const unsupportedCards = findUnsupportedEngineCards([{
+      label: 'Imported deck',
+      commander: importResult.commander || undefined,
+      cards: importResult.cards,
+      lands: importResult.lands,
+      sideboard: importResult.sideboard || [],
+    }]);
+    return {
+      partnerCommanders: getPartnerCommanderNames(importResult),
+      duplicateRepairApplied: importResult.warnings.some(warning => /duplicate non-basic/i.test(warning)),
+      unsupportedCards,
+      filledCards: importResult.filled_cards || [],
+    };
+  }, [importResult]);
 
   // Load saved deck data
   useEffect(() => {
@@ -3592,6 +3626,55 @@ export function PlayPage() {
                 </span>
                 <span className="text-sm text-stone-400">{importResult.total} cards</span>
               </div>
+              {importResult.valid && importEngineReadiness && (
+                <div
+                  data-testid="partner-engine-readiness"
+                  className={`mb-3 rounded-lg border p-3 text-xs ${
+                    importEngineReadiness.unsupportedCards.length > 0
+                      ? 'border-amber-600/50 bg-amber-950/30 text-amber-100'
+                      : 'border-emerald-600/40 bg-emerald-950/30 text-emerald-100'
+                  }`}
+                >
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <div className="flex items-center gap-2 font-black uppercase tracking-[0.14em]">
+                        <Shield className="h-4 w-4" />
+                        Engine preflight
+                      </div>
+                      <div className="mt-1 text-stone-200">
+                        {importEngineReadiness.partnerCommanders.length > 1
+                          ? `${importEngineReadiness.partnerCommanders.length} commanders detected for the command zone.`
+                          : 'Single commander deck detected.'}
+                      </div>
+                    </div>
+                    <div className="rounded bg-black/20 px-2 py-1 font-bold text-stone-100">
+                      1v1 Engine Practice
+                    </div>
+                  </div>
+                  {importEngineReadiness.partnerCommanders.length > 1 && (
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {importEngineReadiness.partnerCommanders.map(name => (
+                        <span key={name} className="rounded-full border border-emerald-300/30 bg-emerald-300/10 px-2 py-1 font-bold text-emerald-50">
+                          {name}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  <div className="mt-2 space-y-1 text-stone-300">
+                    {importEngineReadiness.duplicateRepairApplied && (
+                      <div>Duplicate singleton repair was applied before engine start.</div>
+                    )}
+                    {importEngineReadiness.filledCards.length > 0 && (
+                      <div>Practice fill added {importEngineReadiness.filledCards.length} card{importEngineReadiness.filledCards.length === 1 ? '' : 's'} so the deck can start.</div>
+                    )}
+                    {importEngineReadiness.unsupportedCards.length === 0 ? (
+                      <div>Current preflight did not flag manual-only cards for this import.</div>
+                    ) : (
+                      <div>{formatUnsupportedEngineCards(importEngineReadiness.unsupportedCards)}</div>
+                    )}
+                  </div>
+                </div>
+              )}
               {importResult.warnings.length > 0 && (
                 <div className="text-xs text-amber-400 space-y-1">
                   {importResult.warnings.map((w, i) => <div key={i}>{w}</div>)}

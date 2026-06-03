@@ -1978,24 +1978,24 @@ export function MultiplayerPage() {
                           <>
                             <button
                               type="button"
-                              onClick={onStartSharedTable}
-                              disabled={!canStart || loading}
-                              className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-lg bg-emerald-300 px-4 text-sm font-black text-stone-950 transition hover:bg-emerald-200 disabled:cursor-not-allowed disabled:opacity-40"
-                            >
-                              <Swords className="h-4 w-4" />
-                              Start Shared Table
-                            </button>
-                            <button
-                              type="button"
                               onClick={onStartEngineBeta}
                               disabled={!canStartEngineBeta || loading}
-                              className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-lg border border-sky-300/30 bg-sky-300/10 px-4 text-sm font-black text-sky-100 transition hover:bg-sky-300/20 disabled:cursor-not-allowed disabled:opacity-40"
+                              className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-lg bg-sky-300 px-4 text-sm font-black text-stone-950 transition hover:bg-sky-200 disabled:cursor-not-allowed disabled:bg-sky-300/10 disabled:text-sky-100 disabled:opacity-60"
                             >
                               <Shield className="h-4 w-4" />
                               Start Engine Beta
                             </button>
+                            <button
+                              type="button"
+                              onClick={onStartSharedTable}
+                              disabled={!canStart || loading}
+                              className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-lg border border-emerald-300/30 bg-emerald-300/10 px-4 text-sm font-black text-emerald-100 transition hover:bg-emerald-300/20 disabled:cursor-not-allowed disabled:opacity-40"
+                            >
+                              <Swords className="h-4 w-4" />
+                              Start Shared Table
+                            </button>
                             <div className="text-xs font-semibold text-stone-500 sm:basis-full sm:text-right">
-                              Shared Table is the soft-launch path. Engine Beta requires a clean deck preflight.
+                              Engine Beta is the automated rules path when preflight is clean. Shared Table is the manual tracker fallback.
                             </div>
                             {enginePreflight && (
                               <div className={`rounded-lg border px-3 py-2 text-xs font-bold sm:basis-full ${

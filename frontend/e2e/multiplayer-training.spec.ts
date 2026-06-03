@@ -363,3 +363,72 @@ test('engine beta starts separately with scoped views for both players', async (
     await guestContext.close();
   }
 });
+
+test('four-player engine beta starts with scoped views for a full pod', async ({ browser, baseURL }) => {
+  const contexts = await Promise.all([
+    browser.newContext(),
+    browser.newContext(),
+    browser.newContext(),
+    browser.newContext(),
+  ]);
+  const [host, playerTwo, playerThree, playerFour] = await Promise.all(contexts.map((context) => context.newPage()));
+  let roomId = '';
+  let hostPlayerId = '';
+
+  try {
+    const created = await createRoomThroughUi(host);
+    roomId = created.roomId;
+    hostPlayerId = created.hostPlayerId;
+    await joinRoomThroughUi(playerTwo, roomId, created.password, 'E2E Engine Two');
+    await joinRoomThroughUi(playerThree, roomId, created.password, 'E2E Engine Three');
+    await joinRoomThroughUi(playerFour, roomId, created.password, 'E2E Engine Four');
+
+    await lockSeat(host, {
+      deckName: 'E2E Engine Host Basics',
+      commander: hostCommander,
+      list: deckList('Forest'),
+    });
+    await lockSeat(playerTwo, {
+      deckName: 'E2E Engine Two Basics',
+      commander: guestCommander,
+      list: deckList('Island'),
+    });
+    await lockSeat(playerThree, {
+      deckName: 'E2E Engine Three Basics',
+      commander: 'Krenko, Mob Boss',
+      list: deckList('Mountain'),
+    });
+    await lockSeat(playerFour, {
+      deckName: 'E2E Engine Four Basics',
+      commander: 'Ayli, Eternal Pilgrim',
+      list: deckList('Swamp'),
+    });
+
+    await host.reload();
+    await expect(host.getByText('4/4 seated - waiting', { exact: true })).toBeVisible();
+    await expect(host.getByText('99 cards locked')).toHaveCount(4);
+    const engineButton = host.getByRole('button', { name: 'Start Engine Beta' });
+    await expect(engineButton).toBeEnabled();
+    await engineButton.click();
+
+    await expect(host.getByText('Mode: Engine Beta')).toBeVisible();
+    await expect(host.getByText('Experimental Real Engine')).toBeVisible();
+    await expect(host.getByText(`Authority: ${created.hostName}`, { exact: true })).toBeVisible();
+    await expect(host.getByText('Scoped hidden views')).toBeVisible();
+    await expect(host.getByRole('button', { name: 'Pass Priority' })).toBeVisible();
+
+    for (const page of [playerTwo, playerThree, playerFour]) {
+      await page.reload();
+      await expect(page.getByText('Mode: Engine Beta')).toBeVisible();
+      await expect(page.getByText('Experimental Real Engine')).toBeVisible();
+      await expect(page.getByText(`Authority: ${created.hostName}`, { exact: true })).toBeVisible();
+      await expect(page.getByText('Scoped hidden views')).toBeVisible();
+      await expect(page.getByText('Waiting for authority snapshot')).not.toBeVisible();
+    }
+  } finally {
+    if (baseURL && roomId && hostPlayerId) {
+      await closeRoomForQa(baseURL, roomId, hostPlayerId).catch(() => {});
+    }
+    await Promise.all(contexts.map((context) => context.close()));
+  }
+});
