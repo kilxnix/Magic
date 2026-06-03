@@ -2,7 +2,7 @@
 
 import pytest
 
-from backend.agent.deck_import import parse_decklist, validate_deck, BASIC_LAND_NAMES
+from backend.agent.deck_import import parse_decklist, repair_singleton_duplicates, validate_deck, BASIC_LAND_NAMES
 
 
 # ---------------------------------------------------------------------------
@@ -572,6 +572,28 @@ class TestValidateDeck:
         assert result["missing_slots"] == 0
         assert any("Duplicate non-basic card: 'Sol Ring'" in error for error in result["errors"])
         assert not any("Deck has only" in warning for warning in result["warnings"])
+
+    def test_repair_singleton_duplicate_removes_extra_copy(self):
+        card_db = _mock_card_db()
+        text = "\n".join([
+            "Commander",
+            "1 Ravos, Soultender",
+            "1 Tana, the Bloodsower",
+            "Deck",
+            "1 Sol Ring",
+            "1 Sol Ring",
+            "96 Swamp",
+        ])
+        parsed = parse_decklist(text)
+
+        removed = repair_singleton_duplicates(parsed)
+        result = validate_deck(parsed, card_db)
+
+        assert removed == ["Sol Ring"]
+        assert parsed["cards"].count("Sol Ring") == 1
+        assert parsed["total"] == 99
+        assert result["missing_slots"] == 1
+        assert not any("Duplicate non-basic" in error for error in result["errors"])
 
     def test_clara_oswald_commander_choice_allows_any_color(self):
         card_db = _mock_card_db()

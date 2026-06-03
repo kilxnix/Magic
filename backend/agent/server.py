@@ -22,6 +22,7 @@ from backend.agent.deck_import import (
     _effective_commander_color_identity,
     fill_missing_slots,
     parse_decklist,
+    repair_singleton_duplicates,
     validate_constructed_deck,
     validate_deck,
 )
@@ -627,12 +628,25 @@ async def import_deck(req: ImportDeckRequest):
     else:
         validation = validate_deck(parsed, card_db)
 
+    repaired_duplicates: list[str] = []
+    repair_warnings: list[str] = []
+    if card_db and format_name == "commander" and validation["errors"]:
+        repaired_duplicates = repair_singleton_duplicates(parsed)
+        if repaired_duplicates:
+            unique_repaired = sorted(set(repaired_duplicates))
+            repair_warnings.append(
+                "Removed duplicate non-basic "
+                f"{'copy' if len(repaired_duplicates) == 1 else 'copies'} for Commander singleton rules: "
+                f"{', '.join(unique_repaired)}"
+            )
+            validation = validate_deck(parsed, card_db)
+
     # Step 4: Fill missing slots if requested
     filled_cards: list[str] = []
     if (
         card_db
         and format_name == "commander"
-        and req.fill_missing
+        and (req.fill_missing or bool(repaired_duplicates))
         and validation["missing_slots"] > 0
         and not validation["errors"]
         and parsed.get("commander")
@@ -662,6 +676,9 @@ async def import_deck(req: ImportDeckRequest):
         # Recalculate total
         parsed["total"] = len(commander_names) + len(parsed["cards"]) + len(parsed.get("lands", []))
         validation = validate_deck(parsed, card_db)
+
+    if repair_warnings:
+        validation["warnings"] = [*repair_warnings, *validation.get("warnings", [])]
 
     # Build full card data for every card in the deck
     all_names = set(parsed.get("cards", []) + parsed.get("lands", []) + parsed.get("sideboard", []))

@@ -287,6 +287,56 @@ def _remove_commanders_from_main_deck(parsed: dict, commander_names: List[str]) 
     return removed
 
 
+_DUPLICATE_NONBASIC_ERROR_RE = re.compile(r"^Duplicate non-basic card: '(.+)'$")
+_QUANTITY_NONBASIC_ERROR_RE = re.compile(r"^Non-basic card '(.+)' has quantity \d+ \(only 1 allowed\)$")
+
+
+def _singleton_duplicate_error_name(error: str) -> Optional[str]:
+    """Return the card name for singleton duplicate parse errors."""
+    for pattern in (_DUPLICATE_NONBASIC_ERROR_RE, _QUANTITY_NONBASIC_ERROR_RE):
+        match = pattern.match(error)
+        if match:
+            return match.group(1)
+    return None
+
+
+def repair_singleton_duplicates(parsed: dict) -> List[str]:
+    """Remove extra non-basic copies while preserving one legal copy.
+
+    This is intended for user-facing import repair. Validation still flags the
+    original list first, but the /import-deck workflow can repair duplicate
+    singleton copies and fill the resulting slot for practice.
+    """
+    seen: Set[str] = set()
+    removed: List[str] = []
+
+    for zone in ("cards", "lands"):
+        kept: List[str] = []
+        for name in parsed.get(zone, []):
+            clean_name = str(name).strip()
+            key = clean_name.lower()
+            if clean_name not in BASIC_LAND_NAMES and key in seen:
+                removed.append(clean_name)
+                continue
+            if clean_name not in BASIC_LAND_NAMES:
+                seen.add(key)
+            kept.append(name)
+        parsed[zone] = kept
+
+    if removed:
+        removed_keys = {name.lower() for name in removed}
+        parsed["errors"] = [
+            error for error in parsed.get("errors", [])
+            if (_singleton_duplicate_error_name(error) or "").lower() not in removed_keys
+        ]
+        commander_names = parsed.get("commanders") or (
+            [parsed.get("commander")] if parsed.get("commander") else []
+        )
+        parsed["total"] = len([name for name in commander_names if name]) + len(parsed.get("cards", [])) + len(parsed.get("lands", []))
+
+    return removed
+
+
 def _resolve_card_name(name: str, card_db: dict) -> Tuple[Optional[str], Optional[str]]:
     """Try to find a card in the database, with fuzzy matching.
 
