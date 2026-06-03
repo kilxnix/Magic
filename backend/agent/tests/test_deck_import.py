@@ -158,8 +158,9 @@ class TestParseDecklist:
         text = "1x Sol Ring\n2x Arcane Signet"
         result = parse_decklist(text)
         assert "Sol Ring" in result["cards"]
-        # Non-basic with qty>1 should produce error and clamp to 1
-        assert result["cards"].count("Arcane Signet") == 1
+        # Non-basic with qty>1 stays in the raw import count but is invalid.
+        assert result["cards"].count("Arcane Signet") == 2
+        assert result["total"] == 3
         assert any("Arcane Signet" in e for e in result["errors"])
 
     def test_cmdr_marker(self):
@@ -221,8 +222,16 @@ class TestParseDecklist:
     def test_nonbasic_duplicate_flagged(self):
         text = "1 Sol Ring\n1 Sol Ring"
         result = parse_decklist(text)
-        assert result["cards"].count("Sol Ring") == 1
+        assert result["cards"].count("Sol Ring") == 2
+        assert result["total"] == 2
         assert any("Duplicate" in e for e in result["errors"])
+
+    def test_nonbasic_quantity_duplicate_preserves_raw_count(self):
+        text = "2 Sol Ring"
+        result = parse_decklist(text)
+        assert result["cards"].count("Sol Ring") == 2
+        assert result["total"] == 2
+        assert any("quantity 2" in e for e in result["errors"])
 
     def test_sideboard_header_ignored(self):
         text = "1 Sol Ring\nSideboard\n1 Arcane Signet"
@@ -541,6 +550,28 @@ class TestValidateDeck:
         assert "Ravos, Soultender" not in parsed["cards"]
         assert "Tana, the Bloodsower" not in parsed["cards"]
         assert not any("maximum is 100" in error for error in result["errors"])
+
+    def test_partner_deck_duplicate_nonbasic_does_not_create_missing_slot(self):
+        card_db = _mock_card_db()
+        text = "\n".join([
+            "Commander",
+            "1 Ravos, Soultender",
+            "1 Tana, the Bloodsower",
+            "Deck",
+            "1 Sol Ring",
+            "1 Sol Ring",
+            "96 Swamp",
+        ])
+        parsed = parse_decklist(text)
+
+        result = validate_deck(parsed, card_db)
+
+        assert not result["valid"]
+        assert parsed["commanders"] == ["Ravos, Soultender", "Tana, the Bloodsower"]
+        assert parsed["total"] == 100
+        assert result["missing_slots"] == 0
+        assert any("Duplicate non-basic card: 'Sol Ring'" in error for error in result["errors"])
+        assert not any("Deck has only" in warning for warning in result["warnings"])
 
     def test_clara_oswald_commander_choice_allows_any_color(self):
         card_db = _mock_card_db()

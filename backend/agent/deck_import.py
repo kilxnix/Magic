@@ -486,12 +486,10 @@ def _parse_decklist_legacy(text: str, singleton: bool = True) -> dict:
                 errors.append(
                     f"Non-basic card '{name}' has quantity {qty} (only 1 allowed)"
                 )
-                qty = 1
             prev = seen_names.get(name, 0)
             if prev > 0:
                 errors.append(f"Duplicate non-basic card: '{name}'")
-                continue  # skip the duplicate
-            seen_names[name] = 1
+            seen_names[name] = prev + qty
 
         # Classify as land or non-land
         # We treat basic lands as lands; other cards are classified later during
@@ -674,12 +672,10 @@ def parse_decklist(text: str, singleton: bool = True) -> dict:
                 errors.append(
                     f"Non-basic card '{name}' has quantity {qty} (only 1 allowed)"
                 )
-                qty = 1
             prev = seen_names.get(name, 0)
             if prev > 0:
                 errors.append(f"Duplicate non-basic card: '{name}'")
-                continue
-            seen_names[name] = 1
+            seen_names[name] = prev + qty
 
         if is_basic:
             append_entries(lands, qty, name)

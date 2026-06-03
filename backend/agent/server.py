@@ -629,7 +629,14 @@ async def import_deck(req: ImportDeckRequest):
 
     # Step 4: Fill missing slots if requested
     filled_cards: list[str] = []
-    if card_db and format_name == "commander" and req.fill_missing and validation["missing_slots"] > 0 and parsed.get("commander"):
+    if (
+        card_db
+        and format_name == "commander"
+        and req.fill_missing
+        and validation["missing_slots"] > 0
+        and not validation["errors"]
+        and parsed.get("commander")
+    ):
         parsed = fill_missing_slots(parsed, card_db, bracket=req.bracket)
         filled_cards = parsed.get("filled_cards", [])
         # Re-validate after filling — remove any cards that violate color identity
