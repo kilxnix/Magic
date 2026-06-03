@@ -2727,9 +2727,9 @@ export function MultiplayerPage() {
                         </div>
                         {scopedView && (
                           <div className="mt-2 flex flex-wrap gap-2 text-xs font-black uppercase tracking-wider text-sky-100">
-                            <span className="rounded bg-sky-300/10 px-2 py-1">Active: {engineActivePlayer?.name || 'Unknown'}</span>
-                            <span className="rounded bg-amber-300/10 px-2 py-1 text-amber-100">Priority: {enginePriorityPlayer?.name || 'Unknown'}</span>
-                            <span className="rounded bg-white/10 px-2 py-1">Stack: {scopedView.stackSize}</span>
+                            <span data-testid="real-engine-active-player" className="rounded bg-sky-300/10 px-2 py-1">Active: {engineActivePlayer?.name || 'Unknown'}</span>
+                            <span data-testid="real-engine-priority-player" className="rounded bg-amber-300/10 px-2 py-1 text-amber-100">Priority: {enginePriorityPlayer?.name || 'Unknown'}</span>
+                            <span data-testid="real-engine-stack-size" className="rounded bg-white/10 px-2 py-1">Stack: {scopedView.stackSize}</span>
                             <span className="rounded bg-white/10 px-2 py-1">Scoped hidden views</span>
                             {activeSpectator && <span className="rounded bg-emerald-300/10 px-2 py-1 text-emerald-100">Spectator Mode</span>}
                           </div>
@@ -2938,6 +2938,7 @@ export function MultiplayerPage() {
                         {scopedView.players.map((player) => (
                           <div
                             key={player.id}
+                            data-testid={`real-engine-player-${player.id}`}
                             className={`rounded-lg border p-4 ${
                               player.hasPriority
                                 ? 'border-amber-300/60 bg-amber-300/10'
@@ -2967,11 +2968,11 @@ export function MultiplayerPage() {
                               </div>
                               <div className="rounded bg-white/5 px-3 py-2">
                                 <div className="text-[10px] font-black uppercase tracking-wider text-stone-500">Hand</div>
-                                <div className="text-2xl font-black text-stone-50">{player.zones.hand.count}</div>
+                                <div data-testid={`real-engine-hand-count-${player.id}`} className="text-2xl font-black text-stone-50">{player.zones.hand.count}</div>
                               </div>
                               <div className="rounded bg-white/5 px-3 py-2">
                                 <div className="text-[10px] font-black uppercase tracking-wider text-stone-500">Board</div>
-                                <div className="text-2xl font-black text-stone-50">{player.zones.battlefield.count}</div>
+                                <div data-testid={`real-engine-board-count-${player.id}`} className="text-2xl font-black text-stone-50">{player.zones.battlefield.count}</div>
                               </div>
                               <div className="rounded bg-white/5 px-3 py-2">
                                 <div className="text-[10px] font-black uppercase tracking-wider text-stone-500">GY / Lib</div>
@@ -2988,12 +2989,12 @@ export function MultiplayerPage() {
                               </div>
                             )}
                             {player.id === activeSession?.playerId && player.zones.hand.cards && (
-                              <div className="mt-3 rounded border border-white/10 bg-white/5 p-2 text-xs text-stone-300">
+                              <div data-testid={`real-engine-hand-preview-${player.id}`} className="mt-3 rounded border border-white/10 bg-white/5 p-2 text-xs text-stone-300">
                                 {player.zones.hand.cards.slice(0, 8).map((card) => card.name).join(', ')}
                               </div>
                             )}
                             {player.zones.battlefield.cards && player.zones.battlefield.cards.length > 0 && (
-                              <div className="mt-3 rounded-lg border border-white/10 bg-stone-900/80 p-2">
+                              <div data-testid={`real-engine-battlefield-${player.id}`} className="mt-3 rounded-lg border border-white/10 bg-stone-900/80 p-2">
                                 <div className="mb-2 flex items-center justify-between gap-2 text-[10px] font-black uppercase tracking-wider text-stone-500">
                                   <span>Battlefield</span>
                                   <span>{player.zones.battlefield.count}</span>
@@ -3282,7 +3283,7 @@ export function MultiplayerPage() {
 
                     <div className="rounded-lg border border-white/10 bg-stone-950 p-3">
                       <div className="mb-2 text-xs font-black uppercase tracking-[0.16em] text-stone-500">Engine Log</div>
-                      <div className="flex max-h-56 flex-col gap-2 overflow-y-auto">
+                      <div data-testid="real-engine-log" className="flex max-h-56 flex-col gap-2 overflow-y-auto">
                         {(effectiveRealGameView?.log || room.real_game.log).map((entry) => (
                           <div key={entry.id} className="rounded bg-white/5 px-3 py-2 text-sm text-stone-200">
                             <div className="mb-1 flex items-center justify-between gap-3 text-[10px] font-black uppercase tracking-wider text-stone-500">

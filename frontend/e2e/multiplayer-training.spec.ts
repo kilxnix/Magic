@@ -76,10 +76,39 @@ async function lockSeat(page: Page, input: { deckName: string; commander: string
   await expect(page.getByText(`${expectedCards} non-commander cards ready to lock.`)).toBeVisible();
 }
 
+async function roomSession(page: Page) {
+  const session = await page.evaluate(() => JSON.parse(localStorage.getItem('magicbrains_multiplayer_session_v1') || 'null'));
+  expect(session?.roomId).toBeTruthy();
+  expect(session?.playerId).toBeTruthy();
+  return session as { roomId: string; playerId: string; playerName: string; isHost?: boolean };
+}
+
 async function clickUnique(page: Page, roleName: string) {
   const button = page.getByRole('button', { name: roleName });
   await expect(button).toHaveCount(1);
   await button.click();
+}
+
+async function passEnginePriority(page: Page) {
+  const pass = page.getByRole('button', { name: 'Pass Priority' });
+  await expect(pass).toBeEnabled({ timeout: 20_000 });
+  await pass.click();
+}
+
+async function advanceEnginePodToPrecombatMain(priorityPages: Page[], observer: Page = priorityPages[0]) {
+  await expect(observer.getByText('Turn 1 - beginning / upkeep')).toBeVisible({ timeout: 20_000 });
+  for (const page of priorityPages) {
+    await passEnginePriority(page);
+  }
+  await expect(observer.getByText('Turn 1 - beginning / draw')).toBeVisible({ timeout: 20_000 });
+  for (const page of priorityPages) {
+    await passEnginePriority(page);
+  }
+  await expect(observer.getByText('Turn 1 - precombat main')).toBeVisible({ timeout: 20_000 });
+}
+
+async function advanceEngineToPrecombatMain(host: Page, guest: Page) {
+  await advanceEnginePodToPrecombatMain([host, guest], host);
 }
 
 function qaHeaders() {
@@ -372,6 +401,133 @@ test('engine beta starts separately with scoped views for both players', async (
   }
 });
 
+test('engine beta applies land and priority actions across two real browser seats', async ({ browser, baseURL }) => {
+  const hostContext = await browser.newContext();
+  const guestContext = await browser.newContext();
+  const host = await hostContext.newPage();
+  const guest = await guestContext.newPage();
+  let roomId = '';
+  let hostPlayerId = '';
+
+  try {
+    const created = await createRoomThroughUi(host);
+    roomId = created.roomId;
+    hostPlayerId = created.hostPlayerId;
+    await joinRoomThroughUi(guest, roomId, created.password);
+
+    await lockSeat(host, {
+      deckName: 'E2E Engine Host Lands',
+      commander: hostCommander,
+      list: deckList('Forest'),
+    });
+    await lockSeat(guest, {
+      deckName: 'E2E Engine Guest Lands',
+      commander: guestCommander,
+      list: deckList('Island'),
+    });
+
+    const hostSession = await roomSession(host);
+    const guestSession = await roomSession(guest);
+
+    await host.reload();
+    await expect(host.getByText('99 cards locked')).toHaveCount(2);
+    await host.getByRole('button', { name: 'Start Engine Beta' }).click();
+    await expect(host.getByText('Mode: Engine Beta')).toBeVisible();
+    await expect(guest.getByText('Mode: Engine Beta')).toBeVisible({ timeout: 20_000 });
+
+    await advanceEngineToPrecombatMain(host, guest);
+
+    const playLand = host.getByRole('button', { name: 'Play First Land' });
+    await expect(playLand).toBeEnabled({ timeout: 20_000 });
+    await playLand.click();
+    await expect(host.getByTestId(`real-engine-board-count-${hostSession.playerId}`)).toHaveText('1', { timeout: 20_000 });
+    await expect(host.getByTestId(`real-engine-hand-count-${hostSession.playerId}`)).toHaveText('6');
+    await expect(host.getByTestId(`real-engine-battlefield-${hostSession.playerId}`)).toContainText('Forest');
+    await expect(host.getByTestId('real-engine-log')).toContainText(`${created.hostName} played a land.`);
+
+    await guest.reload();
+    await expect(guest.getByText('Mode: Engine Beta')).toBeVisible({ timeout: 20_000 });
+    await expect(guest.getByTestId(`real-engine-board-count-${hostSession.playerId}`)).toHaveText('1');
+    await expect(guest.getByTestId(`real-engine-battlefield-${hostSession.playerId}`)).toContainText('Forest');
+    await expect(guest.getByTestId(`real-engine-hand-preview-${hostSession.playerId}`)).toHaveCount(0);
+    await expect(guest.getByTestId(`real-engine-hand-preview-${guestSession.playerId}`)).toContainText('Island');
+
+    await passEnginePriority(host);
+    await expect(guest.getByTestId('real-engine-priority-player')).toHaveText(`Priority: ${guestSession.playerName}`, { timeout: 20_000 });
+    await passEnginePriority(guest);
+    await expect(host.getByText('Turn 1 - combat / declare_attackers')).toBeVisible({ timeout: 20_000 });
+    await expect(host.getByTestId('real-engine-log')).toContainText('All players passed; advanced to combat / declare_attackers.');
+  } finally {
+    if (baseURL && roomId && hostPlayerId) {
+      await closeRoomForQa(baseURL, roomId, hostPlayerId).catch(() => {});
+    }
+    await hostContext.close();
+    await guestContext.close();
+  }
+});
+
+test('engine beta casts a zero-cost spell through stack resolution and reload sync', async ({ browser, baseURL }) => {
+  const hostContext = await browser.newContext();
+  const guestContext = await browser.newContext();
+  const host = await hostContext.newPage();
+  const guest = await guestContext.newPage();
+  let roomId = '';
+  let hostPlayerId = '';
+
+  try {
+    const created = await createRoomThroughUi(host);
+    roomId = created.roomId;
+    hostPlayerId = created.hostPlayerId;
+    await joinRoomThroughUi(guest, roomId, created.password);
+
+    await lockSeat(host, {
+      deckName: 'E2E Engine Host Spell',
+      commander: hostCommander,
+      list: deckList('Memnite'),
+    });
+    await lockSeat(guest, {
+      deckName: 'E2E Engine Guest Islands',
+      commander: guestCommander,
+      list: deckList('Island'),
+    });
+
+    const hostSession = await roomSession(host);
+
+    await host.reload();
+    await expect(host.getByText('99 cards locked')).toHaveCount(2);
+    await host.getByRole('button', { name: 'Start Engine Beta' }).click();
+    await expect(host.getByText('Mode: Engine Beta')).toBeVisible();
+    await expect(guest.getByText('Mode: Engine Beta')).toBeVisible({ timeout: 20_000 });
+
+    await advanceEngineToPrecombatMain(host, guest);
+
+    await expect(host.getByLabel('Selected spell')).toHaveValue(/room_card_/);
+    await expect(host.getByRole('button', { name: 'Cast Selected Spell' })).toBeEnabled({ timeout: 20_000 });
+    await host.getByRole('button', { name: 'Cast Selected Spell' }).click();
+    await expect(host.getByTestId('real-engine-stack-size')).toHaveText('Stack: 1', { timeout: 20_000 });
+    await expect(host.getByTestId('real-engine-log')).toContainText(`${created.hostName} cast Memnite.`);
+    await expect(host.getByTestId(`real-engine-board-count-${hostSession.playerId}`)).toHaveText('0');
+
+    await passEnginePriority(host);
+    await passEnginePriority(guest);
+    await expect(host.getByTestId('real-engine-stack-size')).toHaveText('Stack: 0', { timeout: 20_000 });
+    await expect(host.getByTestId(`real-engine-board-count-${hostSession.playerId}`)).toHaveText('1');
+    await expect(host.getByTestId(`real-engine-battlefield-${hostSession.playerId}`)).toContainText('Memnite');
+    await expect(host.getByTestId('real-engine-log')).toContainText('All players passed; the top stack item resolved.');
+
+    await guest.reload();
+    await expect(guest.getByText('Mode: Engine Beta')).toBeVisible({ timeout: 20_000 });
+    await expect(guest.getByTestId(`real-engine-board-count-${hostSession.playerId}`)).toHaveText('1');
+    await expect(guest.getByTestId(`real-engine-battlefield-${hostSession.playerId}`)).toContainText('Memnite');
+  } finally {
+    if (baseURL && roomId && hostPlayerId) {
+      await closeRoomForQa(baseURL, roomId, hostPlayerId).catch(() => {});
+    }
+    await hostContext.close();
+    await guestContext.close();
+  }
+});
+
 test('four-player engine beta starts with scoped views for a full pod', async ({ browser, baseURL }) => {
   const contexts = await Promise.all([
     browser.newContext(),
@@ -432,6 +588,88 @@ test('four-player engine beta starts with scoped views for a full pod', async ({
       await expect(page.getByText(`Authority: ${created.hostName}`, { exact: true })).toBeVisible();
       await expect(page.getByText('Scoped hidden views')).toBeVisible();
       await expect(page.getByText('Waiting for authority snapshot')).not.toBeVisible();
+    }
+  } finally {
+    if (baseURL && roomId && hostPlayerId) {
+      await closeRoomForQa(baseURL, roomId, hostPlayerId).catch(() => {});
+    }
+    await Promise.all(contexts.map((context) => context.close()));
+  }
+});
+
+test('four-player engine beta applies a gameplay action and keeps scoped reload views', async ({ browser, baseURL }) => {
+  const contexts = await Promise.all([
+    browser.newContext(),
+    browser.newContext(),
+    browser.newContext(),
+    browser.newContext(),
+  ]);
+  const [host, playerTwo, playerThree, playerFour] = await Promise.all(contexts.map((context) => context.newPage()));
+  let roomId = '';
+  let hostPlayerId = '';
+
+  try {
+    const created = await createRoomThroughUi(host);
+    roomId = created.roomId;
+    hostPlayerId = created.hostPlayerId;
+    await joinRoomThroughUi(playerTwo, roomId, created.password, 'E2E Action Two');
+    await joinRoomThroughUi(playerThree, roomId, created.password, 'E2E Action Three');
+    await joinRoomThroughUi(playerFour, roomId, created.password, 'E2E Action Four');
+
+    await lockSeat(host, {
+      deckName: 'E2E 4P Host Lands',
+      commander: hostCommander,
+      list: deckList('Forest'),
+    });
+    await lockSeat(playerTwo, {
+      deckName: 'E2E 4P Two Lands',
+      commander: guestCommander,
+      list: deckList('Island'),
+    });
+    await lockSeat(playerThree, {
+      deckName: 'E2E 4P Three Lands',
+      commander: 'Krenko, Mob Boss',
+      list: deckList('Mountain'),
+    });
+    await lockSeat(playerFour, {
+      deckName: 'E2E 4P Four Lands',
+      commander: 'Ayli, Eternal Pilgrim',
+      list: deckList('Swamp'),
+    });
+
+    const hostSession = await roomSession(host);
+    const twoSession = await roomSession(playerTwo);
+    const threeSession = await roomSession(playerThree);
+    const fourSession = await roomSession(playerFour);
+
+    await host.reload();
+    await expect(host.getByText('99 cards locked')).toHaveCount(4);
+    await host.getByRole('button', { name: 'Start Engine Beta' }).click();
+    await expect(host.getByText('Mode: Engine Beta')).toBeVisible();
+    for (const page of [playerTwo, playerThree, playerFour]) {
+      await expect(page.getByText('Mode: Engine Beta')).toBeVisible({ timeout: 20_000 });
+      await expect(page.getByText('Waiting for authority snapshot')).not.toBeVisible();
+    }
+
+    await advanceEnginePodToPrecombatMain([host, playerTwo, playerThree, playerFour], host);
+
+    const playLand = host.getByRole('button', { name: 'Play First Land' });
+    await expect(playLand).toBeEnabled({ timeout: 20_000 });
+    await playLand.click();
+    await expect(host.getByTestId(`real-engine-board-count-${hostSession.playerId}`)).toHaveText('1', { timeout: 20_000 });
+    await expect(host.getByTestId(`real-engine-battlefield-${hostSession.playerId}`)).toContainText('Forest');
+
+    for (const { page, session: viewerSession } of [
+      { page: playerTwo, session: twoSession },
+      { page: playerThree, session: threeSession },
+      { page: playerFour, session: fourSession },
+    ]) {
+      await page.reload();
+      await expect(page.getByText('Mode: Engine Beta')).toBeVisible({ timeout: 20_000 });
+      await expect(page.getByTestId(`real-engine-board-count-${hostSession.playerId}`)).toHaveText('1');
+      await expect(page.getByTestId(`real-engine-battlefield-${hostSession.playerId}`)).toContainText('Forest');
+      await expect(page.getByTestId(`real-engine-hand-preview-${hostSession.playerId}`)).toHaveCount(0);
+      await expect(page.getByTestId(`real-engine-hand-preview-${viewerSession.playerId}`)).toBeVisible();
     }
   } finally {
     if (baseURL && roomId && hostPlayerId) {
