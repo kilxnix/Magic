@@ -3689,6 +3689,9 @@ export function GameBoard({
                       {preview.forecast && (
                         <div className="mt-0.5 text-[9px] leading-snug text-emerald-100/85">{preview.forecast}</div>
                       )}
+                      {preview.practiceRead && (
+                        <div className="mt-0.5 text-[9px] leading-snug text-sky-100/85">{preview.practiceRead}</div>
+                      )}
                       {preview.warnings[0] && (
                         <div className="mt-0.5 text-[9px] leading-snug text-amber-100/85">{preview.warnings[0]}</div>
                       )}
@@ -4411,6 +4414,9 @@ export function GameBoard({
                       </span> {preview.summary}
                       {preview.forecast && (
                         <div className="mt-0.5 text-emerald-100/85">{preview.forecast}</div>
+                      )}
+                      {preview.practiceRead && (
+                        <div className="mt-0.5 text-sky-100/85">{preview.practiceRead}</div>
                       )}
                       {preview.warnings[0] && (
                         <div className="mt-0.5 text-amber-100/85">{preview.warnings[0]}</div>

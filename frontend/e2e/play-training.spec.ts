@@ -34,6 +34,8 @@ test('play page exposes practice progress and opens a scenario drill', async ({ 
   await scenarioLab.getByRole('button', { name: /Complex Combat/i }).click();
   await expect(page.getByText('Bookmark This Moment')).toBeVisible();
   await expect(page.getByLabel('Game actions').getByText('Complex Combat QA Pilot has')).toBeVisible();
+  await expect(page.getByText('Branch Preview').first()).toBeVisible();
+  await expect(page.getByText(/Practice read:/).first()).toBeVisible();
 
   await page.getByRole('button', { name: 'Bookmark This Moment' }).click();
   await page.getByRole('button', { name: 'Open game menu' }).click();

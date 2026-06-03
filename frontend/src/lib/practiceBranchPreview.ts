@@ -18,6 +18,7 @@ export interface PracticeBranchPreview {
   score?: number;
   summary: string;
   forecast?: string;
+  practiceRead?: string;
   warnings: string[];
   resultEngine?: SerializedGameStateV1;
 }
@@ -148,6 +149,47 @@ function branchForecast(
   return undefined;
 }
 
+function branchPracticeRead(input: {
+  label: string;
+  summary: string;
+  forecast?: string;
+  warnings: string[];
+  before: ReturnType<typeof visibleBoardSummary>;
+  after: ReturnType<typeof visibleBoardSummary>;
+  score?: number;
+}): string {
+  const text = `${input.label}\n${input.summary}\n${input.forecast || ''}\n${input.warnings.join('\n')}`.toLowerCase();
+  const boardDelta = input.after.battlefield - input.before.battlefield;
+  const handDelta = input.after.hand - input.before.hand;
+  const lifeDelta = input.after.life - input.before.life;
+  const scoreText = typeof input.score === 'number'
+    ? ` Current heuristic: ${input.score.toFixed(1)}.`
+    : '';
+
+  if (/tooth and nail|natural order|green sun|tutor|search/.test(text)) {
+    return `Practice read: compare the chosen target against the next two turns, not just immediate board size.${scoreText}`;
+  }
+  if (/dracogenesis|terror of the peaks|twinflame tyrant|dragonhawk|etb|trigger/.test(text)) {
+    return `Practice read: pause on trigger order, target selection, and whether holding priority changes lethal math.${scoreText}`;
+  }
+  if (/xenagos|attack|combat|anzrag|hellkite charger|savage ventmaw|block/.test(text)) {
+    return `Practice read: compare damage now, blockers left back, and mana after combat before accepting this branch.${scoreText}`;
+  }
+  if (input.after.stack > input.before.stack) {
+    return `Practice read: stack pressure increased; check opponent interaction windows before resolving.${scoreText}`;
+  }
+  if (boardDelta > 0 && handDelta < 0) {
+    return `Practice read: board +${boardDelta}, hand ${handDelta}. Confirm this develops the exact next-turn plan.${scoreText}`;
+  }
+  if (lifeDelta < 0) {
+    return `Practice read: life ${lifeDelta}. Make sure the resource spend buys tempo or a protected payoff.${scoreText}`;
+  }
+  if (input.summary.toLowerCase().includes('no visible count change')) {
+    return `Practice read: the visible counts did not move; inspect hidden value, prompt state, or future sequencing before trusting this line.${scoreText}`;
+  }
+  return `Practice read: replay this branch if the result is hard to evaluate from counts alone.${scoreText}`;
+}
+
 export function buildPracticeBranchPreviews(input: {
   serializedState?: SerializedGameStateV1 | null;
   playerId: string;
@@ -181,14 +223,18 @@ export function buildPracticeBranchPreviews(input: {
       const sourceCard = action.cardInstanceId ? branchState.cards.get(action.cardInstanceId) : undefined;
       const sourceName = sourceCard ? getCardDefinition(branchState, sourceCard).name : action.cardName;
       const label = action.label || sourceName || action.kind;
+      const score = scoreByKind.get(JSON.stringify(action._engineAction));
+      const forecast = response.ok ? branchForecast(state, afterState, input.playerId, label, summary) : undefined;
+      const warnings = previewWarnings(label, summary);
       return {
         actionId: actionPreviewId(action._engineAction, index),
         label,
         ok: response.ok,
-        score: scoreByKind.get(JSON.stringify(action._engineAction)),
+        score,
         summary,
-        forecast: response.ok ? branchForecast(state, afterState, input.playerId, label, summary) : undefined,
-        warnings: previewWarnings(label, summary),
+        forecast,
+        practiceRead: response.ok ? branchPracticeRead({ label, summary, forecast, warnings, before, after, score }) : undefined,
+        warnings,
         resultEngine: response.ok ? serializeGameState(afterState) : undefined,
       };
     });
