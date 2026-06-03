@@ -1441,6 +1441,16 @@ export function PlayPage() {
       .slice(0, compact ? 2 : 4);
     const latestDrill = recentDrills[0] || null;
     const bestAttempt = practiceHistory.bestAttempts[0] || null;
+    const latestAttempt = practiceHistory.recentAttempts[0] || null;
+    const attemptTrend = bestAttempt && latestAttempt
+      ? {
+          best: bestAttempt.score,
+          latest: latestAttempt.score,
+          delta: latestAttempt.score - bestAttempt.score,
+          latestLabel: latestAttempt.attempt.label,
+          bestLabel: bestAttempt.attempt.label,
+        }
+      : null;
     const xenagosFocused = practiceHistory.archetypes.some(([archetype]) => /xenagos|dragon/i.test(archetype))
       || practiceHistory.topFocusTags.some(([tag]) => /xenagos|combat|dragon|terror|tutor|dracogenesis/i.test(tag))
       || selectedPracticePresetId === 'xenagos-dragons';
@@ -1560,6 +1570,21 @@ export function PlayPage() {
             </div>
           )}
         </div>
+        {attemptTrend && (
+          <div className="mb-2 rounded border border-sky-500/20 bg-sky-950/20 px-3 py-2 text-xs text-sky-100">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="font-black uppercase tracking-wider text-sky-200">Attempt Trend</span>
+              <span className={`rounded px-2 py-0.5 text-[10px] font-black uppercase ${
+                attemptTrend.delta >= 0 ? 'bg-emerald-500/20 text-emerald-100' : 'bg-amber-500/20 text-amber-100'
+              }`}>
+                latest vs best {attemptTrend.delta >= 0 ? '+' : ''}{attemptTrend.delta.toFixed(1)}
+              </span>
+            </div>
+            <div className="mt-1 leading-5 text-sky-100/75">
+              Latest attempt "{attemptTrend.latestLabel}" scored {attemptTrend.latest.toFixed(1)}. Best visible attempt "{attemptTrend.bestLabel}" is {attemptTrend.best.toFixed(1)}.
+            </div>
+          </div>
+        )}
         {!saveSlotsReady && !compact && (
           <div className="flex min-h-[82px] items-center gap-3 rounded border border-emerald-500/20 bg-neutral-950/45 p-3 text-emerald-100/75">
             <Loader2 className="h-4 w-4 animate-spin text-emerald-200" />
