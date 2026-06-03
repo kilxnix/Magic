@@ -163,6 +163,34 @@ class TestFetchMTGGoldfish:
         assert len(result["cards"]) == 99
         assert "Quandrix, the Proof" not in result["cards"]
 
+    def test_deck_partner_commanders_are_removed_from_download_cards(self, monkeypatch):
+        class FakeResponse:
+            def __init__(self, text):
+                self.text = text
+
+            def raise_for_status(self):
+                return None
+
+        def fake_get(url, timeout):
+            if url == "https://www.mtggoldfish.com/deck/download/7767508":
+                return FakeResponse(
+                    "1 Dargo, the Shipwrecker 1 Tymna the Weaver 1 Sol Ring 1 Arcane Signet 97 Swamp"
+                )
+            if url == "https://www.mtggoldfish.com/deck/7767508":
+                return FakeResponse(
+                    "Archetype: <a href=\"/archetype/test\">Dargo, the Shipwrecker // Tymna the Weaver</a>"
+                )
+            raise AssertionError(f"unexpected URL: {url}")
+
+        monkeypatch.setattr(deck_url_parser.requests, "get", fake_get)
+
+        result = fetch_deck_from_url("https://www.mtggoldfish.com/deck/7767508#paper")
+
+        assert result["commander"] == "Dargo, the Shipwrecker // Tymna the Weaver"
+        assert "Dargo, the Shipwrecker" not in result["cards"]
+        assert "Tymna the Weaver" not in result["cards"]
+        assert "Sol Ring" in result["cards"]
+
     def test_flat_single_line_mtggoldfish_style(self):
         # MTGGoldfish exports are often a single line like:
         # "1 Sol Ring 1 Arcane Signet 10 Forest ..."

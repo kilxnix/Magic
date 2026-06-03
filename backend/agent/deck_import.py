@@ -264,6 +264,29 @@ def _effective_commander_color_identity(data: dict) -> List[str]:
     return colors
 
 
+def _remove_commanders_from_main_deck(parsed: dict, commander_names: List[str]) -> int:
+    """Remove commander cards that were also imported in the main deck.
+
+    URL sources can provide partner commanders in a commander field and still
+    leave those same physical cards in the exported card list. Commander deck
+    counts should count those cards once, in the command zone.
+    """
+    commander_keys = {name.strip().lower() for name in commander_names if name and name.strip()}
+    if not commander_keys:
+        return 0
+
+    removed = 0
+    for zone in ("cards", "lands"):
+        kept: List[str] = []
+        for name in parsed.get(zone, []):
+            if str(name).strip().lower() in commander_keys:
+                removed += 1
+                continue
+            kept.append(name)
+        parsed[zone] = kept
+    return removed
+
+
 def _resolve_card_name(name: str, card_db: dict) -> Tuple[Optional[str], Optional[str]]:
     """Try to find a card in the database, with fuzzy matching.
 
@@ -855,6 +878,14 @@ def validate_deck(parsed: dict, card_db: dict) -> dict:
             errors.append("No commander specified")
 
         commander_count = len(commander_names) if commander_names else 0
+        removed_commanders = _remove_commanders_from_main_deck(parsed, commander_names)
+        if removed_commanders:
+            cards = parsed.get("cards", [])
+            lands = parsed.get("lands", [])
+            warnings.append(
+                f"Removed {removed_commanders} commander card"
+                f"{'' if removed_commanders == 1 else 's'} from the main deck count"
+            )
         total = commander_count + len(cards) + len(lands)
         parsed["total"] = total
 
@@ -974,6 +1005,15 @@ def validate_deck(parsed: dict, card_db: dict) -> dict:
             resolved_lands.append(name)
     parsed["lands"] = resolved_lands
     lands = resolved_lands
+
+    removed_commanders = _remove_commanders_from_main_deck(parsed, parsed.get("commanders") or commander_names)
+    if removed_commanders:
+        warnings.append(
+            f"Removed {removed_commanders} commander card"
+            f"{'' if removed_commanders == 1 else 's'} from the main deck count"
+        )
+        cards = parsed.get("cards", [])
+        lands = parsed.get("lands", [])
 
     all_card_names = cards + lands
     for name in all_card_names:

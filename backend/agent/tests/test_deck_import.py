@@ -523,6 +523,25 @@ class TestValidateDeck:
         assert parsed["commanders"] == ["Ravos, Soultender", "Tana, the Bloodsower"]
         assert parsed["total"] == 100
 
+    def test_partner_commanders_duplicated_in_main_deck_are_not_counted_twice(self):
+        card_db = _mock_card_db()
+        parsed = {
+            "commander": "Ravos, Soultender // Tana, the Bloodsower",
+            "cards": ["Ravos, Soultender", "Tana, the Bloodsower"],
+            "lands": ["Swamp"] * 98,
+            "total": 102,
+            "errors": [],
+        }
+
+        result = validate_deck(parsed, card_db)
+
+        assert result["valid"]
+        assert parsed["commanders"] == ["Ravos, Soultender", "Tana, the Bloodsower"]
+        assert parsed["total"] == 100
+        assert "Ravos, Soultender" not in parsed["cards"]
+        assert "Tana, the Bloodsower" not in parsed["cards"]
+        assert not any("maximum is 100" in error for error in result["errors"])
+
     def test_clara_oswald_commander_choice_allows_any_color(self):
         card_db = _mock_card_db()
         parsed = {

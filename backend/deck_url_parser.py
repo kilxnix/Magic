@@ -82,6 +82,27 @@ def _extract_mtggoldfish_commander_from_html(html: str) -> Optional[str]:
     name = m.group(1).strip()
     return name or None
 
+
+def _remove_commander_hint_from_cards(cards: list[str], commander_hint: str) -> list[str]:
+    """Remove commander cards from MTGGoldfish exports using the page hint.
+
+    MTGGoldfish may expose partner commanders as "A // B" in the page metadata
+    while the text download still contains "A" and "B" among card rows.
+    """
+    hint = (commander_hint or "").strip()
+    if not hint:
+        return cards
+    lowered_cards = {card.lower() for card in cards}
+    exact_key = hint.lower()
+    if exact_key in lowered_cards:
+        return [card for card in cards if card.lower() != exact_key]
+    if " // " not in hint:
+        return cards
+    commander_parts = {part.strip().lower() for part in hint.split(" // ") if part.strip()}
+    if not commander_parts:
+        return cards
+    return [card for card in cards if card.lower() not in commander_parts]
+
 # ---------------------------------------------------------------------------
 # URL detection
 # ---------------------------------------------------------------------------
@@ -405,7 +426,7 @@ def fetch_mtggoldfish(deck_id: str) -> dict:
     if commander_hint and not parsed.get("commander"):
         cards = parsed.get("cards", [])
         parsed["commander"] = commander_hint
-        parsed["cards"] = [card for card in cards if card.lower() != commander_hint.lower()][:99]
+        parsed["cards"] = _remove_commander_hint_from_cards(cards, commander_hint)[:99]
     return parsed
 
 
