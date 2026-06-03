@@ -906,6 +906,147 @@ function CardTile({
   );
 }
 
+function CommandZoneStrip({
+  cards,
+  label,
+  testId,
+  tone,
+  getStatus,
+  onCardAction,
+  onInspect,
+  onHoverCard,
+}: {
+  cards: SimpleCard[];
+  label: string;
+  testId: string;
+  tone: 'human' | 'opponent';
+  getStatus: (card: SimpleCard) => { label: string; title?: string; active?: boolean; targetable?: boolean };
+  onCardAction: (card: SimpleCard) => void;
+  onInspect: (card: SimpleCard) => void;
+  onHoverCard?: (card: SimpleCard | null) => void;
+}) {
+  const isHuman = tone === 'human';
+  const headerClass = isHuman ? 'text-emerald-200' : 'text-red-200';
+  const borderClass = isHuman ? 'border-emerald-500/30 bg-emerald-950/20' : 'border-red-500/25 bg-red-950/15';
+  const cardBaseClass = isHuman
+    ? 'border-emerald-700/45 bg-neutral-950/75 hover:border-emerald-400/80'
+    : 'border-red-800/45 bg-neutral-950/75 hover:border-red-400/70';
+
+  return (
+    <section
+      data-testid={testId}
+      aria-label={label}
+      className={`mb-2 rounded-lg border px-2 py-1.5 ${borderClass}`}
+    >
+      <div className="mb-1.5 flex items-center justify-between gap-2">
+        <div className={`text-[10px] font-black uppercase tracking-[0.18em] ${headerClass}`}>
+          Command Zone
+        </div>
+        <div className="rounded border border-amber-500/30 bg-amber-950/35 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-amber-100">
+          {cards.length} {cards.length === 1 ? 'Commander' : 'Commanders'}
+        </div>
+      </div>
+      <div className="grid gap-1.5 sm:grid-cols-2">
+        {cards.map(card => {
+          const status = getStatus(card);
+          const keywordBadges = (card.keywords || []).filter(Boolean).slice(0, 3);
+          const isCreature = card.cardTypes.includes('creature');
+          return (
+            <div
+              key={card.instanceId}
+              data-testid="command-zone-card"
+              className={`group relative min-w-0 rounded-lg border transition-colors ${cardBaseClass}`}
+              onPointerEnter={() => onHoverCard?.(card)}
+              onPointerMove={() => onHoverCard?.(card)}
+              onPointerLeave={() => onHoverCard?.(null)}
+              onMouseEnter={() => onHoverCard?.(card)}
+              onMouseLeave={() => onHoverCard?.(null)}
+            >
+              <button
+                type="button"
+                onClick={() => onCardAction(card)}
+                title={status.title || `Inspect ${card.name}`}
+                className="flex min-h-[4.25rem] w-full min-w-0 items-center gap-2 rounded-lg px-2 py-1.5 text-left"
+              >
+                <div
+                  className={`h-14 w-10 shrink-0 overflow-hidden rounded border bg-stone-200 ${
+                    status.active
+                      ? 'border-green-400 ring-2 ring-green-400/35'
+                      : status.targetable
+                        ? 'border-sky-400 ring-2 ring-sky-400/35'
+                        : 'border-amber-600/45'
+                  }`}
+                >
+                  <CardImage cardName={card.name} size="small" showHoverZoom={false} className="h-full w-full" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-xs font-black leading-tight text-stone-100 md:text-sm">
+                    {card.name}
+                  </div>
+                  <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-1">
+                    {card.manaCost && (
+                      <span className="rounded border border-stone-700 bg-neutral-900 px-1.5 py-0.5 text-[9px] font-bold text-stone-300">
+                        {card.manaCost}
+                      </span>
+                    )}
+                    <span className="rounded border border-amber-600/35 bg-amber-950/35 px-1.5 py-0.5 text-[9px] font-black uppercase text-amber-100">
+                      CMD
+                    </span>
+                    {isCreature && card.power != null && card.toughness != null && (
+                      <span className="rounded border border-stone-700 bg-neutral-900 px-1.5 py-0.5 text-[9px] font-black text-stone-200">
+                        {card.power}/{card.toughness}
+                      </span>
+                    )}
+                    {keywordBadges.map(keyword => (
+                      <span
+                        key={keyword}
+                        className="rounded border border-sky-700/45 bg-sky-950/45 px-1.5 py-0.5 text-[8px] font-black uppercase text-sky-100"
+                      >
+                        {keyword}
+                      </span>
+                    ))}
+                  </div>
+                  <div className="mt-1 truncate text-[10px] font-semibold text-stone-400">
+                    {card.typeLine || 'Commander'}
+                  </div>
+                </div>
+                <div
+                  className={`hidden shrink-0 rounded border px-2 py-1 text-[9px] font-black uppercase tracking-wide sm:block ${
+                    status.active
+                      ? 'border-green-400/50 bg-green-950/50 text-green-100'
+                      : status.targetable
+                        ? 'border-sky-400/50 bg-sky-950/55 text-sky-100'
+                        : 'border-stone-700 bg-neutral-900 text-stone-300'
+                  }`}
+                >
+                  {status.label}
+                </div>
+              </button>
+              <button
+                type="button"
+                aria-label={`Inspect ${card.name}`}
+                title={`Inspect ${card.name}`}
+                onPointerDown={event => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  onInspect(card);
+                }}
+                onClick={event => {
+                  event.stopPropagation();
+                  onInspect(card);
+                }}
+                className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full border border-stone-500/70 bg-neutral-950/90 text-stone-300 transition-colors hover:border-amber-400 hover:text-amber-200"
+              >
+                <Search className="h-3 w-3" />
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 function ManaCostText({ manaCost }: { manaCost: string }) {
   const symbols = manaCost.match(/\{[^}]+\}/g) || [];
   if (symbols.length === 0) return null;
@@ -3898,25 +4039,25 @@ export function GameBoard({
 
         {/* AI command zone cards, including partners/backgrounds. */}
         {aiCommandZoneCards.length > 0 && (
-          <div className="flex gap-1.5 md:gap-2 mb-1 overflow-x-auto">
-            {aiCommandZoneCards.map(card => {
+          <CommandZoneStrip
+            cards={aiCommandZoneCards}
+            label={`${selectedOpponentLabel} command zone`}
+            testId="opponent-command-zone"
+            tone="opponent"
+            onHoverCard={handleCardHover}
+            onInspect={setInspectedCard}
+            getStatus={card => {
               const targetAction = getTargetAction(card);
-              return (
-                <CardTile
-                  key={card.instanceId}
-                  card={card}
-                  playable={false}
-                  targetable={!!targetAction}
-                  targetLabel={targetAction?.label}
-                  compact
-                  inspectable
-                  onHoverCard={handleCardHover}
-                  onClick={() => setInspectedCard(card)}
-                  onInspect={() => setInspectedCard(card)}
-                />
-              );
-            })}
-          </div>
+              return targetAction
+                ? { label: 'Target', title: targetAction.label, targetable: true }
+                : { label: 'Inspect', title: `Inspect ${card.name}` };
+            }}
+            onCardAction={card => {
+              const targetAction = getTargetAction(card);
+              if (targetAction) onAction(targetAction);
+              else setInspectedCard(card);
+            }}
+          />
         )}
 
         <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-stone-500">
@@ -4250,29 +4391,28 @@ export function GameBoard({
 
         {/* Human command zone cards, including partners/backgrounds. */}
         {humanCommandZoneCards.length > 0 && (
-          <div className="flex gap-1.5 md:gap-2 mb-2 overflow-x-auto">
-            {humanCommandZoneCards.map(card => {
+          <CommandZoneStrip
+            cards={humanCommandZoneCards}
+            label="Your command zone"
+            testId="human-command-zone"
+            tone="human"
+            onHoverCard={handleCardHover}
+            onInspect={setInspectedCard}
+            getStatus={card => {
               const targetAction = getTargetAction(card);
               const playable = playableIds.has(card.instanceId);
-              return (
-                <CardTile
-                  key={card.instanceId}
-                  card={card}
-                  playable={playable}
-                  targetable={!playable && !!targetAction}
-                  targetLabel={targetAction?.label}
-                  inspectable
-                  onHoverCard={handleCardHover}
-                  onClick={
-                    playable
-                      ? () => handleCardClick(card)
-                      : () => setInspectedCard(card)
-                  }
-                  onInspect={() => setInspectedCard(card)}
-                />
-              );
-            })}
-          </div>
+              if (playable) return { label: 'Cast', title: `Cast ${card.name}`, active: true };
+              if (targetAction) return { label: 'Target', title: targetAction.label, targetable: true };
+              return { label: 'Inspect', title: `Inspect ${card.name}` };
+            }}
+            onCardAction={card => {
+              const targetAction = getTargetAction(card);
+              const playable = playableIds.has(card.instanceId);
+              if (playable) handleCardClick(card);
+              else if (targetAction) onAction(targetAction);
+              else setInspectedCard(card);
+            }}
+          />
         )}
 
         {/* Human Battlefield */}

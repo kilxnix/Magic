@@ -48,18 +48,20 @@ test('MTGGoldfish partner commander deck starts and plays from the browser', asy
   await page.getByRole('button', { name: 'Start 1v1' }).click();
 
   await expect(page.getByText('You — Dargo, the Shipwrecker // Tymna the Weaver')).toBeVisible({ timeout: 45000 });
-  await expect(page.getByText('Dargo, the Shipwrecker').first()).toBeVisible();
-  await expect(page.getByText('Tymna the Weaver').first()).toBeVisible();
-  await expect(page.getByText('PARTNER').first()).toBeVisible();
-  await expect(page.getByText('CMD').nth(1)).toBeVisible();
+  const humanCommandZone = page.getByTestId('human-command-zone');
+  await expect(humanCommandZone).toBeVisible();
+  await expect(humanCommandZone.getByText('2 Commanders')).toBeVisible();
+  await expect(humanCommandZone.getByText('Dargo, the Shipwrecker')).toBeVisible();
+  await expect(humanCommandZone.getByText('Tymna the Weaver')).toBeVisible();
+  await expect(humanCommandZone.getByText('PARTNER').first()).toBeVisible();
 
   await page.getByRole('button', { name: 'Keep' }).click();
   const playableLand = page.getByRole('button', { name: /^Play / }).first();
   await expect(playableLand).toBeVisible({ timeout: 15000 });
   await playableLand.click();
   await expect(page.getByText('Lands', { exact: true }).first()).toBeVisible();
-  await expect(page.getByText('Dargo, the Shipwrecker').first()).toBeVisible();
-  await expect(page.getByText('Tymna the Weaver').first()).toBeVisible();
+  await expect(humanCommandZone.getByText('Dargo, the Shipwrecker')).toBeVisible();
+  await expect(humanCommandZone.getByText('Tymna the Weaver')).toBeVisible();
 
   const castHope = page.getByRole('button', { name: 'Cast Hope of Ghirapur' });
   if (await castHope.isVisible().catch(() => false)) {
@@ -71,7 +73,7 @@ test('MTGGoldfish partner commander deck starts and plays from the browser', asy
   if (await skipRest.isVisible().catch(() => false)) {
     await skipRest.click();
     await expect(page.getByText('You — Dargo, the Shipwrecker // Tymna the Weaver')).toBeVisible({ timeout: 30000 });
-    await expect(page.getByText('Dargo, the Shipwrecker').first()).toBeVisible();
-    await expect(page.getByText('Tymna the Weaver').first()).toBeVisible();
+    await expect(humanCommandZone.getByText('Dargo, the Shipwrecker')).toBeVisible();
+    await expect(humanCommandZone.getByText('Tymna the Weaver')).toBeVisible();
   }
 });
