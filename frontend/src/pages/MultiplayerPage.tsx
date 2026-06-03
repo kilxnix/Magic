@@ -2952,6 +2952,9 @@ export function MultiplayerPage() {
                                 <div className="text-xs font-semibold text-stone-400">
                                   {player.zones.command.cards?.map((card) => card.name).join(' / ') || 'Commander hidden'}
                                 </div>
+                                <div className="mt-1 inline-flex rounded bg-white/10 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-stone-300">
+                                  {player.zones.command.count} {player.zones.command.count === 1 ? 'commander' : 'commanders'}
+                                </div>
                               </div>
                               <div className="rounded bg-white/10 px-2 py-1 text-[10px] font-black uppercase text-stone-200">
                                 {player.hasPriority ? 'Priority' : player.isActive ? 'Active' : 'Waiting'}

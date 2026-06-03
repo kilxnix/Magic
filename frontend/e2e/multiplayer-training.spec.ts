@@ -9,6 +9,10 @@ function deckList(cardName: string) {
   return Array.from({ length: 99 }, () => `1x ${cardName}`).join('\n');
 }
 
+function partnerDeckList(cardName: string) {
+  return Array.from({ length: 98 }, () => `1x ${cardName}`).join('\n');
+}
+
 async function closeAlpha(page: Page) {
   const declineAds = page.getByRole('button', { name: 'Decline Ads' });
   if (await declineAds.isVisible().catch(() => false)) {
@@ -56,6 +60,10 @@ async function joinRoomThroughUi(page: Page, roomId: string, password: string, p
 }
 
 async function lockSeat(page: Page, input: { deckName: string; commander: string; list: string }) {
+  const expectedCards = input.list.split(/\r?\n/).filter(line => line.trim()).reduce((sum, line) => {
+    const match = line.trim().match(/^(\d+)\s*x?\s+/i);
+    return sum + (match ? Number(match[1]) : 1);
+  }, 0);
   await page.getByPlaceholder('Deck name').fill(input.deckName);
   await page.getByRole('textbox', { name: 'Commander', exact: true }).fill(input.commander);
   await page.locator('textarea[placeholder^="Paste a Commander decklist"]').fill(input.list);
@@ -65,7 +73,7 @@ async function lockSeat(page: Page, input: { deckName: string; commander: string
   }
   await page.getByRole('button', { name: 'Save Seat' }).click();
   await expect(page.getByText('Ready state saved.')).toBeVisible();
-  await expect(page.getByText('99 non-commander cards ready to lock.')).toBeVisible();
+  await expect(page.getByText(`${expectedCards} non-commander cards ready to lock.`)).toBeVisible();
 }
 
 async function clickUnique(page: Page, roleName: string) {
@@ -430,5 +438,57 @@ test('four-player engine beta starts with scoped views for a full pod', async ({
       await closeRoomForQa(baseURL, roomId, hostPlayerId).catch(() => {});
     }
     await Promise.all(contexts.map((context) => context.close()));
+  }
+});
+
+test('engine beta room supports partner commanders in scoped command zones', async ({ browser, baseURL }) => {
+  const hostContext = await browser.newContext();
+  const guestContext = await browser.newContext();
+  const host = await hostContext.newPage();
+  const guest = await guestContext.newPage();
+  let roomId = '';
+  let hostPlayerId = '';
+
+  try {
+    const created = await createRoomThroughUi(host);
+    roomId = created.roomId;
+    hostPlayerId = created.hostPlayerId;
+    await joinRoomThroughUi(guest, roomId, created.password, 'E2E Partner Guest');
+
+    await lockSeat(host, {
+      deckName: 'E2E Dargo Thrasios',
+      commander: 'Dargo, the Shipwrecker // Thrasios, Triton Hero',
+      list: partnerDeckList('Island'),
+    });
+    await lockSeat(guest, {
+      deckName: 'E2E Ravos Tana',
+      commander: 'Ravos, Soultender // Tana, the Bloodsower',
+      list: partnerDeckList('Swamp'),
+    });
+
+    await host.reload();
+    await expect(host.getByText('98 cards locked')).toHaveCount(2);
+    const engineButton = host.getByRole('button', { name: 'Start Engine Beta' });
+    await expect(engineButton).toBeEnabled();
+    await engineButton.click();
+
+    await expect(host.getByText('Mode: Engine Beta')).toBeVisible();
+    await expect(host.getByText('Dargo, the Shipwrecker / Thrasios, Triton Hero')).toBeVisible();
+    await expect(host.getByText('Ravos, Soultender / Tana, the Bloodsower')).toBeVisible();
+    await expect(host.getByText('2 commanders')).toHaveCount(2);
+    await expect(host.getByText('Waiting for authority snapshot')).not.toBeVisible();
+
+    await guest.reload();
+    await expect(guest.getByText('Mode: Engine Beta')).toBeVisible();
+    await expect(guest.getByText('Dargo, the Shipwrecker / Thrasios, Triton Hero')).toBeVisible();
+    await expect(guest.getByText('Ravos, Soultender / Tana, the Bloodsower')).toBeVisible();
+    await expect(guest.getByText('2 commanders')).toHaveCount(2);
+    await expect(guest.getByText('Waiting for authority snapshot')).not.toBeVisible();
+  } finally {
+    if (baseURL && roomId && hostPlayerId) {
+      await closeRoomForQa(baseURL, roomId, hostPlayerId).catch(() => {});
+    }
+    await hostContext.close();
+    await guestContext.close();
   }
 });

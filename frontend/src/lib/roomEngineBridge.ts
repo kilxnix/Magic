@@ -148,11 +148,22 @@ async function fetchCardLookup(names: string[]) {
   ]);
 }
 
+function roomCommanderLookupNames(commander: string | undefined): string[] {
+  const raw = (commander || '').trim();
+  if (!raw) return [];
+  if (!raw.includes(' // ')) return [raw];
+  const parts = raw.split(' // ').map(name => name.trim()).filter(Boolean);
+  return Array.from(new Set([raw, ...parts]));
+}
+
 export async function createRoomEngineState(payload: StartRealGamePayload): Promise<GameState> {
   if (payload.engineState) {
     return deserializeGameState(payload.engineState as Parameters<typeof deserializeGameState>[0]);
   }
-  const names = payload.players.flatMap(player => [player.deck.commander, ...player.deck.list]);
+  const names = payload.players.flatMap(player => [
+    ...roomCommanderLookupNames(player.deck.commander),
+    ...player.deck.list,
+  ]);
   const cardLookup = await fetchCardLookup(names);
   return initRoomGame({
     players: payload.players.map(player => ({
