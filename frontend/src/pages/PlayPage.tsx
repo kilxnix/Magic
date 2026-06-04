@@ -335,6 +335,7 @@ export function PlayPage() {
   const [activeSaveSlot, setActiveSaveSlot] = useState(1);
   const [savePanelOpen, setSavePanelOpen] = useState(false);
   const [showAllSaveSlots, setShowAllSaveSlots] = useState(false);
+  const [showPracticeTools, setShowPracticeTools] = useState(false);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [activeDrillRun, setActiveDrillRun] = useState<{
@@ -3342,7 +3343,7 @@ export function PlayPage() {
         </div>
       )}
 
-      <div className="mx-auto max-w-6xl">
+      <div className={`mx-auto ${showPracticeTools ? 'max-w-6xl' : 'max-w-3xl'}`}>
         {/* Header */}
         <div className="flex items-center gap-3 mb-8">
           <Link to="/" className="text-stone-400 hover:text-stone-200">
@@ -3351,7 +3352,7 @@ export function PlayPage() {
           <h1 className="text-2xl font-bold">Play Practice Game</h1>
         </div>
 
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start">
+        <div className={`grid gap-4 ${showPracticeTools ? 'lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start' : ''}`}>
           <div className="min-w-0 space-y-4">
 
         {/* Step 1: Import */}
@@ -3398,6 +3399,19 @@ export function PlayPage() {
             )}
           </div>
 
+          <div className="mb-4 flex justify-end">
+            <button
+              type="button"
+              onClick={() => setShowPracticeTools(value => !value)}
+              className="min-h-10 rounded-lg border border-stone-700 bg-stone-900 px-3 text-xs font-black text-stone-200 transition-colors hover:bg-stone-700"
+              aria-expanded={showPracticeTools}
+            >
+              {showPracticeTools ? 'Hide Practice Tools' : 'Practice Tools'}
+            </button>
+          </div>
+
+          {showPracticeTools && (
+            <>
           <div className="mb-4 grid gap-2 sm:grid-cols-2">
             <button
               type="button"
@@ -3571,6 +3585,8 @@ export function PlayPage() {
               ))}
             </div>
           </div>
+            </>
+          )}
 
           {/* History dropdown */}
           {showDeckHistory && (
@@ -3977,10 +3993,12 @@ export function PlayPage() {
         )}
           </div>
 
-          <aside className="space-y-3 lg:sticky lg:top-4">
-            {renderPracticeHistory(true)}
-            {renderSaveSlots(false)}
-          </aside>
+          {showPracticeTools && (
+            <aside className="space-y-3 lg:sticky lg:top-4">
+              {renderPracticeHistory(true)}
+              {renderSaveSlots(false)}
+            </aside>
+          )}
         </div>
       </div>
     </div>
