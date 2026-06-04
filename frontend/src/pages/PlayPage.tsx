@@ -334,6 +334,7 @@ export function PlayPage() {
   const [saveSlotsReady, setSaveSlotsReady] = useState(false);
   const [activeSaveSlot, setActiveSaveSlot] = useState(1);
   const [savePanelOpen, setSavePanelOpen] = useState(false);
+  const [showAllSaveSlots, setShowAllSaveSlots] = useState(false);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [activeDrillRun, setActiveDrillRun] = useState<{
@@ -1825,6 +1826,7 @@ export function PlayPage() {
 
   const renderScenarioLab = (embedded = false) => (
     <div
+      id="scenario-lab-section"
       data-testid={embedded ? 'scenario-lab-panel-embedded' : 'scenario-lab-panel'}
       className={embedded
         ? 'border-b border-amber-500/15 p-3'
@@ -1837,7 +1839,7 @@ export function PlayPage() {
             <Target className="h-3.5 w-3.5" />
             Scenario Lab
           </div>
-          <p className="mt-1 text-xs leading-5 text-emerald-100/70">
+          <p className={`${embedded ? 'mt-1 text-[11px] leading-4' : 'mt-1 text-xs leading-5'} text-emerald-100/70`}>
             Jump directly into exact hard spots without importing a deck or playing up to the position.
           </p>
         </div>
@@ -1847,36 +1849,62 @@ export function PlayPage() {
           </span>
         )}
       </div>
-      <div className="grid gap-2 sm:grid-cols-2">
+      <div className={`grid gap-2 ${embedded ? 'grid-cols-2' : 'sm:grid-cols-2'}`}>
         {TRAINING_SCENARIOS.map(scenario => (
           <button
             key={scenario.id}
             type="button"
             onClick={() => loadTrainingScenario(scenario.id)}
             disabled={isImporting}
-            className="min-h-[72px] rounded-lg border border-emerald-500/30 bg-neutral-950 px-3 py-2 text-left transition-colors hover:bg-emerald-950/20 disabled:cursor-not-allowed disabled:opacity-60"
+            className={`${embedded ? 'min-h-[44px] px-2 py-2' : 'min-h-[72px] px-3 py-2'} rounded-lg border border-emerald-500/30 bg-neutral-950 text-left transition-colors hover:bg-emerald-950/20 disabled:cursor-not-allowed disabled:opacity-60`}
           >
             <span className="flex flex-wrap items-center gap-1.5">
-              <span className="text-sm font-black text-emerald-100">{scenario.title}</span>
-              <span className="rounded border border-emerald-500/25 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider text-emerald-200">
+              <span className={`${embedded ? 'text-xs' : 'text-sm'} font-black text-emerald-100`}>{scenario.title}</span>
+              <span className={`${embedded ? 'hidden' : 'inline-flex'} rounded border border-emerald-500/25 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider text-emerald-200`}>
                 {scenario.focus}
               </span>
             </span>
-            <span className="mt-1 block text-[11px] leading-5 text-stone-400">{scenario.description}</span>
+            <span className={`${embedded ? 'sr-only' : 'text-[11px] leading-5'} mt-1 block text-stone-400`}>{scenario.description}</span>
           </button>
         ))}
       </div>
     </div>
   );
 
-  const renderSaveSlots = (compact = false) => (
-    <div className={`rounded-xl border border-stone-700 bg-stone-900/95 ${compact ? 'p-3' : 'p-4'} shadow-xl shadow-black/20`}>
-      <div className="mb-3 flex items-center justify-between gap-3">
+  const renderSaveSlots = (compact = false) => {
+    const saveSlotEntries = saveSlots.map((record, index) => ({ record, slot: index + 1 }));
+    const populatedSaveCount = saveSlotEntries.filter(({ record }) => record).length;
+    const visibleSaveSlotEntries = compact || showAllSaveSlots
+      ? saveSlotEntries
+      : saveSlotEntries
+          .filter(({ record, slot }) => Boolean(record) || slot === activeSaveSlot)
+          .slice(0, 2);
+    const showSaveDiagnostics = compact || showAllSaveSlots || step === 'game';
+
+    return (
+      <div className={`rounded-xl border border-stone-700 bg-stone-900/95 ${compact ? 'p-3' : 'p-4'} shadow-xl shadow-black/20`}>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <Database className="h-4 w-4 text-amber-300" />
-          <h2 className="text-sm font-black uppercase tracking-wider text-stone-200">Game Saves</h2>
+          <div>
+            <h2 className="text-sm font-black uppercase tracking-wider text-stone-200">Game Saves</h2>
+            {!compact && (
+              <p className="mt-0.5 text-[11px] leading-4 text-stone-500">
+                Slot {activeSaveSlot} autosaves. {populatedSaveCount} of {SAVE_SLOT_COUNT} slots have practice state.
+              </p>
+            )}
+          </div>
         </div>
         <div className="flex flex-wrap justify-end gap-2">
+          {!compact && (
+            <button
+              type="button"
+              onClick={() => setShowAllSaveSlots(value => !value)}
+              className="min-h-9 rounded border border-stone-700 px-3 text-xs font-black text-stone-200 hover:bg-stone-800"
+            >
+              {showAllSaveSlots ? 'Hide Details' : 'Show All'}
+            </button>
+          )}
           <label className="flex min-h-9 cursor-pointer items-center gap-1.5 rounded border border-sky-500/40 px-3 text-xs font-black text-sky-100 hover:bg-sky-950/40">
             <Upload className="h-3.5 w-3.5" />
             Import Drill
@@ -1907,9 +1935,8 @@ export function PlayPage() {
         </div>
       )}
       {compact && renderPracticeHistory(true)}
-      <div className="grid gap-2">
-        {saveSlots.map((record, index) => {
-          const slot = index + 1;
+      <div className={`grid gap-2 ${showAllSaveSlots && !compact ? 'xl:grid-cols-2' : ''}`}>
+        {visibleSaveSlotEntries.map(({ record, slot }) => {
           const active = activeSaveSlot === slot;
           const audit = record ? auditPlaySaveSnapshot(record.snapshot) : null;
           const canonicalAudit = record?.canonicalEngineSave ? auditCanonicalPlayEngineSave(record.canonicalEngineSave) : null;
@@ -1928,7 +1955,7 @@ export function PlayPage() {
           return (
             <div
               key={slot}
-              className={`rounded-lg border p-3 ${
+              className={`rounded-lg border ${showSaveDiagnostics ? 'p-3' : 'p-2.5'} ${
                 active ? 'border-amber-400 bg-amber-950/20' : 'border-stone-700 bg-stone-950/80'
               }`}
             >
@@ -1953,7 +1980,7 @@ export function PlayPage() {
                       {record.practice.focusTags.length > 0 ? ` - ${record.practice.focusTags.slice(0, 2).join(', ')}` : ''}
                     </span>
                   )}
-                  {(showLegacyReplayAudit || canonicalAudit || record?.canonicalManager) && (
+                  {showSaveDiagnostics && (showLegacyReplayAudit || canonicalAudit || record?.canonicalManager) && (
                     <span className="mt-1 flex flex-wrap gap-1">
                       {record?.canonicalManager && (
                         <span className={`inline-flex rounded border px-1.5 py-0.5 text-[11px] font-black uppercase tracking-wide ${
@@ -2007,7 +2034,7 @@ export function PlayPage() {
                       )}
                     </span>
                   )}
-                  {(canonicalAudit?.ok && canonicalAudit.fingerprint) || checkpointSequence !== null ? (
+                  {showSaveDiagnostics && ((canonicalAudit?.ok && canonicalAudit.fingerprint) || checkpointSequence !== null) ? (
                     <span className="mt-1 block text-[11px] text-stone-500">
                       {record?.canonicalManager?.fingerprint ? `Manager ${record.canonicalManager.fingerprint.slice(0, 10)}` : ''}
                       {record?.canonicalManager?.verifiedFingerprint ? ` / Verified ${record.canonicalManager.verifiedFingerprint.slice(0, 10)}` : ''}
@@ -2049,7 +2076,7 @@ export function PlayPage() {
                     Drill Latest
                   </button>
                 )}
-                {record?.drillBookmarks && record.drillBookmarks.length > 0 && (
+                {showSaveDiagnostics && record?.drillBookmarks && record.drillBookmarks.length > 0 && (
                   <div className="basis-full rounded-lg border border-fuchsia-500/25 bg-fuchsia-950/20 p-2">
                     <div className="mb-1 flex items-center justify-between gap-2">
                       <div className="text-[10px] font-black uppercase tracking-wider text-fuchsia-200">Drill Lab</div>
@@ -2186,7 +2213,8 @@ export function PlayPage() {
         })}
       </div>
     </div>
-  );
+    );
+  };
 
   const addToDeckHistory = (commander: string, text: string) => {
     setDeckHistory(prev => {
@@ -3314,7 +3342,7 @@ export function PlayPage() {
         </div>
       )}
 
-      <div className="max-w-2xl mx-auto">
+      <div className="mx-auto max-w-6xl">
         {/* Header */}
         <div className="flex items-center gap-3 mb-8">
           <Link to="/" className="text-stone-400 hover:text-stone-200">
@@ -3323,15 +3351,11 @@ export function PlayPage() {
           <h1 className="text-2xl font-bold">Play Practice Game</h1>
         </div>
 
-        <div className="mb-6">
-          {renderPracticeHistory(false)}
-          {renderSaveSlots(false)}
-        </div>
-
-        {renderScenarioLab(false)}
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start">
+          <div className="min-w-0 space-y-4">
 
         {/* Step 1: Import */}
-        <div className="bg-stone-800 rounded-xl border border-stone-700 p-6 mb-6">
+        <div className="bg-stone-800 rounded-xl border border-stone-700 p-4 sm:p-6">
           <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
             <ClipboardPaste className="w-5 h-5 text-amber-400" />
             Import Your Deck
@@ -3951,6 +3975,13 @@ export function PlayPage() {
             {error}
           </div>
         )}
+          </div>
+
+          <aside className="space-y-3 lg:sticky lg:top-4">
+            {renderPracticeHistory(true)}
+            {renderSaveSlots(false)}
+          </aside>
+        </div>
       </div>
     </div>
   );
