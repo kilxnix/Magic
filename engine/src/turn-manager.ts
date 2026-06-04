@@ -54,6 +54,18 @@ function nextMeaningfulStep(state: GameState): Step | null {
   return STEP_ORDER[currentIndex + 1];
 }
 
+function nextStepPriorityPlayerIndex(state: GameState, nextStep: Step): number {
+  if (nextStep !== 'declare_blockers' || !state.combat?.attackers.length) {
+    return state.activePlayerIndex;
+  }
+
+  const firstDefenderId = state.combat.attackers
+    .map(attack => attack.defendingPlayerId)
+    .find((defenderId, index, allDefenders) => allDefenders.indexOf(defenderId) === index);
+  const firstDefenderIndex = state.players.findIndex(player => player.id === firstDefenderId && !player.hasLost);
+  return firstDefenderIndex >= 0 ? firstDefenderIndex : state.activePlayerIndex;
+}
+
 export function advanceStep(state: GameState): GameState {
   state = pruneDamagePreventionEffects(state);
   state = pruneGameOutcomePreventionEffects(state);
@@ -79,7 +91,7 @@ export function advanceStep(state: GameState): GameState {
     phase: nextPhase,
     players: updatedPlayers,
     hasPriorityPassed: new Array(state.players.length).fill(false),
-    priorityPlayerIndex: state.activePlayerIndex,
+    priorityPlayerIndex: nextStepPriorityPlayerIndex(state, nextStep),
     combat: state.step === 'end_of_combat' ? null : state.combat,
   };
 

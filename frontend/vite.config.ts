@@ -1,4 +1,5 @@
-import { defineConfig, loadEnv, type PluginOption } from 'vite'
+import { defineConfig } from 'vitest/config'
+import { loadEnv, type PluginOption } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
@@ -85,6 +86,15 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins,
+    test: {
+      exclude: [
+        'node_modules/**',
+        'dist/**',
+        'e2e/**',
+        'test-results/**',
+        'playwright-report/**',
+      ],
+    },
     server: {
       host: "0.0.0.0",
       allowedHosts: true,

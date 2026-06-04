@@ -63,7 +63,6 @@ const DECKS = [
   {
     slug: 'storms-typhoon',
     url: 'https://archidekt.com/decks/10024261/storms_typhoon',
-    allowFill: true,
   },
   {
     slug: 'league-of-legendaries',
@@ -655,9 +654,9 @@ async function runEngineSweep(deck) {
       deckReport.ui = await runUiDeckPass(browser, deck, imported);
       deckReport.engine = await runEngineSweep(deck, imported);
       deckReport.ok = Boolean(
-        (ALLOW_FILLED_CERTIFICATION || deck.allowFill === true || deckReport.parsed.exactCommanderDeckCount === 100)
+        (ALLOW_FILLED_CERTIFICATION || deckReport.parsed.exactCommanderDeckCount === 100)
         && imported.valid
-        && (ALLOW_FILLED_CERTIFICATION || deck.allowFill === true || deckReport.imported.filledCards.length === 0)
+        && (ALLOW_FILLED_CERTIFICATION || deckReport.imported.filledCards.length === 0)
         && deckReport.ui.ok
         && deckReport.engine.ok,
       );

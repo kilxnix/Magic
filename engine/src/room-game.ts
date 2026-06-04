@@ -137,7 +137,7 @@ export interface PlayerScopedView {
   viewerId: string;
   turnNumber: number;
   phase: GameState['phase'];
-  step: GameState['step'];
+  step: GameState['step'] | 'main';
   activePlayerId: string;
   priorityPlayerId: string;
   stackSize: number;
@@ -640,6 +640,13 @@ function teachingNotes(state: GameState): string[] {
   return notes;
 }
 
+function visibleRoomStep(state: GameState): GameState['step'] | 'main' {
+  if (state.phase === 'precombat_main' || state.phase === 'postcombat_main') {
+    return 'main';
+  }
+  return state.step;
+}
+
 export function getPlayerView(state: GameState, viewerId: string): PlayerScopedView {
   if (!state.players.some(player => player.id === viewerId)) {
     throw new Error(`Viewer is not in game: ${viewerId}`);
@@ -671,7 +678,7 @@ export function getPlayerView(state: GameState, viewerId: string): PlayerScopedV
     viewerId,
     turnNumber: state.turnNumber,
     phase: state.phase,
-    step: state.step,
+    step: visibleRoomStep(state),
     activePlayerId: active.id,
     priorityPlayerId: priority.id,
     stackSize: state.stack.length,

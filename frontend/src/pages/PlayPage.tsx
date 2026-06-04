@@ -61,6 +61,11 @@ interface ImportedDeckEngineReadiness {
   filledCards: string[];
 }
 
+function missingCommanderDeckSlots(importResult: DeckImportResult | null): number {
+  if (!importResult) return 0;
+  return Math.max(0, 100 - (importResult.total || 0));
+}
+
 interface SpawnedOpponent {
   commander: string;
   deck_name?: string;
@@ -136,6 +141,24 @@ const TRAINING_SCENARIOS = [
     title: 'Fetch/Shock Land',
     focus: 'replacement choices',
     description: 'Practice fetchland activation and land-entry choices from a controlled board.',
+  },
+  {
+    id: 'library-manipulation',
+    title: 'Scry/Surveil',
+    focus: 'library choices',
+    description: 'Practice keeping cards on top, bottoming cards, and surveiling to the graveyard.',
+  },
+  {
+    id: 'modal-choice',
+    title: 'Modal Choices',
+    focus: 'mode selection',
+    description: 'Practice choose-one spell modes and make sure each mode targets the right card type.',
+  },
+  {
+    id: 'mulligan-selection',
+    title: 'Mulligan Selection',
+    focus: 'opening hand',
+    description: 'Practice selecting exactly which opening-hand cards to redraw before keeping.',
   },
   {
     id: 'equipment-d20',
@@ -368,6 +391,8 @@ export function PlayPage() {
       filledCards: importResult.filled_cards || [],
     };
   }, [importResult]);
+  const missingImportedDeckSlots = missingCommanderDeckSlots(importResult);
+  const importedDeckReadyForPractice = Boolean(importResult?.valid && missingImportedDeckSlots === 0);
 
   // Load saved deck data
   useEffect(() => {
@@ -2187,27 +2212,36 @@ export function PlayPage() {
         return;
       }
 
-      // Step 1: Fetch card list from URL
-      const parseRes = await fetch('/api/parse-deck-url', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: deckUrl }),
-      });
-      if (!parseRes.ok) {
-        const err = await parseRes.json().catch(() => ({}));
-        throw new Error(err.detail || `Failed to fetch deck (${parseRes.status})`);
-      }
-      const parsed = await parseRes.json();
+      let listText = localDeck?.format === 'commander' ? localDeck.deckText : '';
+      if (!listText) {
+        // Step 1: Fetch card list from URL
+        const parseRes = await fetch('/api/parse-deck-url', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: deckUrl }),
+        });
+        if (!parseRes.ok) {
+          const err = await parseRes.json().catch(() => ({}));
+          throw new Error(err.detail || `Failed to fetch deck (${parseRes.status})`);
+        }
+        const parsed = await parseRes.json();
 
-      // Step 2: Build decklist text and run through import-deck for validation
-      const lines: string[] = [];
-      if (parsed.commander) {
-        lines.push('Commander');
-        lines.push(`1 ${parsed.commander}`);
-        lines.push('Deck');
+        // Step 2: Build decklist text and run through import-deck for validation
+        const lines: string[] = [];
+        if (parsed.commander) {
+          lines.push('Commander');
+          const commanderNames = String(parsed.commander)
+            .split(' // ')
+            .map(name => name.trim())
+            .filter(Boolean);
+          for (const commanderName of commanderNames.length > 1 ? commanderNames : [parsed.commander]) {
+            lines.push(`1 ${commanderName}`);
+          }
+          lines.push('Deck');
+        }
+        for (const card of parsed.cards) lines.push(`1 ${card}`);
+        listText = lines.join('\n');
       }
-      for (const card of parsed.cards) lines.push(`1 ${card}`);
-      const listText = lines.join('\n');
 
       const importRes = await fetch(shelectorApiUrl('/import-deck'), {
         method: 'POST',
@@ -2508,6 +2542,12 @@ export function PlayPage() {
         ? scenarios.createTokenStackQaState()
         : scenarioId === 'land-entry-fetch'
         ? scenarios.createLandEntryFetchQaState()
+        : scenarioId === 'library-manipulation'
+        ? scenarios.createLibraryManipulationQaState()
+        : scenarioId === 'modal-choice'
+        ? scenarios.createModalChoiceQaState()
+        : scenarioId === 'mulligan-selection'
+        ? scenarios.createMulliganSelectionQaState()
         : scenarioId === 'equipment-d20'
         ? scenarios.createEquipmentD20QaState()
         : scenarios.createSisayActivationQaState();
@@ -2519,6 +2559,12 @@ export function PlayPage() {
         ? 'Goblin'
         : scenarioId === 'land-entry-fetch'
         ? 'Sisay, Weatherlight Captain'
+        : scenarioId === 'library-manipulation'
+        ? 'Talrand, Sky Summoner'
+        : scenarioId === 'modal-choice'
+        ? 'Krenko, Mob Boss'
+        : scenarioId === 'mulligan-selection'
+        ? 'Talrand, Sky Summoner'
         : scenarioId === 'equipment-d20'
         ? 'Goblin Morningstar'
         : 'Sisay, Weatherlight Captain';
@@ -2531,6 +2577,12 @@ export function PlayPage() {
               ? 'Token QA Opponent'
               : scenarioId === 'land-entry-fetch'
               ? 'Fetch QA Opponent'
+              : scenarioId === 'library-manipulation'
+              ? 'Library QA Opponent'
+              : scenarioId === 'modal-choice'
+              ? 'Modal QA Opponent'
+              : scenarioId === 'mulligan-selection'
+              ? 'Mulligan QA Opponent'
               : scenarioId === 'equipment-d20'
               ? 'Equipment QA Opponent'
               : 'QA Opponent',
@@ -2556,7 +2608,7 @@ export function PlayPage() {
         lastStateUpdate: null,
         currentPrompt: null,
         lastPlayedCard: null,
-        mulliganPhase: false,
+        mulliganPhase: scenarioId === 'mulligan-selection',
         mulliganCount: 0,
         mulliganBottomSelectionActive: false,
         selectedMulliganCardIds: [],
@@ -3680,6 +3732,18 @@ export function PlayPage() {
                   {importResult.warnings.map((w, i) => <div key={i}>{w}</div>)}
                 </div>
               )}
+              {importResult.valid && missingImportedDeckSlots > 0 && (
+                <div
+                  data-testid="import-count-gate"
+                  className="mt-3 rounded-lg border border-amber-600/50 bg-amber-950/35 p-3 text-xs text-amber-100"
+                >
+                  <div className="font-black uppercase tracking-[0.12em] text-amber-200">Deck not ready for Commander practice</div>
+                  <div className="mt-1">
+                    This import is missing {missingImportedDeckSlots} card{missingImportedDeckSlots === 1 ? '' : 's'}.
+                    Add the missing card{missingImportedDeckSlots === 1 ? '' : 's'} or enable Fill missing cards before choosing an opponent.
+                  </div>
+                </div>
+              )}
               {(importResult.filled_cards?.length || 0) > 0 && (
                 <div className="mt-2 rounded-lg border border-amber-700/50 bg-amber-950/30 p-3 text-xs text-amber-200">
                   <div className="font-semibold text-amber-100">
@@ -3698,10 +3762,11 @@ export function PlayPage() {
               {importResult.valid && (
                 <button
                   onClick={() => setStep('opponent')}
-                  className="mt-3 px-6 py-2.5 bg-green-600 hover:bg-green-500 rounded-lg font-medium transition-colors flex items-center gap-2"
+                  disabled={!importedDeckReadyForPractice}
+                  className="mt-3 px-6 py-2.5 bg-green-600 hover:bg-green-500 rounded-lg font-medium transition-colors flex items-center gap-2 disabled:cursor-not-allowed disabled:bg-stone-700 disabled:text-stone-400"
                 >
                   <Swords className="w-4 h-4" />
-                  Choose Opponent
+                  {importedDeckReadyForPractice ? 'Choose Opponent' : 'Complete Deck First'}
                 </button>
               )}
             </div>
@@ -3709,7 +3774,7 @@ export function PlayPage() {
         </div>
 
         {/* Step 2: Opponent Setup */}
-        {step === 'opponent' && importResult?.valid && (
+        {step === 'opponent' && importedDeckReadyForPractice && (
           <div className="bg-stone-800 rounded-xl border border-stone-700 p-6 mb-6">
             <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
               <Shield className="w-5 h-5 text-red-400" />

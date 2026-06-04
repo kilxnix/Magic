@@ -675,6 +675,7 @@ function CardTile({
   selected,
   selectedLabel,
   stackCount = 1,
+  testId,
 }: {
   card: SimpleCard;
   playable: boolean;
@@ -689,6 +690,7 @@ function CardTile({
   selected?: boolean;
   selectedLabel?: string;
   stackCount?: number;
+  testId?: string;
 }) {
   const isCreature = card.cardTypes.includes('creature');
   const isLand = card.cardTypes.includes('land');
@@ -720,6 +722,9 @@ function CardTile({
 
   return (
     <div
+      data-testid={testId}
+      data-card-name={card.name}
+      data-card-type={card.typeLine}
       className={`group relative shrink-0 ${w}`}
       onPointerEnter={() => onHoverCard?.(card)}
       onPointerMove={() => onHoverCard?.(card)}
@@ -3168,14 +3173,18 @@ export function GameBoard({
   };
   const activeOwnerName = playerNameForId(gameState.activePlayerId);
   const priorityOwnerName = playerNameForId(gameState.priorityPlayerId);
-  const actionWindowLabel = hasHumanDeclareBlockersDecision
+  const actionWindowLabel = discardPhase
+    ? 'Your Discard Choice'
+    : hasHumanDeclareBlockersDecision
     ? 'Your Blockers'
     : hasHumanDeclareAttackersDecision
     ? 'Your Attackers'
     : isHumanTurn
     ? 'Your Priority'
     : `${priorityOwnerName} Priority`;
-  const actionWindowOwnerLabel = hasHumanDeclareBlockersDecision
+  const actionWindowOwnerLabel = discardPhase
+    ? 'You discard'
+    : hasHumanDeclareBlockersDecision
     ? 'You block'
     : hasHumanDeclareAttackersDecision
     ? 'You attack'
@@ -4798,8 +4807,13 @@ export function GameBoard({
                 : 'Tap one or more cards in your hand to mark them for mulligan. Inspect stays on the small card button.'}
           </div>
         )}
+        {discardPhase && (
+          <div className="-mt-0.5 mb-1 rounded border border-red-500/20 bg-red-950/25 px-2 py-1 text-[10px] font-semibold leading-snug text-red-100/85">
+            Click {discardCount === 1 ? 'a card' : `${discardCount} cards`} in your hand to discard to maximum hand size before the turn can finish.
+          </div>
+        )}
 
-        <div className="-mx-1 flex gap-1.5 overflow-x-auto px-1 py-1 md:gap-2">
+        <div data-testid="human-hand-zone" className="-mx-1 flex gap-1.5 overflow-x-auto px-1 py-1 md:gap-2">
           {gameState.humanHand.length === 0 ? (
             <div className="text-stone-600 text-xs italic">
               Hand is empty
@@ -4814,9 +4828,10 @@ export function GameBoard({
                   <CardTile
                     key={card.instanceId}
                     card={card}
+                    testId="human-hand-card"
                     playable={discardPhase || mulliganSelectable || needsMulliganBottomSelection || (!mulliganPhase && playableIds.has(card.instanceId))}
-                    selected={selectedForBottom || selectedForMulligan}
-                    selectedLabel={selectedForBottom ? 'Bottom' : selectedForMulligan ? 'Mulligan' : undefined}
+                    selected={discardPhase || selectedForBottom || selectedForMulligan}
+                    selectedLabel={discardPhase ? 'Discard' : selectedForBottom ? 'Bottom' : selectedForMulligan ? 'Mulligan' : undefined}
                     compact
                     inspectable
                     onHoverCard={handleCardHover}

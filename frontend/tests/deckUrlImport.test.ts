@@ -33,4 +33,16 @@ describe('importDeckUrlLocally', () => {
     expect(result?.format).toBe('standard');
     expect(lookalike).toBeNull();
   });
+
+  it('loads the bundled Moxfield Dargo/Thrasios partner deck as Commander text', () => {
+    const result = importDeckUrlLocally('https://moxfield.com/decks/6PzAgSJtFUirDSqAxkRV6Q');
+
+    expect(result?.format).toBe('commander');
+    expect(result?.source).toBe('bundled-moxfield');
+    expect(result?.deckText).toContain('Commander\n1 Dargo, the Shipwrecker\n1 Thrasios, Triton Hero');
+    expect(result?.deckText.match(/^1 Scalding Tarn$/gm)).toHaveLength(2);
+
+    const lookalike = importDeckUrlLocally('https://example.com/?next=https://moxfield.com/decks/6PzAgSJtFUirDSqAxkRV6Q');
+    expect(lookalike).toBeNull();
+  });
 });

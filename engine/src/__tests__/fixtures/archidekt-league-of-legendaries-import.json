@@ -1,0 +1,1761 @@
+{
+  "parsed": {
+    "commander": "Sisay, Weatherlight Captain",
+    "cards": [
+      "Fynn, the Fangbearer",
+      "Brion Stoutarm",
+      "Najeela, the Blade-Blossom",
+      "Agatha's Soul Cauldron",
+      "Akroma's Memorial",
+      "Annie Joins Up",
+      "Assassin's Trophy",
+      "Beast Within",
+      "Blood Crypt",
+      "Boromir, Warden of the Tower",
+      "Case of the Shattered Pact",
+      "Command Tower",
+      "Counterspell",
+      "Cultivate",
+      "Damnation",
+      "Deflecting Swat",
+      "Dovin's Veto",
+      "Exotic Orchard",
+      "Farseek",
+      "Fellwar Stone",
+      "Fierce Guardianship",
+      "Flowering of the White Tree",
+      "Gisela, Blade of Goldnight",
+      "Godless Shrine",
+      "Hallowed Fountain",
+      "Hero's Blade",
+      "Heroic Intervention",
+      "Island",
+      "Island",
+      "Island",
+      "Jegantha, the Wellspring",
+      "Kodama's Reach",
+      "Kutzil, Malamet Exemplar",
+      "Lightning Greaves",
+      "Mahadi, Emporium Master",
+      "Marsh Flats",
+      "Massacre Girl",
+      "Mithril Coat",
+      "Mountain",
+      "Mountain",
+      "Nature's Lore",
+      "Negate",
+      "Obscuring Haze",
+      "Pact of Negation",
+      "Path to Exile",
+      "Plains",
+      "Plains",
+      "Prismatic Vista",
+      "Rampant Growth",
+      "Ratadrabik of Urborg",
+      "Rejuvenating Springs",
+      "Relic of Legends",
+      "Sacred Foundry",
+      "Saryth, the Viper's Fang",
+      "Satoru, the Infiltrator",
+      "Scalding Tarn",
+      "Silence",
+      "Smothering Tithe",
+      "Sol Ring",
+      "Spire Garden",
+      "Steam Vents",
+      "Stomping Ground",
+      "Supreme Verdict",
+      "Swamp",
+      "Swords to Plowshares",
+      "Teferi's Protection",
+      "Temple Garden",
+      "The Immortal Sun",
+      "Three Visits",
+      "Training Center",
+      "Undergrowth Stadium",
+      "Vandalblast",
+      "Vault of Champions",
+      "Verdant Catacombs",
+      "Vraska Joins Up",
+      "Watery Grave",
+      "Yoshimaru, Ever Faithful",
+      "Reflecting Pool",
+      "Seedborn Muse",
+      "Marchesa, the Black Rose",
+      "Baral, Chief of Compliance",
+      "Samut, Voice of Dissent",
+      "Rhystic Study",
+      "Jodah, the Unifier",
+      "Tam, Mindful First-Year",
+      "Arcane Signet",
+      "Raff Capashen, Ship's Mage",
+      "Enduring Vitality",
+      "Derevi, Empyrial Tactician",
+      "Bloom Tender",
+      "Leyline of the Guildpact",
+      "Growing Rites of Itlimoc // Itlimoc, Cradle of the Sun",
+      "Breeding Pool",
+      "Overgrown Tomb",
+      "Ertai Resurrected",
+      "Forest",
+      "Forest",
+      "Forest",
+      "Forest"
+    ],
+    "site": "archidekt",
+    "error": null
+  },
+  "imported": {
+    "commander": "Sisay, Weatherlight Captain",
+    "commander_data": {
+      "name": "Sisay, Weatherlight Captain",
+      "type_line": "Legendary Creature — Human Soldier",
+      "mana_cost": "{2}{W}",
+      "cmc": 3,
+      "oracle_text": "Sisay gets +1/+1 for each color among other legendary permanents you control.\n{W}{U}{B}{R}{G}: Search your library for a legendary permanent card with mana value less than Sisay's power, put that card onto the battlefield, then shuffle.",
+      "power": "2",
+      "toughness": "2",
+      "colors": [
+        "W"
+      ],
+      "color_identity": [
+        "B",
+        "G",
+        "R",
+        "U",
+        "W"
+      ],
+      "keywords": []
+    },
+    "cards": [
+      "Fynn, the Fangbearer",
+      "Brion Stoutarm",
+      "Najeela, the Blade-Blossom",
+      "Agatha's Soul Cauldron",
+      "Akroma's Memorial",
+      "Annie Joins Up",
+      "Assassin's Trophy",
+      "Beast Within",
+      "Boromir, Warden of the Tower",
+      "Case of the Shattered Pact",
+      "Counterspell",
+      "Cultivate",
+      "Damnation",
+      "Deflecting Swat",
+      "Dovin's Veto",
+      "Farseek",
+      "Fellwar Stone",
+      "Fierce Guardianship",
+      "Flowering of the White Tree",
+      "Gisela, Blade of Goldnight",
+      "Hero's Blade",
+      "Heroic Intervention",
+      "Jegantha, the Wellspring",
+      "Kodama's Reach",
+      "Kutzil, Malamet Exemplar",
+      "Lightning Greaves",
+      "Mahadi, Emporium Master",
+      "Massacre Girl",
+      "Mithril Coat",
+      "Nature's Lore",
+      "Negate",
+      "Obscuring Haze",
+      "Pact of Negation",
+      "Path to Exile",
+      "Rampant Growth",
+      "Ratadrabik of Urborg",
+      "Relic of Legends",
+      "Saryth, the Viper's Fang",
+      "Satoru, the Infiltrator",
+      "Silence",
+      "Smothering Tithe",
+      "Sol Ring",
+      "Supreme Verdict",
+      "Swords to Plowshares",
+      "Teferi's Protection",
+      "The Immortal Sun",
+      "Three Visits",
+      "Vandalblast",
+      "Vraska Joins Up",
+      "Yoshimaru, Ever Faithful",
+      "Seedborn Muse",
+      "Marchesa, the Black Rose",
+      "Baral, Chief of Compliance",
+      "Samut, Voice of Dissent",
+      "Rhystic Study",
+      "Jodah, the Unifier",
+      "Tam, Mindful First-Year",
+      "Arcane Signet",
+      "Raff Capashen, Ship's Mage",
+      "Enduring Vitality",
+      "Derevi, Empyrial Tactician",
+      "Bloom Tender",
+      "Leyline of the Guildpact",
+      "Ertai Resurrected"
+    ],
+    "lands": [
+      "Island",
+      "Island",
+      "Island",
+      "Mountain",
+      "Mountain",
+      "Plains",
+      "Plains",
+      "Swamp",
+      "Forest",
+      "Forest",
+      "Forest",
+      "Forest",
+      "Blood Crypt",
+      "Command Tower",
+      "Exotic Orchard",
+      "Godless Shrine",
+      "Hallowed Fountain",
+      "Marsh Flats",
+      "Prismatic Vista",
+      "Rejuvenating Springs",
+      "Sacred Foundry",
+      "Scalding Tarn",
+      "Spire Garden",
+      "Steam Vents",
+      "Stomping Ground",
+      "Temple Garden",
+      "Training Center",
+      "Undergrowth Stadium",
+      "Vault of Champions",
+      "Verdant Catacombs",
+      "Watery Grave",
+      "Reflecting Pool",
+      "Growing Rites of Itlimoc // Itlimoc, Cradle of the Sun",
+      "Breeding Pool",
+      "Overgrown Tomb"
+    ],
+    "sideboard": [],
+    "card_data": {
+      "Arcane Signet": {
+        "name": "Arcane Signet",
+        "type_line": "Artifact",
+        "mana_cost": "{2}",
+        "cmc": 2,
+        "oracle_text": "{T}: Add one mana of any color in your commander's color identity.",
+        "power": null,
+        "toughness": null,
+        "colors": [],
+        "color_identity": [],
+        "keywords": []
+      },
+      "Hallowed Fountain": {
+        "name": "Hallowed Fountain",
+        "type_line": "Land — Plains Island",
+        "mana_cost": "",
+        "cmc": 0,
+        "oracle_text": "({T}: Add {W} or {U}.)\nAs this land enters, you may pay 2 life. If you don't, it enters tapped.",
+        "power": null,
+        "toughness": null,
+        "colors": [],
+        "color_identity": [
+          "U",
+          "W"
+        ],
+        "keywords": []
+      },
+      "The Immortal Sun": {
+        "name": "The Immortal Sun",
+        "type_line": "Legendary Artifact",
+        "mana_cost": "{6}",
+        "cmc": 6,
+        "oracle_text": "Players can't activate planeswalkers' loyalty abilities.\nAt the beginning of your draw step, draw an additional card.\nSpells you cast cost {1} less to cast.\nCreatures you control get +1/+1.",
+        "power": null,
+        "toughness": null,
+        "colors": [],
+        "color_identity": [],
+        "keywords": []
+      },
+      "Teferi's Protection": {
+        "name": "Teferi's Protection",
+        "type_line": "Instant",
+        "mana_cost": "{2}{W}",
+        "cmc": 3,
+        "oracle_text": "Until your next turn, your life total can't change and you gain protection from everything. All permanents you control phase out. (While they're phased out, they're treated as though they don't exist. They phase in before you untap during your untap step.)\nExile Teferi's Protection.",
+        "power": null,
+        "toughness": null,
+        "colors": [
+          "W"
+        ],
+        "color_identity": [
+          "W"
+        ],
+        "keywords": []
+      },
+      "Sol Ring": {
+        "name": "Sol Ring",
+        "type_line": "Artifact",
+        "mana_cost": "{1}",
+        "cmc": 1,
+        "oracle_text": "{T}: Add {C}{C}.",
+        "power": null,
+        "toughness": null,
+        "colors": [],
+        "color_identity": [],
+        "keywords": []
+      },
+      "Kodama's Reach": {
+        "name": "Kodama's Reach",
+        "type_line": "Sorcery — Arcane",
+        "mana_cost": "{2}{G}",
+        "cmc": 3,
+        "oracle_text": "Search your library for up to two basic land cards, reveal those cards, put one onto the battlefield tapped and the other into your hand, then shuffle.",
+        "power": null,
+        "toughness": null,
+        "colors": [
+          "G"
+        ],
+        "color_identity": [
+          "G"
+        ],
+        "keywords": []
+      },
+      "Saryth, the Viper's Fang": {
+        "name": "Saryth, the Viper's Fang",
+        "type_line": "Legendary Creature — Human Warlock",
+        "mana_cost": "{2}{G}{G}",
+        "cmc": 4,
+        "oracle_text": "Other tapped creatures you control have deathtouch.\nOther untapped creatures you control have hexproof.\n{1}, {T}: Untap another target creature or land you control.",
+        "power": "3",
+        "toughness": "4",
+        "colors": [
+          "G"
+        ],
+        "color_identity": [
+          "G"
+        ],
+        "keywords": []
+      },
+      "Akroma's Memorial": {
+        "name": "Akroma's Memorial",
+        "type_line": "Legendary Artifact",
+        "mana_cost": "{7}",
+        "cmc": 7,
+        "oracle_text": "Creatures you control have flying, first strike, vigilance, trample, haste, and protection from black and from red.",
+        "power": null,
+        "toughness": null,
+        "colors": [],
+        "color_identity": [],
+        "keywords": []
+      },
+      "Scalding Tarn": {
+        "name": "Scalding Tarn",
+        "type_line": "Land",
+        "mana_cost": "",
+        "cmc": 0,
+        "oracle_text": "{T}, Pay 1 life, Sacrifice this land: Search your library for an Island or Mountain card, put it onto the battlefield, then shuffle.",
+        "power": null,
+        "toughness": null,
+        "colors": [],
+        "color_identity": [],
+        "keywords": []
+      },
+      "Spire Garden": {
+        "name": "Spire Garden",
+        "type_line": "Land",
+        "mana_cost": "",
+        "cmc": 0,
+        "oracle_text": "This land enters tapped unless you have two or more opponents.\n{T}: Add {R} or {G}.",
+        "power": null,
+        "toughness": null,
+        "colors": [],
+        "color_identity": [
+          "G",
+          "R"
+        ],
+        "keywords": []
+      },
+      "Gisela, Blade of Goldnight": {
+        "name": "Gisela, Blade of Goldnight",
+        "type_line": "Legendary Creature — Angel",
+        "mana_cost": "{4}{R}{W}{W}",
+        "cmc": 7,
+        "oracle_text": "Flying, first strike\nIf a source would deal damage to an opponent or a permanent an opponent controls, that source deals double that damage to that player or permanent instead.\nIf a source would deal damage to you or a permanent you control, prevent half that damage, rounded up.",
+        "power": "5",
+        "toughness": "5",
+        "colors": [
+          "R",
+          "W"
+        ],
+        "color_identity": [
+          "R",
+          "W"
+        ],
+        "keywords": [
+          "Flying",
+          "First strike"
+        ]
+      },
+      "Vault of Champions": {
+        "name": "Vault of Champions",
+        "type_line": "Land",
+        "mana_cost": "",
+        "cmc": 0,
+        "oracle_text": "This land enters tapped unless you have two or more opponents.\n{T}: Add {W} or {B}.",
+        "power": null,
+        "toughness": null,
+        "colors": [],
+        "color_identity": [
+          "B",
+          "W"
+        ],
+        "keywords": []
+      },
+      "Obscuring Haze": {
+        "name": "Obscuring Haze",
+        "type_line": "Instant",
+        "mana_cost": "{2}{G}",
+        "cmc": 3,
+        "oracle_text": "If you control a commander, you may cast this spell without paying its mana cost.\nPrevent all damage that would be dealt this turn by creatures your opponents control.",
+        "power": null,
+        "toughness": null,
+        "colors": [
+          "G"
+        ],
+        "color_identity": [
+          "G"
+        ],
+        "keywords": []
+      },
+      "Agatha's Soul Cauldron": {
+        "name": "Agatha's Soul Cauldron",
+        "type_line": "Legendary Artifact",
+        "mana_cost": "{2}",
+        "cmc": 2,
+        "oracle_text": "You may spend mana as though it were mana of any color to activate abilities of creatures you control.\nCreatures you control with +1/+1 counters on them have all activated abilities of all creature cards exiled with Agatha's Soul Cauldron.\n{T}: Exile target card from a graveyard. When a creature card is exiled this way, put a +1/+1 counter on target creature you control.",
+        "power": null,
+        "toughness": null,
+        "colors": [],
+        "color_identity": [],
+        "keywords": []
+      },
+      "Exotic Orchard": {
+        "name": "Exotic Orchard",
+        "type_line": "Land",
+        "mana_cost": "",
+        "cmc": 0,
+        "oracle_text": "{T}: Add one mana of any color that a land an opponent controls could produce.",
+        "power": null,
+        "toughness": null,
+        "colors": [],
+        "color_identity": [],
+        "keywords": []
+      },
+      "Relic of Legends": {
+        "name": "Relic of Legends",
+        "type_line": "Artifact",
+        "mana_cost": "{3}",
+        "cmc": 3,
+        "oracle_text": "{T}: Add one mana of any color.\nTap an untapped legendary creature you control: Add one mana of any color.",
+        "power": null,
+        "toughness": null,
+        "colors": [],
+        "color_identity": [],
+        "keywords": []
+      },
+      "Bloom Tender": {
+        "name": "Bloom Tender",
+        "type_line": "Creature — Elf Druid",
+        "mana_cost": "{1}{G}",
+        "cmc": 2,
+        "oracle_text": "Vivid — {T}: For each color among permanents you control, add one mana of that color.",
+        "power": "1",
+        "toughness": "1",
+        "colors": [
+          "G"
+        ],
+        "color_identity": [
+          "G"
+        ],
+        "keywords": [
+          "Vivid"
+        ]
+      },
+      "Growing Rites of Itlimoc // Itlimoc, Cradle of the Sun": {
+        "name": "Growing Rites of Itlimoc // Itlimoc, Cradle of the Sun",
+        "type_line": "Legendary Enchantment // Legendary Land",
+        "mana_cost": "{2}{G}",
+        "cmc": 3,
+        "oracle_text": "When Growing Rites of Itlimoc enters, look at the top four cards of your library. You may reveal a creature card from among them and put it into your hand. Put the rest on the bottom of your library in any order.\nAt the beginning of your end step, if you control four or more creatures, transform Growing Rites of Itlimoc.",
+        "power": null,
+        "toughness": null,
+        "colors": [
+          "G"
+        ],
+        "color_identity": [
+          "G"
+        ],
+        "keywords": [
+          "Transform"
+        ]
+      },
+      "Enduring Vitality": {
+        "name": "Enduring Vitality",
+        "type_line": "Enchantment Creature — Elk Glimmer",
+        "mana_cost": "{1}{G}{G}",
+        "cmc": 3,
+        "oracle_text": "Vigilance\nCreatures you control have \"{T}: Add one mana of any color.\"\nWhen Enduring Vitality dies, if it was a creature, return it to the battlefield under its owner's control. It's an enchantment. (It's not a creature.)",
+        "power": "3",
+        "toughness": "3",
+        "colors": [
+          "G"
+        ],
+        "color_identity": [
+          "G"
+        ],
+        "keywords": [
+          "Vigilance"
+        ]
+      },
+      "Case of the Shattered Pact": {
+        "name": "Case of the Shattered Pact",
+        "type_line": "Enchantment — Case",
+        "mana_cost": "{2}",
+        "cmc": 2,
+        "oracle_text": "When this Case enters, search your library for a basic land card, reveal it, put it into your hand, then shuffle.\nTo solve — There are five colors among permanents you control. (If unsolved, solve at the beginning of your end step.)\nSolved — At the beginning of combat on your turn, target creature you control gains flying, double strike, and vigilance until end of turn.",
+        "power": null,
+        "toughness": null,
+        "colors": [],
+        "color_identity": [],
+        "keywords": [
+          "Solved",
+          "Double strike"
+        ]
+      },
+      "Plains": {
+        "name": "Plains",
+        "type_line": "Basic Land — Plains",
+        "mana_cost": "",
+        "cmc": 0,
+        "oracle_text": "({T}: Add {W}.)",
+        "power": null,
+        "toughness": null,
+        "colors": [],
+        "color_identity": [
+          "W"
+        ],
+        "keywords": []
+      },
+      "Negate": {
+        "name": "Negate",
+        "type_line": "Instant",
+        "mana_cost": "{1}{U}",
+        "cmc": 2,
+        "oracle_text": "Counter target noncreature spell.",
+        "power": null,
+        "toughness": null,
+        "colors": [
+          "U"
+        ],
+        "color_identity": [
+          "U"
+        ],
+        "keywords": []
+      },
+      "Kutzil, Malamet Exemplar": {
+        "name": "Kutzil, Malamet Exemplar",
+        "type_line": "Legendary Creature — Cat Warrior",
+        "mana_cost": "{1}{G}{W}",
+        "cmc": 3,
+        "oracle_text": "Your opponents can't cast spells during your turn.\nWhenever one or more creatures you control each with power greater than its base power deals combat damage to a player, draw a card.",
+        "power": "3",
+        "toughness": "3",
+        "colors": [
+          "G",
+          "W"
+        ],
+        "color_identity": [
+          "G",
+          "W"
+        ],
+        "keywords": []
+      },
+      "Raff Capashen, Ship's Mage": {
+        "name": "Raff Capashen, Ship's Mage",
+        "type_line": "Legendary Creature — Human Wizard",
+        "mana_cost": "{2}{W}{U}",
+        "cmc": 4,
+        "oracle_text": "Flash\nFlying\nYou may cast historic spells as though they had flash. (Artifacts, legendaries, and Sagas are historic.)",
+        "power": "3",
+        "toughness": "3",
+        "colors": [
+          "U",
+          "W"
+        ],
+        "color_identity": [
+          "U",
+          "W"
+        ],
+        "keywords": [
+          "Flying",
+          "Flash"
+        ]
+      },
+      "Smothering Tithe": {
+        "name": "Smothering Tithe",
+        "type_line": "Enchantment",
+        "mana_cost": "{3}{W}",
+        "cmc": 4,
+        "oracle_text": "Whenever an opponent draws a card, that player may pay {2}. If the player doesn't, you create a Treasure token. (It's an artifact with \"{T}, Sacrifice this token: Add one mana of any color.\")",
+        "power": null,
+        "toughness": null,
+        "colors": [
+          "W"
+        ],
+        "color_identity": [
+          "W"
+        ],
+        "keywords": [
+          "Treasure"
+        ]
+      },
+      "Swords to Plowshares": {
+        "name": "Swords to Plowshares",
+        "type_line": "Instant",
+        "mana_cost": "{W}",
+        "cmc": 1,
+        "oracle_text": "Exile target creature. Its controller gains life equal to its power.",
+        "power": null,
+        "toughness": null,
+        "colors": [
+          "W"
+        ],
+        "color_identity": [
+          "W"
+        ],
+        "keywords": []
+      },
+      "Counterspell": {
+        "name": "Counterspell",
+        "type_line": "Instant",
+        "mana_cost": "{U}{U}",
+        "cmc": 2,
+        "oracle_text": "Counter target spell.",
+        "power": null,
+        "toughness": null,
+        "colors": [
+          "U"
+        ],
+        "color_identity": [
+          "U"
+        ],
+        "keywords": []
+      },
+      "Jodah, the Unifier": {
+        "name": "Jodah, the Unifier",
+        "type_line": "Legendary Creature — Human Wizard",
+        "mana_cost": "{W}{U}{B}{R}{G}",
+        "cmc": 5,
+        "oracle_text": "Legendary creatures you control get +X/+X, where X is the number of legendary creatures you control.\nWhenever you cast a legendary spell from your hand, exile cards from the top of your library until you exile a legendary nonland card with lesser mana value. You may cast that card without paying its mana cost. Put the rest on the bottom of your library in a random order.",
+        "power": "5",
+        "toughness": "5",
+        "colors": [
+          "B",
+          "G",
+          "R",
+          "U",
+          "W"
+        ],
+        "color_identity": [
+          "B",
+          "G",
+          "R",
+          "U",
+          "W"
+        ],
+        "keywords": []
+      },
+      "Tam, Mindful First-Year": {
+        "name": "Tam, Mindful First-Year",
+        "type_line": "Legendary Creature — Gorgon Wizard",
+        "mana_cost": "{1}{G/U}",
+        "cmc": 2,
+        "oracle_text": "Each other creature you control has hexproof from each of its colors.\n{T}: Target creature you control becomes all colors until end of turn.",
+        "power": "2",
+        "toughness": "2",
+        "colors": [
+          "G",
+          "U"
+        ],
+        "color_identity": [
+          "G",
+          "U"
+        ],
+        "keywords": []
+      },
+      "Farseek": {
+        "name": "Farseek",
+        "type_line": "Sorcery",
+        "mana_cost": "{1}{G}",
+        "cmc": 2,
+        "oracle_text": "Search your library for a Plains, Island, Swamp, or Mountain card, put it onto the battlefield tapped, then shuffle.",
+        "power": null,
+        "toughness": null,
+        "colors": [
+          "G"
+        ],
+        "color_identity": [
+          "G"
+        ],
+        "keywords": []
+      },
+      "Jegantha, the Wellspring": {
+        "name": "Jegantha, the Wellspring",
+        "type_line": "Legendary Creature — Elemental Elk",
+        "mana_cost": "{4}{R/G}",
+        "cmc": 5,
+        "oracle_text": "Companion — No card in your starting deck has more than one of the same mana symbol in its mana cost. (If this card is your chosen companion, you may put it into your hand from outside the game for {3} as a sorcery.)\n{T}: Add {W}{U}{B}{R}{G}. This mana can't be spent to pay generic mana costs.",
+        "power": "5",
+        "toughness": "5",
+        "colors": [
+          "G",
+          "R"
+        ],
+        "color_identity": [
+          "B",
+          "G",
+          "R",
+          "U",
+          "W"
+        ],
+        "keywords": [
+          "Companion"
+        ]
+      },
+      "Mithril Coat": {
+        "name": "Mithril Coat",
+        "type_line": "Legendary Artifact — Equipment",
+        "mana_cost": "{3}",
+        "cmc": 3,
+        "oracle_text": "Flash\nIndestructible\nWhen Mithril Coat enters, attach it to target legendary creature you control.\nEquipped creature has indestructible.\nEquip {3}",
+        "power": null,
+        "toughness": null,
+        "colors": [],
+        "color_identity": [],
+        "keywords": [
+          "Indestructible",
+          "Equip",
+          "Flash"
+        ]
+      },
+      "Fellwar Stone": {
+        "name": "Fellwar Stone",
+        "type_line": "Artifact",
+        "mana_cost": "{2}",
+        "cmc": 2,
+        "oracle_text": "{T}: Add one mana of any color that a land an opponent controls could produce.",
+        "power": null,
+        "toughness": null,
+        "colors": [],
+        "color_identity": [],
+        "keywords": []
+      },
+      "Beast Within": {
+        "name": "Beast Within",
+        "type_line": "Instant",
+        "mana_cost": "{2}{G}",
+        "cmc": 3,
+        "oracle_text": "Destroy target permanent. Its controller creates a 3/3 green Beast creature token.",
+        "power": null,
+        "toughness": null,
+        "colors": [
+          "G"
+        ],
+        "color_identity": [
+          "G"
+        ],
+        "keywords": []
+      },
+      "Seedborn Muse": {
+        "name": "Seedborn Muse",
+        "type_line": "Creature — Spirit",
+        "mana_cost": "{3}{G}{G}",
+        "cmc": 5,
+        "oracle_text": "Untap all permanents you control during each other player's untap step.",
+        "power": "2",
+        "toughness": "4",
+        "colors": [
+          "G"
+        ],
+        "color_identity": [
+          "G"
+        ],
+        "keywords": []
+      },
+      "Silence": {
+        "name": "Silence",
+        "type_line": "Instant",
+        "mana_cost": "{W}",
+        "cmc": 1,
+        "oracle_text": "Your opponents can't cast spells this turn.",
+        "power": null,
+        "toughness": null,
+        "colors": [
+          "W"
+        ],
+        "color_identity": [
+          "W"
+        ],
+        "keywords": []
+      },
+      "Annie Joins Up": {
+        "name": "Annie Joins Up",
+        "type_line": "Legendary Enchantment",
+        "mana_cost": "{1}{R}{G}{W}",
+        "cmc": 4,
+        "oracle_text": "When Annie Joins Up enters, it deals 5 damage to target creature or planeswalker an opponent controls.\nIf a triggered ability of a legendary creature you control triggers, that ability triggers an additional time.",
+        "power": null,
+        "toughness": null,
+        "colors": [
+          "G",
+          "R",
+          "W"
+        ],
+        "color_identity": [
+          "G",
+          "R",
+          "W"
+        ],
+        "keywords": []
+      },
+      "Fynn, the Fangbearer": {
+        "name": "Fynn, the Fangbearer",
+        "type_line": "Legendary Creature — Human Warrior",
+        "mana_cost": "{1}{G}",
+        "cmc": 2,
+        "oracle_text": "Deathtouch (Any amount of damage this deals to a creature is enough to destroy it.)\nWhenever a creature you control with deathtouch deals combat damage to a player, that player gets two poison counters. (A player with ten or more poison counters loses the game.)",
+        "power": "1",
+        "toughness": "3",
+        "colors": [
+          "G"
+        ],
+        "color_identity": [
+          "G"
+        ],
+        "keywords": [
+          "Deathtouch"
+        ]
+      },
+      "Najeela, the Blade-Blossom": {
+        "name": "Najeela, the Blade-Blossom",
+        "type_line": "Legendary Creature — Human Warrior",
+        "mana_cost": "{2}{R}",
+        "cmc": 3,
+        "oracle_text": "Whenever a Warrior attacks, you may have its controller create a 1/1 white Warrior creature token that's tapped and attacking.\n{W}{U}{B}{R}{G}: Untap all attacking creatures. They gain trample, lifelink, and haste until end of turn. After this phase, there is an additional combat phase. Activate only during combat.",
+        "power": "3",
+        "toughness": "2",
+        "colors": [
+          "R"
+        ],
+        "color_identity": [
+          "B",
+          "G",
+          "R",
+          "U",
+          "W"
+        ],
+        "keywords": []
+      },
+      "Pact of Negation": {
+        "name": "Pact of Negation",
+        "type_line": "Instant",
+        "mana_cost": "{0}",
+        "cmc": 0,
+        "oracle_text": "Counter target spell.\nAt the beginning of your next upkeep, pay {3}{U}{U}. If you don't, you lose the game.",
+        "power": null,
+        "toughness": null,
+        "colors": [
+          "U"
+        ],
+        "color_identity": [
+          "U"
+        ],
+        "keywords": []
+      },
+      "Ertai Resurrected": {
+        "name": "Ertai Resurrected",
+        "type_line": "Legendary Creature — Phyrexian Human Wizard",
+        "mana_cost": "{2}{U}{B}",
+        "cmc": 4,
+        "oracle_text": "Flash\nWhen Ertai Resurrected enters, choose up to one —\n• Counter target spell, activated ability, or triggered ability. Its controller draws a card.\n• Destroy another target creature or planeswalker. Its controller draws a card.",
+        "power": "3",
+        "toughness": "2",
+        "colors": [
+          "B",
+          "U"
+        ],
+        "color_identity": [
+          "B",
+          "U"
+        ],
+        "keywords": [
+          "Flash"
+        ]
+      },
+      "Blood Crypt": {
+        "name": "Blood Crypt",
+        "type_line": "Land — Swamp Mountain",
+        "mana_cost": "",
+        "cmc": 0,
+        "oracle_text": "({T}: Add {B} or {R}.)\nAs this land enters, you may pay 2 life. If you don't, it enters tapped.",
+        "power": null,
+        "toughness": null,
+        "colors": [],
+        "color_identity": [
+          "B",
+          "R"
+        ],
+        "keywords": []
+      },
+      "Rampant Growth": {
+        "name": "Rampant Growth",
+        "type_line": "Sorcery",
+        "mana_cost": "{1}{G}",
+        "cmc": 2,
+        "oracle_text": "Search your library for a basic land card, put that card onto the battlefield tapped, then shuffle.",
+        "power": null,
+        "toughness": null,
+        "colors": [
+          "G"
+        ],
+        "color_identity": [
+          "G"
+        ],
+        "keywords": []
+      },
+      "Undergrowth Stadium": {
+        "name": "Undergrowth Stadium",
+        "type_line": "Land",
+        "mana_cost": "",
+        "cmc": 0,
+        "oracle_text": "This land enters tapped unless you have two or more opponents.\n{T}: Add {B} or {G}.",
+        "power": null,
+        "toughness": null,
+        "colors": [],
+        "color_identity": [
+          "B",
+          "G"
+        ],
+        "keywords": []
+      },
+      "Damnation": {
+        "name": "Damnation",
+        "type_line": "Sorcery",
+        "mana_cost": "{2}{B}{B}",
+        "cmc": 4,
+        "oracle_text": "Destroy all creatures. They can't be regenerated.",
+        "power": null,
+        "toughness": null,
+        "colors": [
+          "B"
+        ],
+        "color_identity": [
+          "B"
+        ],
+        "keywords": []
+      },
+      "Forest": {
+        "name": "Forest",
+        "type_line": "Basic Land — Forest",
+        "mana_cost": "",
+        "cmc": 0,
+        "oracle_text": "({T}: Add {G}.)",
+        "power": null,
+        "toughness": null,
+        "colors": [],
+        "color_identity": [
+          "G"
+        ],
+        "keywords": []
+      },
+      "Hero's Blade": {
+        "name": "Hero's Blade",
+        "type_line": "Artifact — Equipment",
+        "mana_cost": "{2}",
+        "cmc": 2,
+        "oracle_text": "Equipped creature gets +3/+2.\nWhenever a legendary creature you control enters, you may attach this Equipment to it.\nEquip {4} ({4}: Attach to target creature you control. Equip only as a sorcery.)",
+        "power": null,
+        "toughness": null,
+        "colors": [],
+        "color_identity": [],
+        "keywords": [
+          "Equip"
+        ]
+      },
+      "Supreme Verdict": {
+        "name": "Supreme Verdict",
+        "type_line": "Sorcery",
+        "mana_cost": "{1}{W}{W}{U}",
+        "cmc": 4,
+        "oracle_text": "This spell can't be countered.\nDestroy all creatures.",
+        "power": null,
+        "toughness": null,
+        "colors": [
+          "U",
+          "W"
+        ],
+        "color_identity": [
+          "U",
+          "W"
+        ],
+        "keywords": []
+      },
+      "Heroic Intervention": {
+        "name": "Heroic Intervention",
+        "type_line": "Instant",
+        "mana_cost": "{1}{G}",
+        "cmc": 2,
+        "oracle_text": "Permanents you control gain hexproof and indestructible until end of turn.",
+        "power": null,
+        "toughness": null,
+        "colors": [
+          "G"
+        ],
+        "color_identity": [
+          "G"
+        ],
+        "keywords": []
+      },
+      "Cultivate": {
+        "name": "Cultivate",
+        "type_line": "Sorcery",
+        "mana_cost": "{2}{G}",
+        "cmc": 3,
+        "oracle_text": "Search your library for up to two basic land cards, reveal those cards, put one onto the battlefield tapped and the other into your hand, then shuffle.",
+        "power": null,
+        "toughness": null,
+        "colors": [
+          "G"
+        ],
+        "color_identity": [
+          "G"
+        ],
+        "keywords": []
+      },
+      "Breeding Pool": {
+        "name": "Breeding Pool",
+        "type_line": "Land — Forest Island",
+        "mana_cost": "",
+        "cmc": 0,
+        "oracle_text": "({T}: Add {G} or {U}.)\nAs this land enters, you may pay 2 life. If you don't, it enters tapped.",
+        "power": null,
+        "toughness": null,
+        "colors": [],
+        "color_identity": [
+          "G",
+          "U"
+        ],
+        "keywords": []
+      },
+      "Boromir, Warden of the Tower": {
+        "name": "Boromir, Warden of the Tower",
+        "type_line": "Legendary Creature — Human Soldier",
+        "mana_cost": "{2}{W}",
+        "cmc": 3,
+        "oracle_text": "Vigilance\nWhenever an opponent casts a spell, if no mana was spent to cast it, counter that spell.\nSacrifice Boromir: Creatures you control gain indestructible until end of turn. The Ring tempts you.",
+        "power": "3",
+        "toughness": "3",
+        "colors": [
+          "W"
+        ],
+        "color_identity": [
+          "W"
+        ],
+        "keywords": [
+          "Vigilance"
+        ]
+      },
+      "Prismatic Vista": {
+        "name": "Prismatic Vista",
+        "type_line": "Land",
+        "mana_cost": "",
+        "cmc": 0,
+        "oracle_text": "{T}, Pay 1 life, Sacrifice this land: Search your library for a basic land card, put it onto the battlefield, then shuffle.",
+        "power": null,
+        "toughness": null,
+        "colors": [],
+        "color_identity": [],
+        "keywords": []
+      },
+      "Baral, Chief of Compliance": {
+        "name": "Baral, Chief of Compliance",
+        "type_line": "Legendary Creature — Human Wizard",
+        "mana_cost": "{1}{U}",
+        "cmc": 2,
+        "oracle_text": "Instant and sorcery spells you cast cost {1} less to cast.\nWhenever a spell or ability you control counters a spell, you may draw a card. If you do, discard a card.",
+        "power": "1",
+        "toughness": "3",
+        "colors": [
+          "U"
+        ],
+        "color_identity": [
+          "U"
+        ],
+        "keywords": []
+      },
+      "Leyline of the Guildpact": {
+        "name": "Leyline of the Guildpact",
+        "type_line": "Enchantment",
+        "mana_cost": "{G/W}{G/U}{B/G}{R/G}",
+        "cmc": 4,
+        "oracle_text": "If this card is in your opening hand, you may begin the game with it on the battlefield.\nEach nonland permanent you control is all colors.\nLands you control are every basic land type in addition to their other types.",
+        "power": null,
+        "toughness": null,
+        "colors": [
+          "B",
+          "G",
+          "R",
+          "U",
+          "W"
+        ],
+        "color_identity": [
+          "B",
+          "G",
+          "R",
+          "U",
+          "W"
+        ],
+        "keywords": []
+      },
+      "Godless Shrine": {
+        "name": "Godless Shrine",
+        "type_line": "Land — Plains Swamp",
+        "mana_cost": "",
+        "cmc": 0,
+        "oracle_text": "({T}: Add {W} or {B}.)\nAs this land enters, you may pay 2 life. If you don't, it enters tapped.",
+        "power": null,
+        "toughness": null,
+        "colors": [],
+        "color_identity": [
+          "B",
+          "W"
+        ],
+        "keywords": []
+      },
+      "Brion Stoutarm": {
+        "name": "Brion Stoutarm",
+        "type_line": "Legendary Creature — Giant Warrior",
+        "mana_cost": "{2}{R}{W}",
+        "cmc": 4,
+        "oracle_text": "Lifelink\n{R}, {T}, Sacrifice another creature: Brion Stoutarm deals damage equal to the sacrificed creature's power to target player or planeswalker.",
+        "power": "4",
+        "toughness": "4",
+        "colors": [
+          "R",
+          "W"
+        ],
+        "color_identity": [
+          "R",
+          "W"
+        ],
+        "keywords": [
+          "Lifelink"
+        ]
+      },
+      "Marsh Flats": {
+        "name": "Marsh Flats",
+        "type_line": "Land",
+        "mana_cost": "",
+        "cmc": 0,
+        "oracle_text": "{T}, Pay 1 life, Sacrifice this land: Search your library for a Plains or Swamp card, put it onto the battlefield, then shuffle.",
+        "power": null,
+        "toughness": null,
+        "colors": [],
+        "color_identity": [],
+        "keywords": []
+      },
+      "Lightning Greaves": {
+        "name": "Lightning Greaves",
+        "type_line": "Artifact — Equipment",
+        "mana_cost": "{2}",
+        "cmc": 2,
+        "oracle_text": "Equipped creature has haste and shroud. (It can't be the target of spells or abilities.)\nEquip {0}",
+        "power": null,
+        "toughness": null,
+        "colors": [],
+        "color_identity": [],
+        "keywords": [
+          "Equip"
+        ]
+      },
+      "Path to Exile": {
+        "name": "Path to Exile",
+        "type_line": "Instant",
+        "mana_cost": "{W}",
+        "cmc": 1,
+        "oracle_text": "Exile target creature. Its controller may search their library for a basic land card, put that card onto the battlefield tapped, then shuffle.",
+        "power": null,
+        "toughness": null,
+        "colors": [
+          "W"
+        ],
+        "color_identity": [
+          "W"
+        ],
+        "keywords": []
+      },
+      "Mahadi, Emporium Master": {
+        "name": "Mahadi, Emporium Master",
+        "type_line": "Legendary Creature — Devil",
+        "mana_cost": "{1}{B}{R}",
+        "cmc": 3,
+        "oracle_text": "At the beginning of your end step, create a Treasure token for each creature that died this turn. (It's an artifact with \"{T}, Sacrifice this token: Add one mana of any color.\")",
+        "power": "3",
+        "toughness": "3",
+        "colors": [
+          "B",
+          "R"
+        ],
+        "color_identity": [
+          "B",
+          "R"
+        ],
+        "keywords": [
+          "Treasure"
+        ]
+      },
+      "Rhystic Study": {
+        "name": "Rhystic Study",
+        "type_line": "Enchantment",
+        "mana_cost": "{2}{U}",
+        "cmc": 3,
+        "oracle_text": "Whenever an opponent casts a spell, you may draw a card unless that player pays {1}.",
+        "power": null,
+        "toughness": null,
+        "colors": [
+          "U"
+        ],
+        "color_identity": [
+          "U"
+        ],
+        "keywords": []
+      },
+      "Vandalblast": {
+        "name": "Vandalblast",
+        "type_line": "Sorcery",
+        "mana_cost": "{R}",
+        "cmc": 1,
+        "oracle_text": "Destroy target artifact you don't control.\nOverload {4}{R} (You may cast this spell for its overload cost. If you do, change \"target\" in its text to \"each.\")",
+        "power": null,
+        "toughness": null,
+        "colors": [
+          "R"
+        ],
+        "color_identity": [
+          "R"
+        ],
+        "keywords": [
+          "Overload"
+        ]
+      },
+      "Satoru, the Infiltrator": {
+        "name": "Satoru, the Infiltrator",
+        "type_line": "Legendary Creature — Human Ninja Rogue",
+        "mana_cost": "{U}{B}",
+        "cmc": 2,
+        "oracle_text": "Menace\nWhenever Satoru and/or one or more other nontoken creatures you control enter, if none of them were cast or no mana was spent to cast them, draw a card.",
+        "power": "2",
+        "toughness": "3",
+        "colors": [
+          "B",
+          "U"
+        ],
+        "color_identity": [
+          "B",
+          "U"
+        ],
+        "keywords": [
+          "Menace"
+        ]
+      },
+      "Swamp": {
+        "name": "Swamp",
+        "type_line": "Basic Land — Swamp",
+        "mana_cost": "",
+        "cmc": 0,
+        "oracle_text": "({T}: Add {B}.)",
+        "power": null,
+        "toughness": null,
+        "colors": [],
+        "color_identity": [
+          "B"
+        ],
+        "keywords": []
+      },
+      "Sisay, Weatherlight Captain": {
+        "name": "Sisay, Weatherlight Captain",
+        "type_line": "Legendary Creature — Human Soldier",
+        "mana_cost": "{2}{W}",
+        "cmc": 3,
+        "oracle_text": "Sisay gets +1/+1 for each color among other legendary permanents you control.\n{W}{U}{B}{R}{G}: Search your library for a legendary permanent card with mana value less than Sisay's power, put that card onto the battlefield, then shuffle.",
+        "power": "2",
+        "toughness": "2",
+        "colors": [
+          "W"
+        ],
+        "color_identity": [
+          "B",
+          "G",
+          "R",
+          "U",
+          "W"
+        ],
+        "keywords": []
+      },
+      "Marchesa, the Black Rose": {
+        "name": "Marchesa, the Black Rose",
+        "type_line": "Legendary Creature — Human Wizard",
+        "mana_cost": "{1}{U}{B}{R}",
+        "cmc": 4,
+        "oracle_text": "Dethrone (Whenever this creature attacks the player with the most life or tied for most life, put a +1/+1 counter on it.)\nOther creatures you control have dethrone.\nWhenever a creature you control with a +1/+1 counter on it dies, return that card to the battlefield under your control at the beginning of the next end step.",
+        "power": "3",
+        "toughness": "3",
+        "colors": [
+          "B",
+          "R",
+          "U"
+        ],
+        "color_identity": [
+          "B",
+          "R",
+          "U"
+        ],
+        "keywords": [
+          "Dethrone"
+        ]
+      },
+      "Assassin's Trophy": {
+        "name": "Assassin's Trophy",
+        "type_line": "Instant",
+        "mana_cost": "{B}{G}",
+        "cmc": 2,
+        "oracle_text": "Destroy target permanent an opponent controls. Its controller may search their library for a basic land card, put it onto the battlefield, then shuffle.",
+        "power": null,
+        "toughness": null,
+        "colors": [
+          "B",
+          "G"
+        ],
+        "color_identity": [
+          "B",
+          "G"
+        ],
+        "keywords": []
+      },
+      "Nature's Lore": {
+        "name": "Nature's Lore",
+        "type_line": "Sorcery",
+        "mana_cost": "{1}{G}",
+        "cmc": 2,
+        "oracle_text": "Search your library for a Forest card, put that card onto the battlefield, then shuffle.",
+        "power": null,
+        "toughness": null,
+        "colors": [
+          "G"
+        ],
+        "color_identity": [
+          "G"
+        ],
+        "keywords": []
+      },
+      "Vraska Joins Up": {
+        "name": "Vraska Joins Up",
+        "type_line": "Legendary Enchantment",
+        "mana_cost": "{B}{G}",
+        "cmc": 2,
+        "oracle_text": "When Vraska Joins Up enters, put a deathtouch counter on each creature you control.\nWhenever a legendary creature you control deals combat damage to a player, draw a card.",
+        "power": null,
+        "toughness": null,
+        "colors": [
+          "B",
+          "G"
+        ],
+        "color_identity": [
+          "B",
+          "G"
+        ],
+        "keywords": []
+      },
+      "Steam Vents": {
+        "name": "Steam Vents",
+        "type_line": "Land — Island Mountain",
+        "mana_cost": "",
+        "cmc": 0,
+        "oracle_text": "({T}: Add {U} or {R}.)\nAs this land enters, you may pay 2 life. If you don't, it enters tapped.",
+        "power": null,
+        "toughness": null,
+        "colors": [],
+        "color_identity": [
+          "R",
+          "U"
+        ],
+        "keywords": []
+      },
+      "Dovin's Veto": {
+        "name": "Dovin's Veto",
+        "type_line": "Instant",
+        "mana_cost": "{W}{U}",
+        "cmc": 2,
+        "oracle_text": "This spell can't be countered.\nCounter target noncreature spell.",
+        "power": null,
+        "toughness": null,
+        "colors": [
+          "U",
+          "W"
+        ],
+        "color_identity": [
+          "U",
+          "W"
+        ],
+        "keywords": []
+      },
+      "Flowering of the White Tree": {
+        "name": "Flowering of the White Tree",
+        "type_line": "Legendary Enchantment",
+        "mana_cost": "{W}{W}",
+        "cmc": 2,
+        "oracle_text": "Legendary creatures you control get +2/+1 and have ward {1}.\nNonlegendary creatures you control get +1/+1.",
+        "power": null,
+        "toughness": null,
+        "colors": [
+          "W"
+        ],
+        "color_identity": [
+          "W"
+        ],
+        "keywords": []
+      },
+      "Yoshimaru, Ever Faithful": {
+        "name": "Yoshimaru, Ever Faithful",
+        "type_line": "Legendary Creature — Dog",
+        "mana_cost": "{W}",
+        "cmc": 1,
+        "oracle_text": "Whenever another legendary permanent you control enters, put a +1/+1 counter on Yoshimaru.\nPartner (You can have two commanders if both have partner.)",
+        "power": "1",
+        "toughness": "1",
+        "colors": [
+          "W"
+        ],
+        "color_identity": [
+          "W"
+        ],
+        "keywords": [
+          "Partner"
+        ]
+      },
+      "Ratadrabik of Urborg": {
+        "name": "Ratadrabik of Urborg",
+        "type_line": "Legendary Creature — Zombie Wizard",
+        "mana_cost": "{2}{W}{B}",
+        "cmc": 4,
+        "oracle_text": "Vigilance, ward {2}\nOther Zombies you control have vigilance.\nWhenever another legendary creature you control dies, create a token that's a copy of that creature, except it's not legendary and it's a 2/2 black Zombie in addition to its other colors and types.",
+        "power": "3",
+        "toughness": "3",
+        "colors": [
+          "B",
+          "W"
+        ],
+        "color_identity": [
+          "B",
+          "W"
+        ],
+        "keywords": [
+          "Vigilance",
+          "Ward"
+        ]
+      },
+      "Derevi, Empyrial Tactician": {
+        "name": "Derevi, Empyrial Tactician",
+        "type_line": "Legendary Creature — Bird Wizard",
+        "mana_cost": "{G}{W}{U}",
+        "cmc": 3,
+        "oracle_text": "Flying\nWhen Derevi enters and whenever a creature you control deals combat damage to a player, you may tap or untap target permanent.\n{1}{G}{W}{U}: Put Derevi onto the battlefield from the command zone.",
+        "power": "2",
+        "toughness": "3",
+        "colors": [
+          "G",
+          "U",
+          "W"
+        ],
+        "color_identity": [
+          "G",
+          "U",
+          "W"
+        ],
+        "keywords": [
+          "Flying"
+        ]
+      },
+      "Island": {
+        "name": "Island",
+        "type_line": "Basic Land — Island",
+        "mana_cost": "",
+        "cmc": 0,
+        "oracle_text": "({T}: Add {U}.)",
+        "power": null,
+        "toughness": null,
+        "colors": [],
+        "color_identity": [
+          "U"
+        ],
+        "keywords": []
+      },
+      "Overgrown Tomb": {
+        "name": "Overgrown Tomb",
+        "type_line": "Land — Swamp Forest",
+        "mana_cost": "",
+        "cmc": 0,
+        "oracle_text": "({T}: Add {B} or {G}.)\nAs this land enters, you may pay 2 life. If you don't, it enters tapped.",
+        "power": null,
+        "toughness": null,
+        "colors": [],
+        "color_identity": [
+          "B",
+          "G"
+        ],
+        "keywords": []
+      },
+      "Sacred Foundry": {
+        "name": "Sacred Foundry",
+        "type_line": "Land — Mountain Plains",
+        "mana_cost": "",
+        "cmc": 0,
+        "oracle_text": "({T}: Add {R} or {W}.)\nAs this land enters, you may pay 2 life. If you don't, it enters tapped.",
+        "power": null,
+        "toughness": null,
+        "colors": [],
+        "color_identity": [
+          "R",
+          "W"
+        ],
+        "keywords": []
+      },
+      "Rejuvenating Springs": {
+        "name": "Rejuvenating Springs",
+        "type_line": "Land",
+        "mana_cost": "",
+        "cmc": 0,
+        "oracle_text": "This land enters tapped unless you have two or more opponents.\n{T}: Add {G} or {U}.",
+        "power": null,
+        "toughness": null,
+        "colors": [],
+        "color_identity": [
+          "G",
+          "U"
+        ],
+        "keywords": []
+      },
+      "Fierce Guardianship": {
+        "name": "Fierce Guardianship",
+        "type_line": "Instant",
+        "mana_cost": "{2}{U}",
+        "cmc": 3,
+        "oracle_text": "If you control a commander, you may cast this spell without paying its mana cost.\nCounter target noncreature spell.",
+        "power": null,
+        "toughness": null,
+        "colors": [
+          "U"
+        ],
+        "color_identity": [
+          "U"
+        ],
+        "keywords": []
+      },
+      "Reflecting Pool": {
+        "name": "Reflecting Pool",
+        "type_line": "Land",
+        "mana_cost": "",
+        "cmc": 0,
+        "oracle_text": "{T}: Add one mana of any type that a land you control could produce.",
+        "power": null,
+        "toughness": null,
+        "colors": [],
+        "color_identity": [],
+        "keywords": []
+      },
+      "Mountain": {
+        "name": "Mountain",
+        "type_line": "Basic Land — Mountain",
+        "mana_cost": "",
+        "cmc": 0,
+        "oracle_text": "({T}: Add {R}.)",
+        "power": null,
+        "toughness": null,
+        "colors": [],
+        "color_identity": [
+          "R"
+        ],
+        "keywords": []
+      },
+      "Temple Garden": {
+        "name": "Temple Garden",
+        "type_line": "Land — Forest Plains",
+        "mana_cost": "",
+        "cmc": 0,
+        "oracle_text": "({T}: Add {G} or {W}.)\nAs this land enters, you may pay 2 life. If you don't, it enters tapped.",
+        "power": null,
+        "toughness": null,
+        "colors": [],
+        "color_identity": [
+          "G",
+          "W"
+        ],
+        "keywords": []
+      },
+      "Watery Grave": {
+        "name": "Watery Grave",
+        "type_line": "Land — Island Swamp",
+        "mana_cost": "",
+        "cmc": 0,
+        "oracle_text": "({T}: Add {U} or {B}.)\nAs this land enters, you may pay 2 life. If you don't, it enters tapped.",
+        "power": null,
+        "toughness": null,
+        "colors": [],
+        "color_identity": [
+          "B",
+          "U"
+        ],
+        "keywords": []
+      },
+      "Massacre Girl": {
+        "name": "Massacre Girl",
+        "type_line": "Legendary Creature — Human Assassin",
+        "mana_cost": "{3}{B}{B}",
+        "cmc": 5,
+        "oracle_text": "Menace\nWhen Massacre Girl enters, each other creature gets -1/-1 until end of turn. Whenever a creature dies this turn, each creature other than Massacre Girl gets -1/-1 until end of turn.",
+        "power": "4",
+        "toughness": "4",
+        "colors": [
+          "B"
+        ],
+        "color_identity": [
+          "B"
+        ],
+        "keywords": [
+          "Menace"
+        ]
+      },
+      "Deflecting Swat": {
+        "name": "Deflecting Swat",
+        "type_line": "Instant",
+        "mana_cost": "{2}{R}",
+        "cmc": 3,
+        "oracle_text": "If you control a commander, you may cast this spell without paying its mana cost.\nYou may choose new targets for target spell or ability.",
+        "power": null,
+        "toughness": null,
+        "colors": [
+          "R"
+        ],
+        "color_identity": [
+          "R"
+        ],
+        "keywords": []
+      },
+      "Stomping Ground": {
+        "name": "Stomping Ground",
+        "type_line": "Land — Mountain Forest",
+        "mana_cost": "",
+        "cmc": 0,
+        "oracle_text": "({T}: Add {R} or {G}.)\nAs this land enters, you may pay 2 life. If you don't, it enters tapped.",
+        "power": null,
+        "toughness": null,
+        "colors": [],
+        "color_identity": [
+          "G",
+          "R"
+        ],
+        "keywords": []
+      },
+      "Samut, Voice of Dissent": {
+        "name": "Samut, Voice of Dissent",
+        "type_line": "Legendary Creature — Human Warrior",
+        "mana_cost": "{3}{R}{G}",
+        "cmc": 5,
+        "oracle_text": "Flash\nDouble strike, vigilance, haste\nOther creatures you control have haste.\n{W}, {T}: Untap another target creature.",
+        "power": "3",
+        "toughness": "4",
+        "colors": [
+          "G",
+          "R"
+        ],
+        "color_identity": [
+          "G",
+          "R",
+          "W"
+        ],
+        "keywords": [
+          "Vigilance",
+          "Haste",
+          "Double strike",
+          "Flash"
+        ]
+      },
+      "Verdant Catacombs": {
+        "name": "Verdant Catacombs",
+        "type_line": "Land",
+        "mana_cost": "",
+        "cmc": 0,
+        "oracle_text": "{T}, Pay 1 life, Sacrifice this land: Search your library for a Swamp or Forest card, put it onto the battlefield, then shuffle.",
+        "power": null,
+        "toughness": null,
+        "colors": [],
+        "color_identity": [],
+        "keywords": []
+      },
+      "Training Center": {
+        "name": "Training Center",
+        "type_line": "Land",
+        "mana_cost": "",
+        "cmc": 0,
+        "oracle_text": "This land enters tapped unless you have two or more opponents.\n{T}: Add {U} or {R}.",
+        "power": null,
+        "toughness": null,
+        "colors": [],
+        "color_identity": [
+          "R",
+          "U"
+        ],
+        "keywords": []
+      },
+      "Command Tower": {
+        "name": "Command Tower",
+        "type_line": "Land",
+        "mana_cost": "",
+        "cmc": 0,
+        "oracle_text": "{T}: Add one mana of any color in your commander's color identity.",
+        "power": null,
+        "toughness": null,
+        "colors": [],
+        "color_identity": [],
+        "keywords": []
+      },
+      "Three Visits": {
+        "name": "Three Visits",
+        "type_line": "Sorcery",
+        "mana_cost": "{1}{G}",
+        "cmc": 2,
+        "oracle_text": "Search your library for a Forest card, put it onto the battlefield, then shuffle.",
+        "power": null,
+        "toughness": null,
+        "colors": [
+          "G"
+        ],
+        "color_identity": [
+          "G"
+        ],
+        "keywords": []
+      }
+    },
+    "total": 100,
+    "valid": true,
+    "errors": [],
+    "warnings": [],
+    "filled_cards": []
+  },
+  "decklistText": "Commander\n1 Sisay, Weatherlight Captain\nDeck\n1 Fynn, the Fangbearer\n1 Brion Stoutarm\n1 Najeela, the Blade-Blossom\n1 Agatha's Soul Cauldron\n1 Akroma's Memorial\n1 Annie Joins Up\n1 Assassin's Trophy\n1 Beast Within\n1 Blood Crypt\n1 Boromir, Warden of the Tower\n1 Case of the Shattered Pact\n1 Command Tower\n1 Counterspell\n1 Cultivate\n1 Damnation\n1 Deflecting Swat\n1 Dovin's Veto\n1 Exotic Orchard\n1 Farseek\n1 Fellwar Stone\n1 Fierce Guardianship\n1 Flowering of the White Tree\n1 Gisela, Blade of Goldnight\n1 Godless Shrine\n1 Hallowed Fountain\n1 Hero's Blade\n1 Heroic Intervention\n1 Island\n1 Island\n1 Island\n1 Jegantha, the Wellspring\n1 Kodama's Reach\n1 Kutzil, Malamet Exemplar\n1 Lightning Greaves\n1 Mahadi, Emporium Master\n1 Marsh Flats\n1 Massacre Girl\n1 Mithril Coat\n1 Mountain\n1 Mountain\n1 Nature's Lore\n1 Negate\n1 Obscuring Haze\n1 Pact of Negation\n1 Path to Exile\n1 Plains\n1 Plains\n1 Prismatic Vista\n1 Rampant Growth\n1 Ratadrabik of Urborg\n1 Rejuvenating Springs\n1 Relic of Legends\n1 Sacred Foundry\n1 Saryth, the Viper's Fang\n1 Satoru, the Infiltrator\n1 Scalding Tarn\n1 Silence\n1 Smothering Tithe\n1 Sol Ring\n1 Spire Garden\n1 Steam Vents\n1 Stomping Ground\n1 Supreme Verdict\n1 Swamp\n1 Swords to Plowshares\n1 Teferi's Protection\n1 Temple Garden\n1 The Immortal Sun\n1 Three Visits\n1 Training Center\n1 Undergrowth Stadium\n1 Vandalblast\n1 Vault of Champions\n1 Verdant Catacombs\n1 Vraska Joins Up\n1 Watery Grave\n1 Yoshimaru, Ever Faithful\n1 Reflecting Pool\n1 Seedborn Muse\n1 Marchesa, the Black Rose\n1 Baral, Chief of Compliance\n1 Samut, Voice of Dissent\n1 Rhystic Study\n1 Jodah, the Unifier\n1 Tam, Mindful First-Year\n1 Arcane Signet\n1 Raff Capashen, Ship's Mage\n1 Enduring Vitality\n1 Derevi, Empyrial Tactician\n1 Bloom Tender\n1 Leyline of the Guildpact\n1 Growing Rites of Itlimoc // Itlimoc, Cradle of the Sun\n1 Breeding Pool\n1 Overgrown Tomb\n1 Ertai Resurrected\n1 Forest\n1 Forest\n1 Forest\n1 Forest"
+}

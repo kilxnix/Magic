@@ -1,4 +1,5 @@
 import { readFileSync, writeFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { getLegalActions } from '../ai/legal-actions';
 import { createCardLookup, type GeneratedDeck, type ScryfallCard } from '../cards/deck-loader';
@@ -32,8 +33,8 @@ interface CardData {
   toughness?: string | null;
 }
 
-const RUN_PATH = process.env.ARCHIDEKT_IMPORT_JSON;
-const maybeDescribe = RUN_PATH ? describe : describe.skip;
+const DEFAULT_RUN_PATH = fileURLToPath(new URL('./fixtures/archidekt-league-of-legendaries-import.json', import.meta.url));
+const RUN_PATH = process.env.ARCHIDEKT_IMPORT_JSON || DEFAULT_RUN_PATH;
 
 function cardDataToScryfall(name: string, data: CardData): ScryfallCard {
   return {
@@ -182,9 +183,9 @@ function resolveStack(state: GameState): { state: GameState; resolved: string[] 
   return { state: current, resolved };
 }
 
-maybeDescribe('Archidekt deck certification', () => {
+describe('Archidekt deck certification', () => {
   it('casts, resolves, and exposes basic actions for each imported card', () => {
-    const raw = readFileSync(RUN_PATH!, 'utf8');
+    const raw = readFileSync(RUN_PATH, 'utf8');
     const payload = JSON.parse(raw) as ImportedDeckPayload;
     const imported = payload.imported;
     const allCards = Object.entries(imported.card_data).map(([name, data]) => cardDataToScryfall(name, data));

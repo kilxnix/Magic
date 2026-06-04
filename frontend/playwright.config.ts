@@ -5,6 +5,7 @@ const browserChannel = process.env.PLAYWRIGHT_CHANNEL || 'chrome';
 
 export default defineConfig({
   testDir: './e2e',
+  workers: Number(process.env.PLAYWRIGHT_WORKERS || 1),
   timeout: 180_000,
   expect: {
     timeout: 10_000,

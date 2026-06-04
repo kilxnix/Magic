@@ -147,6 +147,17 @@ describe('room engine games', () => {
     }
   });
 
+  it('shows main phase cleanly and advertises legal land plays in room views', () => {
+    const state = { ...roomGame(), phase: 'precombat_main' as const, step: 'begin_combat' as const };
+    const view = getPlayerView(state, 'p1');
+
+    expect(view.step).toBe('main');
+    expect(view.legalActions.find(action => action.action === 'Play Land')).toMatchObject({
+      enabled: true,
+      reason: 'Main phase, empty stack, land available.',
+    });
+  });
+
   it('does not advertise another land play after the turn land drop is used', () => {
     const state = { ...roomGame(), phase: 'precombat_main' as const };
     const land = getCardsInZone(state, 'p1', 'hand').find(card => card.definitionId === 'forest')!;

@@ -3841,8 +3841,8 @@ export function useShelectorGame() {
         // AI decision: pay if they have enough mana and it's worth it
         pays = totalMana >= taxInfo.taxAmount;
       } else {
-        // Human caster: for now, auto-decide based on available mana
-        // (TODO: prompt the human with a choice UI)
+        // Fallback for an unexpected non-AI, non-local caster in solo practice.
+        // The local human caster path above opens TaxPaymentModal.
         pays = totalMana >= taxInfo.taxAmount;
       }
 
@@ -5714,7 +5714,7 @@ export function useShelectorGame() {
       engineRef.current = result.state as GameStateWithAI;
       stepEffectsDoneRef.current.clear();
       setMulliganCount(newMulliganCount);
-      setMulliganBottomSelectionActive(false);
+      setMulliganBottomSelectionActive(true);
       setSelectedMulliganCardIds([]);
       setSelectedMulliganBottomIds([]);
       addMessage(

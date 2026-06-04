@@ -155,6 +155,34 @@ describe('Turn Manager', () => {
       expect(next.step).toBe('end_of_combat');
       expect(next.priorityPlayerIndex).toBe(next.activePlayerIndex);
     });
+
+    it('gives blocker priority to the first attacked defender in multiplayer combat', () => {
+      let state = initGameState(makeEmptyDecks(4));
+      state = {
+        ...state,
+        activePlayerIndex: 0,
+        priorityPlayerIndex: 0,
+        phase: 'combat',
+        step: 'declare_attackers',
+        combat: {
+          attackers: [
+            { cardInstanceId: 'attacker-a', defendingPlayerId: 'p2' },
+            { cardInstanceId: 'attacker-b', defendingPlayerId: 'p3' },
+          ],
+          blockers: [],
+          blockersDeclared: false,
+          blockersDeclaredBy: [],
+          damageAssignment: new Map(),
+        },
+      };
+
+      const next = advanceStep(state);
+
+      expect(next.phase).toBe('combat');
+      expect(next.step).toBe('declare_blockers');
+      expect(next.players[next.priorityPlayerIndex].id).toBe('p2');
+      expect(next.hasPriorityPassed.every(Boolean)).toBe(false);
+    });
   });
 
   describe('advanceToNextTurn', () => {

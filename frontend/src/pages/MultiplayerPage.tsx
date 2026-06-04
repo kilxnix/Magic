@@ -555,6 +555,10 @@ export function MultiplayerPage() {
   const largeEngineBoard = Boolean(scopedView?.complexity?.largeBoardMode);
   const availableAttackers = myBattlefieldCards.filter(canUseVisibleAttacker);
   const defenderOptions = scopedView?.players.filter((player) => player.id !== activeSession?.playerId) || [];
+  const canDeclareAttackers = Boolean(
+    activeSession &&
+    scopedView?.legalActions?.find((action) => action.action === 'Declare Attackers')?.enabled,
+  );
   const availableBlockers = myBattlefieldCards.filter((card) => isCreatureCard(card) && !card.tapped);
   const incomingCombatAssignments = scopedView?.combat?.assignments.filter((assignment) => (
     assignment.defenderName === myScopedPlayer?.name
@@ -562,6 +566,13 @@ export function MultiplayerPage() {
   const incomingAttackers = incomingCombatAssignments.map((assignment) => assignment.attacker);
   const selectedAttacker = availableAttackers.find((card) => card.instanceId === selectedAttackCardId) || availableAttackers[0];
   const selectedDefender = defenderOptions.find((player) => player.id === selectedDefenderPlayerId) || defenderOptions[0];
+  const multiDefenderAttackAssignments = availableAttackers
+    .slice(0, Math.min(availableAttackers.length, defenderOptions.length))
+    .map((card, index) => ({
+      cardInstanceId: card.instanceId,
+      defendingPlayerId: defenderOptions[index].id,
+    }));
+  const canAttackMultipleDefenders = canDeclareAttackers && multiDefenderAttackAssignments.length >= 2;
   const selectedBlocker = availableBlockers.find((card) => card.instanceId === selectedBlockerCardId) || availableBlockers[0];
   const selectedBlockedAttacker = incomingAttackers.find((attacker) => attacker.id === selectedBlockedAttackerId) || incomingAttackers[0];
   const engineActivePlayer = scopedView?.players.find((player) => player.id === scopedView.activePlayerId);
@@ -593,10 +604,6 @@ export function MultiplayerPage() {
     }
     return Array.from(new Set(help)).slice(0, 6);
   }, [room?.real_game, scopedView, activeSession, activeSpectator, enginePriorityPlayer?.name, firstLandInHand, canPlayFirstLand, firstManaSource, playLandActionHint]);
-  const canDeclareAttackers = Boolean(
-    activeSession &&
-    scopedView?.legalActions?.find((action) => action.action === 'Declare Attackers')?.enabled,
-  );
   const canDeclareBlockers = Boolean(
     activeSession &&
     scopedView?.legalActions?.find((action) => action.action === 'Declare Blockers')?.enabled,
@@ -679,9 +686,23 @@ export function MultiplayerPage() {
   }, [replaySearch, room?.game?.status]);
 
   useEffect(() => {
-    const targetRoomId = roomId || session?.roomId;
-    if (!targetRoomId) return;
-    refreshRoom(targetRoomId).catch((err) => setError(err.message));
+    if (!roomId) {
+      setRoom(null);
+      setSelectedRoomId('');
+      setError('');
+      return;
+    }
+    refreshRoom(roomId).catch((err) => {
+      setError(err.message);
+      if (session?.roomId === roomId) {
+        saveSession(null);
+        setSession(null);
+      }
+      if (spectatorSession?.roomId === roomId) {
+        saveSpectatorSession(null);
+        setSpectatorSession(null);
+      }
+    });
   }, [roomId]);
 
   useEffect(() => {
@@ -789,7 +810,9 @@ export function MultiplayerPage() {
       if (!room?.id || !activeSession) return;
       try {
         const view = await getRealGameView(room.id, activeSession.playerId);
-        if (!cancelled) setRealGameView(view);
+        if (!cancelled) {
+          setRealGameView((previous) => (view.view ? view : previous ?? view));
+        }
       } catch {
         // The room poll handles user-visible errors; view polling should stay quiet.
       }
@@ -812,7 +835,9 @@ export function MultiplayerPage() {
       if (!room?.id || !activeSpectator) return;
       try {
         const view = await getRealGameSpectatorView(room.id, activeSpectator.spectatorId);
-        if (!cancelled) setSpectatorRealGameView(view);
+        if (!cancelled) {
+          setSpectatorRealGameView((previous) => (view.view ? view : previous ?? view));
+        }
       } catch {
         // Room polling and explicit spectator actions surface errors.
       }
@@ -833,12 +858,15 @@ export function MultiplayerPage() {
       realActionUnlockTimerRef.current = null;
       return;
     }
-    if ((room.real_game.revision || 0) > realActionSubmittedRevisionRef.current) {
+    const latestObservedRevision = activeSpectator
+      ? spectatorRealGameView?.revision || 0
+      : realGameView?.revision || 0;
+    if (latestObservedRevision > realActionSubmittedRevisionRef.current) {
       setRealActionPending(false);
       if (realActionUnlockTimerRef.current) window.clearTimeout(realActionUnlockTimerRef.current);
       realActionUnlockTimerRef.current = null;
     }
-  }, [realActionPending, room?.real_game?.revision, room?.real_game]);
+  }, [realActionPending, room?.real_game, activeSpectator, realGameView?.revision, spectatorRealGameView?.revision]);
 
   useEffect(() => {
     if (!room?.real_game || !activeSession || !isAuthority) return;
@@ -1258,16 +1286,30 @@ export function MultiplayerPage() {
     const publisherSession = activeSessionRef.current;
     if (!state || !publisherSession) return;
     engineRevisionRef.current = Math.max(engineRevisionRef.current, roomRef.current?.real_game?.revision || 0) + 1;
+    const nextViews = createRoomScopedViews(state);
     const nextRoom = await publishRealGameSnapshot(roomIdToPublish, {
       player_id: publisherSession.playerId,
       revision: engineRevisionRef.current,
-      views: createRoomScopedViews(state),
+      views: nextViews,
       engine_state: serializeGameState(state),
       completed_action_ids: completedActionIds,
       rejected_actions: rejectedActions,
       events,
     });
     setRoom(nextRoom);
+    const ownView = nextViews[publisherSession.playerId];
+    if (ownView && nextRoom.real_game) {
+      setRealGameView({
+        status: nextRoom.real_game.status,
+        revision: nextRoom.real_game.revision,
+        authority_player_id: nextRoom.real_game.authority_player_id,
+        authority_player_name: nextRoom.real_game.authority_player_name,
+        authority_last_seen_at: nextRoom.real_game.authority_last_seen_at,
+        pending_action_count: nextRoom.real_game.pending_action_count,
+        log: nextRoom.real_game.log,
+        view: ownView,
+      });
+    }
   }
 
   async function onSubmitRealAction(action: RealGameAction) {
@@ -3258,6 +3300,17 @@ export function MultiplayerPage() {
                             className="min-h-[42px] rounded-lg bg-red-300 px-3 text-sm font-black text-stone-950 hover:bg-red-200 disabled:cursor-not-allowed disabled:opacity-40"
                           >
                             Attack First Creature
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => onSubmitRealAction({
+                              kind: 'declare_attackers',
+                              payload: { attackers: multiDefenderAttackAssignments },
+                            })}
+                            disabled={realActionBusy || !canAttackMultipleDefenders}
+                            className="min-h-[42px] rounded-lg bg-red-200 px-3 text-sm font-black text-stone-950 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            Attack Multiple Defenders
                           </button>
                           <button
                             type="button"
