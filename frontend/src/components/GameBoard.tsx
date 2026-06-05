@@ -2784,6 +2784,7 @@ export function GameBoard({
   const [showPlayerCounters, setShowPlayerCounters] = useState(false);
   const [showPhaseCorrection, setShowPhaseCorrection] = useState(false);
   const [attachSourceCardId, setAttachSourceCardId] = useState<string | null>(null);
+  const activeGameCoachingEnabled = false;
 
   const handleCardHover = (card: SimpleCard | null) => {
     setHoveredCard(card);
@@ -2911,7 +2912,7 @@ export function GameBoard({
     manaActions.length > 0 || otherCardActions.length > 0 || canUndo
   );
   const hasAnyAction = hasTopActions || hasPhaseMovement;
-  const guideSuggestion = newPlayerMode && hasAnyAction
+  const guideSuggestion = activeGameCoachingEnabled && newPlayerMode && hasAnyAction
     ? getNewPlayerSuggestion(gameState, legalActions)
     : null;
   const visibleActionCount = castActions.length
@@ -2937,15 +2938,17 @@ export function GameBoard({
     lastStateUpdate,
   });
   const complexDecisionCount = Math.max(1, complexTurnSignals.length + branchPreviews.length + (currentPrompt ? 1 : 0));
-  const shouldShowComplexTurnOverview = !gameState.gameOver && !mulliganPhase && (
+  const shouldShowComplexTurnOverview = activeGameCoachingEnabled && !gameState.gameOver && !mulliganPhase && (
     complexTurnSignals.length > 0 || branchPreviews.length > 0 || currentPrompt || activeDrillLabel
   );
-  const hasDecisionMapContent = complexTurnSignals.length > 0
+  const hasDecisionMapContent = activeGameCoachingEnabled && (
+    complexTurnSignals.length > 0
     || practiceFocusTags.length > 0
     || branchPreviews.length > 0
-    || !!activeDrillLabel;
+    || !!activeDrillLabel
+  );
   const smartBookmarkReason = (() => {
-    if (!onBookmarkDrill || gameState.gameOver) return '';
+    if (!activeGameCoachingEnabled || !onBookmarkDrill || gameState.gameOver) return '';
     if (mulliganPhase) return 'Opening hand mulligan decision';
     if (currentPrompt) return currentPrompt.title || PROMPT_TYPE_LABELS[currentPrompt.type] || 'Current prompt';
     if (triggerOrderChoice?.triggers.length) return `${triggerOrderChoice.triggers.length} triggers waiting`;
@@ -3585,7 +3588,7 @@ export function GameBoard({
                 </div>
               )}
 
-              {onToggleCoach && (
+              {activeGameCoachingEnabled && onToggleCoach && (
                 <button
                   type="button"
                   onClick={() => onToggleCoach(!coachMode)}
@@ -3600,7 +3603,7 @@ export function GameBoard({
                 </button>
               )}
 
-              {onToggleNewPlayerMode && (
+              {activeGameCoachingEnabled && onToggleNewPlayerMode && (
                 <button
                   type="button"
                   onClick={() => onToggleNewPlayerMode(!newPlayerMode)}
@@ -3615,7 +3618,7 @@ export function GameBoard({
                 </button>
               )}
 
-              {onBookmarkDrill && (
+              {activeGameCoachingEnabled && onBookmarkDrill && (
                 <button
                   type="button"
                   onClick={() => {
@@ -3763,7 +3766,7 @@ export function GameBoard({
               Decision Map
             </div>
             <div className="flex items-center gap-1">
-              {onBookmarkDrill && (
+              {activeGameCoachingEnabled && onBookmarkDrill && (
                 <button
                   type="button"
                   onClick={onBookmarkDrill}

@@ -404,9 +404,6 @@ export function PlayPage() {
     if (savedResult) setImportResult(savedResult);
     const savedHistory = cacheGet<DeckHistoryEntry[]>('deck_history');
     if (savedHistory) setDeckHistory(savedHistory);
-    if (!cacheGet<boolean>(GUIDED_PROMPT_CACHE_KEY)) {
-      setShowGuidedPrompt(true);
-    }
   }, []);
 
   // Show review when game ends
@@ -3014,8 +3011,9 @@ export function PlayPage() {
     if (started) setStep('game');
   };
 
+  const inGameCoachingEnabled = false;
   const branchPreviews = useMemo(() => {
-    if (step !== 'game' || !gameState) return [];
+    if (!inGameCoachingEnabled || step !== 'game' || !gameState) return [];
     const snapshot = exportGameSave();
     return buildPracticeBranchPreviews({
       serializedState: snapshot?.engine,
@@ -3156,10 +3154,10 @@ export function PlayPage() {
             onResolveTriggerOrder={resolveTriggerOrderChoice}
             undosRemaining={undosRemaining}
             onUndo={undoAction}
-            coachMode={coachMode}
-            onToggleCoach={setCoachMode}
-            newPlayerMode={newPlayerMode}
-            onToggleNewPlayerMode={setNewPlayerMode}
+            coachMode={inGameCoachingEnabled ? coachMode : false}
+            onToggleCoach={inGameCoachingEnabled ? setCoachMode : undefined}
+            newPlayerMode={inGameCoachingEnabled ? newPlayerMode : false}
+            onToggleNewPlayerMode={inGameCoachingEnabled ? setNewPlayerMode : undefined}
             holdPriority={holdPriority}
             onToggleHoldPriority={setHoldPriority}
             priorityStops={priorityStops}
@@ -3182,14 +3180,14 @@ export function PlayPage() {
             currentPrompt={currentPrompt}
             actionError={actionError}
             onClearActionError={clearActionError}
-            onBookmarkDrill={bookmarkCurrentDrill}
+            onBookmarkDrill={inGameCoachingEnabled ? bookmarkCurrentDrill : undefined}
             drillBookmarkLabel="Bookmark This Moment"
-            practiceFocusTags={activePracticeFocusTags}
-            branchPreviews={branchPreviews}
-            onLoadBranchPreview={loadBranchPreviewAsDrill}
-            activeDrillLabel={activeDrillRun?.label || null}
-            onSaveDrillAttempt={activeDrillRun ? saveCurrentDrillAttempt : undefined}
-            onExitDrillAttempt={activeDrillRun ? exitCurrentDrillAttempt : undefined}
+            practiceFocusTags={inGameCoachingEnabled ? activePracticeFocusTags : []}
+            branchPreviews={inGameCoachingEnabled ? branchPreviews : []}
+            onLoadBranchPreview={inGameCoachingEnabled ? loadBranchPreviewAsDrill : undefined}
+            activeDrillLabel={inGameCoachingEnabled ? activeDrillRun?.label || null : null}
+            onSaveDrillAttempt={inGameCoachingEnabled && activeDrillRun ? saveCurrentDrillAttempt : undefined}
+            onExitDrillAttempt={inGameCoachingEnabled && activeDrillRun ? exitCurrentDrillAttempt : undefined}
             menuActions={[
               {
                 id: 'saves',
