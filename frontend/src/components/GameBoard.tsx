@@ -2963,6 +2963,28 @@ export function GameBoard({
     setInspectedCard(card);
   };
 
+  const getPrimaryHandAction = (card: SimpleCard): SimpleLegalAction | null => {
+    if (mulliganPhase) return null;
+    if (card.zone !== 'hand' || card.ownerId !== gameState.humanPlayer.id) return null;
+
+    const cardActions = legalActions.filter(action => action.cardInstanceId === card.instanceId);
+    if (cardActions.length === 0) return null;
+
+    return cardActions.find(action => action.kind === 'PlayLand')
+      || cardActions.find(action => action.kind === 'CastSpell')
+      || (cardActions.length === 1 ? cardActions[0] : null);
+  };
+
+  const handleHumanHandCardClick = (card: SimpleCard) => {
+    const action = getPrimaryHandAction(card);
+    if (action) {
+      setInspectedCard(null);
+      onAction(action);
+      return;
+    }
+    setInspectedCard(card);
+  };
+
   const getInspectAction = (card: SimpleCard) => {
     const isHumanHandCard = card.zone === 'hand' && card.ownerId === gameState.humanPlayer.id;
     const targetAction = getTargetAction(card);
@@ -4875,7 +4897,7 @@ export function GameBoard({
                       ? () => onToggleMulliganBottom(card.instanceId)
                       : discardPhase && cardAction
                       ? cardAction.run
-                      : () => setInspectedCard(card)
+                      : () => handleHumanHandCardClick(card)
                   }
                   onInspect={() => setInspectedCard(card)}
                 />
