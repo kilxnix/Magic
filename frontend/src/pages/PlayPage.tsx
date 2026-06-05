@@ -3341,7 +3341,7 @@ export function PlayPage() {
         </div>
       )}
 
-      <div className={`mx-auto ${showPracticeTools ? 'max-w-6xl' : 'max-w-3xl'}`}>
+      <div className="mx-auto max-w-6xl">
         {/* Header */}
         <div className="flex items-center gap-3 mb-8">
           <Link to="/" className="text-stone-400 hover:text-stone-200">
@@ -3350,7 +3350,7 @@ export function PlayPage() {
           <h1 className="text-2xl font-bold">Play Practice Game</h1>
         </div>
 
-        <div className={`grid gap-4 ${showPracticeTools ? 'lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start' : ''}`}>
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start">
           <div className="min-w-0 space-y-4">
 
         {/* Step 1: Import */}
@@ -3404,7 +3404,7 @@ export function PlayPage() {
               className="min-h-10 rounded-lg border border-stone-700 bg-stone-900 px-3 text-xs font-black text-stone-200 transition-colors hover:bg-stone-700"
               aria-expanded={showPracticeTools}
             >
-              {showPracticeTools ? 'Hide Practice Tools' : 'Practice Tools'}
+              {showPracticeTools ? 'Hide Drills & Presets' : 'Drills & Presets'}
             </button>
           </div>
 
@@ -3991,12 +3991,10 @@ export function PlayPage() {
         )}
           </div>
 
-          {showPracticeTools && (
-            <aside className="space-y-3 lg:sticky lg:top-4">
-              {renderPracticeHistory(true)}
-              {renderSaveSlots(false)}
-            </aside>
-          )}
+          <aside className="space-y-3 lg:sticky lg:top-4">
+            {renderSaveSlots(false)}
+            {showPracticeTools && renderPracticeHistory(true)}
+          </aside>
         </div>
       </div>
     </div>
