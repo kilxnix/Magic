@@ -3145,6 +3145,35 @@ export function PlayPage() {
               currentPrompt={currentPrompt}
               damageAssignmentChoice={damageAssignmentChoice}
               newPlayerMode={inGameCoachingEnabled ? newPlayerMode : false}
+              prompts={{
+                mulligan: {
+                  phase: mulliganPhase,
+                  count: mulliganCount,
+                  bottomCount: mulliganBottomCount,
+                  selectedCardIds: selectedMulliganCardIds,
+                  selectedBottomIds: selectedMulliganBottomIds,
+                  onKeep: keepHand,
+                  onMulligan: mulligan,
+                  onToggleCard: toggleMulliganCard,
+                  onToggleBottom: toggleMulliganBottomCard,
+                },
+                discard: { phase: discardPhase, count: discardCount, onDiscard: discardCard },
+                tutor: {
+                  phase: tutorPhase,
+                  cards: tutorCards,
+                  title: tutorTitle,
+                  onPick: resolveTutor,
+                  onCancel: cancelTutor,
+                },
+                library: { choice: libraryChoice, onResolve: resolveLibraryChoice },
+                optionalTrigger: { choice: optionalTriggerChoice, onResolve: resolveOptionalTriggerChoice },
+                tax: { choice: taxPaymentChoice, onResolve: resolveTaxPaymentChoice },
+                ward: { choice: wardPaymentChoice, onResolve: resolveWardPaymentChoice },
+                damageAssignment: { choice: damageAssignmentChoice, onResolve: resolveDamageAssignmentChoice },
+                triggerOrder: { choice: triggerOrderChoice, onResolve: resolveTriggerOrderChoice },
+                actionError,
+                onClearActionError: clearActionError,
+              }}
             />
           ) : (
           <GameBoard

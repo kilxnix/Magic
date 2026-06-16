@@ -26,8 +26,10 @@ import type {
   LegalAction,
   CurrentPromptLike,
   DamageAssignmentChoiceLike,
+  PlayPrompts,
 } from './gameView.types';
 import { useGameView } from './useGameView';
+import { MulliganOverlay } from './components/MulliganOverlay';
 import { DesktopBattlefield } from './shells/DesktopBattlefield';
 import { MobileTable } from './shells/MobileTable';
 
@@ -114,6 +116,12 @@ export interface PlayExperienceProps {
   damageAssignmentChoice?: DamageAssignmentChoice | null;
   /** Whether to START in guided mode (mirrors the page's newPlayerMode toggle). */
   newPlayerMode?: boolean;
+  /**
+   * Engine-prompt dispatch surface (mulligan, tutor/search, optional-trigger,
+   * tax/ward, damage-order, trigger-order, scry/surveil, discard, actionError).
+   * Optional so existing tests can omit it; when absent those prompts are inert.
+   */
+  prompts?: PlayPrompts;
 }
 
 /**
@@ -146,8 +154,26 @@ export function PlayExperience({
   chatMessages,
   damageAssignmentChoice = null,
   newPlayerMode = false,
+  prompts,
 }: PlayExperienceProps) {
   const isDesktop = useIsDesktop();
+
+  // A mid-resolution decision the engine is waiting on. SEVEN of these hard-block
+  // submitAction in the hook, so the board's normal action path is refused while
+  // one is pending — auto-pass MUST stand down (see the auto-pass effect) or it
+  // would pass underneath an unrendered choice (or stall the game silently).
+  const hasPendingBlockingChoice = Boolean(
+    prompts &&
+      (prompts.mulligan.phase ||
+        prompts.discard.phase ||
+        prompts.tutor.phase ||
+        prompts.library.choice ||
+        prompts.optionalTrigger.choice ||
+        prompts.tax.choice ||
+        prompts.ward.choice ||
+        prompts.damageAssignment.choice ||
+        prompts.triggerOrder.choice),
+  );
 
   // ── Interaction state owned here (NOT in the pure shells) ─────────────────
   // `guided`: seeded from the page's newPlayerMode, then a start "play guided?"
@@ -332,6 +358,7 @@ export function PlayExperience({
   useEffect(() => {
     if (alwaysStop) return;
     if (guidedPromptOpen) return; // wait for the guided choice before auto-flowing
+    if (hasPendingBlockingChoice) return; // a decision modal is up — never pass under it
     if (effectiveLegalActions.length === 0) return;
     const passAction = findPassAction(effectiveLegalActions);
     if (!passAction) return;
@@ -343,7 +370,7 @@ export function PlayExperience({
     if (sig === lastAutoPassSig.current) return;
     lastAutoPassSig.current = sig;
     onAction(passAction);
-  }, [effectiveLegalActions, alwaysStop, guidedPromptOpen, onAction]);
+  }, [effectiveLegalActions, alwaysStop, guidedPromptOpen, hasPendingBlockingChoice, onAction]);
 
   // Targeting: the board-target prompt resolves ONE target per tap (max = 1).
   //   toggle  → record the locally-selected id (or clear it if re-tapped);
@@ -444,9 +471,37 @@ export function PlayExperience({
     onConfirmCombat: handleConfirmCombat,
   };
 
+  const mulliganOpen = Boolean(prompts?.mulligan.phase);
+  const actionError = prompts?.actionError ?? null;
+
   return (
     <div data-testid="play-experience" className="relative h-full w-full">
-      {guidedPromptOpen && (
+      {/* A refused/illegal action is otherwise invisible in this UI — surface it
+          so stalls are diagnosable (this is the class of bug that bit us before). */}
+      {actionError && (
+        <div
+          data-testid="play-action-error"
+          role="alert"
+          className="absolute inset-x-0 top-0 z-50 flex items-start justify-between gap-3 border-b border-rose-500/40 bg-rose-950/95 px-4 py-2 text-sm text-rose-100"
+        >
+          <span className="min-w-0 flex-1">
+            <span className="font-bold">Can't do that: </span>
+            {actionError.message}
+          </span>
+          <button
+            type="button"
+            data-testid="play-action-error-dismiss"
+            onClick={() => prompts?.onClearActionError()}
+            aria-label="Dismiss"
+            className="shrink-0 rounded px-2 py-0.5 font-bold text-rose-200 hover:bg-rose-900/80"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {/* Guided is asked AFTER mulligan so the opening-hand decision comes first. */}
+      {guidedPromptOpen && !mulliganOpen && (
         <div
           data-testid="play-guided-prompt"
           className="absolute inset-x-0 top-0 z-30 flex items-center justify-center gap-3 border-b border-amber-500/30 bg-stone-950/95 px-4 py-2 text-sm text-stone-100"
@@ -480,6 +535,20 @@ export function PlayExperience({
       )}
 
       {isDesktop ? <DesktopBattlefield {...shellProps} /> : <MobileTable {...shellProps} />}
+
+      {mulliganOpen && prompts && (
+        <MulliganOverlay
+          hand={view.you.hand}
+          count={prompts.mulligan.count}
+          bottomCount={prompts.mulligan.bottomCount}
+          selectedCardIds={prompts.mulligan.selectedCardIds}
+          selectedBottomIds={prompts.mulligan.selectedBottomIds}
+          onKeep={prompts.mulligan.onKeep}
+          onMulligan={prompts.mulligan.onMulligan}
+          onToggleCard={prompts.mulligan.onToggleCard}
+          onToggleBottom={prompts.mulligan.onToggleBottom}
+        />
+      )}
     </div>
   );
 }

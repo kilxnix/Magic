@@ -17,7 +17,15 @@ import type {
   SimplePlayer,
   BoardTargetingPrompt,
   ChatMessage,
+  TutorCardOption,
+  LibraryManipulationChoice,
+  OptionalTriggerChoice,
+  TaxPaymentChoice,
+  WardPaymentChoice,
+  DamageAssignmentChoice,
+  TriggerOrderChoiceState,
 } from '../hooks/useShelectorGame';
+import type { DamageAssignmentOrder } from 'commander-engine';
 
 export type {
   SimpleGameState,
@@ -26,7 +34,91 @@ export type {
   SimplePlayer,
   BoardTargetingPrompt,
   ChatMessage,
+  TutorCardOption,
+  LibraryManipulationChoice,
+  OptionalTriggerChoice,
+  TaxPaymentChoice,
+  WardPaymentChoice,
+  DamageAssignmentChoice,
+  TriggerOrderChoiceState,
+  DamageAssignmentOrder,
 };
+
+/** The hook's `actionError` shape (a refused/illegal action, surfaced to the UI). */
+export interface PlayActionError {
+  reason: string;
+  message: string;
+}
+
+/**
+ * The engine-prompt DISPATCH surface threaded from the page — the hook's pending
+ * choice state plus the resolver that answers each one. Grouped into one prop so
+ * PlayExperience takes a single `prompts` bag (mirroring how the page already
+ * feeds these to GameBoard), and so `hasPendingBlockingChoice` is computable in
+ * one place to gate auto-pass. Signatures match the hook's resolvers exactly.
+ */
+export interface PlayPrompts {
+  /** London mulligan: keep / redraw / then bottom N. */
+  mulligan: {
+    phase: boolean;
+    count: number;
+    /** > 0 only during the post-mulligan bottom-selection stage. */
+    bottomCount: number;
+    selectedCardIds: string[];
+    selectedBottomIds: string[];
+    onKeep: () => void;
+    onMulligan: (cardInstanceIds?: string[]) => void;
+    onToggleCard: (cardInstanceId: string) => void;
+    onToggleBottom: (cardInstanceId: string) => void;
+  };
+  /** Cleanup discard-to-hand-size. */
+  discard: {
+    phase: boolean;
+    count: number;
+    onDiscard: (cardInstanceId: string) => void;
+  };
+  /** Shared tutor/search channel (tutor, sacrifice, name-a-card, cast extra cost…). */
+  tutor: {
+    phase: boolean;
+    cards: TutorCardOption[];
+    title: string;
+    onPick: (cardInstanceId: string) => void;
+    onCancel: () => void;
+  };
+  /** Scry / surveil top-of-library ordering. */
+  library: {
+    choice: LibraryManipulationChoice | null;
+    onResolve: (topIds: string[], movedIds: string[]) => void;
+  };
+  /** "You may" optional trigger. */
+  optionalTrigger: {
+    choice: OptionalTriggerChoice | null;
+    onResolve: (use: boolean) => void;
+  };
+  /** Tax trigger ("unless you pay {N}"). */
+  tax: {
+    choice: TaxPaymentChoice | null;
+    onResolve: (pay: boolean) => void;
+  };
+  /** Ward ("pay the ward cost or be countered"). */
+  ward: {
+    choice: WardPaymentChoice | null;
+    onResolve: (pay: boolean) => void;
+  };
+  /** Combat damage-assignment order among multiple blockers. */
+  damageAssignment: {
+    choice: DamageAssignmentChoice | null;
+    onResolve: (orders: DamageAssignmentOrder[]) => void;
+  };
+  /** Ordering of simultaneous own triggers (APNAP). */
+  triggerOrder: {
+    choice: TriggerOrderChoiceState | null;
+    onResolve: (orderedTriggerIds: string[]) => void;
+  };
+  /** A refused/illegal action — surfaced so stalls aren't silent. */
+  actionError: PlayActionError | null;
+  onClearActionError: () => void;
+}
 
 /** One choice in a prompt — carries the engine action under `action`. When the
  * hook empties `legalActions` (idle priority / mid-resolution windows), the legal
