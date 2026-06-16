@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { LegalAction, PermanentView } from '../gameView.types';
 import { CardImage } from '../../components/CardImage';
 import { ActionMenu } from './ActionMenu';
+import { AnchoredMenu } from './AnchoredMenu';
 import { cn } from '../../lib/utils';
 
 export interface PermanentTileProps {
@@ -65,17 +66,9 @@ export function PermanentTile({ permanent, onAction, onExamine }: PermanentTileP
 
   const badges = counterBadges(permanent.counters);
 
-  // Close the inline menu on any outside click so it never lingers over the board.
-  useEffect(() => {
-    if (!menuOpen) return;
-    function onDocPointerDown(event: PointerEvent) {
-      if (!containerRef.current?.contains(event.target as Node)) {
-        setMenuOpen(false);
-      }
-    }
-    document.addEventListener('pointerdown', onDocPointerDown);
-    return () => document.removeEventListener('pointerdown', onDocPointerDown);
-  }, [menuOpen]);
+  // Outside-click / scroll / Escape dismissal is handled by AnchoredMenu (the
+  // menu is portaled to the body, so a containerRef-based check would wrongly
+  // treat clicks on the menu as "outside" and close it before onPick fires).
 
   useEffect(() => {
     return () => {
@@ -212,20 +205,24 @@ export function PermanentTile({ permanent, onAction, onExamine }: PermanentTileP
         i
       </button>
 
-      {/* Inline action menu — anchored beneath this tile, NOT a fixed overlay.
-          Picking an action commits it (onAction) and closes the menu. */}
-      {menuOpen && (
-        <div className="absolute left-0 top-full z-20 mt-1">
-          <ActionMenu
-            actions={legalActions}
-            guided={false}
-            onPick={(action) => {
-              setMenuOpen(false);
-              onAction(action);
-            }}
-          />
-        </div>
-      )}
+      {/* Action menu — portaled (AnchoredMenu) so it escapes the battlefield's
+          overflow:hidden clipping and stays click-hittable. Picking an action
+          commits it (onAction) and closes the menu. */}
+      <AnchoredMenu
+        anchorRef={containerRef}
+        open={menuOpen}
+        onClose={() => setMenuOpen(false)}
+        placement="bottom"
+      >
+        <ActionMenu
+          actions={legalActions}
+          guided={false}
+          onPick={(action) => {
+            setMenuOpen(false);
+            onAction(action);
+          }}
+        />
+      </AnchoredMenu>
     </div>
   );
 }

@@ -59,9 +59,10 @@ describe('HandView', () => {
     const cards = screen.getAllByTestId('hand-card');
     expect(cards).toHaveLength(2);
 
-    // Tapping a card opens its inline ActionMenu (anchored to that card, in-flow).
+    // Tapping a card opens its ActionMenu, portaled to the body (AnchoredMenu)
+    // so it escapes the hand strip's overflow clipping and stays click-hittable.
     fireEvent.click(screen.getByLabelText('Actions for Lightning Bolt'));
-    const menu = screen.getByTestId('hand-action-menu');
+    const menu = screen.getByTestId('anchored-menu');
 
     // Pick the action from within the opened menu.
     fireEvent.click(within(menu).getByText('Cast Lightning Bolt'));

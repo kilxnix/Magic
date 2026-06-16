@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import type { HandCardView, LegalAction } from '../gameView.types';
 import { CardImage } from '../../components/CardImage';
 import { ActionMenu } from './ActionMenu';
+import { AnchoredMenu } from './AnchoredMenu';
 import { cn } from '../../lib/utils';
 
 export interface HandViewProps {
@@ -34,6 +35,12 @@ export interface HandViewProps {
 export function HandView({ hand, onAction, onExamine }: HandViewProps) {
   // Which card's ActionMenu is currently open (by hand-card id), or null.
   const [openId, setOpenId] = useState<string | null>(null);
+  // The trigger button of the open card — the AnchoredMenu (portaled to body)
+  // positions itself against this so no overflow ancestor can clip it.
+  const anchorRef = useRef<HTMLButtonElement | null>(null);
+
+  const close = useCallback(() => setOpenId(null), []);
+  const openCard = openId ? hand.find((c) => c.id === openId) ?? null : null;
 
   if (hand.length === 0) {
     return (
@@ -47,6 +54,7 @@ export function HandView({ hand, onAction, onExamine }: HandViewProps) {
   }
 
   return (
+    <>
     <div
       data-testid="hand-view"
       role="list"
@@ -74,24 +82,6 @@ export function HandView({ hand, onAction, onExamine }: HandViewProps) {
               isOpen ? 'z-30 -translate-y-4' : 'z-0',
             )}
           >
-            {/* Inline ActionMenu — pushes UP from the card, in-flow (absolute
-                within this card's box, anchored to its top). Never fixed. */}
-            {isOpen && (
-              <div
-                data-testid="hand-action-menu"
-                className="absolute bottom-full left-1/2 z-40 mb-2 -translate-x-1/2"
-              >
-                <ActionMenu
-                  actions={card.legalActions}
-                  guided={false}
-                  onPick={(action) => {
-                    onAction(card, action);
-                    setOpenId(null);
-                  }}
-                />
-              </div>
-            )}
-
             <div
               className={cn(
                 'overflow-hidden rounded-lg border bg-stone-900 shadow-lg shadow-black/40 transition-colors',
@@ -103,10 +93,19 @@ export function HandView({ hand, onAction, onExamine }: HandViewProps) {
                 'w-24 sm:w-28 lg:w-24',
               )}
             >
-              {/* Commit gesture: tap the card → toggle its action menu. */}
+              {/* Commit gesture: tap the card → toggle its action menu. The menu
+                  itself is portaled (AnchoredMenu) so it can't be clipped by the
+                  hand's horizontal-scroll container. */}
               <button
                 type="button"
-                onClick={() => setOpenId(isOpen ? null : card.id)}
+                onClick={(e) => {
+                  if (isOpen) {
+                    setOpenId(null);
+                  } else {
+                    anchorRef.current = e.currentTarget;
+                    setOpenId(card.id);
+                  }
+                }}
                 aria-haspopup="menu"
                 aria-expanded={isOpen}
                 aria-label={`Actions for ${card.name}`}
@@ -143,6 +142,20 @@ export function HandView({ hand, onAction, onExamine }: HandViewProps) {
         );
       })}
     </div>
+
+    {openCard && (
+      <AnchoredMenu anchorRef={anchorRef} open onClose={close} placement="top">
+        <ActionMenu
+          actions={openCard.legalActions}
+          guided={false}
+          onPick={(action) => {
+            onAction(openCard, action);
+            setOpenId(null);
+          }}
+        />
+      </AnchoredMenu>
+    )}
+    </>
   );
 }
 
