@@ -9,6 +9,7 @@ import {
   isLethalDamage,
   isProtectedFromSource,
 } from './keywords';
+import { LURE_STATIC_SELF_RE, LURE_STATIC_ATTACHED_RE } from './effects/matchers/static-abilities';
 import { getEffectivePower, getEffectiveToughness } from './effects/continuous';
 import { isEffectiveCreature } from './effective-types';
 import { checkTriggersForEvent } from './stack';
@@ -17,8 +18,127 @@ import { applyDamageReplacementEffects } from './effects/replacement';
 import { canPayUnrestrictedCost, payUnrestrictedManaCost } from './mana';
 import { playerCantLoseLife } from './game-outcome';
 
+// ============================================================================
+// Slice 8: CanBlockAdditional helper
+// ============================================================================
+
+/**
+ * The "can block an additional creature each combat" static oracle text regex.
+ * Mirrors the matchCanBlockAdditionalStatic parser: read directly from oracle text
+ * so the ability is enforced even if the face parsed as Unparsed or as an
+ * Activated ability (where the static line is mixed with an activated ability).
+ */
+const CAN_BLOCK_ADDITIONAL_ORACLE_RE =
+  /\bcan\s+block\s+an\s+additional\s+creature\s+each\s+combat\b/i;
+
+/**
+ * Slice 11: "can block any number of creatures" — no cap at all (return 99 as
+ * a practical infinity). Mirrors matchCanBlockAnyNumber in static-abilities.ts.
+ */
+const CAN_BLOCK_ANY_NUMBER_ORACLE_RE =
+  /\bcan\s+block\s+any\s+number\s+of\s+creatures\b/i;
+
+/**
+ * Returns the maximum number of attackers creature `instanceId` may simultaneously
+ * block this combat:
+ *  - The default is 1 (CR 509.1b: each creature may only block one attacker).
+ *  - The static "can block an additional creature each combat" (oracle text) and
+ *    the activated "can block an additional creature this turn" (grantedKeywords)
+ *    each add +1, stacking for creatures with both.
+ *  - Slice 11: "can block any number of creatures" (oracle text or CanBlockAnyNumber
+ *    grantedKeyword) returns 99 — a practical infinity that exceeds any realistic
+ *    attacking force.
+ *
+ * Only called from declareBlockers to validate the proposed block assignments.
+ */
+function maxAttackersCreatureCanBlock(state: GameState, instanceId: string): number {
+  let cap = 1;
+  const card = state.cards.get(instanceId);
+  if (!card) return cap;
+
+  const def = getCardDefinition(state, card);
+  const oracleText = def?.oracle_text || '';
+
+  // Slice 11: "can block any number of creatures" — unlimited blocker.
+  if (CAN_BLOCK_ANY_NUMBER_ORACLE_RE.test(oracleText)
+      || card.grantedKeywords?.includes('CanBlockAnyNumber')) {
+    return 99;
+  }
+
+  // Static form: printed in oracle text ("each combat").
+  if (CAN_BLOCK_ADDITIONAL_ORACLE_RE.test(oracleText)) {
+    cap++;
+  }
+
+  // Activated (or ETB/triggered) grant: keyword written into grantedKeywords
+  // ("this turn") by the executor's GrantKeyword/Source branch.
+  if (card.grantedKeywords?.includes('CanBlockAdditional')) {
+    cap++;
+  }
+
+  return cap;
+}
+
 function emptyGenericCost(generic: number): ManaCost {
   return { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0, generic };
+}
+
+// ============================================================================
+// Slice 7: Lure / forced-block helper
+// ============================================================================
+
+/**
+ * Collect the instance IDs of all currently attacking creatures that must be
+ * blocked by every blocker that is able to block them (the "lure" rule,
+ * CR 509.1a modifier).
+ *
+ * Sources:
+ *  1. state.combat.luredCreatureIds — set at resolution time by the
+ *     MustBeBlockedIfAble executor for spell/trigger forms (Taunting Challenge).
+ *  2. Static "All creatures able to block ~ do so" on an attacker's oracle text
+ *     (Elvish Bard / Breaker of Armies family — LURE_STATIC_SELF_RE).
+ *  3. Static "All creatures able to block equipped creature do so" on a non-
+ *     attacker Equipment / Aura whose attached creature IS attacking
+ *     (Nemesis Mask family — LURE_STATIC_ATTACHED_RE).
+ *  4. 'MustBeBlockedIfAble' in an attacker's grantedKeywords (Taunting Challenge
+ *     cast before combat, stored via GrantKeyword).
+ */
+function getActiveLuredCreatureIds(state: GameState): string[] {
+  if (!state.combat) return [];
+  const ids = new Set<string>(state.combat.luredCreatureIds ?? []);
+
+  for (const attacker of state.combat.attackers) {
+    const attackerCard = state.cards.get(attacker.cardInstanceId);
+    if (!attackerCard) continue;
+    const attackerDef = getCardDefinition(state, attackerCard);
+
+    // Self-lure static on the attacker's oracle text (Elvish Bard, Breaker of Armies).
+    if (LURE_STATIC_SELF_RE.test(attackerDef.oracle_text)) {
+      ids.add(attacker.cardInstanceId);
+    }
+
+    // Keyword granted by a spell-form lure that resolved before combat (e.g.
+    // Taunting Challenge cast before the declare-attackers step).
+    if (attackerCard.grantedKeywords?.includes('MustBeBlockedIfAble')) {
+      ids.add(attacker.cardInstanceId);
+    }
+  }
+
+  // Equipment / Aura static: LURE_STATIC_ATTACHED_RE — find any non-equipment
+  // permanent whose oracle text matches and whose attachedTo creature is attacking.
+  for (const card of state.cards.values()) {
+    if (card.zone !== 'battlefield') continue;
+    const def = getCardDefinition(state, card);
+    if (!LURE_STATIC_ATTACHED_RE.test(def.oracle_text)) continue;
+    // The Equipment/Aura must be attached to a creature that is currently attacking.
+    const attachedToId = card.attachedTo;
+    if (!attachedToId) continue;
+    if (state.combat.attackers.some(a => a.cardInstanceId === attachedToId)) {
+      ids.add(attachedToId);
+    }
+  }
+
+  return [...ids];
 }
 
 export function canDeclareAttacker(state: GameState, playerId: string, cardInstanceId: string): boolean {
@@ -39,9 +159,23 @@ export function canDeclareAttacker(state: GameState, playerId: string, cardInsta
   return true;
 }
 
+/** True when a creature is currently goaded (by at least one player). */
+export function isGoaded(state: GameState, cardInstanceId: string): boolean {
+  const card = state.cards.get(cardInstanceId);
+  return Boolean(card?.goadedBy && card.goadedBy.length > 0);
+}
+
+/** The set of players who have goaded this creature (empty if not goaded). */
+export function goaders(state: GameState, cardInstanceId: string): string[] {
+  const card = state.cards.get(cardInstanceId);
+  return card?.goadedBy ? [...card.goadedBy] : [];
+}
+
 export function mustAttackIfAble(state: GameState, cardInstanceId: string): boolean {
   const card = state.cards.get(cardInstanceId);
   if (!card) return false;
+  // Goaded creatures must attack each combat if able (CR 701.39a).
+  if (isGoaded(state, cardInstanceId)) return true;
   const def = getCardDefinition(state, card);
   return /\battacks\s+(?:each|every)\s+combat\s+if\s+able\b/i.test(def.oracle_text)
     || /\battacks\s+each\s+turn\s+if\s+able\b/i.test(def.oracle_text);
@@ -105,6 +239,19 @@ export function declareAttackers(state: GameState, playerId: string, attacks: At
     if (!canDeclareAttacker(state, playerId, attack.cardInstanceId)) {
       throw new Error(`Cannot declare attacker: ${attack.cardInstanceId}`);
     }
+
+    // CR 701.39a: a goaded creature must attack a player other than a goader if able.
+    const goaderIds = goaders(state, attack.cardInstanceId);
+    if (goaderIds.length > 0 && goaderIds.includes(attack.defendingPlayerId)) {
+      const nonGoaderDefenders = state.players.filter(
+        p => p.id !== playerId && !p.hasLost && !goaderIds.includes(p.id),
+      );
+      if (nonGoaderDefenders.length > 0) {
+        const card = state.cards.get(attack.cardInstanceId);
+        const name = card ? getCardDefinition(state, card).name : attack.cardInstanceId;
+        throw new Error(`${name} is goaded and must attack a player who didn't goad it`);
+      }
+    }
   }
 
   for (const requiredAttackerId of getRequiredAttackers(state, playerId)) {
@@ -157,12 +304,17 @@ export function declareAttackers(state: GameState, playerId: string, attacks: At
     priorityPlayerIndex: state.activePlayerIndex,
   };
 
-  // Fire "whenever ~ attacks" triggers for each attacker
+  // Fire "whenever ~ attacks" triggers for each attacker.
+  // "alone" is true when this creature is the only attacker this combat,
+  // enabling "Whenever ~ attacks alone" triggers (CR 508.4 / 'attacking alone').
+  const attacksAlone = attacks.length === 1;
   for (const attack of attacks) {
     resultState = checkTriggersForEvent(resultState, {
       kind: 'Attacks',
       attackerInstanceId: attack.cardInstanceId,
       controllerId: playerId,
+      alone: attacksAlone,
+      defendingPlayerId: attack.defendingPlayerId,
     });
   }
 
@@ -237,6 +389,21 @@ export function declareBlockers(state: GameState, playerId: string, blocks: Bloc
     }
   }
 
+  // CR 509.1b — each creature may block only one attacker per combat unless it
+  // has an ability permitting additional blocks ("can block an additional creature
+  // each/this combat/turn"). Count how many times each blocker appears in the
+  // proposed declarations and compare against its limit.
+  const newBlockCounts = new Map<string, number>();
+  for (const block of blocks) {
+    newBlockCounts.set(block.cardInstanceId, (newBlockCounts.get(block.cardInstanceId) ?? 0) + 1);
+  }
+  for (const [cardInstanceId, count] of newBlockCounts) {
+    const limit = maxAttackersCreatureCanBlock(state, cardInstanceId);
+    if (count > limit) {
+      throw new Error(`Creature ${cardInstanceId} cannot block more than ${limit} attacker(s) simultaneously`);
+    }
+  }
+
   // Calculate updated blockers list
   const newBlockers = [...state.combat.blockers, ...blocks];
 
@@ -248,6 +415,43 @@ export function declareBlockers(state: GameState, playerId: string, blocks: Bloc
 
     if (!satisfiesMenace(state, attacker.cardInstanceId, blockerIds)) {
       throw new Error(`Menace creature ${attacker.cardInstanceId} requires 2+ blockers`);
+    }
+  }
+
+  // Slice 7 (lure): CR 509.1a — if any attacker has a lure effect ("all creatures
+  // able to block ~ do so"), every creature the defending player controls that CAN
+  // block at least one lured attacker MUST block at least one of them (or block
+  // another lured creature).  A declaration that omits a creature able to block a
+  // lured creature is illegal.
+  const luredIds = getActiveLuredCreatureIds(state);
+  if (luredIds.length > 0) {
+    // Attackers targeting this defending player that are lured.
+    const luredAttackersForPlayer = luredIds.filter(luredId =>
+      state.combat!.attackers.some(a => a.cardInstanceId === luredId && a.defendingPlayerId === playerId),
+    );
+    if (luredAttackersForPlayer.length > 0) {
+      // Find all potential blockers this player controls.
+      for (const card of state.cards.values()) {
+        if (card.zone !== 'battlefield') continue;
+        if (card.ownerId !== playerId) continue;
+        if (card.tapped) continue;
+        if (!isEffectiveCreature(state, card.instanceId)) continue;
+
+        // Check if this creature can block at least one lured attacker.
+        const canBlockAnyLured = luredAttackersForPlayer.some(
+          luredId => canBlock(state, card.instanceId, luredId),
+        );
+        if (!canBlockAnyLured) continue; // Cannot block any lured creature — free to do anything.
+
+        // The creature can block a lured creature; it MUST be assigned to block
+        // at least one lured creature in this declaration.
+        const blocksALured = newBlockers.some(
+          b => b.cardInstanceId === card.instanceId && luredAttackersForPlayer.includes(b.blockingAttackerId),
+        );
+        if (!blocksALured) {
+          throw new Error(`Lure: creature ${card.instanceId} must block a lured creature this turn`);
+        }
+      }
     }
   }
 
@@ -273,6 +477,31 @@ export function declareBlockers(state: GameState, playerId: string, blocks: Bloc
   };
 
   if (blockersDeclared) {
+    // Slice 8/11: fire BlocksOrBlockedBy triggers for each blocker-attacker pair.
+    // Per MTG CR 509.1d, "blocks or becomes blocked" triggers fire when blockers are
+    // declared. For each pair: the blocker fires with the attacker as "that creature",
+    // and the attacker fires with the blocker as "that creature".
+    for (const blocker of combat.blockers) {
+      const blockerCard = resultState.cards.get(blocker.cardInstanceId);
+      const attackerCard = resultState.cards.get(blocker.blockingAttackerId);
+      if (blockerCard && attackerCard) {
+        // Blocker fires (it is "blocking a creature" — the attacker is "that creature").
+        resultState = checkTriggersForEvent(resultState, {
+          kind: 'BlocksOrBlockedBy',
+          sourceInstanceId: blocker.cardInstanceId,
+          opposingCreatureId: blocker.blockingAttackerId,
+          controllerId: blockerCard.ownerId,
+        });
+        // Attacker fires (it is "becoming blocked by a creature" — the blocker is "that creature").
+        resultState = checkTriggersForEvent(resultState, {
+          kind: 'BlocksOrBlockedBy',
+          sourceInstanceId: blocker.blockingAttackerId,
+          opposingCreatureId: blocker.cardInstanceId,
+          controllerId: attackerCard.ownerId,
+        });
+      }
+    }
+
     for (const attacker of combat.attackers) {
       const hasBlocker = combat.blockers.some(blocker => blocker.blockingAttackerId === attacker.cardInstanceId);
       if (!hasBlocker) {
@@ -282,6 +511,7 @@ export function declareBlockers(state: GameState, playerId: string, blocks: Bloc
             kind: 'Unblocked',
             attackerInstanceId: attacker.cardInstanceId,
             controllerId: attackerCard.ownerId,
+            defendingPlayerId: attacker.defendingPlayerId,
           });
         }
       }
@@ -303,6 +533,15 @@ function applyLifelink(
 ): { playerId: string; amount: number } | null {
   if (damageDealt <= 0) return null;
   if (!instanceHasKeyword(state, sourceId, 'Lifelink')) return null;
+
+  // Slice 5: "Players can't gain life." (Leyline of Punishment family).
+  // Lifelink gain bypasses executeGainLife, so we must check here too.
+  const cantGainLifeActive = (state.continuousEffects ?? []).some(ce => {
+    if (ce.ability.modifier.kind !== 'CantGainLife') return false;
+    const src = state.cards.get(ce.sourceInstanceId);
+    return src != null && src.zone === 'battlefield';
+  });
+  if (cantGainLifeActive) return null;
 
   const sourceCard = state.cards.get(sourceId);
   if (!sourceCard) return null;
@@ -464,11 +703,16 @@ function resolveDamageStep(state: GameState, step: 'first' | 'normal'): GameStat
   const newCards = new Map(state.cards);
   const newPlayers = state.players.map(p => ({ ...p }));
   let replacementState: GameState = state;
+  // Snapshot attacker ids NOW, before combat state is cleared by resolveDamageStep.
+  // This is used by AllAttackingCreaturesYouControl trigger bodies (slice 6).
+  const attackerSnapshot = state.combat.attackers.map(a => a.cardInstanceId);
+
   const combatDamageEvents: Array<{
     sourceInstanceId: string;
     controllerId: string;
     damagedPlayerId: string;
     damage: number;
+    attackerInstanceIds: string[];
   }> = [];
   const lifeGainEvents: Array<{ playerId: string; amount: number }> = [];
 
@@ -515,6 +759,7 @@ function resolveDamageStep(state: GameState, step: 'first' | 'normal'): GameStat
               controllerId: attackerCard.ownerId,
               damagedPlayerId: attacker.defendingPlayerId,
               damage: damageDealt,
+              attackerInstanceIds: attackerSnapshot,
             });
           }
         }
@@ -591,6 +836,7 @@ function resolveDamageStep(state: GameState, step: 'first' | 'normal'): GameStat
                 controllerId: attackerCard.ownerId,
                 damagedPlayerId: attacker.defendingPlayerId,
                 damage: damageDealt,
+                attackerInstanceIds: attackerSnapshot,
               });
             }
           }
@@ -654,6 +900,15 @@ function resolveDamageStep(state: GameState, step: 'first' | 'normal'): GameStat
       kind: 'LifeGained',
       ...event,
     });
+  }
+
+  // CR 720.5: a creature dealing combat damage to the monarch makes its
+  // controller the new monarch.
+  if (resultState.monarchId) {
+    const hit = combatDamageEvents.find(
+      e => e.damagedPlayerId === resultState.monarchId && e.damage > 0 && e.controllerId !== resultState.monarchId,
+    );
+    if (hit) resultState = { ...resultState, monarchId: hit.controllerId };
   }
 
   return resultState;

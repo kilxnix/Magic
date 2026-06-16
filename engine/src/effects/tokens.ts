@@ -15,9 +15,27 @@ const DASHES_RE = /([—–-])/g;
 // P/T modification patterns like +1/+1, -3/-3, +2/+0 — preserve as single tokens
 const PT_MOD_RE = /([+-]\d+\/[+-]\d+)/g;
 
+/**
+ * Strip parenthetical reminder text (CR 207.2 — reminder text has no rules
+ * meaning). Depth-aware so nested parens are handled. Removing it lets matchers
+ * see a card's real abilities instead of the rules restatement (e.g. Bestow
+ * auras, keyword reminder text), and is always game-behavior-preserving.
+ */
+function stripReminderText(text: string): string {
+  let result = '';
+  let depth = 0;
+  for (const char of text) {
+    if (char === '(') { depth += 1; continue; }
+    if (char === ')') { depth = Math.max(0, depth - 1); continue; }
+    if (depth === 0) result += char;
+  }
+  // Collapse whitespace left behind by removed spans.
+  return result.replace(/[ \t]+/g, ' ').replace(/ *\n */g, '\n').trim();
+}
+
 export function tokenizeOracleText(oracleText: string): OracleToken[] {
   // Lowercase normalization (preserve numbers and braces).
-  let s = oracleText.toLowerCase();
+  let s = stripReminderText(oracleText).toLowerCase();
 
   // Preserve mana chunks by temporary placeholders.
   const manaChunks: string[] = [];

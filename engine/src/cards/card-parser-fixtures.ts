@@ -18,9 +18,11 @@ export const PARSER_FIXTURES: ParserFixture[] = [
   // --- entersTheBattlefieldTapped ---
   {
     name: 'Sacred Foundry',
+    // Slice 6: shock lands are no longer "always tapped" — buildBattlefieldEntryPlan
+    // now applies a deterministic auto-choice (pay when life >= 4, else tapped).
     oracleText: 'As Sacred Foundry enters the battlefield, you may pay 2 life. If you don\'t, it enters tapped.',
     typeLine: 'Land — Mountain Plains',
-    expected: { entersTapped: true },
+    expected: { entersTapped: false },
   },
   {
     name: 'Tranquil Cove',
@@ -48,6 +50,48 @@ export const PARSER_FIXTURES: ParserFixture[] = [
     expected: {
       equipCost: { generic: 1, W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 },
       equipmentBonus: { power: 1, toughness: 1, keywords: ['Trample', 'Lifelink'] },
+    },
+  },
+  // --- Aura static buff (shares the equipmentBonus cache via "enchanted creature") ---
+  {
+    name: 'Holy Strength',
+    oracleText: 'Enchant creature\nEnchanted creature gets +1/+2.',
+    typeLine: 'Enchantment — Aura',
+    expected: {
+      equipmentBonus: { power: 1, toughness: 2, keywords: [] },
+    },
+  },
+  {
+    name: 'Unholy Strength',
+    oracleText: 'Enchant creature\nEnchanted creature gets +2/+1.',
+    typeLine: 'Enchantment — Aura',
+    expected: {
+      equipmentBonus: { power: 2, toughness: 1, keywords: [] },
+    },
+  },
+  {
+    name: 'Flight',
+    oracleText: 'Enchant creature\nEnchanted creature has flying.',
+    typeLine: 'Enchantment — Aura',
+    expected: {
+      equipmentBonus: { power: 0, toughness: 0, keywords: ['Flying'] },
+    },
+  },
+  // --- Pacifism family: combat restrictions enforced via CannotAttack/CannotBlock ---
+  {
+    name: 'Pacifism',
+    oracleText: 'Enchant creature\nEnchanted creature can\'t attack or block.',
+    typeLine: 'Enchantment — Aura',
+    expected: {
+      equipmentBonus: { power: 0, toughness: 0, keywords: ['CannotAttack', 'CannotBlock'] },
+    },
+  },
+  {
+    name: 'Curse of Chains',
+    oracleText: 'Enchant creature\nEnchanted creature can\'t attack.',
+    typeLine: 'Enchantment — Aura',
+    expected: {
+      equipmentBonus: { power: 0, toughness: 0, keywords: ['CannotAttack'] },
     },
   },
   // --- Mana production ---

@@ -369,6 +369,45 @@ describe('createCardLookup', () => {
 
     expect(mountainLookup('Mountain')?.id).toBe('real-mountain');
   });
+
+  it('prefers the real card over a token printing with the same name (Llanowar Elves)', () => {
+    // The token printing has an empty mana cost; if it wins a name lookup the
+    // engine loads it as a free-to-cast token and desyncs game state.
+    const tokenElf: ScryfallCard = {
+      id: 'token-llanowar',
+      name: 'Llanowar Elves',
+      layout: 'token',
+      type_line: 'Token Creature — Elf Druid',
+      oracle_text: '{T}: Add {G}.',
+      mana_cost: '',
+      cmc: 0,
+      colors: ['G'],
+      color_identity: ['G'],
+      keywords: [],
+      legalities: { commander: 'not_legal' },
+    };
+    const realElf: ScryfallCard = {
+      id: 'real-llanowar',
+      name: 'Llanowar Elves',
+      layout: 'normal',
+      type_line: 'Creature — Elf Druid',
+      oracle_text: '{T}: Add {G}.',
+      mana_cost: '{G}',
+      cmc: 1,
+      colors: ['G'],
+      color_identity: ['G'],
+      keywords: [],
+      legalities: { commander: 'legal' },
+    };
+
+    // Token listed last must not shadow the real card.
+    expect(createCardLookup([realElf, tokenElf])('Llanowar Elves')?.id).toBe('real-llanowar');
+    // And token listed first must still lose.
+    expect(createCardLookup([tokenElf, realElf])('Llanowar Elves')?.id).toBe('real-llanowar');
+    // Even if the real card is not commander-legal, a token never wins.
+    const nonLegalReal = { ...realElf, legalities: { commander: 'not_legal' } };
+    expect(createCardLookup([tokenElf, nonLegalReal])('Llanowar Elves')?.mana_cost).toBe('{G}');
+  });
 });
 
 describe('convertGeneratedDeck', () => {

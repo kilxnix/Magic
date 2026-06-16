@@ -191,17 +191,29 @@ export function convertCard(card: ScryfallCard): CardDefinition {
   const cmc = typeof card.cmc === 'string' ? parseFloat(card.cmc) : card.cmc;
   const faces = card.card_faces?.map((face, index) => convertFace(card, face, index)) ?? [];
 
+  // Slice 5 (Transform typing fix): for transform/modal_dfc cards, the top-level
+  // type_line is the combined "Front // Back" form. When per-face type_lines exist
+  // on the front face, always prefer those so the unflipped permanent on the
+  // battlefield has only its front-face type (e.g. "Legendary Enchantment", not
+  // "Legendary Enchantment // Legendary Land"). Without this fix, cards with a
+  // non-null top-level oracle_text (which suppresses firstFace above) leak the
+  // combined type_line onto the battlefield.
+  const isTransformLayout = card.layout === 'transform' || card.layout === 'modal_dfc';
+  const frontFaceForTyping = isTransformLayout && card.card_faces?.[0]?.type_line
+    ? card.card_faces[0]
+    : firstFace;
+
   const baseDef: CardDefinition = {
     id: card.id,
     name: card.name,
-    type_line: firstFace?.type_line || card.type_line,
+    type_line: frontFaceForTyping?.type_line || card.type_line,
     oracle_text: firstFace?.oracle_text || card.oracle_text || '',
     mana_cost: firstFace?.mana_cost || card.mana_cost || '',
     cmc: Math.floor(cmc),
     colors: toManaColors(firstFace?.colors || card.colors || []),
     color_identity: toManaColors(card.color_identity || []),
     keywords: card.keywords || [],
-    card_types: parseCardTypes(firstFace?.type_line || card.type_line),
+    card_types: parseCardTypes(frontFaceForTyping?.type_line || card.type_line),
     power: parsePT(firstFace?.power ?? card.power),
     toughness: parsePT(firstFace?.toughness ?? card.toughness),
     ...(faces.length > 0 ? { faces } : {}),
@@ -380,6 +392,10 @@ export function createCardLookup(cards: ScryfallCard[]): CardLookup {
     if (card.legalities?.commander === 'legal') score += 100;
     if (/(creature|instant|sorcery|artifact|enchantment|planeswalker|battle|land)/.test(typeLine)) score += 20;
     if (card.layout === 'art_series' || typeLine === 'card' || typeLine === 'card // card') score -= 100;
+    // Token printings share a name with the real card (e.g. "Llanowar Elves")
+    // but have no mana cost, so they must never win a name lookup — otherwise
+    // the real card loads as a free-to-cast token and desyncs game state.
+    if (card.layout === 'token' || card.layout === 'double_faced_token' || typeLine.startsWith('token')) score -= 200;
     if (card.oracle_text || card.mana_cost || card.power || card.toughness) score += 5;
     return score;
   };

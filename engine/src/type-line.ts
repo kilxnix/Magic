@@ -15,9 +15,27 @@ const KNOWN_TYPES = new Set<CardType>([
 const CARD_TYPE_ORDER: CardType[] = ['creature', 'instant', 'sorcery', 'artifact', 'enchantment', 'planeswalker', 'land', 'battle'];
 
 function normalizeTypeLineDashes(typeLine: string): string {
+  // Normalize the supertypes/types <-> subtypes separator to ` -- `.
+  //
+  // The separator can appear as an em-dash (\u2014, U+2014), an en-dash
+  // (\u2013, U+2013), a mojibake'd em-dash, or a plain ASCII hyphen (-).  Real
+  // type lines render the ASCII separator with surrounding whitespace
+  // ("Creature - Bear"), so we only treat a *whitespace-surrounded* hyphen as
+  // the separator.
+  //
+  // Intra-word ASCII hyphens are deliberately left alone: they are part of
+  // multi-word subtype names like "Assembly-Worker", "Half-Elf",
+  // "Will-o'-the-Wisp", etc.  Because those hyphens have no surrounding
+  // whitespace, the ` - ` rule never touches them.
+  //
+  // Slice 12: fixed pre-existing bug where `-` in hyphens-in-subtype-names
+  // (e.g. "Creature \u2014 Assembly-Worker") was converted to ` -- `, causing
+  // typeLineSectionTerms to split "Assembly-Worker" into two separate terms
+  // and typeLineHasSubtype to fail for those cards.
   return typeLine
-    .replace(/\u2013|\u2014|-/g, ' -- ')
-    .replace(/\u00e2\u20ac[\u201c\u201d]/g, ' -- ');
+    .replace(/\u2013|\u2014/g, ' -- ')
+    .replace(/\u00e2\u20ac[\u201c\u201d]/g, ' -- ')
+    .replace(/\s+-\s+/g, ' -- ');
 }
 
 function normalizeTerm(term: string): string {

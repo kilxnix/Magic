@@ -10,7 +10,40 @@
  * - "If you would draw a card, draw two cards instead" (card draw doubling)
  */
 
-import type { GameState, CardInstance, DamagePreventionEffectRef, Zone } from '../types';
+import type { GameState, CardInstance, CardDefinition, DamagePreventionEffectRef, Zone } from '../types';
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Detect a SELF die-replacement printed on a card's own oracle text, e.g.
+ *   "If ~ would die, exile it instead."
+ *   "If this creature would die, return it to its owner's hand instead."
+ *
+ * Returns the replacement destination zone, or null if the card has no such
+ * self-replacement. This is read directly off the CardDefinition at the moment
+ * a creature is dying (the die chokepoints), so no serialized state is needed.
+ */
+export function getSelfDieReplacementZone(def: CardDefinition): 'exile' | 'hand' | null {
+  const texts: string[] = [];
+  if (def.oracle_text) texts.push(def.oracle_text);
+  if (def.faces) for (const f of def.faces) if (f.oracle_text) texts.push(f.oracle_text);
+  if (texts.length === 0) return null;
+  const nameRe = def.name ? new RegExp(escapeRegExp(def.name), 'gi') : null;
+  for (const raw of texts) {
+    let text = raw.toLowerCase();
+    if (nameRe) text = text.replace(nameRe, '~');
+    text = text.replace(/\bthis (?:creature|permanent|card)\b/g, '~');
+    const m = text.match(/if ~ would die,?\s+(?:instead\s+)?(exile|return)\b[^.]*/);
+    if (!m) continue;
+    const clause = m[0];
+    if (!/\binstead\b/.test(clause)) continue;
+    if (m[1] === 'exile') return 'exile';
+    if (m[1] === 'return' && /\bhand\b/.test(clause)) return 'hand';
+  }
+  return null;
+}
 
 // Types of events that can be replaced
 export type ReplacementEventType =
@@ -263,6 +296,112 @@ export function pruneDamagePreventionEffects(state: GameState): GameState {
 }
 
 /**
+ * Determine the controller of a damage-event target.
+ * Returns the player id that controls the target (either a player id directly,
+ * or the ownerId of the permanent being damaged).
+ */
+function targetControllerId(state: GameState, targetId: string | undefined): string | undefined {
+  if (!targetId) return undefined;
+  // Direct player target
+  if (state.players.some(p => p.id === targetId)) return targetId;
+  // Permanent target — ownerId serves as controller in this engine
+  return state.cards.get(targetId)?.ownerId;
+}
+
+/**
+ * Apply Gisela-style damage-doubling and damage-halving continuous effects.
+ *
+ * For each GiselaDamageDoubling effect in state.continuousEffects:
+ *   If the damage target is controlled by an OPPONENT of the effect's controller
+ *   (i.e. targetController !== effect.controllerId), double the damage.
+ *
+ * For each GiselaDamageHalving effect in state.continuousEffects:
+ *   If the damage target is controlled by the SAME player as the effect's
+ *   controller (i.e. targetController === effect.controllerId), halve the damage
+ *   (rounded up) by preventing ceil(amount/2), so dealt = floor(amount/2).
+ *
+ * Returns the modified event (or null if damage becomes 0).
+ * MTG rules: doubling applies as a replacement; halving is also a replacement.
+ * When both could apply simultaneously (unusual), apply doubling first then
+ * halving so that layering resolves in a deterministic order.
+ */
+function applyGiselaContinuousReplacements(
+  state: GameState,
+  event: ReplacementEvent,
+): { event: ReplacementEvent | null; appliedReplacements: string[] } {
+  if (!state.continuousEffects || state.continuousEffects.length === 0) {
+    return { event, appliedReplacements: [] };
+  }
+
+  let currentEvent: ReplacementEvent | null = event;
+  const appliedReplacements: string[] = [];
+
+  const targetController = targetControllerId(state, event.targetId);
+
+  // Phase 1: apply GiselaDamageDoubling effects (opponent/opponent's permanent)
+  for (const ce of state.continuousEffects) {
+    if (!currentEvent) break;
+    if (ce.ability.modifier.kind !== 'GiselaDamageDoubling') continue;
+
+    // Verify Gisela is still on the battlefield
+    const source = state.cards.get(ce.sourceInstanceId);
+    if (!source || source.zone !== 'battlefield') continue;
+
+    // Apply only when the target is controlled by an OPPONENT of the effect's controller
+    if (targetController === undefined) continue;
+    if (targetController === ce.controllerId) continue; // target is self — skip
+
+    const newAmount: number = (currentEvent.amount ?? 0) * 2;
+    appliedReplacements.push(`gisela_double_${ce.sourceInstanceId}`);
+    currentEvent = { ...currentEvent, amount: newAmount };
+  }
+
+  // Phase 2: apply GiselaDamageHalving effects (self/own permanent)
+  for (const ce of state.continuousEffects) {
+    if (!currentEvent) break;
+    if (ce.ability.modifier.kind !== 'GiselaDamageHalving') continue;
+
+    // Verify Gisela is still on the battlefield
+    const source = state.cards.get(ce.sourceInstanceId);
+    if (!source || source.zone !== 'battlefield') continue;
+
+    // Apply only when the target is controlled by the SAME player as the effect's controller
+    if (targetController !== ce.controllerId) continue;
+
+    const amount: number = currentEvent.amount ?? 0;
+    // "prevent half that damage, rounded up" → prevented = ceil(amount/2)
+    // dealt = floor(amount/2)
+    const prevented: number = Math.ceil(amount / 2);
+    const dealt: number = amount - prevented; // == floor(amount / 2)
+    appliedReplacements.push(`gisela_halve_${ce.sourceInstanceId}`);
+    currentEvent = dealt > 0 ? { ...currentEvent, amount: dealt } : null;
+  }
+
+  return { event: currentEvent, appliedReplacements };
+}
+
+/**
+ * Slice 5 (player-level static prohibitions): return true when any battlefield
+ * permanent has a DamageCantBePrevented continuous effect active (i.e.,
+ * "Damage can't be prevented." from Leyline of Punishment, Everlasting Torment,
+ * Sulfuric Vortex family).
+ *
+ * When true, applyDamageReplacementEffects skips the prevention-effect loops
+ * (state.damagePreventionEffects and DamageDealt replacement registry). Gisela-
+ * style doubling/halving (which modifies, not prevents, damage) still applies.
+ */
+function damageCantBePrevented(state: GameState): boolean {
+  const effects = state.continuousEffects;
+  if (!effects || effects.length === 0) return false;
+  for (const ce of effects) {
+    if (ce.ability.modifier.kind !== 'DamageCantBePrevented') continue;
+    const source = state.cards.get(ce.sourceInstanceId);
+    if (source && source.zone === 'battlefield') return true;
+  }
+  return false;
+}
+
+/**
  * Apply both the legacy replacement registry and state-scoped damage prevention.
  * Returns the possibly updated state because finite prevention shields consume
  * their remaining amount.
@@ -271,14 +410,39 @@ export function applyDamageReplacementEffects(
   state: GameState,
   event: ReplacementEvent & { type: 'DamageDealt'; amount: number },
 ): { state: GameState; event: ReplacementEvent | null; appliedReplacements: string[] } {
-  const globalResult = applyReplacements(state, event);
+  // Apply Gisela-style continuous replacements first (before the legacy registry
+  // and state-scoped prevention shields). These live in state.continuousEffects
+  // and are registered by registerContinuousAbilitiesForPermanent when a
+  // GiselaDamageDoubling/GiselaDamageHalving static is parsed.
+  const giselaResult = applyGiselaContinuousReplacements(state, event);
+  const eventAfterGisela = giselaResult.event;
+  const giselaApplied = giselaResult.appliedReplacements;
+
+  if (!eventAfterGisela) {
+    return { state, event: null, appliedReplacements: giselaApplied };
+  }
+
+  // Slice 5: "Damage can't be prevented." (Leyline of Punishment family).
+  // When active, skip the prevention-effect loops entirely — damage goes through
+  // unreduced. Gisela-style doubling/halving (above) is NOT prevention and still
+  // applies. The checked flag is also respected by state.damagePreventionEffects
+  // (turn-scoped shields like Fog), so both paths are bypassed.
+  if (damageCantBePrevented(state)) {
+    return {
+      state,
+      event: eventAfterGisela,
+      appliedReplacements: giselaApplied,
+    };
+  }
+
+  const globalResult = applyReplacements(state, eventAfterGisela as ReplacementEvent & { type: 'DamageDealt'; amount: number });
   if (!globalResult.event) {
-    return { state, event: null, appliedReplacements: globalResult.appliedReplacements };
+    return { state, event: null, appliedReplacements: [...giselaApplied, ...globalResult.appliedReplacements] };
   }
 
   let currentEvent: ReplacementEvent | null = globalResult.event;
   let effects = clearExpiredPreventionEffects(state.damagePreventionEffects, state.turnNumber);
-  const appliedReplacements = [...globalResult.appliedReplacements];
+  const appliedReplacements = [...giselaApplied, ...globalResult.appliedReplacements];
 
   for (const prevention of effects) {
     if (!currentEvent) break;
@@ -286,6 +450,34 @@ export function applyDamageReplacementEffects(
     if (prevention.combatOnly && !currentEvent.isCombatDamage) continue;
 
     appliedReplacements.push(prevention.id);
+
+    // Slice 12 (en-Kor redirect): when redirectToId is set, the damage is
+    // redirected to a different target rather than prevented. The shield is
+    // consumed (one-shot) and the event's targetId is updated.
+    if (prevention.redirectToId) {
+      const currentAmount: number = currentEvent.amount ?? 0;
+      const redirected: number = Math.min(
+        prevention.amount === 'all' ? currentAmount : prevention.amount,
+        currentAmount,
+      );
+      const remainingDamage: number = currentAmount - redirected;
+      // Consume the redirect shield entirely (always one-shot per activation)
+      effects = effects.filter(e => e.id !== prevention.id);
+      // Redirect the damage; if any damage exceeds the shield's amount,
+      // the remainder goes to the original target via a separate event.
+      // For simplicity (en-Kor always redirects all covered damage), we
+      // redirect up to `prevention.amount` to the new target.
+      // The caller (executeDealDamage) will check replaced.targetId.
+      currentEvent = redirected > 0
+        ? { ...currentEvent, targetId: prevention.redirectToId, amount: redirected }
+        : null;
+      // If there is remaining damage (amount > shield), it is lost here.
+      // (en-Kor shields cover "next N", so only N is redirected; excess falls
+      // to the original target. For N=1 forms this never fires.)
+      void remainingDamage; // acknowledged: excess damage is not re-dealt
+      continue;
+    }
+
     if (prevention.amount === 'all') {
       currentEvent = null;
       continue;

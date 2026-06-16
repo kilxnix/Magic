@@ -22,8 +22,36 @@ import { typeLineHasSubtype } from '../type-line';
  * Parse all cached fields for a CardDefinition from its oracle text.
  * Called once at card load time.
  */
+/**
+ * Slice 1: Strip the outer parenthesis from mana-ability-only land oracle text.
+ *
+ * Basic/dual/snow lands store their mana line wrapped in parens (e.g.
+ * '({T}: Add {W} or {U}.)').  stripParentheticalReminderText strips the ENTIRE
+ * group, leaving nothing for parseManaProductions to find.  Detect this pattern
+ * before stripping so the inner mana ability text survives.
+ * Returns the original text when the pattern does not match.
+ */
+function stripOuterManaParensForCache(text: string): string {
+  const trimmed = text.trim();
+  if (!trimmed.startsWith('(') || !trimmed.endsWith(')')) return text;
+  // Find the matching ')' for the opening '('
+  let depth = 0;
+  let closeIdx = -1;
+  for (let i = 0; i < trimmed.length; i++) {
+    if (trimmed[i] === '(') depth++;
+    else if (trimmed[i] === ')') { depth--; if (depth === 0) { closeIdx = i; break; } }
+  }
+  if (closeIdx !== trimmed.length - 1) return text;
+  const inner = trimmed.slice(1, -1).trim();
+  // Only unwrap if the inner text is a tap mana ability
+  if (!/^\{t\}:\s*add\s+\{[wubrgcs]\}/i.test(inner)) return text;
+  return inner;
+}
+
 export function populateParsedCache(def: CardDefinition): CardDefinition {
-  const oracle = def.oracle_text.toLowerCase();
+  const rawOracle = def.oracle_text.toLowerCase();
+  // Slice 1: unwrap outer-paren mana ability text before reminder stripping
+  const oracle = stripOuterManaParensForCache(rawOracle);
   const typeLine = def.type_line.toLowerCase();
   const manaOracle = stripParentheticalReminderText(oracle);
   const manaProductions = parseManaProductions(manaOracle, typeLine);
@@ -105,8 +133,87 @@ function parseEquipmentBonus(oracle: string): EquipmentBonusInfo | undefined {
     }
   }
 
-  if (power === 0 && toughness === 0 && keywords.length === 0) return undefined;
-  return { power, toughness, keywords };
+  // Pacifism family: "Enchanted creature can't attack and/or block." The engine
+  // enforces the CannotAttack/CannotBlock keywords in canAttackThisTurn/canBlock
+  // (keywords.ts), and instanceHasKeyword reads an attached card's
+  // equipmentBonus.keywords — so emitting them here makes the restriction real.
+  const cantSentence = oracle.match(new RegExp(`${subject} can'?t ([^.]+)`, 'i'));
+  if (cantSentence) {
+    const clause = cantSentence[1].toLowerCase();
+    if (/\battack\b/.test(clause)) keywords.push('CannotAttack');
+    if (/\bblock\b/.test(clause)) keywords.push('CannotBlock');
+  }
+
+  // Layer 7b (CR 613.4): aura/effect SETS base power and toughness, e.g.
+  // "Enchanted creature is a Treefolk with base power and toughness 0/4" (Lignify)
+  // or "Enchanted creature has base power and toughness 1/1" (Cursed). Enforced in
+  // continuous.ts getEffectivePower/Toughness, which substitute the base before
+  // adding counters/pumps, so the value is genuinely applied end-to-end.
+  let setBasePower: number | undefined;
+  let setBaseToughness: number | undefined;
+  const setPTMatch = oracle.match(new RegExp(`${subject}[^.]*\\bbase power and toughness (\\d+)\\/(\\d+)`, 'i'));
+  if (setPTMatch) {
+    setBasePower = parseInt(setPTMatch[1], 10);
+    setBaseToughness = parseInt(setPTMatch[2], 10);
+  }
+
+  // Layer 4 (CR 613): aura SETS or ADDS card types to the attached creature.
+  // Only the 8 card TYPES are modeled — subtypes ("Treefolk"/"Frog") are dropped
+  // (no consumer reads effective subtypes; they read def.type_line directly). So
+  // Lignify ("is a Treefolk ...") yields no type change, while Darksteel Mutation
+  // ("is an Insect artifact creature ...") correctly adds 'artifact'.
+  const CARD_TYPE_WORDS: Record<string, import('../types').CardType> = {
+    creature: 'creature', artifact: 'artifact', enchantment: 'enchantment',
+    land: 'land', planeswalker: 'planeswalker', battle: 'battle',
+  };
+  const pickTypes = (phrase: string): import('../types').CardType[] => {
+    const out: import('../types').CardType[] = [];
+    for (const [w, t] of Object.entries(CARD_TYPE_WORDS)) {
+      if (new RegExp(`\\b${w}\\b`, 'i').test(phrase) && !out.includes(t)) out.push(t);
+    }
+    return out;
+  };
+  let setTypes: import('../types').CardType[] | undefined;
+  let addTypes: import('../types').CardType[] | undefined;
+  // Also match the Frogify/Reprobation compound form:
+  //   "Enchanted creature loses all abilities and is a <phrase>"
+  // The base regex `subject (?:is|becomes) an? ([^.]+)` already handles the
+  // direct form (Lignify, Darksteel Mutation). The alternative prefix
+  // `(?:loses all (?:other )?abilities(?:\s+\w+)*\s+and\s+)?` extends it to
+  // the combined sentence (Slice 3 addition).
+  const becomeSentence = oracle.match(
+    new RegExp(
+      `${subject}\\s+(?:loses\\s+all\\s+(?:other\\s+)?abilities\\s+and\\s+)?(?:is|becomes)\\s+an?\\s+([^.]+)`,
+      'i',
+    ),
+  );
+  if (becomeSentence) {
+    const phrase = becomeSentence[1];
+    const types = pickTypes(phrase);
+    if (types.length) {
+      if (/\bin addition\b/i.test(phrase)) addTypes = types;
+      else setTypes = types;
+    }
+  }
+
+  // Layer 6 (CR 613): "loses all [other] abilities" (Darksteel Mutation, Lignify).
+  // An Aura's whole oracle is about the attached permanent, so a plain match is safe.
+  const losesAllAbilities = /\bloses all (?:other )?abilities\b/i.test(oracle) || undefined;
+
+  if (power === 0 && toughness === 0 && keywords.length === 0
+      && setBasePower === undefined && setBaseToughness === undefined
+      && setTypes === undefined && addTypes === undefined
+      && losesAllAbilities === undefined) {
+    return undefined;
+  }
+  return {
+    power, toughness, keywords,
+    ...(setBasePower !== undefined ? { setBasePower } : {}),
+    ...(setBaseToughness !== undefined ? { setBaseToughness } : {}),
+    ...(setTypes !== undefined ? { setTypes } : {}),
+    ...(addTypes !== undefined ? { addTypes } : {}),
+    ...(losesAllAbilities ? { losesAllAbilities } : {}),
+  };
 }
 
 // ========== Mana Production ==========
@@ -319,7 +426,7 @@ function parseSearchAbility(oracle: string): SearchAbilityInfo | undefined {
   if (forMatch) {
     const target = forMatch[1].toLowerCase();
     const filters = [
-      'basic land', 'artifact or enchantment', 'artifact', 'enchantment',
+      'snow land', 'basic land', 'artifact or enchantment', 'artifact', 'enchantment',
       'creature', 'instant or sorcery', 'instant', 'sorcery', 'land', 'planeswalker',
     ];
     filter = filters.find(f => target.includes(f));

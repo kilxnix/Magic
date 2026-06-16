@@ -218,6 +218,58 @@ describe('keywords', () => {
       const state = makeTestState(['CannotAttack'], { summoningSick: false });
       expect(canAttackThisTurn(state, 'creature-1')).toBe(false);
     });
+
+    it('prevents attack when enchanted by a Pacifism Aura (CannotAttack via equipmentBonus)', () => {
+      const state = makeTestState([], { summoningSick: false });
+      // Attach a Pacifism Aura whose cached equipmentBonus carries the combat
+      // restriction keywords the parser/cache now extract from "can't attack or block".
+      state.cardDefinitions.set('pacifism', {
+        id: 'pacifism',
+        name: 'Pacifism',
+        type_line: 'Enchantment — Aura',
+        oracle_text: "Enchant creature\nEnchanted creature can't attack or block.",
+        mana_cost: '{1}{W}',
+        cmc: 2,
+        colors: ['W'],
+        color_identity: ['W'],
+        keywords: [],
+        card_types: ['enchantment'],
+        equipmentBonus: { power: 0, toughness: 0, keywords: ['CannotAttack', 'CannotBlock'] },
+      });
+      state.cards.set('aura-1', {
+        instanceId: 'aura-1',
+        definitionId: 'pacifism',
+        ownerId: 'player-1',
+        zone: 'battlefield',
+        tapped: false,
+        summoningSick: false,
+        counters: {},
+        damage: 0,
+        isCommander: false,
+        attachedTo: 'creature-1',
+      });
+      expect(instanceHasKeyword(state, 'creature-1', 'CannotAttack')).toBe(true);
+      expect(instanceHasKeyword(state, 'creature-1', 'CannotBlock')).toBe(true);
+      expect(canAttackThisTurn(state, 'creature-1')).toBe(false);
+    });
+
+    it('a "loses all abilities" aura suppresses the creature\'s own keywords but keeps aura-granted ones', () => {
+      const state = makeTestState(['Flying'], { summoningSick: false }); // creature prints Flying
+      state.cardDefinitions.set('mutation', {
+        id: 'mutation',
+        name: 'Darksteel Mutation',
+        type_line: 'Enchantment — Aura',
+        oracle_text: 'Enchant creature\nEnchanted creature is an Insect artifact creature with base power and toughness 0/1 and has indestructible, and it loses all other abilities.',
+        mana_cost: '{1}{W}', cmc: 2, colors: ['W'], color_identity: ['W'], keywords: [], card_types: ['enchantment'],
+        equipmentBonus: { power: 0, toughness: 0, keywords: ['Indestructible'], setBasePower: 0, setBaseToughness: 1, setTypes: ['creature', 'artifact'], losesAllAbilities: true },
+      });
+      state.cards.set('aura-1', {
+        instanceId: 'aura-1', definitionId: 'mutation', ownerId: 'player-1', zone: 'battlefield',
+        tapped: false, summoningSick: false, counters: {}, damage: 0, isCommander: false, attachedTo: 'creature-1',
+      });
+      expect(instanceHasKeyword(state, 'creature-1', 'Flying')).toBe(false);        // own ability lost
+      expect(instanceHasKeyword(state, 'creature-1', 'Indestructible')).toBe(true); // aura-granted kept
+    });
   });
 
   describe('shouldTapWhenAttacking', () => {

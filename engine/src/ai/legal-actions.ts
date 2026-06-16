@@ -6,7 +6,7 @@
 
 import { GameState, CardInstance, AttackerDeclaration, BlockerDeclaration, isSpellStackItem } from '../types';
 import { getCardsInZone, getCardDefinition } from '../game-state';
-import { canCastSpell, getAdditionalLifeCostForCast, getCastSpellDefinition, getEffectiveCastCost, type CastSpellOptions } from '../stack';
+import { canCastSpell, getAdditionalLifeCostForCast, getCastSpellDefinition, getEffectiveCastCost, type CastSpellOptions, canPlayCardFromTopOfLibrary } from '../stack';
 import { canPlayLand, getActivatedAbilities, canActivateAbility, isBlockedBySummoningSicknessForTap, getAvailableManaColors } from '../actions';
 import { canDeclareAttacker, canDeclareBlocker, canPayAttackTaxes, getRequiredAttackers, hasPlayerDeclaredBlockers } from '../combat';
 import { canPaySpellCost, canPayUnrestrictedCost } from '../mana';
@@ -177,6 +177,7 @@ export function getLegalTargets(
     || spec.type === 'CreatureOrEnchantmentSpell'
     || spec.type === 'ArtifactOrCreatureSpell'
     || spec.type === 'InstantOrSorcerySpell'
+    || spec.type === 'EnchantmentInstantOrSorcerySpell'
   ) {
     for (const item of state.stack) {
       if (!isSpellStackItem(item)) continue;
@@ -188,6 +189,7 @@ export function getLegalTargets(
       if (spec.type === 'CreatureOrEnchantmentSpell' && !def.card_types.includes('creature') && !def.card_types.includes('enchantment')) continue;
       if (spec.type === 'ArtifactOrCreatureSpell' && !def.card_types.includes('artifact') && !def.card_types.includes('creature')) continue;
       if (spec.type === 'InstantOrSorcerySpell' && !def.card_types.includes('instant') && !def.card_types.includes('sorcery')) continue;
+      if (spec.type === 'EnchantmentInstantOrSorcerySpell' && !def.card_types.includes('enchantment') && !def.card_types.includes('instant') && !def.card_types.includes('sorcery')) continue;
       if (!matchesCmcConstraint(def.cmc ?? 0)) continue;
       addIfValid(card.instanceId);
     }
@@ -226,6 +228,19 @@ export function getLegalTargets(
       if (spec.constraints?.controllerControls && card.ownerId !== casterId) continue;
       if (spec.constraints?.notSource && sourceInstanceId && card.instanceId === sourceInstanceId) continue;
 
+      addIfValid(card.instanceId);
+    }
+  } else if (spec.type === 'CreatureOrPlaneswalker') {
+    for (const card of state.cards.values()) {
+      if (card.zone !== 'battlefield') continue;
+      const def = getCardDefinition(state, card);
+      if (!isEffectiveCreature(state, card.instanceId) && !def.card_types.includes('planeswalker')) continue;
+      if (spec.constraints?.colors?.length && !spec.constraints.colors.some(color => def.colors.includes(color))) continue;
+      if (spec.constraints?.notColors?.some(color => def.colors.includes(color))) continue;
+      if (!matchesCmcConstraint(def.cmc ?? 0)) continue;
+      if (spec.constraints?.opponentControls && card.ownerId === casterId) continue;
+      if (spec.constraints?.controllerControls && card.ownerId !== casterId) continue;
+      if (spec.constraints?.notSource && sourceInstanceId && card.instanceId === sourceInstanceId) continue;
       addIfValid(card.instanceId);
     }
   } else if (
@@ -470,9 +485,23 @@ function generateCastSpellActions(state: GameState, playerId: string): CastSpell
   const playableExile = getCardsInZone(state, playerId, 'exile')
     .filter(card => typeof card.playableFromExileUntilTurn === 'number' && card.playableFromExileUntilTurn >= state.turnNumber);
 
+  // Slice 4 (top-library-play): include top of library when a PlayFromTopLibrary
+  // continuous effect is active for this player.
+  const library = getCardsInZone(state, playerId, 'library');
+  const topLibraryCard = library.length > 0 ? library[0] : undefined;
+  const playableFromLibrary = topLibraryCard
+    ? (() => {
+        const topDef = getCardDefinition(state, topLibraryCard);
+        if (topDef.card_types.includes('land')) return []; // lands handled by generatePlayLandActions
+        return canPlayCardFromTopOfLibrary(state, playerId, topLibraryCard.instanceId, topDef)
+          ? [topLibraryCard]
+          : [];
+      })()
+    : [];
+
   // Check hand and impulse-draw exile permissions.
   const hand = getCardsInZone(state, playerId, 'hand');
-  for (const card of [...hand, ...playableExile]) {
+  for (const card of [...hand, ...playableExile, ...playableFromLibrary]) {
     for (const faceCast of castFacesForCard(state, card)) {
       if (!canCastSpell(state, playerId, card.instanceId, faceCast.options)) continue;
       // Check for modal spells first
@@ -552,6 +581,18 @@ function generatePlayLandActions(state: GameState, playerId: string): PlayLandAc
     }
   }
 
+  // Slice 4 (top-library-play): also check the top card of the library.
+  const library = getCardsInZone(state, playerId, 'library');
+  const topCard = library.length > 0 ? library[0] : undefined;
+  if (topCard && topCard.zone === 'library') {
+    if (canPlayLand(state, playerId, topCard.instanceId)) {
+      actions.push({
+        kind: 'PlayLand',
+        cardInstanceId: topCard.instanceId,
+      });
+    }
+  }
+
   return actions;
 }
 
@@ -568,18 +609,33 @@ function generateManaActions(state: GameState, playerId: string): ActivateManaAb
       def = populateParsedCache(def);
     }
 
-    if (!def.manaProduction) continue;
-    if (def.manaProduction.activationZone === 'hand') continue;
-    if (def.manaProduction.isTapAbility && card.tapped) continue;
-    if (def.manaProduction.isTapAbility && isBlockedBySummoningSicknessForTap(state, card.instanceId)) continue;
-    if (def.manaProduction.sacrificeFilter) {
-      const canPaySacrificeCost = battlefield.some(candidate => {
-        if (candidate.instanceId === card.instanceId) return false;
-        const candidateDef = getCardDefinition(state, candidate);
-        return matchesCardFilter(candidateDef, def.manaProduction!.sacrificeFilter!);
-      });
-      if (!canPaySacrificeCost) continue;
+    // Slice 4 (engine-gap): a creature with no own manaProduction may still have
+    // a GrantActivatedManaAbility granted to it (Enduring Vitality family).
+    // getAvailableManaColors already includes granted colors, so we can check that
+    // directly. We skip the normal own-production gate and fall through to the
+    // color loop below when a grant applies.
+    const hasOwnManaProduction = !!def.manaProduction;
+    const hasGrantedManaColors = !hasOwnManaProduction
+      && getAvailableManaColors(state, card.instanceId).length > 0;
+
+    if (!hasOwnManaProduction && !hasGrantedManaColors) continue;
+
+    if (hasOwnManaProduction) {
+      if (def.manaProduction!.activationZone === 'hand') continue;
+      if (def.manaProduction!.isTapAbility && card.tapped) continue;
+      if (def.manaProduction!.isTapAbility && isBlockedBySummoningSicknessForTap(state, card.instanceId)) continue;
+      if (def.manaProduction!.sacrificeFilter) {
+        const canPaySacrificeCost = battlefield.some(candidate => {
+          if (candidate.instanceId === card.instanceId) return false;
+          const candidateDef = getCardDefinition(state, candidate);
+          return matchesCardFilter(candidateDef, def.manaProduction!.sacrificeFilter!);
+        });
+        if (!canPaySacrificeCost) continue;
+      }
     }
+    // hasGrantedManaColors path: getAvailableManaColors already handles summoning
+    // sickness and tap checks for granted abilities. The color loop below suffices.
+
     // Sacrifice-cost mana abilities (Lotus Petal, Tinder Wall, etc.) are now
     // legal actions — tapLandForMana sacrifices the card as part of activation.
 

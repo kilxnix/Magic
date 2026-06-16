@@ -2,7 +2,47 @@ import { describe, it, expect } from 'vitest';
 import { parseOracleText, canParseOracleText } from './parser';
 
 describe('parseOracleText', () => {
+  describe('reminder text (CR 207.2 — non-functional, stripped)', () => {
+    it('does not parse a flying reminder as a phantom combat-restriction static', () => {
+      // Storm Crow: "Flying (This creature can't be blocked except by creatures
+      // with flying or reach.)" — the parenthetical is reminder text and must NOT
+      // become a StaticAbility. It parses to Unparsed (classified KeywordOnly upstream).
+      const result = parseOracleText("Flying (This creature can't be blocked except by creatures with flying or reach.)");
+      expect(result.kind).toBe('Unparsed');
+    });
+
+    it('parses the real ability of a Bestow aura past its reminder text', () => {
+      const result = parseOracleText("Bestow {3}{G} (If you cast this card for its bestow cost, it's an Aura spell.)\nEnchant creature\nEnchanted creature gets +2/+1 and has trample.");
+      expect(result.kind).toBe('StaticAbility');
+    });
+
+    it('parses a connive ETB as a Connive effect, not the reminder Draw', () => {
+      const result = parseOracleText('When ~ enters, it connives. (Draw a card, then discard a card. If you discarded a nonland card, put a +1/+1 counter on this creature.)');
+      // "connives" is now implemented; the reminder Draw in parens must be stripped,
+      // and the ability resolves to a real Connive effect rather than a bare Draw.
+      const json = JSON.stringify(result);
+      expect(json).toContain('"Connive"');
+      expect(json).not.toContain('"Draw"');
+    });
+  });
+
   describe('deal damage patterns', () => {
+    it('parses "this creature deals damage equal to its power to any target"', () => {
+      const result = parseOracleText('This creature deals damage equal to its power to any target.');
+      expect(result.kind).toBe('Spell');
+      if (result.kind !== 'Spell') return;
+      const dmg = result.effects[0];
+      if (dmg.kind !== 'DealDamage') return;
+      expect(dmg.amount).toMatchObject({ kind: 'TargetPower', target: { kind: 'Source' } });
+      expect(result.targets[0].type).toBe('Any');
+    });
+
+    it('does not match "deals damage equal to its power" for a spell (~) source', () => {
+      // Spells have no power; the conservative guard leaves this for a future bucket.
+      const result = parseOracleText('~ deals damage equal to its power to target creature.');
+      expect(result.kind).toBe('Unparsed');
+    });
+
     it('parses "~ deals 3 damage to any target."', () => {
       const result = parseOracleText('~ deals 3 damage to any target.');
 
@@ -344,6 +384,119 @@ describe('parseOracleText', () => {
     });
   });
 
+  describe('remove counters (Vanishing/Fading upkeep bodies)', () => {
+    it('parses "remove a time counter from it" as a self RemoveCounters', () => {
+      const result = parseOracleText('Remove a time counter from it.');
+      expect(result.kind).toBe('Spell');
+      if (result.kind !== 'Spell') return;
+      expect(result.effects[0]).toMatchObject({ kind: 'RemoveCounters', target: { kind: 'Source' }, counterType: 'time', count: 1 });
+    });
+
+    it('parses an upkeep trigger body that removes a fade counter', () => {
+      const result = parseOracleText('At the beginning of your upkeep, remove a fade counter from ~.');
+      expect(result.kind).toBe('Triggered');
+      if (result.kind !== 'Triggered') return;
+      expect(result.ability.effects[0]).toMatchObject({ kind: 'RemoveCounters', counterType: 'fade' });
+    });
+  });
+
+  describe('combat tricks (pump + grant keyword)', () => {
+    it('parses "target creature gets +N/+N and gains <keyword> until end of turn"', () => {
+      const result = parseOracleText('Target creature gets +2/+2 and gains trample until end of turn.');
+      expect(result.kind).toBe('Spell');
+      if (result.kind !== 'Spell') return;
+      expect(result.effects.map(e => e.kind)).toEqual(['ModifyPT', 'GrantKeyword']);
+      const pt = result.effects[0];
+      const kw = result.effects[1];
+      if (pt.kind !== 'ModifyPT' || kw.kind !== 'GrantKeyword') return;
+      expect(pt).toMatchObject({ power: 2, toughness: 2, untilEndOfTurn: true });
+      expect(kw).toMatchObject({ keyword: 'Trample', untilEndOfTurn: true });
+    });
+
+    it('parses multiple granted keywords ("and gains flying and first strike")', () => {
+      const result = parseOracleText('Target creature gets +1/+1 and gains flying and first strike until end of turn.');
+      expect(result.kind).toBe('Spell');
+      if (result.kind !== 'Spell') return;
+      expect(result.effects.map(e => e.kind)).toEqual(['ModifyPT', 'GrantKeyword', 'GrantKeyword']);
+    });
+
+    it('still parses a plain pump with no keyword', () => {
+      const result = parseOracleText('Target creature gets +2/+2 until end of turn.');
+      expect(result.kind).toBe('Spell');
+      if (result.kind !== 'Spell') return;
+      expect(result.effects.map(e => e.kind)).toEqual(['ModifyPT']);
+    });
+
+    it('parses a SELF pump + grant keyword ("~ gets +N/+N and gains <kw>")', () => {
+      const result = parseOracleText('~ gets +2/+0 and gains trample until end of turn.');
+      expect(result.kind).toBe('Spell');
+      if (result.kind !== 'Spell') return;
+      expect(result.effects.map(e => e.kind)).toEqual(['ModifyPT', 'GrantKeyword']);
+      const pt = result.effects[0];
+      const kw = result.effects[1];
+      if (pt.kind !== 'ModifyPT' || kw.kind !== 'GrantKeyword') return;
+      expect(pt.target).toMatchObject({ kind: 'Source' });
+      expect(kw).toMatchObject({ target: { kind: 'Source' }, keyword: 'Trample', untilEndOfTurn: true });
+    });
+
+    it('does not let the anthem static matcher swallow the temporary self trick', () => {
+      // "Other creatures you control get +1/+1 and have trample" must stay a StaticAbility.
+      const anthem = parseOracleText('Other creatures you control get +1/+1 and have trample.');
+      expect(anthem.kind).toBe('StaticAbility');
+    });
+  });
+
+  describe('attached static buffs (Aura/Equipment)', () => {
+    it('parses a simple +P/+P Aura past its "Enchant creature" preamble', () => {
+      const result = parseOracleText('Enchant creature\nEnchanted creature gets +2/+1.');
+      expect(result.kind).toBe('StaticAbility');
+      if (result.kind !== 'StaticAbility') return;
+      expect(result.ability.attachedOnly).toBe(true);
+      expect(result.ability.modifier).toMatchObject({ kind: 'ModifyPT', power: 2, toughness: 1 });
+    });
+
+    it('parses a keyword-only Aura', () => {
+      const result = parseOracleText('Enchant creature\nEnchanted creature has flying.');
+      expect(result.kind).toBe('StaticAbility');
+      if (result.kind !== 'StaticAbility') return;
+      expect(result.ability.attachedOnly).toBe(true);
+    });
+
+    it('parses a Flash-prefixed Aura buff', () => {
+      const result = parseOracleText('Flash\nEnchanted creature gets +1/+0 and has first strike.');
+      expect(result.kind).toBe('StaticAbility');
+      if (result.kind !== 'StaticAbility') return;
+      expect(result.ability.modifier).toMatchObject({ kind: 'ModifyPT', power: 1, toughness: 0 });
+    });
+
+    it('keeps trigger-bearing Auras on their trigger parse (no buff shadowing)', () => {
+      const result = parseOracleText("Enchant creature Enchanted creature gets +1/+1. When enchanted creature dies, return that card to its owner's hand.");
+      expect(result.kind).toBe('Dies');
+    });
+
+    it('parses a Pacifism-style "can\'t attack or block" Aura', () => {
+      const result = parseOracleText("Enchant creature\nEnchanted creature can't attack or block.");
+      expect(result.kind).toBe('StaticAbility');
+      if (result.kind !== 'StaticAbility') return;
+      expect(result.ability.attachedOnly).toBe(true);
+      expect(result.ability.modifier).toMatchObject({ kind: 'GrantKeyword', keyword: 'CannotAttack' });
+    });
+
+    it('parses a "can\'t block" Aura', () => {
+      const result = parseOracleText("Enchant creature\nEnchanted creature can't block.");
+      expect(result.kind).toBe('StaticAbility');
+      if (result.kind !== 'StaticAbility') return;
+      expect(result.ability.modifier).toMatchObject({ kind: 'GrantKeyword', keyword: 'CannotBlock' });
+    });
+
+    it('parses an untap-lock Aura (enforced by performUntapStep)', () => {
+      const result = parseOracleText("Enchant creature\nEnchanted creature doesn't untap during its controller's untap step.");
+      expect(result.kind).toBe('StaticAbility');
+      if (result.kind !== 'StaticAbility') return;
+      expect(result.ability.attachedOnly).toBe(true);
+    });
+  });
+
   describe('unparsed cases', () => {
     it('returns Unparsed for empty text', () => {
       const result = parseOracleText('');
@@ -469,6 +622,27 @@ describe('parseOracleText', () => {
       const add = result.effects[0];
       if (add.kind !== 'AddCounters') return;
       expect(add.count).toBe(3);
+    });
+
+    it('parses "Put a +1/+1 counter on it." as a self (Source) target', () => {
+      const result = parseOracleText('Put a +1/+1 counter on it.');
+      expect(result.kind).toBe('Spell');
+      if (result.kind !== 'Spell') return;
+      const add = result.effects[0];
+      expect(add.kind).toBe('AddCounters');
+      if (add.kind !== 'AddCounters') return;
+      expect(add.target).toEqual({ kind: 'Source' });
+      expect(add.count).toBe(1);
+    });
+
+    it('parses "Put two +1/+1 counters on it."', () => {
+      const result = parseOracleText('Put two +1/+1 counters on it.');
+      expect(result.kind).toBe('Spell');
+      if (result.kind !== 'Spell') return;
+      const add = result.effects[0];
+      if (add.kind !== 'AddCounters') return;
+      expect(add.target).toEqual({ kind: 'Source' });
+      expect(add.count).toBe(2);
     });
 
     it('parses energy counter gain', () => {
@@ -877,6 +1051,16 @@ describe('parseOracleText', () => {
       expect(result.effects[0].filter).toBe('creatureOrEnchantment');
       expect(result.effects[0].exileInstead).toBe(true);
       expect(result.targets[0].type).toBe('CreatureOrEnchantmentSpell');
+    });
+
+    it('parses "Counter target enchantment, instant, or sorcery spell." (Swan Song)', () => {
+      const result = parseOracleText('Counter target enchantment, instant, or sorcery spell.');
+      expect(result.kind).toBe('Spell');
+      if (result.kind !== 'Spell') return;
+      expect(result.effects[0].kind).toBe('CounterSpell');
+      if (result.effects[0].kind !== 'CounterSpell') return;
+      expect(result.effects[0].filter).toBe('enchantmentInstantOrSorcery');
+      expect(result.targets[0].type).toBe('EnchantmentInstantOrSorcerySpell');
     });
   });
 
@@ -1368,6 +1552,68 @@ describe('parseOracleText', () => {
 
   // 4. "Search your library for a card" (generic tutor)
   describe('generic tutor patterns', () => {
+    it('parses basic land fetch onto the battlefield tapped', () => {
+      const result = parseOracleText('Search your library for a basic land card, put it onto the battlefield tapped, then shuffle.');
+      expect(result.kind).toBe('Spell');
+      if (result.kind !== 'Spell') return;
+      expect(result.effects[0]).toMatchObject({
+        kind: 'SearchLibrary',
+        filter: { supertypes: ['basic'], types: ['land'] },
+        destination: 'battlefield',
+        tapped: true,
+        shuffle: true,
+      });
+      expect(result.effects[1].kind).toBe('ShuffleLibrary');
+    });
+
+    it('parses basic land fetch onto the battlefield untapped', () => {
+      const result = parseOracleText('Search your library for a basic land card, put it onto the battlefield, then shuffle.');
+      expect(result.kind).toBe('Spell');
+      if (result.kind !== 'Spell') return;
+      expect(result.effects[0]).toMatchObject({
+        kind: 'SearchLibrary',
+        filter: { supertypes: ['basic'], types: ['land'] },
+        destination: 'battlefield',
+        tapped: false,
+      });
+    });
+
+    it('parses basic land fetch into hand', () => {
+      const result = parseOracleText('Search your library for a basic land card, put it into your hand, then shuffle.');
+      expect(result.kind).toBe('Spell');
+      if (result.kind !== 'Spell') return;
+      expect(result.effects[0]).toMatchObject({
+        kind: 'SearchLibrary',
+        filter: { supertypes: ['basic'], types: ['land'] },
+        destination: 'hand',
+        tapped: false,
+      });
+    });
+
+    it('parses a single basic-subtype fetch onto battlefield tapped', () => {
+      const result = parseOracleText('Search your library for a Forest card, put it onto the battlefield tapped, then shuffle.');
+      expect(result.kind).toBe('Spell');
+      if (result.kind !== 'Spell') return;
+      expect(result.effects[0]).toMatchObject({
+        kind: 'SearchLibrary',
+        filter: { types: ['land'], subtypes: ['Forest'] },
+        destination: 'battlefield',
+        tapped: true,
+      });
+    });
+
+    it('parses a dual basic-subtype union fetch', () => {
+      const result = parseOracleText('Search your library for a Mountain or Plains card, put it onto the battlefield tapped, then shuffle.');
+      expect(result.kind).toBe('Spell');
+      if (result.kind !== 'Spell') return;
+      expect(result.effects[0]).toMatchObject({
+        kind: 'SearchLibrary',
+        filter: { types: ['land'], subtypes: ['Mountain', 'Plains'] },
+        destination: 'battlefield',
+        tapped: true,
+      });
+    });
+
     it('parses look-at-top reveal filters into a top-library search prompt effect', () => {
       const result = parseOracleText('Look at the top four cards of your library. You may reveal a Human card from among them and put it into your hand. Put the rest on the bottom of your library in any order.');
       expect(result.kind).toBe('Spell');

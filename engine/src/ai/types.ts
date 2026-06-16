@@ -30,6 +30,8 @@ export interface PlayLandAction {
   kind: 'PlayLand';
   cardInstanceId: string;
   chosenCreatureType?: string;
+  /** Slice 5: chosen color for "As ~ enters, choose a color." */
+  chosenColor?: 'W' | 'U' | 'B' | 'R' | 'G';
   payLifeToEnterUntapped?: boolean;
 }
 

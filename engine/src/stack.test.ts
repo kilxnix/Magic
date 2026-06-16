@@ -1154,6 +1154,44 @@ describe('Stack', () => {
       expect(next.cards.get(cardInstanceId)?.counters['+1/+1']).toBe(4);
     });
 
+    it('applies enters-with counters with an "additional" adjective', () => {
+      const def: CardDefinition = {
+        ...makeCreatureEnteringWithCounters(),
+        id: 'add-counter-1', name: 'Adder',
+        oracle_text: 'Adder enters with an additional +1/+1 counter on it.',
+      };
+      const { state, cardInstanceId } = setupWithCardInHand(def);
+      let next = castSpell(state, 'p1', cardInstanceId);
+      next = resolveTopOfStack(next);
+      expect(next.cards.get(cardInstanceId)?.counters['+1/+1']).toBe(1);
+    });
+
+    it('applies X enters-with counters using the resolved X of an {X}-cost spell', () => {
+      const def: CardDefinition = {
+        ...makeCreatureEnteringWithCounters(),
+        id: 'hydra-1', name: 'Test Hydra',
+        oracle_text: 'Test Hydra enters with X +1/+1 counters on it.',
+        mana_cost: '{X}{G}', cmc: 1,
+      };
+      const { state, cardInstanceId } = setupWithCardInHand(def);
+      let next = castSpell(state, 'p1', cardInstanceId, [], { xValue: 3 });
+      next = resolveTopOfStack(next);
+      expect(next.cards.get(cardInstanceId)?.counters['+1/+1']).toBe(3);
+    });
+
+    it('adds no counters for X enters-with when X is unknown', () => {
+      const def: CardDefinition = {
+        ...makeCreatureEnteringWithCounters(),
+        id: 'bloodthirst-1', name: 'Bloody',
+        oracle_text: 'Bloody enters with X +1/+1 counters on it.',
+        mana_cost: '{2}{R}', cmc: 3,
+      };
+      const { state, cardInstanceId } = setupWithCardInHand(def);
+      let next = castSpell(state, 'p1', cardInstanceId);
+      next = resolveTopOfStack(next);
+      expect(next.cards.get(cardInstanceId)?.counters['+1/+1'] ?? 0).toBe(0);
+    });
+
     it('instant resolves to graveyard', () => {
       const { state, cardInstanceId } = setupWithCardInHand(makeInstant());
       state.players[0].manaPool = { W: 0, U: 0, B: 0, R: 1, G: 0, C: 0 };

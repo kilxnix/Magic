@@ -195,8 +195,11 @@ export function returnSideboardCardsToSideboard(state: GameState): GameState {
 }
 
 export function getCardDefinition(state: GameState, card: CardInstance): CardDefinition {
-  const def = state.cardDefinitions.get(card.definitionId);
-  if (!def) throw new Error(`Card definition not found: ${card.definitionId}`);
+  // Slice 7 (becomes-copy): while becomesCopyOfDefinitionId is set, the permanent's
+  // copiable characteristics are those of the copied card (BecomesCopyEffect / until EOT).
+  const defId = card.becomesCopyOfDefinitionId ?? card.definitionId;
+  const def = state.cardDefinitions.get(defId);
+  if (!def) throw new Error(`Card definition not found: ${defId}`);
   return applyFaceToCardDefinition(def, card.activeFaceName);
 }
 
@@ -240,6 +243,30 @@ export function pruneDetachedEffects(state: GameState): GameState {
     }
   }
 
+  // Slice 9 (ControlEnchanted): when a theft-Aura leaves the battlefield, revert
+  // control of the enchanted permanent to its previous owner. We detect this by
+  // scanning for ControlEnchanted continuous effects whose source is no longer on
+  // the battlefield; for each, restore the enchanted permanent's ownerId using the
+  // precise stolenPermanentId + previousEnchantedOwnerId stored in the Aura's
+  // choices when it entered attached (registerContinuousAbilitiesForPermanent).
+  let cards = state.cards;
+  for (const effect of state.continuousEffects || []) {
+    if (effect.ability.modifier.kind !== 'ControlEnchanted') continue;
+    const source = state.cards.get(effect.sourceInstanceId);
+    if (source?.zone === 'battlefield') continue; // still attached — no revert yet
+    // The Aura has left the battlefield; revert control of the stolen permanent.
+    const previousOwnerId = source?.choices?.previousEnchantedOwnerId;
+    const stolenId = source?.choices?.stolenPermanentId;
+    if (!previousOwnerId || !stolenId) continue;
+    const stolen = state.cards.get(stolenId);
+    // Only revert if the permanent is still on the battlefield; if it also left,
+    // its controller is moot (SBA will handle zone-change cleanup separately).
+    if (!stolen || stolen.zone !== 'battlefield') continue;
+    // Revert: restore the permanent's ownerId to its pre-theft controller.
+    if (cards === state.cards) cards = new Map(state.cards);
+    cards.set(stolenId, { ...stolen, ownerId: previousOwnerId });
+  }
+
   const continuousEffects = (state.continuousEffects || []).filter(effect => {
     const source = state.cards.get(effect.sourceInstanceId);
     return source?.zone === 'battlefield';
@@ -247,6 +274,7 @@ export function pruneDetachedEffects(state: GameState): GameState {
 
   return {
     ...state,
+    cards,
     battlefieldAbilities,
     continuousEffects,
   };

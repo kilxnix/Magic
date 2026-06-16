@@ -1,157 +1,136 @@
 {
-  "generatedAt": "2026-05-30T13:39:39.792Z",
+  "generatedAt": "2026-06-15T22:15:04.669Z",
   "source": "mtg_data/cards_min.jsonl",
   "commanderLegalOnly": true,
   "includedCards": 30969,
   "totalOracleFaces": 31420,
-  "parsedFaces": 17828,
-  "unparsedFaces": 13592,
-  "parsedPercent": 56.74,
+  "parsedFaces": 27183,
+  "unparsedFaces": 4237,
+  "parsedPercent": 86.51,
   "parsedKindCounts": {
-    "Unparsed": 13592,
-    "Spell": 8569,
-    "Activated": 3063,
-    "ETB": 2642,
-    "Triggered": 1343,
-    "KeywordOnly": 876,
-    "StaticAbility": 752,
-    "EntryCounters": 326,
-    "Modal": 242,
-    "Dies": 15
+    "Spell": 10637,
+    "Activated": 4767,
+    "Unparsed": 4237,
+    "ETB": 3592,
+    "StaticAbility": 2853,
+    "Triggered": 2702,
+    "KeywordOnly": 1097,
+    "AbsorbedOnly": 768,
+    "Dies": 391,
+    "Modal": 237,
+    "EntryCounters": 129,
+    "ManaAbility": 10
   },
   "unparsedReasons": [
     {
       "reason": "No recognized pattern",
-      "count": 11279
-    },
-    {
-      "reason": "Could not parse ETB effect clause",
-      "count": 1286
+      "count": 3822
     },
     {
       "reason": "Could not parse trigger effect clause",
-      "count": 996
+      "count": 235
+    },
+    {
+      "reason": "Could not parse ETB effect clause",
+      "count": 131
     },
     {
       "reason": "Could not parse dies effect clause",
-      "count": 31
+      "count": 35
+    },
+    {
+      "reason": "Could not parse ETB if-cast-it effect clause",
+      "count": 13
+    },
+    {
+      "reason": "Empty oracle text",
+      "count": 1
     }
   ],
   "syntaxClusters": [
     {
       "id": "trigger-timing",
       "reason": "Triggered or delayed triggered abilities need event registration and APNAP ordering.",
-      "count": 6041,
+      "count": 1590,
       "samples": [
         {
-          "name": "Mindlink Mech",
-          "set": "neo",
+          "name": "Don & Raph, Hard Science",
+          "set": "tmt",
           "reason": "No recognized pattern",
-          "text": "Flying Whenever this Vehicle becomes crewed for the first time each turn, until end of turn, this Vehicle becomes a copy of target nonlegendary creature that crewed it this turn, except it's 4/3, it's a Vehicle artifact in addition to its other types, and it has flying. Crew 1"
+          "text": "Menace Whenever Don & Raph attack, the next noncreature spell you cast this turn has affinity for artifacts. (It costs {1} less to cast for each artifact you control.)"
         },
         {
-          "name": "Ogre Battlecaster",
-          "set": "j22",
-          "reason": "Could not parse trigger effect clause",
-          "text": "First strike Whenever this creature attacks, you may cast target instant or sorcery card from your graveyard by paying {R}{R} in addition to its other costs. If that spell would be put into a graveyard, exile it instead. When you cast that spell, this creature gets +X/+0 until end of turn, where X is that spell's mana value."
-        },
-        {
-          "name": "Hot Pursuit",
-          "set": "mkc",
-          "reason": "Could not parse ETB effect clause",
-          "text": "When this enchantment enters, suspect target creature an opponent controls. As long as this enchantment remains on the battlefield, that creature is also goaded. At the beginning of combat on your turn, if two or more players have lost the game, gain control of all goaded and/or suspected creatures until end of turn. Untap them. They gain haste until end of "
-        },
-        {
-          "name": "End-Blaze Epiphany",
-          "set": "ecl",
-          "reason": "No recognized pattern",
-          "text": "End-Blaze Epiphany deals X damage to target creature. When that creature dies this turn, exile a number of cards from the top of your library equal to its power, then choose a card exiled this way. Until the end of your next turn, you may play that card."
-        },
-        {
-          "name": "Utopia Sprawl",
-          "set": "rvr",
-          "reason": "No recognized pattern",
-          "text": "Enchant Forest As this Aura enters, choose a color. Whenever enchanted Forest is tapped for mana, its controller adds an additional one mana of the chosen color."
-        },
-        {
-          "name": "Dazzling Sphinx",
-          "set": "otc",
-          "reason": "No recognized pattern",
-          "text": "Flying Whenever this creature deals combat damage to a player, that player exiles cards from the top of their library until they exile an instant or sorcery card. You may cast that card without paying its mana cost. Then that player puts the exiled cards that weren't cast this way on the bottom of their library in a random order."
-        },
-        {
-          "name": "Planebound Accomplice",
-          "set": "mh1",
-          "reason": "No recognized pattern",
-          "text": "{R}: You may put a planeswalker card from your hand onto the battlefield. Sacrifice it at the beginning of the next end step."
-        },
-        {
-          "name": "Ondu Rising",
-          "set": "bfz",
-          "reason": "No recognized pattern",
-          "text": "Whenever a creature attacks this turn, it gains lifelink until end of turn. Awaken 4—{4}{W} (If you cast this spell for {4}{W}, also put four +1/+1 counters on target land you control and it becomes a 0/0 Elemental creature with haste. It's still a land.)"
-        }
-      ]
-    },
-    {
-      "id": "continuous-layers",
-      "reason": "Continuous effects need layer/timestamp/dependency handling.",
-      "count": 2945,
-      "samples": [
-        {
-          "name": "Sensory Deprivation",
-          "set": "m14",
-          "reason": "No recognized pattern",
-          "text": "Enchant creature Enchanted creature gets -3/-0."
-        },
-        {
-          "name": "Behemoth Sledge",
-          "set": "afc",
-          "reason": "No recognized pattern",
-          "text": "Equipped creature gets +2/+2 and has trample and lifelink. Equip {3}"
-        },
-        {
-          "name": "Strength of Unity",
-          "set": "inv",
-          "reason": "No recognized pattern",
-          "text": "Enchant creature Domain — Enchanted creature gets +1/+1 for each basic land type among lands you control."
-        },
-        {
-          "name": "Warden of the First Tree",
+          "name": "Arcbond",
           "set": "frf",
           "reason": "No recognized pattern",
-          "text": "{1}{W/B}: This creature becomes a Human Warrior with base power and toughness 3/3. {2}{W/B}{W/B}: If this creature is a Warrior, it becomes a Human Spirit Warrior with trample and lifelink. {3}{W/B}{W/B}{W/B}: If this creature is a Spirit, put five +1/+1 counters on it."
+          "text": "Choose target creature. Whenever that creature is dealt damage this turn, it deals that much damage to each other creature and each player."
         },
         {
-          "name": "Mindlink Mech",
-          "set": "neo",
+          "name": "Rashmi, Eternities Crafter",
+          "set": "dsc",
           "reason": "No recognized pattern",
-          "text": "Flying Whenever this Vehicle becomes crewed for the first time each turn, until end of turn, this Vehicle becomes a copy of target nonlegendary creature that crewed it this turn, except it's 4/3, it's a Vehicle artifact in addition to its other types, and it has flying. Crew 1"
+          "text": "Whenever you cast your first spell each turn, reveal the top card of your library. You may cast it without paying its mana cost if it's a spell with lesser mana value. If you don't cast it, put it into your hand."
         },
         {
-          "name": "Hot Pursuit",
-          "set": "mkc",
+          "name": "April O'Neil, Human Element",
+          "set": "tmc",
+          "reason": "No recognized pattern",
+          "text": "Whenever a player casts an artifact, instant, or sorcery spell, you create a Mutagen token. (It's an artifact with \"{1}, {T}, Sacrifice this token: Put a +1/+1 counter on target creature. Activate only as a sorcery.\")"
+        },
+        {
+          "name": "Taster of Wares",
+          "set": "ecl",
           "reason": "Could not parse ETB effect clause",
-          "text": "When this enchantment enters, suspect target creature an opponent controls. As long as this enchantment remains on the battlefield, that creature is also goaded. At the beginning of combat on your turn, if two or more players have lost the game, gain control of all goaded and/or suspected creatures until end of turn. Untap them. They gain haste until end of "
+          "text": "When this creature enters, target opponent reveals X cards from their hand, where X is the number of Goblins you control. You choose one of those cards. That player exiles it. If an instant or sorcery card is exiled this way, you may cast it for as long as you control this creature, and mana of any type can be spent to cast that spell."
         },
         {
-          "name": "Guul Draz Vampire",
-          "set": "zen",
+          "name": "Omo, Queen of Vesuva",
+          "set": "m3c",
           "reason": "No recognized pattern",
-          "text": "As long as an opponent has 10 or less life, this creature gets +2/+1 and has intimidate. (It can't be blocked except by artifact creatures and/or creatures that share a color with it.)"
+          "text": "Whenever Omo enters or attacks, put an everything counter on each of up to one target land and up to one target creature. Each land with an everything counter on it is every land type in addition to its other types. Each nonland creature with an everything counter on it is every creature type."
         },
         {
-          "name": "Bond of Discipline",
-          "set": "war",
+          "name": "Sultai Emissary",
+          "set": "frf",
+          "reason": "Could not parse dies effect clause",
+          "text": "When this creature dies, manifest the top card of your library. (Put that card onto the battlefield face down as a 2/2 creature. Turn it face up any time for its mana cost if it's a creature card.)"
+        },
+        {
+          "name": "Park Bleater",
+          "set": "unf",
           "reason": "No recognized pattern",
-          "text": "Tap all creatures your opponents control. Creatures you control gain lifelink until end of turn."
+          "text": "Whenever another creature you own enters, you get {TK}. {W}, {T}: You may put a sticker on a creature you own that entered this turn."
+        },
+        {
+          "name": "Astarion, the Decadent",
+          "set": "clb",
+          "reason": "No recognized pattern",
+          "text": "Deathtouch, lifelink At the beginning of your end step, choose one — • Feed — Target opponent loses life equal to the amount of life they lost this turn. • Friends — You gain life equal to the amount of life you gained this turn."
+        },
+        {
+          "name": "Karlach, Fury of Avernus",
+          "set": "clb",
+          "reason": "No recognized pattern",
+          "text": "Whenever you attack, if it's the first combat phase of the turn, untap all attacking creatures. They gain first strike until end of turn. After this phase, there is an additional combat phase. Choose a Background (You can have a Background as a second commander.)"
+        },
+        {
+          "name": "Earth Village Ruffians",
+          "set": "tla",
+          "reason": "Could not parse dies effect clause",
+          "text": "When this creature dies, earthbend 2. (Target land you control becomes a 0/0 creature with haste that's still a land. Put two +1/+1 counters on it. When it dies or is exiled, return it to the battlefield tapped.)"
+        },
+        {
+          "name": "Parker Luck",
+          "set": "spm",
+          "reason": "Could not parse trigger effect clause",
+          "text": "At the beginning of your end step, two target players each reveal the top card of their library. They each lose life equal to the mana value of the card revealed by the other player. Then they each put the card they revealed into their hand."
         }
       ]
     },
     {
       "id": "unclassified",
       "reason": "Unparsed text did not match a known syntax cluster; inspect manually.",
-      "count": 2919,
+      "count": 1115,
       "samples": [
         {
           "name": "Static Orb",
@@ -172,12 +151,6 @@
           "text": "Gain control of target Aura that's attached to a permanent. Attach it to another permanent it can enchant."
         },
         {
-          "name": "Weakstone",
-          "set": "me4",
-          "reason": "No recognized pattern",
-          "text": "Attacking creatures get -1/-0."
-        },
-        {
           "name": "Dungeon Delver",
           "set": "clb",
           "reason": "No recognized pattern",
@@ -190,60 +163,133 @@
           "text": "Trample As long as this card is in your graveyard and you control a Forest, creatures you control have trample."
         },
         {
-          "name": "Magma Sliver",
-          "set": "lgn",
+          "name": "Collective Voyage",
+          "set": "c16",
           "reason": "No recognized pattern",
-          "text": "All Slivers have \"{T}: Target Sliver creature gets +X/+0 until end of turn, where X is the number of Slivers on the battlefield.\""
+          "text": "Join forces — Starting with you, each player may pay any amount of mana. Each player searches their library for up to X basic land cards, where X is the total amount of mana paid this way, puts them onto the battlefield tapped, then shuffles."
         },
         {
-          "name": "Phyrexian Juggernaut",
-          "set": "td2",
+          "name": "Strategic Betrayal",
+          "set": "tdm",
           "reason": "No recognized pattern",
-          "text": "Infect (This creature deals damage to creatures in the form of -1/-1 counters and to players in the form of poison counters.) This creature attacks each combat if able."
+          "text": "Target opponent exiles a creature they control and their graveyard."
+        },
+        {
+          "name": "Pir's Whim",
+          "set": "bbd",
+          "reason": "No recognized pattern",
+          "text": "For each player, choose friend or foe. Each friend searches their library for a land card, puts it onto the battlefield tapped, then shuffles. Each foe sacrifices an artifact or enchantment of their choice."
+        },
+        {
+          "name": "Delete",
+          "set": "who",
+          "reason": "No recognized pattern",
+          "text": "Delete deals X damage to each nonartifact creature and each player."
+        },
+        {
+          "name": "Goblin Gathering",
+          "set": "rna",
+          "reason": "No recognized pattern",
+          "text": "Create a number of 1/1 red Goblin creature tokens equal to two plus the number of cards named Goblin Gathering in your graveyard."
+        },
+        {
+          "name": "Storage Matrix",
+          "set": "9ed",
+          "reason": "No recognized pattern",
+          "text": "As long as this artifact is untapped, each player chooses artifact, creature, or land during their untap step. That player can untap only permanents of the chosen type this step."
+        },
+        {
+          "name": "Yew Spirit",
+          "set": "avr",
+          "reason": "No recognized pattern",
+          "text": "{2}{G}{G}: This creature gets +X/+X until end of turn, where X is its power."
+        }
+      ]
+    },
+    {
+      "id": "continuous-layers",
+      "reason": "Continuous effects need layer/timestamp/dependency handling.",
+      "count": 666,
+      "samples": [
+        {
+          "name": "Halsin, Emerald Archdruid",
+          "set": "clb",
+          "reason": "No recognized pattern",
+          "text": "{1}: Until end of turn, target token you control becomes a green Bear creature with base power and toughness 4/4 in addition to its other colors and types. Choose a Background (You can have a Background as a second commander.)"
+        },
+        {
+          "name": "Sworn Defender",
+          "set": "all",
+          "reason": "No recognized pattern",
+          "text": "{1}: This creature's power becomes the toughness of target creature blocking or being blocked by this creature minus 1 until end of turn, and its toughness becomes 1 plus the power of that creature until end of turn."
+        },
+        {
+          "name": "Mistform Wall",
+          "set": "ons",
+          "reason": "No recognized pattern",
+          "text": "This creature has defender as long as it's a Wall. {1}: This creature becomes the creature type of your choice until end of turn."
+        },
+        {
+          "name": "Earth Village Ruffians",
+          "set": "tla",
+          "reason": "Could not parse dies effect clause",
+          "text": "When this creature dies, earthbend 2. (Target land you control becomes a 0/0 creature with haste that's still a land. Put two +1/+1 counters on it. When it dies or is exiled, return it to the battlefield tapped.)"
+        },
+        {
+          "name": "Mesmeric Orb",
+          "set": "2xm",
+          "reason": "No recognized pattern",
+          "text": "Whenever a permanent becomes untapped, that permanent's controller mills a card."
+        },
+        {
+          "name": "Illusionary Mask",
+          "set": "me3",
+          "reason": "No recognized pattern",
+          "text": "{X}: You may choose a creature card in your hand whose mana cost could be paid by some amount of, or all of, the mana you spent on {X}. If you do, you may cast that card face down as a 2/2 creature spell without paying its mana cost. If the creature that spell becomes as it resolves has not been turned face up and would assign or deal damage, be dealt damage"
+        },
+        {
+          "name": "Isleback Spawn",
+          "set": "shm",
+          "reason": "No recognized pattern",
+          "text": "Shroud (This creature can't be the target of spells or abilities.) This creature gets +4/+8 as long as a library has twenty or fewer cards in it."
+        },
+        {
+          "name": "Vihaan, Goldwaker",
+          "set": "otc",
+          "reason": "No recognized pattern",
+          "text": "Other outlaws you control have vigilance and haste. (Assassins, Mercenaries, Pirates, Rogues, and Warlocks are outlaws.) At the beginning of combat on your turn, you may have Treasures you control become 3/3 Construct Assassin artifact creatures in addition to their other types until end of turn."
+        },
+        {
+          "name": "Warbringer",
+          "set": "dtk",
+          "reason": "No recognized pattern",
+          "text": "Dash costs you pay cost {2} less (as long as this creature is on the battlefield). Dash {2}{R} (You may cast this spell for its dash cost. If you do, it gains haste, and it's returned from the battlefield to its owner's hand at the beginning of the next end step.)"
+        },
+        {
+          "name": "Deadly Wanderings",
+          "set": "dtk",
+          "reason": "No recognized pattern",
+          "text": "As long as you control exactly one creature, that creature gets +2/+0 and has deathtouch and lifelink."
+        },
+        {
+          "name": "Kudo, King Among Bears",
+          "set": "mh3",
+          "reason": "No recognized pattern",
+          "text": "Other creatures have base power and toughness 2/2 and are Bears in addition to their other types."
+        },
+        {
+          "name": "Nanoform Sentinel",
+          "set": "eoe",
+          "reason": "Could not parse trigger effect clause",
+          "text": "Whenever this creature becomes tapped, untap another target permanent. This ability triggers only once each turn."
         }
       ]
     },
     {
       "id": "combat-multiplayer",
       "reason": "Combat or multiplayer-defender text needs combat/defender-aware execution.",
-      "count": 2133,
+      "count": 649,
       "samples": [
-        {
-          "name": "Dazzling Sphinx",
-          "set": "otc",
-          "reason": "No recognized pattern",
-          "text": "Flying Whenever this creature deals combat damage to a player, that player exiles cards from the top of their library until they exile an instant or sorcery card. You may cast that card without paying its mana cost. Then that player puts the exiled cards that weren't cast this way on the bottom of their library in a random order."
-        },
-        {
-          "name": "Tanglewalker",
-          "set": "dst",
-          "reason": "No recognized pattern",
-          "text": "Each creature you control can't be blocked as long as defending player controls an artifact land."
-        },
-        {
-          "name": "Planebound Accomplice",
-          "set": "mh1",
-          "reason": "No recognized pattern",
-          "text": "{R}: You may put a planeswalker card from your hand onto the battlefield. Sacrifice it at the beginning of the next end step."
-        },
-        {
-          "name": "Welkin Tern",
-          "set": "gs1",
-          "reason": "No recognized pattern",
-          "text": "Flying (This creature can't be blocked except by creatures with flying or reach.) This creature can block only creatures with flying."
-        },
-        {
-          "name": "Goblin Flotilla",
-          "set": "fem",
-          "reason": "No recognized pattern",
-          "text": "Islandwalk (This creature can't be blocked as long as defending player controls an Island.) At the beginning of each combat, unless you pay {R}, whenever this creature blocks or becomes blocked by a creature this combat, that creature gains first strike until end of turn."
-        },
-        {
-          "name": "Quilled Greatwurm",
-          "set": "fdn",
-          "reason": "No recognized pattern",
-          "text": "Trample Whenever a creature you control deals combat damage during your turn, put that many +1/+1 counters on it. (It must survive to get the counters.) You may cast this card from your graveyard by removing six counters from among creatures you control in addition to paying its other costs."
-        },
         {
           "name": "Don & Raph, Hard Science",
           "set": "tmt",
@@ -251,35 +297,83 @@
           "text": "Menace Whenever Don & Raph attack, the next noncreature spell you cast this turn has affinity for artifacts. (It costs {1} less to cast for each artifact you control.)"
         },
         {
-          "name": "Fear of Infinity",
-          "set": "dsk",
+          "name": "Embermaw Hellion",
+          "set": "ori",
           "reason": "No recognized pattern",
-          "text": "Flying, lifelink This creature can't block. Eerie — Whenever an enchantment you control enters and whenever you fully unlock a Room, you may return this card from your graveyard to your hand."
+          "text": "Trample (This creature can deal excess combat damage to the player or planeswalker it's attacking.) If another red source you control would deal damage to a permanent or player, it deals that much damage plus 1 to that permanent or player instead."
+        },
+        {
+          "name": "Karlach, Fury of Avernus",
+          "set": "clb",
+          "reason": "No recognized pattern",
+          "text": "Whenever you attack, if it's the first combat phase of the turn, untap all attacking creatures. They gain first strike until end of turn. After this phase, there is an additional combat phase. Choose a Background (You can have a Background as a second commander.)"
+        },
+        {
+          "name": "Fangorn, Tree Shepherd",
+          "set": "ltr",
+          "reason": "No recognized pattern",
+          "text": "Treefolk you control have vigilance. Whenever one or more Treefolk you control attack, add twice that much {G}. You don't lose unspent green mana as steps and phases end."
+        },
+        {
+          "name": "The Emperor of Palamecia // The Lord Master of Hell // The Lord Master of Hell",
+          "set": "fin",
+          "reason": "No recognized pattern",
+          "text": "Starfall — Whenever The Lord Master of Hell attacks, it deals X damage to each opponent, where X is the number of noncreature, nonland cards in your graveyard."
+        },
+        {
+          "name": "Bristlepack Sentry",
+          "set": "otj",
+          "reason": "No recognized pattern",
+          "text": "Defender As long as you control a creature with power 4 or greater, this creature can attack as though it didn't have defender."
+        },
+        {
+          "name": "Viseling",
+          "set": "c13",
+          "reason": "Could not parse trigger effect clause",
+          "text": "At the beginning of each opponent's upkeep, this creature deals X damage to that player, where X is the number of cards in their hand minus 4."
+        },
+        {
+          "name": "Tempt with Immortality",
+          "set": "c13",
+          "reason": "No recognized pattern",
+          "text": "Tempting offer — Return a creature card from your graveyard to the battlefield. Each opponent may return a creature card from their graveyard to the battlefield. For each opponent who does, return a creature card from your graveyard to the battlefield."
+        },
+        {
+          "name": "Espers to Magicite",
+          "set": "fic",
+          "reason": "No recognized pattern",
+          "text": "Exile each opponent's graveyard. When you do, choose up to one target creature card exiled this way. Create a token that's a copy of that card, except it's an artifact and it loses all other card types."
+        },
+        {
+          "name": "Corporeal Projection",
+          "set": "clu",
+          "reason": "No recognized pattern",
+          "text": "Target creature you control gains myriad until end of turn. (Whenever it attacks, for each opponent other than defending player, you may create a token copy that's tapped and attacking that player or a planeswalker they control. Exile the tokens at end of combat.) Overload {3}{U}{U}{R}{R} (You may cast this spell for its overload cost. If you do, change \"tar"
+        },
+        {
+          "name": "Whipgrass Entangler",
+          "set": "lgn",
+          "reason": "No recognized pattern",
+          "text": "{1}{W}: Until end of turn, target creature gains \"This creature can't attack or block unless its controller pays {1} for each Cleric on the battlefield.\""
+        },
+        {
+          "name": "Incite Hysteria",
+          "set": "rav",
+          "reason": "No recognized pattern",
+          "text": "Radiance — Until end of turn, target creature and each other creature that shares a color with it gain \"This creature can't block.\""
         }
       ]
     },
     {
       "id": "tokens-counters",
       "reason": "Token/counter wording needs typed objects, counters, and downstream interactions.",
-      "count": 1664,
+      "count": 472,
       "samples": [
         {
           "name": "Sagu Pummeler",
           "set": "tdm",
           "reason": "No recognized pattern",
           "text": "Reach Renew — {4}{G}, Exile this card from your graveyard: Put two +1/+1 counters and a reach counter on target creature. Activate only as a sorcery."
-        },
-        {
-          "name": "Minion Reflector",
-          "set": "ala",
-          "reason": "Could not parse trigger effect clause",
-          "text": "Whenever a nontoken creature you control enters, you may pay {2}. If you do, create a token that's a copy of that creature, except it has haste and \"At the beginning of the end step, sacrifice this permanent.\""
-        },
-        {
-          "name": "Long List of the Ents",
-          "set": "ltr",
-          "reason": "No recognized pattern",
-          "text": "(As this Saga enters and after your draw step, add a lore counter. Sacrifice after VI.) I, II, III, IV, V, VI — Note a creature type that hasn't been noted for this Saga. When you next cast a creature spell of that type this turn, that creature enters with an additional +1/+1 counter on it."
         },
         {
           "name": "Halsin, Emerald Archdruid",
@@ -288,145 +382,150 @@
           "text": "{1}: Until end of turn, target token you control becomes a green Bear creature with base power and toughness 4/4 in addition to its other colors and types. Choose a Background (You can have a Background as a second commander.)"
         },
         {
-          "name": "Cogwork Assembler",
-          "set": "2xm",
+          "name": "April O'Neil, Human Element",
+          "set": "tmc",
           "reason": "No recognized pattern",
-          "text": "{7}: Create a token that's a copy of target artifact. That token gains haste. Exile it at the beginning of the next end step."
+          "text": "Whenever a player casts an artifact, instant, or sorcery spell, you create a Mutagen token. (It's an artifact with \"{1}, {T}, Sacrifice this token: Put a +1/+1 counter on target creature. Activate only as a sorcery.\")"
         },
         {
-          "name": "Benevolent Hydra",
-          "set": "soc",
+          "name": "Omo, Queen of Vesuva",
+          "set": "m3c",
           "reason": "No recognized pattern",
-          "text": "This creature enters with X +1/+1 counters on it. If one or more +1/+1 counters would be put on another creature you control, that many plus one +1/+1 counters are put on it instead. {T}, Remove a +1/+1 counter from this creature: Put a +1/+1 counter on another target creature you control."
+          "text": "Whenever Omo enters or attacks, put an everything counter on each of up to one target land and up to one target creature. Each land with an everything counter on it is every land type in addition to its other types. Each nonland creature with an everything counter on it is every creature type."
         },
         {
-          "name": "Sword-Swallowing Seraph",
-          "set": "unf",
-          "reason": "Could not parse ETB effect clause",
-          "text": "Flying, vigilance When this creature enters, you may put a name sticker on a nonland permanent you own. {1}{W}, {T}: Put a +1/+1 counter on another target creature with a name sticker on it. Activate only as a sorcery."
-        },
-        {
-          "name": "Kadena's Silencer",
-          "set": "c19",
+          "name": "Flycatcher Giraffid",
+          "set": "iko",
           "reason": "No recognized pattern",
-          "text": "When this creature is turned face up, counter all abilities your opponents control. Megamorph {1}{U} (You may cast this card face down as a 2/2 creature for {3}. Turn it face up any time for its megamorph cost and put a +1/+1 counter on it.)"
-        }
-      ]
-    },
-    {
-      "id": "non-hand-zones",
-      "reason": "Non-hand zone casting/movement needs zone permission and visibility checks.",
-      "count": 1418,
-      "samples": [
+          "text": "This creature enters with your choice of a vigilance counter or a reach counter on it."
+        },
         {
-          "name": "Road of Return",
-          "set": "c19",
+          "name": "Spider-Punk",
+          "set": "spm",
           "reason": "No recognized pattern",
-          "text": "Choose one — • Return target permanent card from your graveyard to your hand. • Put your commander into your hand from the command zone. Entwine {2} (Choose both if you pay the entwine cost.)"
+          "text": "Riot (This creature enters with your choice of a +1/+1 counter or haste.) Other Spiders you control have riot. Spells and abilities can't be countered. Damage can't be prevented."
         },
         {
-          "name": "Hua Tuo, Honored Physician",
-          "set": "c13",
+          "name": "Scourge of the Throne",
+          "set": "tdc",
           "reason": "No recognized pattern",
-          "text": "{T}: Put target creature card from your graveyard on top of your library. Activate only during your turn, before attackers are declared."
+          "text": "Flying Dethrone (Whenever this creature attacks the player with the most life or tied for most life, put a +1/+1 counter on it.) Whenever this creature attacks for the first time each turn, if it's attacking the player with the most life or tied for most life, untap all attacking creatures. After this phase, there is an additional combat phase."
         },
         {
-          "name": "Ogre Battlecaster",
-          "set": "j22",
-          "reason": "Could not parse trigger effect clause",
-          "text": "First strike Whenever this creature attacks, you may cast target instant or sorcery card from your graveyard by paying {R}{R} in addition to its other costs. If that spell would be put into a graveyard, exile it instead. When you cast that spell, this creature gets +X/+0 until end of turn, where X is that spell's mana value."
-        },
-        {
-          "name": "Harvest Pyre",
-          "set": "isd",
+          "name": "Wave Goodbye",
+          "set": "tmc",
           "reason": "No recognized pattern",
-          "text": "As an additional cost to cast this spell, exile X cards from your graveyard. Harvest Pyre deals X damage to target creature."
+          "text": "Return each creature without a +1/+1 counter on it to its owner's hand."
         },
         {
-          "name": "Sagu Pummeler",
-          "set": "tdm",
+          "name": "Espers to Magicite",
+          "set": "fic",
           "reason": "No recognized pattern",
-          "text": "Reach Renew — {4}{G}, Exile this card from your graveyard: Put two +1/+1 counters and a reach counter on target creature. Activate only as a sorcery."
+          "text": "Exile each opponent's graveyard. When you do, choose up to one target creature card exiled this way. Create a token that's a copy of that card, except it's an artifact and it loses all other card types."
         },
         {
-          "name": "Sanguine Indulgence",
-          "set": "fdn",
+          "name": "Battle at the Helvault",
+          "set": "cmm",
           "reason": "No recognized pattern",
-          "text": "This spell costs {3} less to cast if you've gained 3 or more life this turn. Return up to two target creature cards from your graveyard to your hand."
+          "text": "(As this Saga enters and after your draw step, add a lore counter. Sacrifice after III.) I, II — For each player, exile up to one target non-Saga, nonland permanent that player controls until this Saga leaves the battlefield. III — Create Avacyn, a legendary 8/8 white Angel creature token with flying, vigilance, and indestructible."
         },
         {
-          "name": "Greasefang, Okiba Boss",
-          "set": "neo",
-          "reason": "Could not parse trigger effect clause",
-          "text": "At the beginning of combat on your turn, return target Vehicle card from your graveyard to the battlefield. It gains haste. Return it to its owner's hand at the beginning of your next end step."
-        },
-        {
-          "name": "Dragon Fangs",
-          "set": "scg",
+          "name": "Thunderous Debut",
+          "set": "woe",
           "reason": "No recognized pattern",
-          "text": "Enchant creature Enchanted creature gets +1/+1 and has trample. When a creature with mana value 6 or greater enters, you may return this card from your graveyard to the battlefield attached to that creature."
+          "text": "Bargain (You may sacrifice an artifact, enchantment, or token as you cast this spell.) Look at the top twenty cards of your library. You may reveal up to two creature cards from among them. If this spell was bargained, put the revealed cards onto the battlefield. Otherwise, put the revealed cards into your hand. Then shuffle."
+        },
+        {
+          "name": "Lifeforce",
+          "set": "me4",
+          "reason": "No recognized pattern",
+          "text": "{G}{G}: Counter target black spell."
         }
       ]
     },
     {
       "id": "cost-system",
       "reason": "Alternative/additional/reduced costs need prompt-backed payment and legality.",
-      "count": 1160,
+      "count": 468,
       "samples": [
         {
-          "name": "Pteramander",
-          "set": "otc",
+          "name": "Don & Raph, Hard Science",
+          "set": "tmt",
           "reason": "No recognized pattern",
-          "text": "Flying {7}{U}: Adapt 4. This ability costs {1} less to activate for each instant and sorcery card in your graveyard. (If this creature has no +1/+1 counters on it, put four +1/+1 counters on it.)"
+          "text": "Menace Whenever Don & Raph attack, the next noncreature spell you cast this turn has affinity for artifacts. (It costs {1} less to cast for each artifact you control.)"
         },
         {
-          "name": "Thunderherd Migration",
+          "name": "Rashmi, Eternities Crafter",
+          "set": "dsc",
+          "reason": "No recognized pattern",
+          "text": "Whenever you cast your first spell each turn, reveal the top card of your library. You may cast it without paying its mana cost if it's a spell with lesser mana value. If you don't cast it, put it into your hand."
+        },
+        {
+          "name": "Fallaji Wayfarer",
+          "set": "dmc",
+          "reason": "No recognized pattern",
+          "text": "Fallaji Wayfarer is all colors. This ability doesn't affect its color identity. (It can be in any deck whose commander's color identity includes green.) Multicolored spells you cast have convoke. (Your creatures can help cast those spells. Each creature you tap while casting a multicolored spell pays for {1} or one mana of a color that creature is.)"
+        },
+        {
+          "name": "Flashback",
+          "set": "sos",
+          "reason": "No recognized pattern",
+          "text": "Target instant or sorcery card in your graveyard gains flashback until end of turn. The flashback cost is equal to its mana cost. (You may cast that card from your graveyard for its flashback cost. Then exile it.)"
+        },
+        {
+          "name": "Kopala, Warden of Waves",
           "set": "lcc",
           "reason": "No recognized pattern",
-          "text": "As an additional cost to cast this spell, reveal a Dinosaur card from your hand or pay {1}. Search your library for a basic land card, put it onto the battlefield tapped, then shuffle."
+          "text": "Spells your opponents cast that target a Merfolk you control cost {2} more to cast. Abilities your opponents activate that target a Merfolk you control cost {2} more to activate."
         },
         {
-          "name": "Harvest Pyre",
-          "set": "isd",
+          "name": "Makeshift Mauler",
+          "set": "inr",
           "reason": "No recognized pattern",
-          "text": "As an additional cost to cast this spell, exile X cards from your graveyard. Harvest Pyre deals X damage to target creature."
+          "text": "As an additional cost to cast this spell, exile a creature card from your graveyard."
         },
         {
-          "name": "Dazzling Sphinx",
-          "set": "otc",
+          "name": "Close Encounter",
+          "set": "eoe",
           "reason": "No recognized pattern",
-          "text": "Flying Whenever this creature deals combat damage to a player, that player exiles cards from the top of their library until they exile an instant or sorcery card. You may cast that card without paying its mana cost. Then that player puts the exiled cards that weren't cast this way on the bottom of their library in a random order."
+          "text": "As an additional cost to cast this spell, choose a creature you control or a warped creature card you own in exile. Close Encounter deals damage equal to the power of the chosen creature or card to target creature."
         },
         {
-          "name": "Sanguine Indulgence",
-          "set": "fdn",
+          "name": "Nethergoyf",
+          "set": "mh3",
           "reason": "No recognized pattern",
-          "text": "This spell costs {3} less to cast if you've gained 3 or more life this turn. Return up to two target creature cards from your graveyard to your hand."
+          "text": "Nethergoyf's power is equal to the number of card types among cards in your graveyard and its toughness is equal to that number plus 1. Escape—{2}{B}, Exile any number of other cards from your graveyard with four or more card types among them. (You may cast this card from your graveyard for its escape cost.)"
         },
         {
-          "name": "Starnheim Courser",
-          "set": "khm",
+          "name": "Gorex, the Tombshell",
+          "set": "cmm",
           "reason": "No recognized pattern",
-          "text": "Flying Artifact and enchantment spells you cast cost {1} less to cast."
+          "text": "As an additional cost to cast this spell, you may exile any number of creature cards from your graveyard. This spell costs {2} less to cast for each card exiled this way. Deathtouch Whenever Gorex attacks or dies, choose a card at random exiled with Gorex and put that card into its owner's hand."
         },
         {
-          "name": "Mocking Sprite",
-          "set": "fdn",
+          "name": "Oracle of Bones",
+          "set": "bng",
           "reason": "No recognized pattern",
-          "text": "Flying Instant and sorcery spells you cast cost {1} less to cast."
+          "text": "Haste Tribute 2 (As this creature enters, an opponent of your choice may put two +1/+1 counters on it.) When this creature enters, if tribute wasn't paid, you may cast an instant or sorcery spell from your hand without paying its mana cost."
         },
         {
-          "name": "Icebreaker Kraken",
-          "set": "khm",
+          "name": "Outbreak",
+          "set": "pcy",
           "reason": "No recognized pattern",
-          "text": "Affinity for snow lands (This spell costs {1} less to cast for each snow land you control.) When this creature enters, artifacts and creatures target opponent controls don't untap during that player's next untap step. Return three snow lands you control to their owner's hand: Return this creature to its owner's hand."
+          "text": "You may discard a Swamp card rather than pay this spell's mana cost. Choose a creature type. All creatures of that type get -1/-1 until end of turn."
+        },
+        {
+          "name": "Alter Reality",
+          "set": "tor",
+          "reason": "No recognized pattern",
+          "text": "Change the text of target spell or permanent by replacing all instances of one color word with another. (This effect lasts indefinitely.) Flashback {1}{U} (You may cast this card from your graveyard for its flashback cost. Then exile it.)"
         }
       ]
     },
     {
       "id": "replacement-prevention",
       "reason": "Replacement/prevention effects require replacement-layer handling.",
-      "count": 1131,
+      "count": 386,
       "samples": [
         {
           "name": "Soul-Scar Mage",
@@ -435,72 +534,157 @@
           "text": "Prowess If a source you control would deal noncombat damage to a creature an opponent controls, put that many -1/-1 counters on that creature instead."
         },
         {
-          "name": "Ogre Battlecaster",
-          "set": "j22",
-          "reason": "Could not parse trigger effect clause",
-          "text": "First strike Whenever this creature attacks, you may cast target instant or sorcery card from your graveyard by paying {R}{R} in addition to its other costs. If that spell would be put into a graveyard, exile it instead. When you cast that spell, this creature gets +X/+0 until end of turn, where X is that spell's mana value."
-        },
-        {
-          "name": "Utopia Sprawl",
-          "set": "rvr",
-          "reason": "No recognized pattern",
-          "text": "Enchant Forest As this Aura enters, choose a color. Whenever enchanted Forest is tapped for mana, its controller adds an additional one mana of the chosen color."
-        },
-        {
-          "name": "Long List of the Ents",
-          "set": "ltr",
-          "reason": "No recognized pattern",
-          "text": "(As this Saga enters and after your draw step, add a lore counter. Sacrifice after VI.) I, II, III, IV, V, VI — Note a creature type that hasn't been noted for this Saga. When you next cast a creature spell of that type this turn, that creature enters with an additional +1/+1 counter on it."
-        },
-        {
           "name": "Doubling Season",
           "set": "fdn",
           "reason": "No recognized pattern",
           "text": "If an effect would create one or more tokens under your control, it creates twice that many of those tokens instead. If an effect would put one or more counters on a permanent you control, it puts twice that many of those counters on that permanent instead."
         },
         {
-          "name": "Gerrard's Hourglass Pendant",
-          "set": "dmc",
-          "reason": "No recognized pattern",
-          "text": "Flash If a player would begin an extra turn, that player skips that turn instead. {4}, {T}, Exile Gerrard's Hourglass Pendant: Return to the battlefield tapped all artifact, creature, enchantment, and land cards in your graveyard that were put there from the battlefield this turn."
-        },
-        {
-          "name": "Royal Warden",
-          "set": "40k",
-          "reason": "No recognized pattern",
-          "text": "Phalanx Commander — When this creature enters, create two tapped 2/2 black Necron Warrior artifact creature tokens. Unearth {3}{B} ({3}{B}: Return this card from your graveyard to the battlefield. It gains haste. Exile it at the beginning of the next end step or if it would leave the battlefield. Unearth only as a sorcery.)"
-        },
-        {
           "name": "Embermaw Hellion",
           "set": "ori",
           "reason": "No recognized pattern",
           "text": "Trample (This creature can deal excess combat damage to the player or planeswalker it's attacking.) If another red source you control would deal damage to a permanent or player, it deals that much damage plus 1 to that permanent or player instead."
+        },
+        {
+          "name": "Green Sun's Twilight",
+          "set": "one",
+          "reason": "No recognized pattern",
+          "text": "Reveal the top X plus one cards of your library. Choose a creature card and/or a land card from among them. Put those cards into your hand and the rest on the bottom of your library in a random order. If X is 5 or more, instead put the chosen cards onto the battlefield or into your hand and the rest on the bottom of your library in a random order."
+        },
+        {
+          "name": "Oracle of Bones",
+          "set": "bng",
+          "reason": "No recognized pattern",
+          "text": "Haste Tribute 2 (As this creature enters, an opponent of your choice may put two +1/+1 counters on it.) When this creature enters, if tribute wasn't paid, you may cast an instant or sorcery spell from your hand without paying its mana cost."
+        },
+        {
+          "name": "Illusionary Mask",
+          "set": "me3",
+          "reason": "No recognized pattern",
+          "text": "{X}: You may choose a creature card in your hand whose mana cost could be paid by some amount of, or all of, the mana you spent on {X}. If you do, you may cast that card face down as a 2/2 creature spell without paying its mana cost. If the creature that spell becomes as it resolves has not been turned face up and would assign or deal damage, be dealt damage"
+        },
+        {
+          "name": "Lilah, Undefeated Slickshot",
+          "set": "otj",
+          "reason": "No recognized pattern",
+          "text": "Prowess (Whenever you cast a noncreature spell, this creature gets +1/+1 until end of turn.) Whenever you cast a multicolored instant or sorcery spell from your hand, exile that spell instead of putting it into your graveyard as it resolves. If you do, it becomes plotted. (You may cast it as a sorcery on a later turn without paying its mana cost.)"
+        },
+        {
+          "name": "Battle at the Helvault",
+          "set": "cmm",
+          "reason": "No recognized pattern",
+          "text": "(As this Saga enters and after your draw step, add a lore counter. Sacrifice after III.) I, II — For each player, exile up to one target non-Saga, nonland permanent that player controls until this Saga leaves the battlefield. III — Create Avacyn, a legendary 8/8 white Angel creature token with flying, vigilance, and indestructible."
+        },
+        {
+          "name": "Circle of Protection: Shadow",
+          "set": "tmp",
+          "reason": "No recognized pattern",
+          "text": "{1}: The next time a creature of your choice with shadow would deal damage to you this turn, prevent that damage."
+        },
+        {
+          "name": "Shimian Night Stalker",
+          "set": "chr",
+          "reason": "No recognized pattern",
+          "text": "{B}, {T}: All damage that would be dealt to you this turn by target attacking creature is dealt to this creature instead."
+        },
+        {
+          "name": "Nevermore",
+          "set": "isd",
+          "reason": "No recognized pattern",
+          "text": "As this enchantment enters, choose a nonland card name. Spells with the chosen name can't be cast."
+        },
+        {
+          "name": "Shield Dancer",
+          "set": "pcy",
+          "reason": "No recognized pattern",
+          "text": "{2}{W}: The next time target attacking creature would deal combat damage to this creature this turn, that creature deals that damage to itself instead."
+        }
+      ]
+    },
+    {
+      "id": "non-hand-zones",
+      "reason": "Non-hand zone casting/movement needs zone permission and visibility checks.",
+      "count": 326,
+      "samples": [
+        {
+          "name": "Sagu Pummeler",
+          "set": "tdm",
+          "reason": "No recognized pattern",
+          "text": "Reach Renew — {4}{G}, Exile this card from your graveyard: Put two +1/+1 counters and a reach counter on target creature. Activate only as a sorcery."
+        },
+        {
+          "name": "Flashback",
+          "set": "sos",
+          "reason": "No recognized pattern",
+          "text": "Target instant or sorcery card in your graveyard gains flashback until end of turn. The flashback cost is equal to its mana cost. (You may cast that card from your graveyard for its flashback cost. Then exile it.)"
+        },
+        {
+          "name": "Makeshift Mauler",
+          "set": "inr",
+          "reason": "No recognized pattern",
+          "text": "As an additional cost to cast this spell, exile a creature card from your graveyard."
+        },
+        {
+          "name": "Heaven // Earth // Earth",
+          "set": "otc",
+          "reason": "No recognized pattern",
+          "text": "Aftermath (Cast this spell only from your graveyard. Then exile it.) Earth deals X damage to each creature without flying."
+        },
+        {
+          "name": "Nethergoyf",
+          "set": "mh3",
+          "reason": "No recognized pattern",
+          "text": "Nethergoyf's power is equal to the number of card types among cards in your graveyard and its toughness is equal to that number plus 1. Escape—{2}{B}, Exile any number of other cards from your graveyard with four or more card types among them. (You may cast this card from your graveyard for its escape cost.)"
+        },
+        {
+          "name": "Gorex, the Tombshell",
+          "set": "cmm",
+          "reason": "No recognized pattern",
+          "text": "As an additional cost to cast this spell, you may exile any number of creature cards from your graveyard. This spell costs {2} less to cast for each card exiled this way. Deathtouch Whenever Gorex attacks or dies, choose a card at random exiled with Gorex and put that card into its owner's hand."
+        },
+        {
+          "name": "Alter Reality",
+          "set": "tor",
+          "reason": "No recognized pattern",
+          "text": "Change the text of target spell or permanent by replacing all instances of one color word with another. (This effect lasts indefinitely.) Flashback {1}{U} (You may cast this card from your graveyard for its flashback cost. Then exile it.)"
+        },
+        {
+          "name": "Tempt with Immortality",
+          "set": "c13",
+          "reason": "No recognized pattern",
+          "text": "Tempting offer — Return a creature card from your graveyard to the battlefield. Each opponent may return a creature card from their graveyard to the battlefield. For each opponent who does, return a creature card from your graveyard to the battlefield."
+        },
+        {
+          "name": "Dead Drop",
+          "set": "ktk",
+          "reason": "No recognized pattern",
+          "text": "Delve (Each card you exile from your graveyard while casting this spell pays for {1}.) Target player sacrifices two creatures of their choice."
+        },
+        {
+          "name": "Champion of Dusan",
+          "set": "tdm",
+          "reason": "No recognized pattern",
+          "text": "Trample Renew — {1}{G}, Exile this card from your graveyard: Put a +1/+1 counter and a trample counter on target creature. Activate only as a sorcery."
+        },
+        {
+          "name": "Visions of Dread",
+          "set": "mic",
+          "reason": "No recognized pattern",
+          "text": "Target opponent puts a creature card of their choice from their graveyard onto the battlefield under your control. Flashback {8}{B}{B}. This spell costs {X} less to cast this way, where X is the greatest mana value of a commander you own on the battlefield or in the command zone. (You may cast this card from your graveyard for its flashback cost. Then exile "
+        },
+        {
+          "name": "Struggle // Survive // Survive",
+          "set": "moc",
+          "reason": "No recognized pattern",
+          "text": "Aftermath (Cast this spell only from your graveyard. Then exile it.) Each player shuffles their graveyard into their library."
         }
       ]
     },
     {
       "id": "choice-modal",
       "reason": "Choice/modal/naming text should be prompt-backed instead of deterministic.",
-      "count": 779,
+      "count": 318,
       "samples": [
-        {
-          "name": "Road of Return",
-          "set": "c19",
-          "reason": "No recognized pattern",
-          "text": "Choose one — • Return target permanent card from your graveyard to your hand. • Put your commander into your hand from the command zone. Entwine {2} (Choose both if you pay the entwine cost.)"
-        },
-        {
-          "name": "End-Blaze Epiphany",
-          "set": "ecl",
-          "reason": "No recognized pattern",
-          "text": "End-Blaze Epiphany deals X damage to target creature. When that creature dies this turn, exile a number of cards from the top of your library equal to its power, then choose a card exiled this way. Until the end of your next turn, you may play that card."
-        },
-        {
-          "name": "Utopia Sprawl",
-          "set": "rvr",
-          "reason": "No recognized pattern",
-          "text": "Enchant Forest As this Aura enters, choose a color. Whenever enchanted Forest is tapped for mana, its controller adds an additional one mana of the chosen color."
-        },
         {
           "name": "Arcbond",
           "set": "frf",
@@ -526,157 +710,223 @@
           "text": "Reveal the top X plus one cards of your library. Choose a creature card and/or a land card from among them. Put those cards into your hand and the rest on the bottom of your library in a random order. If X is 5 or more, instead put the chosen cards onto the battlefield or into your hand and the rest on the bottom of your library in a random order."
         },
         {
-          "name": "Prismatic Circle",
-          "set": "mir",
-          "reason": "No recognized pattern",
-          "text": "Cumulative upkeep {1} (At the beginning of your upkeep, put an age counter on this permanent, then sacrifice it unless you pay its upkeep cost for each age counter on it.) As this enchantment enters, choose a color. {1}: The next time a source of your choice of the chosen color would deal damage to you this turn, prevent that damage."
-        }
-      ]
-    },
-    {
-      "id": "library-selection",
-      "reason": "Library search/look/reveal effects need legal choices, destinations, reveal policy, and ordering.",
-      "count": 691,
-      "samples": [
-        {
-          "name": "Safewright Quest",
-          "set": "shm",
-          "reason": "No recognized pattern",
-          "text": "Search your library for a Forest or Plains card, reveal it, put it into your hand, then shuffle."
-        },
-        {
-          "name": "Thunderherd Migration",
-          "set": "lcc",
-          "reason": "No recognized pattern",
-          "text": "As an additional cost to cast this spell, reveal a Dinosaur card from your hand or pay {1}. Search your library for a basic land card, put it onto the battlefield tapped, then shuffle."
-        },
-        {
-          "name": "Lantern of Revealing",
+          "name": "Astarion, the Decadent",
           "set": "clb",
           "reason": "No recognized pattern",
-          "text": "{T}: Add one mana of any color. {4}, {T}: Look at the top card of your library. If it's a land card, you may put it onto the battlefield tapped. If you don't put the card onto the battlefield, you may put it on the bottom of your library."
+          "text": "Deathtouch, lifelink At the beginning of your end step, choose one — • Feed — Target opponent loses life equal to the amount of life they lost this turn. • Friends — You gain life equal to the amount of life you gained this turn."
         },
         {
-          "name": "Puresight Merrow",
-          "set": "shm",
+          "name": "Close Encounter",
+          "set": "eoe",
           "reason": "No recognized pattern",
-          "text": "{W/U}, {Q}: Look at the top card of your library. You may exile that card. ({Q} is the untap symbol.)"
+          "text": "As an additional cost to cast this spell, choose a creature you control or a warped creature card you own in exile. Close Encounter deals damage equal to the power of the chosen creature or card to target creature."
         },
         {
-          "name": "Vraska's Scorn",
-          "set": "rix",
+          "name": "Karlach, Fury of Avernus",
+          "set": "clb",
           "reason": "No recognized pattern",
-          "text": "Target opponent loses 4 life. You may search your library and/or graveyard for a card named Vraska, Scheming Gorgon, reveal it, and put it into your hand. If you search your library this way, shuffle."
+          "text": "Whenever you attack, if it's the first combat phase of the turn, untap all attacking creatures. They gain first strike until end of turn. After this phase, there is an additional combat phase. Choose a Background (You can have a Background as a second commander.)"
         },
         {
-          "name": "Winota, Joiner of Forces",
-          "set": "iko",
+          "name": "Gorex, the Tombshell",
+          "set": "cmm",
           "reason": "No recognized pattern",
-          "text": "Whenever a non-Human creature you control attacks, look at the top six cards of your library. You may put a Human creature card from among them onto the battlefield tapped and attacking. It gains indestructible until end of turn. Put the rest of the cards on the bottom of your library in a random order."
+          "text": "As an additional cost to cast this spell, you may exile any number of creature cards from your graveyard. This spell costs {2} less to cast for each card exiled this way. Deathtouch Whenever Gorex attacks or dies, choose a card at random exiled with Gorex and put that card into its owner's hand."
         },
         {
-          "name": "Lydia Frye",
-          "set": "acr",
+          "name": "Deglamer",
+          "set": "mor",
           "reason": "No recognized pattern",
-          "text": "Lydia Frye can't be blocked by creatures with power 3 or greater. At the beginning of your end step, surveil X, where X is the number of tapped Assassins you control. (Look at the top X cards of your library, then put any number of them into your graveyard and the rest on top of your library in any order.)"
+          "text": "Choose target artifact or enchantment. Its owner shuffles it into their library."
         },
         {
-          "name": "Treasure Hunt",
-          "set": "c18",
+          "name": "Outbreak",
+          "set": "pcy",
           "reason": "No recognized pattern",
-          "text": "Reveal cards from the top of your library until you reveal a nonland card, then put all cards revealed this way into your hand."
+          "text": "You may discard a Swamp card rather than pay this spell's mana cost. Choose a creature type. All creatures of that type get -1/-1 until end of turn."
+        },
+        {
+          "name": "Illusionary Mask",
+          "set": "me3",
+          "reason": "No recognized pattern",
+          "text": "{X}: You may choose a creature card in your hand whose mana cost could be paid by some amount of, or all of, the mana you spent on {X}. If you do, you may cast that card face down as a 2/2 creature spell without paying its mana cost. If the creature that spell becomes as it resolves has not been turned face up and would assign or deal damage, be dealt damage"
+        },
+        {
+          "name": "Acquisitions Expert",
+          "set": "znr",
+          "reason": "Could not parse ETB effect clause",
+          "text": "When this creature enters, target opponent reveals a number of cards from their hand equal to the number of creatures in your party. You choose one of those cards. That player discards that card. (Your party consists of up to one each of Cleric, Rogue, Warrior, and Wizard.)"
         }
       ]
     },
     {
       "id": "copy-stack",
       "reason": "Copy/stack mechanics need stack-object identity and trigger multiplication.",
-      "count": 577,
+      "count": 251,
       "samples": [
         {
-          "name": "Mindlink Mech",
-          "set": "neo",
+          "name": "Verrak, Warped Sengir",
+          "set": "dmc",
           "reason": "No recognized pattern",
-          "text": "Flying Whenever this Vehicle becomes crewed for the first time each turn, until end of turn, this Vehicle becomes a copy of target nonlegendary creature that crewed it this turn, except it's 4/3, it's a Vehicle artifact in addition to its other types, and it has flying. Crew 1"
+          "text": "Flying, deathtouch, lifelink Whenever you activate an ability that isn't a mana ability, if life was paid to activate it, you may pay that much life again. If you do, copy that ability. You may choose new targets for the copy."
         },
         {
-          "name": "Minion Reflector",
-          "set": "ala",
+          "name": "Call Forth the Tempest",
+          "set": "ltc",
+          "reason": "No recognized pattern",
+          "text": "Cascade, cascade (When you cast this spell, exile cards from the top of your library until you exile a nonland card that costs less. You may cast it without paying its mana cost. Put the exiled cards on the bottom of your library in a random order. Then do it again.) Call Forth the Tempest deals damage to each creature your opponents control equal to the tot"
+        },
+        {
+          "name": "Espers to Magicite",
+          "set": "fic",
+          "reason": "No recognized pattern",
+          "text": "Exile each opponent's graveyard. When you do, choose up to one target creature card exiled this way. Create a token that's a copy of that card, except it's an artifact and it loses all other card types."
+        },
+        {
+          "name": "Renegade Doppelganger",
+          "set": "roe",
           "reason": "Could not parse trigger effect clause",
-          "text": "Whenever a nontoken creature you control enters, you may pay {2}. If you do, create a token that's a copy of that creature, except it has haste and \"At the beginning of the end step, sacrifice this permanent.\""
+          "text": "Whenever another creature you control enters, you may have this creature become a copy of that creature until end of turn. (If it does, it loses this ability for the rest of the turn.)"
         },
         {
-          "name": "Etherium-Horn Sorcerer",
-          "set": "c17",
+          "name": "Corporeal Projection",
+          "set": "clu",
           "reason": "No recognized pattern",
-          "text": "{1}{U}{R}: Return this creature to its owner's hand. Cascade (When you cast this spell, exile cards from the top of your library until you exile a nonland card that costs less. You may cast it without paying its mana cost. Put the exiled cards on the bottom in a random order.)"
+          "text": "Target creature you control gains myriad until end of turn. (Whenever it attacks, for each opponent other than defending player, you may create a token copy that's tapped and attacking that player or a planeswalker they control. Exile the tokens at end of combat.) Overload {3}{U}{U}{R}{R} (You may cast this spell for its overload cost. If you do, change \"tar"
         },
         {
-          "name": "Cogwork Assembler",
+          "name": "Rowan's Talent",
+          "set": "moc",
+          "reason": "No recognized pattern",
+          "text": "Enchant planeswalker Enchanted planeswalker has \"[+1]: Up to one target creature gets +2/+0 and gains first strike and trample until end of turn.\" Whenever you activate a loyalty ability of enchanted planeswalker, copy that ability. You may choose new targets for the copy."
+        },
+        {
+          "name": "Extus, Oriq Overlord // Awaken the Blood Avatar // Extus, Oriq Overlord",
+          "set": "stx",
+          "reason": "No recognized pattern",
+          "text": "Double strike Magecraft — Whenever you cast or copy an instant or sorcery spell, return target nonlegendary creature card from your graveyard to your hand."
+        },
+        {
+          "name": "Sun-Blessed Guardian // Furnace-Blessed Conqueror // Furnace-Blessed Conqueror",
+          "set": "mom",
+          "reason": "Could not parse trigger effect clause",
+          "text": "Whenever this creature attacks, create a tapped and attacking token that's a copy of it. Put a +1/+1 counter on that token for each +1/+1 counter on this creature. Sacrifice that token at the beginning of the next end step."
+        },
+        {
+          "name": "Thurid, Mare of Destiny",
+          "set": "j25",
+          "reason": "No recognized pattern",
+          "text": "Flying, lifelink Whenever you cast a Pegasus, Unicorn, or Horse creature spell, copy it. (The copy becomes a token.) Other Pegasi, Unicorns, and Horses you control get +1/+1."
+        },
+        {
+          "name": "Shaun, Father of Synths",
+          "set": "pip",
+          "reason": "No recognized pattern",
+          "text": "Whenever you attack, you may create a tapped and attacking token that's a copy of target attacking legendary creature you control other than Shaun, except it's not legendary and it's a Synth artifact creature in addition to its other types. When Shaun leaves the battlefield, exile all Synth tokens you control."
+        },
+        {
+          "name": "Sliver Gravemother",
+          "set": "cmm",
+          "reason": "No recognized pattern",
+          "text": "The \"legend rule\" doesn't apply to Slivers you control. Each Sliver creature card in your graveyard has encore {X}, where X is its mana value. Encore {5} ({5}, Exile this card from your graveyard: For each opponent, create a token copy that attacks that opponent this turn if able. They gain haste. Sacrifice them at the beginning of the next end step. Activat"
+        },
+        {
+          "name": "Flawless Forgery",
+          "set": "ncc",
+          "reason": "No recognized pattern",
+          "text": "Casualty 3 (As you cast this spell, you may sacrifice a creature with power 3 or greater. When you do, copy this spell and you may choose a new target for the copy.) Exile target instant or sorcery card from an opponent's graveyard. Copy that card. You may cast the copy without paying its mana cost."
+        }
+      ]
+    },
+    {
+      "id": "library-selection",
+      "reason": "Library search/look/reveal effects need legal choices, destinations, reveal policy, and ordering.",
+      "count": 176,
+      "samples": [
+        {
+          "name": "Thunderous Debut",
+          "set": "woe",
+          "reason": "No recognized pattern",
+          "text": "Bargain (You may sacrifice an artifact, enchantment, or token as you cast this spell.) Look at the top twenty cards of your library. You may reveal up to two creature cards from among them. If this spell was bargained, put the revealed cards onto the battlefield. Otherwise, put the revealed cards into your hand. Then shuffle."
+        },
+        {
+          "name": "Galvanoth",
+          "set": "ddj",
+          "reason": "Could not parse trigger effect clause",
+          "text": "At the beginning of your upkeep, you may look at the top card of your library. You may cast it without paying its mana cost if it's an instant or sorcery spell."
+        },
+        {
+          "name": "Traverse the Outlands",
+          "set": "clb",
+          "reason": "No recognized pattern",
+          "text": "Search your library for up to X basic land cards, where X is the greatest power among creatures you control. Put those cards onto the battlefield tapped, then shuffle."
+        },
+        {
+          "name": "Keldon Flamesage",
+          "set": "dmu",
+          "reason": "No recognized pattern",
+          "text": "Enlist Whenever this creature attacks, look at the top X cards of your library, where X is this creature's power. You may exile an instant or sorcery card with mana value X or less from among them. Put the rest on the bottom of your library in a random order. You may cast the exiled card without paying its mana cost."
+        },
+        {
+          "name": "Neverending Torment",
+          "set": "sok",
+          "reason": "No recognized pattern",
+          "text": "Search target player's library for X cards, where X is the number of cards in your hand, and exile them. Then that player shuffles. Epic (For the rest of the game, you can't cast spells. At the beginning of each of your upkeeps, copy this spell except for its epic ability. You may choose a new target for the copy.)"
+        },
+        {
+          "name": "Arcum Dagsson",
           "set": "2xm",
           "reason": "No recognized pattern",
-          "text": "{7}: Create a token that's a copy of target artifact. That token gains haste. Exile it at the beginning of the next end step."
+          "text": "{T}: Target artifact creature's controller sacrifices it. That player may search their library for a noncreature artifact card, put it onto the battlefield, then shuffle."
         },
         {
-          "name": "Eye of the Storm",
-          "set": "rav",
+          "name": "Eye of Ugin",
+          "set": "mm2",
           "reason": "No recognized pattern",
-          "text": "Whenever a player casts an instant or sorcery card, exile it. Then that player copies each instant or sorcery card exiled with this enchantment. For each copy, the player may cast the copy without paying its mana cost."
+          "text": "Colorless Eldrazi spells you cast cost {2} less to cast. {7}, {T}: Search your library for a colorless creature card, reveal it, put it into your hand, then shuffle."
         },
         {
-          "name": "Adventurous Eater // Have a Bite // Adventurous Eater",
-          "set": "sos",
-          "reason": "No recognized pattern",
-          "text": "This creature enters prepared. (While it's prepared, you may cast a copy of its spell. Doing so unprepares it.)"
+          "name": "Innocuous Rat",
+          "set": "dsk",
+          "reason": "Could not parse dies effect clause",
+          "text": "When this creature dies, manifest dread. (Look at the top two cards of your library. Put one onto the battlefield face down as a 2/2 creature and the other into your graveyard. Turn it face up any time for its mana cost if it's a creature card.)"
         },
         {
-          "name": "Mirrorweave",
-          "set": "cm2",
+          "name": "Verdant Succession",
+          "set": "ody",
           "reason": "No recognized pattern",
-          "text": "Each other creature becomes a copy of target nonlegendary creature until end of turn."
+          "text": "Whenever a green nontoken creature dies, that creature's controller may search their library for a card with the same name as that creature, put it onto the battlefield, then shuffle."
         },
         {
-          "name": "World at War",
-          "set": "roe",
+          "name": "Xanathar, Guild Kingpin",
+          "set": "afr",
+          "reason": "Could not parse trigger effect clause",
+          "text": "At the beginning of your upkeep, choose target opponent. Until end of turn, that player can't cast spells, you may look at the top card of their library any time, you may play the top card of their library, and you may spend mana as though it were mana of any color to cast spells this way."
+        },
+        {
+          "name": "Fortune Teller's Talent",
+          "set": "blc",
           "reason": "No recognized pattern",
-          "text": "After the second main phase this turn, there's an additional combat phase followed by an additional main phase. At the beginning of that combat, untap all creatures that attacked this turn. Rebound (If you cast this spell from your hand, exile it as it resolves. At the beginning of your next upkeep, you may cast this card from exile without paying its mana c"
+          "text": "(Gain the next level as a sorcery to add its ability.) You may look at the top card of your library any time. {3}{U}: Level 2 As long as you've cast a spell this turn, you may play cards from the top of your library. {2}{U}: Level 3 Spells you cast from anywhere other than your hand cost {2} less to cast."
+        },
+        {
+          "name": "Old Stickfingers",
+          "set": "dsc",
+          "reason": "No recognized pattern",
+          "text": "When you cast this spell, reveal cards from the top of your library until you reveal X creature cards. Put all creature cards revealed this way into your graveyard, then put the rest on the bottom of your library in a random order. Old Stickfingers's power and toughness are each equal to the number of creature cards in your graveyard."
         }
       ]
     },
     {
       "id": "special-mechanics",
       "reason": "Special mechanics need dedicated state and UI presentation.",
-      "count": 269,
+      "count": 71,
       "samples": [
-        {
-          "name": "Sword-Swallowing Seraph",
-          "set": "unf",
-          "reason": "Could not parse ETB effect clause",
-          "text": "Flying, vigilance When this creature enters, you may put a name sticker on a nonland permanent you own. {1}{W}, {T}: Put a +1/+1 counter on another target creature with a name sticker on it. Activate only as a sorcery."
-        },
         {
           "name": "Park Bleater",
           "set": "unf",
           "reason": "No recognized pattern",
           "text": "Whenever another creature you own enters, you get {TK}. {W}, {T}: You may put a sticker on a creature you own that entered this turn."
-        },
-        {
-          "name": "Rakdos, the Showstopper",
-          "set": "clu",
-          "reason": "Could not parse ETB effect clause",
-          "text": "Flying, trample When Rakdos enters, flip a coin for each creature that isn't a Demon, Devil, or Imp. Destroy each creature whose coin comes up tails."
-        },
-        {
-          "name": "Yamabushi's Flame",
-          "set": "chk",
-          "reason": "No recognized pattern",
-          "text": "Yamabushi's Flame deals 3 damage to any target. If a creature dealt damage this way would die this turn, exile it instead."
-        },
-        {
-          "name": "Goblin Lyre",
-          "set": "ice",
-          "reason": "No recognized pattern",
-          "text": "Sacrifice this artifact: Flip a coin. If you win the flip, this artifact deals damage to target opponent or planeswalker equal to the number of creatures you control. If you lose the flip, this artifact deals damage to you equal to the number of creatures that opponent or that planeswalker's controller controls."
         },
         {
           "name": "Zombie Ogre",
@@ -687,33 +937,68 @@
         {
           "name": "Nadaar, Selfless Paladin",
           "set": "afr",
-          "reason": "Could not parse ETB effect clause",
+          "reason": "No recognized pattern",
           "text": "Vigilance Whenever Nadaar enters or attacks, venture into the dungeon. (Enter the first room or advance to the next room.) Other creatures you control get +1/+1 as long as you've completed a dungeon."
         },
         {
-          "name": "Atomwheel Acrobats",
+          "name": "_____ _____ Rocketship",
           "set": "unf",
           "reason": "No recognized pattern",
-          "text": "Whenever you roll a 1 or 2, put that many +1/+1 counters on this creature. {2}{G}: Roll a six-sided die."
-        }
-      ]
-    },
-    {
-      "id": "digital-only",
-      "reason": "Alchemy/digital-only wording needs an explicit unsupported or emulated mechanic.",
-      "count": 1,
-      "samples": [
+          "text": "Flying When this Vehicle enters, you may put up to two name stickers on it. Whenever this Vehicle attacks, choose a letter. This Vehicle gets +1/+1 until end of turn for each name sticker on it that begins with the chosen letter. Crew 2"
+        },
         {
-          "name": "Skyblade's Boon",
-          "set": "mh2",
+          "name": "Bar the Gate",
+          "set": "afr",
           "reason": "No recognized pattern",
-          "text": "Enchant creature Enchanted creature gets +1/+1 and has flying. {2}{W}: Return Skyblade's Boon to its owner's hand. Activate only if Skyblade's Boon is on the battlefield or in your graveyard."
+          "text": "Counter target creature or planeswalker spell. Venture into the dungeon. (Enter the first room or advance to the next room.)"
+        },
+        {
+          "name": "Ydwen Efreet",
+          "set": "me1",
+          "reason": "No recognized pattern",
+          "text": "Whenever this creature blocks, flip a coin. If you lose the flip, remove this creature from combat and it can't block this turn. Creatures it was blocking that had become blocked by only this creature this combat become unblocked."
+        },
+        {
+          "name": "Gloom Stalker",
+          "set": "afr",
+          "reason": "No recognized pattern",
+          "text": "As long as you've completed a dungeon, this creature has double strike."
+        },
+        {
+          "name": "Wandering Troubadour",
+          "set": "afr",
+          "reason": "Could not parse trigger effect clause",
+          "text": "At the beginning of your end step, if you had a land enter the battlefield under your control this turn, venture into the dungeon. (Enter the first room or advance to the next room.)"
+        },
+        {
+          "name": "Veteran Dungeoneer",
+          "set": "afr",
+          "reason": "Could not parse ETB effect clause",
+          "text": "When this creature enters, venture into the dungeon. (Enter the first room or advance to the next room.)"
+        },
+        {
+          "name": "Costume Shop",
+          "set": "unf",
+          "reason": "No recognized pattern",
+          "text": "Visit — You may put a sticker on a nonland permanent you own."
+        },
+        {
+          "name": "Shortcut Seeker",
+          "set": "afr",
+          "reason": "Could not parse trigger effect clause",
+          "text": "Whenever this creature deals combat damage to a player, venture into the dungeon. (Enter the first room or advance to the next room.)"
+        },
+        {
+          "name": "Mogg Assassin",
+          "set": "exo",
+          "reason": "No recognized pattern",
+          "text": "{T}: You choose target creature an opponent controls, and that opponent chooses target creature. Flip a coin. If you win the flip, destroy the creature you chose. If you lose the flip, destroy the creature your opponent chose."
         }
       ]
     }
   ],
   "overrideCoverage": {
-    "matchedCards": 57,
+    "matchedCards": 55,
     "samples": [
       {
         "name": "Solemn Simulacrum",
@@ -778,6 +1063,38 @@
         "fixtureCards": [
           "Diabolic Tutor"
         ]
+      },
+      {
+        "name": "Kodama's Reach",
+        "reason": "Legacy name override; add a focused parser/engine fixture before removing it.",
+        "owner": "engine",
+        "fixtureCards": [
+          "Kodama's Reach"
+        ]
+      },
+      {
+        "name": "Imperial Seal",
+        "reason": "Legacy name override; add a focused parser/engine fixture before removing it.",
+        "owner": "engine",
+        "fixtureCards": [
+          "Imperial Seal"
+        ]
+      },
+      {
+        "name": "Tainted Pact",
+        "reason": "Legacy name override; add a focused parser/engine fixture before removing it.",
+        "owner": "engine",
+        "fixtureCards": [
+          "Tainted Pact"
+        ]
+      },
+      {
+        "name": "Three Visits",
+        "reason": "Legacy name override; add a focused parser/engine fixture before removing it.",
+        "owner": "engine",
+        "fixtureCards": [
+          "Three Visits"
+        ]
       }
     ]
   },
@@ -786,6 +1103,16 @@
       "name": "Nissa, Worldsoul Speaker",
       "kind": "Spell",
       "text": "Landfall — Whenever a land you control enters, you get {E}{E} (two energy counters). You may pay eight {E} rather than pay the mana cost for permanent spells you cast."
+    },
+    {
+      "name": "Sensory Deprivation",
+      "kind": "StaticAbility",
+      "text": "Enchant creature Enchanted creature gets -3/-0."
+    },
+    {
+      "name": "Road of Return",
+      "kind": "Spell",
+      "text": "Choose one — • Return target permanent card from your graveyard to your hand. • Put your commander into your hand from the command zone. Entwine {2} (Choose both if you pay the entwine cost.)"
     },
     {
       "name": "Storm Crow",
@@ -813,14 +1140,24 @@
       "text": "{T}: Target creature gets +1/+1 until end of turn."
     },
     {
+      "name": "Pteramander",
+      "kind": "Activated",
+      "text": "Flying {7}{U}: Adapt 4. This ability costs {1} less to activate for each instant and sorcery card in your graveyard. (If this creature has no +1/+1 counters on it, put four +1/+1 counters on it.)"
+    },
+    {
       "name": "Nantuko Elder",
       "kind": "Activated",
       "text": "{T}: Add {C}{G}."
     },
     {
       "name": "Vedalken Heretic",
-      "kind": "Spell",
+      "kind": "Triggered",
       "text": "Whenever this creature deals damage to an opponent, you may draw a card."
+    },
+    {
+      "name": "Waterknot",
+      "kind": "ETB",
+      "text": "Enchant creature When this Aura enters, tap enchanted creature. Enchanted creature doesn't untap during its controller's untap step."
     }
   ],
   "unparsedSamples": [
@@ -831,34 +1168,10 @@
       "text": "As long as this artifact is untapped, players can't untap more than two permanents during their untap steps."
     },
     {
-      "name": "Sensory Deprivation",
-      "set": "m14",
-      "reason": "No recognized pattern",
-      "text": "Enchant creature Enchanted creature gets -3/-0."
-    },
-    {
-      "name": "Road of Return",
-      "set": "c19",
-      "reason": "No recognized pattern",
-      "text": "Choose one — • Return target permanent card from your graveyard to your hand. • Put your commander into your hand from the command zone. Entwine {2} (Choose both if you pay the entwine cost.)"
-    },
-    {
       "name": "Walking Sponge",
       "set": "ulg",
       "reason": "No recognized pattern",
       "text": "{T}: Target creature loses your choice of flying, first strike, or trample until end of turn."
-    },
-    {
-      "name": "Pteramander",
-      "set": "otc",
-      "reason": "No recognized pattern",
-      "text": "Flying {7}{U}: Adapt 4. This ability costs {1} less to activate for each instant and sorcery card in your graveyard. (If this creature has no +1/+1 counters on it, put four +1/+1 counters on it.)"
-    },
-    {
-      "name": "Hua Tuo, Honored Physician",
-      "set": "c13",
-      "reason": "No recognized pattern",
-      "text": "{T}: Put target creature card from your graveyard on top of your library. Activate only during your turn, before attackers are declared."
     },
     {
       "name": "Aura Graft",
@@ -867,10 +1180,58 @@
       "text": "Gain control of target Aura that's attached to a permanent. Attach it to another permanent it can enchant."
     },
     {
-      "name": "Safewright Quest",
-      "set": "shm",
+      "name": "Dungeon Delver",
+      "set": "clb",
       "reason": "No recognized pattern",
-      "text": "Search your library for a Forest or Plains card, reveal it, put it into your hand, then shuffle."
+      "text": "Commander creatures you own have \"Room abilities of dungeons you own trigger an additional time.\""
+    },
+    {
+      "name": "Brawn",
+      "set": "moc",
+      "reason": "No recognized pattern",
+      "text": "Trample As long as this card is in your graveyard and you control a Forest, creatures you control have trample."
+    },
+    {
+      "name": "Soul-Scar Mage",
+      "set": "akh",
+      "reason": "No recognized pattern",
+      "text": "Prowess If a source you control would deal noncombat damage to a creature an opponent controls, put that many -1/-1 counters on that creature instead."
+    },
+    {
+      "name": "Sagu Pummeler",
+      "set": "tdm",
+      "reason": "No recognized pattern",
+      "text": "Reach Renew — {4}{G}, Exile this card from your graveyard: Put two +1/+1 counters and a reach counter on target creature. Activate only as a sorcery."
+    },
+    {
+      "name": "Collective Voyage",
+      "set": "c16",
+      "reason": "No recognized pattern",
+      "text": "Join forces — Starting with you, each player may pay any amount of mana. Each player searches their library for up to X basic land cards, where X is the total amount of mana paid this way, puts them onto the battlefield tapped, then shuffles."
+    },
+    {
+      "name": "Strategic Betrayal",
+      "set": "tdm",
+      "reason": "No recognized pattern",
+      "text": "Target opponent exiles a creature they control and their graveyard."
+    },
+    {
+      "name": "Doubling Season",
+      "set": "fdn",
+      "reason": "No recognized pattern",
+      "text": "If an effect would create one or more tokens under your control, it creates twice that many of those tokens instead. If an effect would put one or more counters on a permanent you control, it puts twice that many of those counters on that permanent instead."
+    },
+    {
+      "name": "Don & Raph, Hard Science",
+      "set": "tmt",
+      "reason": "No recognized pattern",
+      "text": "Menace Whenever Don & Raph attack, the next noncreature spell you cast this turn has affinity for artifacts. (It costs {1} less to cast for each artifact you control.)"
+    },
+    {
+      "name": "Arcbond",
+      "set": "frf",
+      "reason": "No recognized pattern",
+      "text": "Choose target creature. Whenever that creature is dealt damage this turn, it deals that much damage to each other creature and each player."
     }
   ]
 }

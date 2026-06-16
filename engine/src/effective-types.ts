@@ -73,7 +73,39 @@ export function getEffectiveCardTypes(state: GameState, instanceId: string): Car
   if (!card) return [];
   const def = getCardDefinition(state, card);
 
+  // Slice 12 (Licid family): while in Aura form, the permanent's effective type
+  // is Enchantment only (it loses creature status and behaves as an Aura).
+  if (card.licidAura) {
+    return ['enchantment'];
+  }
+
   let types = [...def.card_types];
+
+  // Slice-6: EnterAsCopy "except it's a <type> in addition to its other types" rider.
+  if (card.additionalTypes) {
+    for (const t of card.additionalTypes) {
+      if (!types.includes(t as CardType)) types.push(t as CardType);
+    }
+  }
+
+  // CR 613 layer 4: type-changing auras/equipment attached to this permanent
+  // (e.g. Darksteel Mutation "is an Insect artifact creature", animate effects
+  // "becomes an artifact in addition"). SET replaces, then ADD unions. Applied via
+  // the cached equipmentBonus so combat/targeting/SBA all see the changed types.
+  if (card.zone === 'battlefield') {
+    let setTypes: CardType[] | undefined;
+    const addTypes: CardType[] = [];
+    for (const other of state.cards.values()) {
+      if (other.attachedTo !== instanceId || other.zone !== 'battlefield') continue;
+      const eb = getCardDefinition(state, other).equipmentBonus;
+      if (!eb) continue;
+      if (eb.setTypes && eb.setTypes.length) setTypes = eb.setTypes; // last attached wins
+      if (eb.addTypes) addTypes.push(...eb.addTypes);
+    }
+    if (setTypes) types = [...setTypes];
+    for (const t of addTypes) if (!types.includes(t)) types.push(t);
+  }
+
   const suppression = parseDevotionCreatureSuppression(def);
   if (card.zone === 'battlefield' && suppression) {
     const devotion = countDevotionToColors(state, card.ownerId, suppression.colors);

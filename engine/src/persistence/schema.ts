@@ -101,6 +101,9 @@ export interface SerializedCardInstanceV1 {
   damage: number;
   deathtouchDamage?: boolean;
   isCommander: boolean;
+  goadedBy?: string[];
+  regenerationShields?: number;
+  monstrous?: boolean;
   isToken?: boolean;
   fromSideboard?: boolean;
   playableFromExileUntilTurn?: number;
@@ -108,6 +111,9 @@ export interface SerializedCardInstanceV1 {
   activeFaceName?: string;
   choices?: {
     chosenCreatureType?: string;
+    chosenColor?: string;
+    chosenOpponent?: string;
+    chosenCardName?: string;
     imprintedCardIds?: string[];
     discardedCardIds?: string[];
   };
@@ -166,6 +172,9 @@ export interface SerializedStackItemV1 {
   namedCardChoices?: Record<string, string>;
   cardChoices?: {
     chosenCreatureType?: string;
+    chosenColor?: string;
+    chosenOpponent?: string;
+    chosenCardName?: string;
     imprintedCardIds?: string[];
     discardedCardIds?: string[];
   };
@@ -179,6 +188,7 @@ export interface SerializedStackItemV1 {
   eventContext?: {
     casterId?: string;
     cardInstanceId?: string;
+    eventPlayerId?: string;
   };
 }
 
@@ -218,6 +228,8 @@ export interface SerializedDamagePreventionEffectV1 {
   amount: number | 'all';
   combatOnly: boolean;
   expiresAtTurnNumber: number;
+  /** Slice 12 (en-Kor): redirect destination — if set, damage is redirected to this target. */
+  redirectToId?: string;
 }
 
 export interface SerializedGameOutcomePreventionEffectV1 {
@@ -258,6 +270,9 @@ export interface SerializedGameStateV1 {
   step: string;
   turnNumber: number;
   spellsCastThisTurn?: number;
+  /** Slice 2 (werewolf): snapshot of spellsCastThisTurn from the previous turn. */
+  spellsCastLastTurn?: number;
+  monarchId?: string;
   playersWhoAttackedThisTurn?: string[];
   legendRuleKeepChoices?: Record<string, string>;
   replacementEffectOrderChoices?: Record<string, string[]>;
@@ -272,6 +287,9 @@ export interface SerializedGameStateV1 {
   damagePreventionEffects?: SerializedDamagePreventionEffectV1[];
   gameOutcomePreventionEffects?: SerializedGameOutcomePreventionEffectV1[];
   diceRolls?: SerializedDiceRollRecordV1[];
+  /** Deterministic PRNG cursor + id counter (see engine `rng.ts`). */
+  rngState?: number;
+  idCounter?: number;
 }
 
 /**

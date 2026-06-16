@@ -1564,6 +1564,56 @@ describe('authority action boundary', () => {
     expect(insufficient.message).toContain('do not produce enough mana');
   });
 
+  it('accepts pay-cost responses that leave phyrexian pips to be paid with life', () => {
+    // Vault Skirge shape: {1}{B/P} with only a non-black source — the generic
+    // is covered by mana, the {B/P} by 2 life. The gate must agree with the
+    // actual spell-payment path (choosePaymentUnits) instead of demanding a
+    // black mana unit.
+    const state = stateWithManaSource();
+    const manaAction = buildActionPrompt(state, 'p1')?.legalChoices
+      .find(choice => choice.kind === 'ActivateManaAbility')?.action as Extract<AIAction, { kind: 'ActivateManaAbility' }> | undefined;
+    expect(manaAction).toBeDefined();
+
+    const phyrexianCost = {
+      W: 0, U: 0, B: 0, R: 0, G: 0, C: 0,
+      generic: 1,
+      phyrexian: ['B' as const],
+    };
+    const request = createPayCostsPromptRequest(state, 'p1', phyrexianCost, {
+      id: 'prompt-pay-phyrexian',
+      proposedManaActions: [manaAction!],
+      createdAt: 22,
+    });
+
+    const accepted = applyPayCostsPromptResponse(state, request, {
+      requestId: request.id,
+      kind: 'PayCosts',
+      playerId: 'p1',
+      selectedManaActions: [manaAction!],
+    });
+    expect(accepted.ok).toBe(true);
+
+    // With life too low to pay the phyrexian pip, the gate still rejects.
+    const lowLifeState = {
+      ...state,
+      players: state.players.map(player =>
+        player.id === 'p1' ? { ...player, life: 1 } : player),
+    };
+    const lowLifeRequest = createPayCostsPromptRequest(lowLifeState, 'p1', phyrexianCost, {
+      id: 'prompt-pay-phyrexian-low-life',
+      proposedManaActions: [manaAction!],
+      createdAt: 23,
+    });
+    const rejected = applyPayCostsPromptResponse(lowLifeState, lowLifeRequest, {
+      requestId: lowLifeRequest.id,
+      kind: 'PayCosts',
+      playerId: 'p1',
+      selectedManaActions: [manaAction!],
+    });
+    expect(rejected.ok).toBe(false);
+    expect(rejected.message).toContain('do not produce enough mana');
+  });
+
   it('validates mandatory card-selection prompts for cleanup discard', () => {
     const state = stateWithForestInHand();
     const forest = [...state.cards.values()].find(card => card.definitionId === 'forest' && card.ownerId === 'p1');

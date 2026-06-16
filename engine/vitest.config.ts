@@ -9,5 +9,8 @@ export default defineConfig({
   test: {
     globals: true,
     include: ['src/**/*.test.ts'],
+    // Seed Math.random per test file so unseeded games are reproducible (kills
+    // the shuffle-dependent flake class). See src/__tests__/vitest.setup.ts.
+    setupFiles: ['./src/__tests__/vitest.setup.ts'],
   },
 });

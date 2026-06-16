@@ -10,6 +10,7 @@ import { hasPlayerDeclaredBlockers } from './combat';
 import type { TargetSpec } from './effects/targets';
 import { canPlayLandDetailed } from './actions';
 import { tryCastSpell } from './actions-public';
+import { hashSeed, shuffled, type RngHost } from './rng';
 
 export interface RoomGamePlayerConfig {
   id: string;
@@ -23,6 +24,10 @@ export interface RoomGameConfig {
   firstPlayerId?: string;
   startingLife?: number;
   startingHandSize?: number;
+  /** Optional deterministic seed (number or string). Server-authoritative play
+   * should pass a stable seed (e.g. derived from the room id) so the shuffle is
+   * reproducible. Omit for a fresh random game. */
+  seed?: number | string;
 }
 
 export interface PlayerScopedCard {
@@ -157,13 +162,8 @@ function nextRoomInstanceId(prefix: string): string {
   return `${prefix}_${roomInstanceCounter}`;
 }
 
-function shuffle<T>(items: T[]): T[] {
-  const result = [...items];
-  for (let i = result.length - 1; i > 0; i -= 1) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [result[i], result[j]] = [result[j], result[i]];
-  }
-  return result;
+function shuffle<T>(host: RngHost, items: T[]): T[] {
+  return shuffled(host, items);
 }
 
 function addCardInstance(
@@ -212,7 +212,7 @@ function setupRoomPlayer(
     }
   }
 
-  const library = shuffle(deck.library);
+  const library = shuffle(state, deck.library);
   for (const definition of library) {
     addCardInstance(state, config.id, definition, 'library', false);
   }
@@ -254,6 +254,12 @@ export function initRoomGame(config: RoomGameConfig): GameState {
     combat: null,
     battlefieldAbilities: new Map(),
     pendingTriggers: [],
+    rngState: typeof config.seed === 'number'
+      ? config.seed >>> 0
+      : config.seed != null
+        ? hashSeed(config.seed)
+        : (Math.floor(Math.random() * 0x100000000) >>> 0),
+    idCounter: 0,
   };
 
   state.players = config.players.map(player =>

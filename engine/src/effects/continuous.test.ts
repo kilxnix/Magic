@@ -20,6 +20,7 @@ import { getKeywordsForInstance } from '../keywords';
 import { emptyManaPool } from '../types';
 import { canDeclareAttacker } from '../combat';
 import { canCastSpell, registerContinuousAbilitiesForPermanent } from '../stack';
+import { getEffectiveCardTypes, isEffectiveCreature } from '../effective-types';
 import { countDevotionToColors, getEffectiveCardTypes, isEffectiveCreature } from '../effective-types';
 
 // ============================================================================
@@ -452,6 +453,49 @@ describe('Continuous P/T Modifications', () => {
 
     expect(getEffectivePower(state, 'creature_1')).toBe(3); // 2 base + 1 continuous
     expect(getEffectiveToughness(state, 'creature_1')).toBe(3);
+  });
+
+  it('applies a Lignify-style base power/toughness SET (layer 7b) before counters', () => {
+    const cards = new Map<string, CardInstance>();
+    const bigGuy = makeCard('creature_1', 'big_def', 'p1');
+    bigGuy.counters = { '+1/+1': 1 }; // counter stacks ON TOP of the set base
+    cards.set('creature_1', bigGuy);
+    cards.set('lignify_1', { ...makeCard('lignify_1', 'lignify_def', 'p1'), attachedTo: 'creature_1' });
+
+    const defs = new Map<string, CardDefinition>();
+    defs.set('big_def', makeDef('big_def', { power: 8, toughness: 8 }));
+    const lignify = makeDef('lignify_def', {
+      type_line: 'Enchantment — Aura', card_types: ['enchantment'],
+      oracle_text: 'Enchanted creature is a Treefolk with base power and toughness 0/4 and loses all abilities.',
+    });
+    lignify.equipmentBonus = { power: 0, toughness: 0, keywords: [], setBasePower: 0, setBaseToughness: 4 };
+    defs.set('lignify_def', lignify);
+
+    const state = makeState({ cards, cardDefinitions: defs });
+    // base SET to 0/4, then +1/+1 counter => 1/5 (NOT 9/9).
+    expect(getEffectivePower(state, 'creature_1')).toBe(1);
+    expect(getEffectiveToughness(state, 'creature_1')).toBe(5);
+  });
+
+  it('applies a Darksteel-Mutation-style type change (layer 4): adds artifact type', () => {
+    const cards = new Map<string, CardInstance>();
+    cards.set('creature_1', makeCard('creature_1', 'big_def', 'p1'));
+    cards.set('mutation_1', { ...makeCard('mutation_1', 'mutation_def', 'p1'), attachedTo: 'creature_1' });
+
+    const defs = new Map<string, CardDefinition>();
+    defs.set('big_def', makeDef('big_def', { power: 8, toughness: 8, card_types: ['creature'] }));
+    const mutation = makeDef('mutation_def', {
+      type_line: 'Enchantment — Aura', card_types: ['enchantment'],
+      oracle_text: 'Enchanted creature is an Insect artifact creature with base power and toughness 0/1 and has indestructible, and it loses all other abilities.',
+    });
+    mutation.equipmentBonus = { power: 0, toughness: 0, keywords: ['Indestructible'], setBasePower: 0, setBaseToughness: 1, setTypes: ['creature', 'artifact'] };
+    defs.set('mutation_def', mutation);
+
+    const state = makeState({ cards, cardDefinitions: defs });
+    const types = getEffectiveCardTypes(state, 'creature_1');
+    expect(types).toContain('artifact'); // now an artifact -> "destroy target artifact" can hit it
+    expect(types).toContain('creature'); // still a creature
+    expect(isEffectiveCreature(state, 'creature_1')).toBe(true);
   });
 
   it('subtype filter only affects matching creatures', () => {

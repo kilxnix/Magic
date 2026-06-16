@@ -272,10 +272,12 @@ describe('Land Actions', () => {
       state.cards.set(card.instanceId, { ...card, zone: 'hand' });
       state = { ...state, phase: 'precombat_main' };
 
-      const tappedDefault = playLand(state, 'p1', card.instanceId);
-      expect(tappedDefault.cards.get(card.instanceId)?.tapped).toBe(true);
-      expect(tappedDefault.players[0].life).toBe(40);
+      // Slice 6 auto-choice: at life=40 (>= 4), the engine pays 2 life and enters untapped.
+      const autoChoice = playLand(state, 'p1', card.instanceId);
+      expect(autoChoice.cards.get(card.instanceId)?.tapped).toBe(false);
+      expect(autoChoice.players[0].life).toBe(38);
 
+      // Explicit opt-in: same result (untapped, life -2).
       state = initGameState(decks);
       const secondCard = getCardsInZone(state, 'p1', 'library')[0];
       state.cards.set(secondCard.instanceId, { ...secondCard, zone: 'hand' });
@@ -284,6 +286,16 @@ describe('Land Actions', () => {
       const paid = playLand(state, 'p1', secondCard.instanceId, { payLifeToEnterUntapped: true });
       expect(paid.cards.get(secondCard.instanceId)?.tapped).toBe(false);
       expect(paid.players[0].life).toBe(38);
+
+      // Explicit opt-out: enters tapped, no life paid.
+      state = initGameState(decks);
+      const thirdCard = getCardsInZone(state, 'p1', 'library')[0];
+      state.cards.set(thirdCard.instanceId, { ...thirdCard, zone: 'hand' });
+      state = { ...state, phase: 'precombat_main' };
+
+      const notPaid = playLand(state, 'p1', thirdCard.instanceId, { payLifeToEnterUntapped: false });
+      expect(notPaid.cards.get(thirdCard.instanceId)?.tapped).toBe(true);
+      expect(notPaid.players[0].life).toBe(40);
     });
 
     it('evaluates two-or-more-opponents lands from the actual table size', () => {

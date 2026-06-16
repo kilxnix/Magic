@@ -573,13 +573,16 @@ registerOverrideByName('Acidic Slime', {
 // Batch 2 — Counterspells
 // =============================================================================
 
-// Swan Song — Counter target spell, create 2/2 blue Bird with flying for opponent
+// Swan Song — Counter target enchantment, instant, or sorcery spell; create a
+// 2/2 blue Bird with flying for that spell's controller. The target is
+// restricted to enchantment/instant/sorcery spells (not artifacts or creatures).
 registerOverrideByName('Swan Song', {
   kind: 'Spell',
   effects: [
     {
       kind: 'CounterSpell',
       target: { kind: 'Chosen', targetId: 'target_1' },
+      filter: 'enchantmentInstantOrSorcery',
     },
     {
       kind: 'CreateToken',
@@ -596,7 +599,7 @@ registerOverrideByName('Swan Song', {
       count: 1,
     },
   ],
-  targets: [{ id: 'target_1', type: 'Spell', count: 1 }],
+  targets: [{ id: 'target_1', type: 'EnchantmentInstantOrSorcerySpell', count: 1 }],
 });
 
 // =============================================================================

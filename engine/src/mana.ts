@@ -114,6 +114,54 @@ export function canPayCost(pool: ManaPool, cost: ManaCost): boolean {
   return choosePoolPaymentUnits(pool, cost) !== null;
 }
 
+/**
+ * Pool-level payability that, unlike canPayCost, lets phyrexian pips be paid
+ * with 2 life each (CR 107.4f) when the pool lacks that color — the same
+ * semantics as the player-aware choosePaymentUnits. The PayCosts prompt gate
+ * must use this so it agrees with the actual spell-payment path; otherwise
+ * auto-pay plans for cards like Vault Skirge ({1}{B/P}) are wrongly rejected
+ * even though the cast itself would pay the {B/P} with life.
+ */
+export function canPayCostWithLife(pool: ManaPool, cost: ManaCost, life: number): boolean {
+  if (canPayCost(pool, cost)) return true;
+  const phyrexian = cost.phyrexian || [];
+  if (phyrexian.length === 0) return false;
+
+  const available: ManaUnit[] = [];
+  for (const color of COLOR_SYMBOLS) {
+    for (let i = 0; i < pool[color]; i++) available.push({ color });
+  }
+
+  const take = (predicate: (unit: ManaUnit) => boolean): boolean => {
+    const idx = available.findIndex(predicate);
+    if (idx === -1) return false;
+    available.splice(idx, 1);
+    return true;
+  };
+
+  for (const color of COLOR_SYMBOLS) {
+    for (let i = 0; i < cost[color]; i++) {
+      if (!take(unit => unit.color === color)) return false;
+    }
+  }
+  for (const options of cost.hybrid || []) {
+    if (!take(unit => options.includes(unit.color))) return false;
+  }
+  let lifeToPay = 0;
+  for (const color of phyrexian) {
+    if (take(unit => unit.color === color)) continue;
+    lifeToPay += 2;
+    if (life < lifeToPay) return false;
+  }
+  // Pool-only view carries no snow tracking, same as 2-arg canPayCost: a
+  // snow pip cannot be satisfied here.
+  if ((cost.snow || 0) > 0) return false;
+  for (let i = 0; i < cost.generic; i++) {
+    if (!take(() => true)) return false;
+  }
+  return true;
+}
+
 export function payManaCost(pool: ManaPool, cost: ManaCost): ManaPool {
   const used = choosePoolPaymentUnits(pool, cost);
   if (!used) {

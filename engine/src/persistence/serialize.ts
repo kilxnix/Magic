@@ -111,6 +111,9 @@ function serializeCardInstance(card: CardInstance): SerializedCardInstanceV1 {
     damage: card.damage,
     deathtouchDamage: card.deathtouchDamage,
     isCommander: card.isCommander,
+    goadedBy: card.goadedBy ? [...card.goadedBy] : undefined,
+    regenerationShields: card.regenerationShields,
+    monstrous: card.monstrous,
     isToken: card.isToken,
     fromSideboard: card.fromSideboard,
     playableFromExileUntilTurn: card.playableFromExileUntilTurn,
@@ -123,14 +126,23 @@ function serializeCardInstance(card: CardInstance): SerializedCardInstanceV1 {
 function serializeCardChoices(choices: CardInstance['choices']): SerializedCardInstanceV1['choices'] {
   return choices ? {
     chosenCreatureType: choices.chosenCreatureType,
+    chosenColor: choices.chosenColor,
+    chosenOpponent: choices.chosenOpponent,
+    chosenCardName: choices.chosenCardName,
     imprintedCardIds: choices.imprintedCardIds ? [...choices.imprintedCardIds] : undefined,
     discardedCardIds: choices.discardedCardIds ? [...choices.discardedCardIds] : undefined,
   } : undefined;
 }
 
 function deserializeCardChoices(choices: SerializedCardInstanceV1['choices']): CardInstance['choices'] {
+  const validColors = new Set(['W', 'U', 'B', 'R', 'G']);
   return choices ? {
     chosenCreatureType: choices.chosenCreatureType,
+    chosenColor: validColors.has(choices.chosenColor ?? '')
+      ? (choices.chosenColor as 'W' | 'U' | 'B' | 'R' | 'G')
+      : undefined,
+    chosenOpponent: choices.chosenOpponent,
+    chosenCardName: choices.chosenCardName,
     imprintedCardIds: choices.imprintedCardIds ? [...choices.imprintedCardIds] : undefined,
     discardedCardIds: choices.discardedCardIds ? [...choices.discardedCardIds] : undefined,
   } : undefined;
@@ -152,6 +164,9 @@ function deserializeCardInstance(data: SerializedCardInstanceV1): CardInstance {
     damage: data.damage,
     deathtouchDamage: data.deathtouchDamage,
     isCommander: data.isCommander,
+    goadedBy: data.goadedBy ? [...data.goadedBy] : undefined,
+    regenerationShields: data.regenerationShields,
+    monstrous: data.monstrous,
     isToken: data.isToken,
     fromSideboard: data.fromSideboard,
     playableFromExileUntilTurn: data.playableFromExileUntilTurn,
@@ -180,12 +195,12 @@ function serializeCardDefinition(def: CardDefinition): SerializedCardDefinitionV
     card_types: [...def.card_types],
     isEquipment: def.isEquipment,
     equipCost: def.equipCost ? { ...def.equipCost } : undefined,
+    // Spread so ALL equipmentBonus fields survive save/resume — including the
+    // layer-7b set* fields (setBasePower/setBaseToughness) and layer-4 type
+    // fields (setTypes/addTypes). Previously this enumerated only
+    // power/toughness/keywords and silently dropped the rest.
     equipmentBonus: def.equipmentBonus
-      ? {
-          power: def.equipmentBonus.power,
-          toughness: def.equipmentBonus.toughness,
-          keywords: [...def.equipmentBonus.keywords],
-        }
+      ? { ...def.equipmentBonus, keywords: [...def.equipmentBonus.keywords] }
       : undefined,
     manaProduction: def.manaProduction ? { ...def.manaProduction } : undefined,
     searchAbility: def.searchAbility ? { ...def.searchAbility } : undefined,
@@ -226,11 +241,7 @@ function deserializeCardDefinition(data: SerializedCardDefinitionV1): CardDefini
     isEquipment: data.isEquipment,
     equipCost: data.equipCost ? { ...data.equipCost } : undefined,
     equipmentBonus: data.equipmentBonus
-      ? {
-          power: data.equipmentBonus.power,
-          toughness: data.equipmentBonus.toughness,
-          keywords: [...data.equipmentBonus.keywords],
-        }
+      ? { ...data.equipmentBonus, keywords: [...data.equipmentBonus.keywords] }
       : undefined,
     manaProduction: data.manaProduction ? { ...data.manaProduction } : undefined,
     searchAbility: data.searchAbility ? { ...data.searchAbility } : undefined,
@@ -387,6 +398,8 @@ export function serializeGameState(state: GameState): SerializedGameStateV1 {
     step: state.step,
     turnNumber: state.turnNumber,
     spellsCastThisTurn: state.spellsCastThisTurn,
+    spellsCastLastTurn: state.spellsCastLastTurn,
+    monarchId: state.monarchId,
     playersWhoAttackedThisTurn: state.playersWhoAttackedThisTurn ? [...state.playersWhoAttackedThisTurn] : undefined,
     legendRuleKeepChoices: state.legendRuleKeepChoices ? { ...state.legendRuleKeepChoices } : undefined,
     replacementEffectOrderChoices: state.replacementEffectOrderChoices
@@ -418,6 +431,8 @@ export function serializeGameState(state: GameState): SerializedGameStateV1 {
     diceRolls: state.diceRolls
       ? state.diceRolls.map(roll => ({ ...roll }))
       : undefined,
+    rngState: state.rngState,
+    idCounter: state.idCounter,
   };
 
   // Include grudge data if present
@@ -447,6 +462,8 @@ export function deserializeGameState(data: SerializedGameStateV1): GameState {
     step: data.step as GameState['step'],
     turnNumber: data.turnNumber,
     spellsCastThisTurn: data.spellsCastThisTurn,
+    spellsCastLastTurn: data.spellsCastLastTurn,
+    monarchId: data.monarchId,
     playersWhoAttackedThisTurn: data.playersWhoAttackedThisTurn ? [...data.playersWhoAttackedThisTurn] : [],
     legendRuleKeepChoices: data.legendRuleKeepChoices ? { ...data.legendRuleKeepChoices } : undefined,
     replacementEffectOrderChoices: data.replacementEffectOrderChoices
@@ -480,6 +497,8 @@ export function deserializeGameState(data: SerializedGameStateV1): GameState {
           step: roll.step as GameState['step'],
         }))
       : undefined,
+    rngState: data.rngState,
+    idCounter: data.idCounter,
   };
 
   // Restore grudge data if present

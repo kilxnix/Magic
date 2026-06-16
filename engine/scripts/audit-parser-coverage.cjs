@@ -22,6 +22,32 @@ require.extensions['.ts'] = (module, filename) => {
 const repoRoot = path.resolve(__dirname, '..', '..');
 const { parseOracleText } = require('../src/effects/parser.ts');
 const { getOverrideMetadata } = require('../src/effects/overrides.ts');
+const { populateParsedCache } = require('../src/cards/card-parser-cache.ts');
+
+/**
+ * A mana LAND whose mana is produced by the authoritative cache path
+ * (card-parser-cache.ts parseManaProductions → def.manaProduction, consumed in
+ * actions.ts tapLandForMana) is functionally complete even when parseOracleText
+ * doesn't recognize the worded form ("Add one mana of any color", "{W} or {U}",
+ * enters-tapped duals). Restricted to lands so we never over-count creatures with
+ * incidental mana plus other unparsed abilities. Same honesty bar as KeywordOnly /
+ * EntryCounters: a real game function works.
+ */
+function isCacheBackedManaLand(card, face) {
+  if (!/\bland\b/i.test(card.type_line || '')) return false;
+  try {
+    const def = populateParsedCache({
+      id: card.id || card.name, name: card.name,
+      oracle_text: face.oracleText, type_line: card.type_line || '',
+      mana_cost: face.manaCost || '', cmc: card.cmc || 0,
+      colors: card.colors || [], color_identity: card.color_identity || [],
+      keywords: card.keywords || [], card_types: [],
+    });
+    return Boolean((def.manaProductions && def.manaProductions.length) || def.manaProduction);
+  } catch {
+    return false;
+  }
+}
 
 const KNOWN_ENGINE_KEYWORDS = new Set([
   'deathtouch',
@@ -124,14 +150,32 @@ function isKeywordOnlyOracle(text, cardKeywords = []) {
       .map(part => part.trim())
       .filter(Boolean);
     return parts.length > 0 && parts.every(part => {
-      const normalized = part.replace(/\s*\{[^}]+\}\s*$/, '').trim();
+      // Strip ALL trailing brace groups (e.g. "Morph {6}{G}" → "Morph",
+      // "Scavenge {4}{G}{G}" → "Scavenge", "Echo {2}{G}" → "Echo") and then
+      // strip a trailing bare number (e.g. "Bushido 1" → "Bushido",
+      // "Soulshift 4" → "Soulshift", "Crew 1" → "Crew").
+      const normalized = part
+        .replace(/(\s*\{[^}]+\})+\s*$/, '')
+        .replace(/\s+\d+$/, '')
+        .trim();
       return keywordSet.has(normalized);
     });
   });
 }
 
-function isEntryCounterOracle(text) {
-  return /\benters(?: the battlefield)? with (?:a|an|one|two|three|four|five|six|seven|eight|nine|ten|\d+) (?:[+\-]\d+\/[+\-]\d+|[a-z]+(?: [a-z]+)?) counters?\b/i.test(text);
+function isEntryCounterOracle(text, manaCost) {
+  // Static/word/number counts (optionally "additional") always execute via
+  // stack.ts applyEntersWithCounters.
+  if (/\benters(?: the battlefield)? with (?:a|an|one|two|three|four|five|six|seven|eight|nine|ten|\d+)(?: additional)? (?:[+\-]\d+\/[+\-]\d+|[a-z]+(?: [a-z]+)?) counters?\b/i.test(text)) {
+    return true;
+  }
+  // "X counters" only count when the spell has an {X} cost, so the resolved X
+  // is known and actually applied (stack.ts gates the x-branch on xValue).
+  if (manaCost && /\{X\}/i.test(manaCost) &&
+      /\benters(?: the battlefield)? with x(?: additional)? (?:[+\-]\d+\/[+\-]\d+|[a-z]+(?: [a-z]+)?) counters?\b/i.test(text)) {
+    return true;
+  }
+  return false;
 }
 
 function cardFaces(card) {
@@ -141,14 +185,39 @@ function cardFaces(card) {
       .map((face, index) => ({
         id: `${card.id || card.name}-face-${index}`,
         name: face.name ? `${card.name} // ${face.name}` : card.name,
+        // Self-reference names to normalize to '~' (full card name + this face's printed name).
+        selfNames: [card.name, face.name].filter(Boolean),
         oracleText: face.oracle_text,
+        manaCost: face.mana_cost ?? card.mana_cost,
       }));
   }
   return [{
     id: card.id || card.name,
     name: card.name,
+    selfNames: [card.name].filter(Boolean),
     oracleText: card.oracle_text,
+    manaCost: card.mana_cost,
   }];
+}
+
+// Replicate the runtime self-reference normalization (see authority.ts /
+// ai/legal-actions.ts): cards refer to themselves by name in oracle text, and
+// the engine replaces that name with the '~' self-token before parsing. The
+// audit must do the same or it understates real coverage for every "Cardname
+// does X" card (burn spells, many triggers, equipment, etc.).
+function normalizeOracleForParser(oracleText, selfNames = []) {
+  let text = oracleText;
+  for (const name of selfNames) {
+    if (!name) continue;
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    text = text.replace(new RegExp(escaped, 'gi'), '~');
+    const shortName = name.split(',')[0]?.trim();
+    if (shortName && shortName.length >= 3 && shortName !== name) {
+      const escapedShort = shortName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      text = text.replace(new RegExp(`\\b${escapedShort}\\b`, 'gi'), '~');
+    }
+  }
+  return text;
 }
 
 function classifySyntax(text) {
@@ -234,10 +303,23 @@ function analyze(args) {
     for (const face of cardFaces(card)) {
       if (!face.oracleText) continue;
       totalFaces += 1;
-      const parsed = parseOracleText(face.oracleText);
+      const parsed = parseOracleText(normalizeOracleForParser(face.oracleText, face.selfNames));
       const isKeywordOnly = parsed.kind === 'Unparsed' && isKeywordOnlyOracle(face.oracleText, card.keywords || []);
-      const isEntryCounters = parsed.kind === 'Unparsed' && isEntryCounterOracle(face.oracleText);
-      const parsedKind = isKeywordOnly ? 'KeywordOnly' : isEntryCounters ? 'EntryCounters' : parsed.kind;
+      const isEntryCounters = parsed.kind === 'Unparsed' && isEntryCounterOracle(face.oracleText, face.manaCost);
+      const isManaLand = parsed.kind === 'Unparsed' && !isKeywordOnly && !isEntryCounters
+        && isCacheBackedManaLand(card, face);
+      // Slice 2/12 (gap a): faces where ALL oracle lines were absorbed as
+      // unenforced skips (e.g. "This creature enters prepared." + engine keywords)
+      // carry absorbedKeywords on an Unparsed result. Credit these as AbsorbedOnly —
+      // consistent with KeywordOnly: no fabricated benefits, pure honest skip.
+      const isAbsorbedOnly = parsed.kind === 'Unparsed'
+        && !isKeywordOnly && !isEntryCounters && !isManaLand
+        && Array.isArray(parsed.absorbedKeywords) && parsed.absorbedKeywords.length > 0;
+      const parsedKind = isKeywordOnly ? 'KeywordOnly'
+        : isEntryCounters ? 'EntryCounters'
+        : isManaLand ? 'ManaAbility'
+        : isAbsorbedOnly ? 'AbsorbedOnly'
+        : parsed.kind;
       kindCounts[parsedKind] = (kindCounts[parsedKind] || 0) + 1;
 
       const override = getOverrideMetadata(card.id || '', card.name || face.name || '');

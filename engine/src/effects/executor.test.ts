@@ -238,6 +238,30 @@ describe('executeEffects', () => {
     });
   });
 
+  describe('AddCounters on each creature you control', () => {
+    it('puts a +1/+1 counter on each of the caster\'s creatures only', () => {
+      const state = createTestState();
+      // Add an opponent creature that must NOT receive a counter.
+      state.cards.set('opp-creature', {
+        instanceId: 'opp-creature',
+        definitionId: 'def-creature',
+        ownerId: 'player-2',
+        zone: 'battlefield',
+        tapped: false,
+        summoningSick: false,
+        counters: {},
+        damage: 0,
+        isCommander: false,
+      });
+      const effects: Effect[] = [
+        { kind: 'AddCounters', target: { kind: 'AllCreaturesYouControl' }, counterType: '+1/+1', count: 1 },
+      ];
+      const newState = executeEffects(state, effects, 'player-1', [], []);
+      expect(newState.cards.get('creature-1')?.counters['+1/+1']).toBe(1);
+      expect(newState.cards.get('opp-creature')?.counters['+1/+1'] ?? 0).toBe(0);
+    });
+  });
+
   describe('Destroy effect', () => {
     it('moves creature to graveyard', () => {
       const state = createTestState();
@@ -1849,6 +1873,85 @@ describe('EachOpponent and AllCreatures effects', () => {
 
       expect(newState.stack).toHaveLength(0);
       expect(newState.cards.get('spell-2')?.zone).toBe('exile');
+    });
+
+    it('does not counter an artifact spell with the enchantment/instant/sorcery filter (Swan Song)', () => {
+      const state = createTestState();
+      state.cardDefinitions.set('def-artifact', {
+        id: 'def-artifact',
+        name: 'Test Artifact',
+        type_line: 'Artifact',
+        oracle_text: '',
+        mana_cost: '{2}',
+        cmc: 2,
+        colors: [],
+        color_identity: [],
+        keywords: [],
+        card_types: ['artifact'],
+      });
+      state.cards.set('spell-art', {
+        instanceId: 'spell-art',
+        definitionId: 'def-artifact',
+        ownerId: 'player-2',
+        zone: 'stack',
+        tapped: false,
+        summoningSick: false,
+        counters: {},
+        damage: 0,
+        isCommander: false,
+      });
+      state.stack = [{ kind: 'Spell', id: 'stack_art', cardInstanceId: 'spell-art', casterId: 'player-2', targets: [] }];
+
+      const newState = executeEffects(
+        state,
+        [{ kind: 'CounterSpell', target: { kind: 'Chosen', targetId: 'target_1' }, filter: 'enchantmentInstantOrSorcery' }],
+        'player-1',
+        ['spell-art'],
+        [{ id: 'target_1', type: 'EnchantmentInstantOrSorcerySpell', count: 1 }],
+      );
+
+      // The artifact spell must remain on the stack (illegal target → no counter).
+      expect(newState.stack).toHaveLength(1);
+      expect(newState.cards.get('spell-art')?.zone).toBe('stack');
+    });
+
+    it('counters an instant spell with the enchantment/instant/sorcery filter (Swan Song)', () => {
+      const state = createTestState();
+      state.cardDefinitions.set('def-instant', {
+        id: 'def-instant',
+        name: 'Test Instant',
+        type_line: 'Instant',
+        oracle_text: '',
+        mana_cost: '{U}',
+        cmc: 1,
+        colors: ['U'],
+        color_identity: ['U'],
+        keywords: [],
+        card_types: ['instant'],
+      });
+      state.cards.set('spell-ins', {
+        instanceId: 'spell-ins',
+        definitionId: 'def-instant',
+        ownerId: 'player-2',
+        zone: 'stack',
+        tapped: false,
+        summoningSick: false,
+        counters: {},
+        damage: 0,
+        isCommander: false,
+      });
+      state.stack = [{ kind: 'Spell', id: 'stack_ins', cardInstanceId: 'spell-ins', casterId: 'player-2', targets: [] }];
+
+      const newState = executeEffects(
+        state,
+        [{ kind: 'CounterSpell', target: { kind: 'Chosen', targetId: 'target_1' }, filter: 'enchantmentInstantOrSorcery' }],
+        'player-1',
+        ['spell-ins'],
+        [{ id: 'target_1', type: 'EnchantmentInstantOrSorcerySpell', count: 1 }],
+      );
+
+      expect(newState.stack).toHaveLength(0);
+      expect(newState.cards.get('spell-ins')?.zone).toBe('graveyard');
     });
   });
 

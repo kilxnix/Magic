@@ -1,6 +1,8 @@
 export * from './types';
+export * from './rng';
 export * from './game-state';
 export * from './turn-manager';
+export * from './turn-actions';
 export * from './mana';
 export * from './priority';
 export * from './actions';
@@ -69,5 +71,7 @@ export {
   tryCreateManualToken,
   tryAttachCardManually,
   trySetPhaseStepManually,
+  tryMorphCast,
+  tryTurnFaceUp,
   resetLoopDetector,
 } from './actions-public';

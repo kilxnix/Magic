@@ -262,6 +262,28 @@ describe('serializeGameState / deserializeGameState', () => {
     expect(def?.equipmentBonus).toEqual({ power: 1, toughness: 0, keywords: ['Trample'] });
   });
 
+  it('round-trips the layer-7b base-P/T-set aura fields (setBasePower/setBaseToughness)', () => {
+    const state = createTestState();
+    addCard(state, 'lignify1', 'p1', 'battlefield', {
+      id: 'lignify',
+      name: 'Lignify',
+      type_line: 'Enchantment — Aura',
+      oracle_text: 'Enchant creature\nEnchanted creature is a Treefolk with base power and toughness 0/4 and loses all abilities.',
+      mana_cost: '{1}{G}',
+      cmc: 2,
+      colors: ['G'],
+      color_identity: ['G'],
+      card_types: ['enchantment'],
+      equipmentBonus: { power: 0, toughness: 0, keywords: [], setBasePower: 0, setBaseToughness: 4 },
+    });
+
+    const restored = deserializeGameState(serializeGameState(state));
+    const def = restored.cardDefinitions.get('lignify');
+    // The base-P/T SET must survive — previously the serializer dropped it.
+    expect(def?.equipmentBonus?.setBasePower).toBe(0);
+    expect(def?.equipmentBonus?.setBaseToughness).toBe(4);
+  });
+
   it('round-trips stack items correctly', () => {
     const state = createTestState();
 

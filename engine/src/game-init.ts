@@ -9,6 +9,20 @@ import { createPlayer, emptyManaPool } from './types';
 import type { GeneratedDeck, CardLookup, EngineDeck } from './cards/deck-loader';
 import { convertGeneratedDeck, convertLimitedDeck } from './cards/deck-loader';
 import type { AIPersonality } from './ai/types';
+import { hashSeed, randomInt, shuffled, type RngHost } from './rng';
+import { registerBattlefieldAbilities, registerContinuousAbilitiesForPermanent } from './stack';
+import { getCardDefinition } from './game-state';
+
+/**
+ * Coerce an optional seed into a uint32. When no seed is given we draw a fresh
+ * random one ONCE (preserving game-to-game variety); it is then stored on the
+ * state and serialized, so the game replays deterministically from that point.
+ */
+function resolveSeed(seed: number | string | undefined): number {
+  if (typeof seed === 'number') return seed >>> 0;
+  if (typeof seed === 'string') return hashSeed(seed);
+  return (Math.floor(Math.random() * 0x100000000) >>> 0);
+}
 
 /**
  * Configuration for initializing a game.
@@ -23,6 +37,9 @@ export interface GameInitConfig {
   humanGoesFirst?: boolean;           // Default: true
   startingLife?: number;              // Default: 40
   startingHandSize?: number;          // Default: 7
+  /** Optional deterministic seed (number or string). Omit for a fresh random
+   * game; the chosen seed is stored on the state so the game is reproducible. */
+  seed?: number | string;
 }
 
 /**
@@ -57,15 +74,11 @@ export function resetInstanceCounter(): void {
 }
 
 /**
- * Shuffle an array in place using Fisher-Yates algorithm.
+ * Shuffle an array using the state's seeded PRNG (Fisher-Yates). Returns a new
+ * array; the host's `rngState` advances so the shuffle is reproducible.
  */
-function shuffle<T>(array: T[]): T[] {
-  const result = [...array];
-  for (let i = result.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [result[i], result[j]] = [result[j], result[i]];
-  }
-  return result;
+function shuffle<T>(host: RngHost, array: T[]): T[] {
+  return shuffled(host, array);
 }
 
 /**
@@ -143,8 +156,8 @@ function setupPlayer(
     state.sideboards?.set(id, [...deck.sideboard]);
   }
 
-  // Create library instances (shuffled)
-  const libraryCards = shuffle(deck.library);
+  // Create library instances (shuffled with the state's seeded PRNG)
+  const libraryCards = shuffle(state, deck.library);
   const libraryInstanceIds: string[] = [];
 
   for (const cardDef of libraryCards) {
@@ -192,6 +205,7 @@ export function initGameFromDecks(config: GameInitConfig): GameStateWithAI {
     humanGoesFirst = true,
     startingLife = 40,
     startingHandSize = 7,
+    seed,
   } = config;
 
   // Validate AI count
@@ -225,6 +239,8 @@ export function initGameFromDecks(config: GameInitConfig): GameStateWithAI {
     combat: null,
     battlefieldAbilities: new Map(),
     pendingTriggers: [],
+    rngState: resolveSeed(seed),
+    idCounter: 0,
   };
 
   // Setup human player first
@@ -271,13 +287,51 @@ export function initGameFromDecks(config: GameInitConfig): GameStateWithAI {
     state.priorityPlayerIndex = 0;
     state.players[0].hasPriority = true;
   } else {
-    // Random starting player
-    state.activePlayerIndex = Math.floor(Math.random() * state.players.length);
+    // Random starting player (seeded so the choice replays)
+    state.activePlayerIndex = randomInt(state, state.players.length);
     state.priorityPlayerIndex = state.activePlayerIndex;
     state.players[state.activePlayerIndex].hasPriority = true;
   }
 
   return state;
+}
+
+/**
+ * Pre-game actions (CR 103.6): after a player keeps their opening hand, cards
+ * that say they may begin the game on the battlefield (the Leyline cycle —
+ * every such commander-legal card uses this exact sentence) are put onto the
+ * battlefield before the first turn. "You may" is always taken: these cards
+ * are strictly beneficial for their controller.
+ *
+ * Per the official Leyline rulings, permanents that begin the game on the
+ * battlefield were never "cast" and do not trigger enters-the-battlefield
+ * abilities — so this places them directly and registers their battlefield /
+ * continuous abilities without running ETB triggers.
+ */
+const PREGAME_BATTLEFIELD_SENTENCE =
+  'If this card is in your opening hand, you may begin the game with it on the battlefield.';
+
+export function applyPregameActions(
+  state: GameState,
+  playerId: string,
+): { state: GameState; placedCardNames: string[] } {
+  let nextState = state;
+  const placedCardNames: string[] = [];
+  const handCards = [...nextState.cards.values()]
+    .filter(card => card.ownerId === playerId && card.zone === 'hand');
+
+  for (const card of handCards) {
+    const def = getCardDefinition(nextState, card);
+    if (!def.oracle_text || !def.oracle_text.includes(PREGAME_BATTLEFIELD_SENTENCE)) continue;
+    card.zone = 'battlefield';
+    card.tapped = false;
+    card.summoningSick = false; // not a creature in any printed case, but harmless
+    nextState = registerBattlefieldAbilities(nextState, card.instanceId);
+    nextState = registerContinuousAbilitiesForPermanent(nextState, card.instanceId);
+    placedCardNames.push(def.name);
+  }
+
+  return { state: nextState, placedCardNames };
 }
 
 /**

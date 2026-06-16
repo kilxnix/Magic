@@ -13,6 +13,7 @@ import type { Effect } from '../effects/ast';
 import { getLegalActions, getSpellTargetSpecs } from './legal-actions';
 import { evaluateActions, getBestAction } from './evaluate';
 import { selectTargetsForSpell, selectBestAttackTarget } from './targeting';
+import { hashSeed, DEFAULT_RNG_SEED } from '../rng';
 import type { AIAction, AIDifficulty, AIPlayerConfig, ActionEvaluation } from './types';
 import {
   tryPlayLand,
@@ -119,6 +120,7 @@ export function dispatchAIAction(
     case 'PlayLand':
       return tryPlayLand(state, playerId, action.cardInstanceId, {
         chosenCreatureType: action.chosenCreatureType,
+        chosenColor: action.chosenColor,
         payLifeToEnterUntapped: action.payLifeToEnterUntapped,
       });
 
@@ -217,20 +219,37 @@ export function applyAction(state: GameState, playerId: string, action: AIAction
 
 /**
  * Add randomness to action selection for lower difficulty levels.
+ *
+ * The jitter is a PURE deterministic function of the game's PRNG cursor
+ * (`state.rngState`) and each action's identity — it does not advance the
+ * cursor. That keeps AI decisions reproducible on replay (same state ⇒ same
+ * ranking) and free of side effects, so calling the decision function
+ * speculatively (previews, look-ahead) never perturbs the live RNG stream.
+ * The cursor only moves on real random game events (shuffles, dice), which in
+ * turn shifts subsequent AI jitter — so the AI still varies game to game.
  */
 function addRandomness(
   evaluations: ActionEvaluation[],
   difficulty: AIDifficulty,
+  state: GameState,
 ): ActionEvaluation[] {
   if (evaluations.length === 0) return evaluations;
 
   // Higher difficulty = less randomness
   const randomFactor = (5 - difficulty) * 2; // 8 for d1, 6 for d2, 4 for d3, 2 for d4, 0 for d5
+  if (randomFactor === 0) {
+    return [...evaluations].sort((a, b) => b.score - a.score);
+  }
 
-  return evaluations.map(ev => ({
-    ...ev,
-    score: ev.score + (Math.random() - 0.5) * randomFactor,
-  })).sort((a, b) => b.score - a.score);
+  const base = state.rngState ?? DEFAULT_RNG_SEED;
+  return evaluations.map((ev, index) => {
+    const key = `${base}:${index}:${ev.action.kind}:${(ev.action as { cardInstanceId?: string }).cardInstanceId ?? ''}`;
+    const unit = hashSeed(key) / 4294967296; // deterministic value in [0, 1)
+    return {
+      ...ev,
+      score: ev.score + (unit - 0.5) * randomFactor,
+    };
+  }).sort((a, b) => b.score - a.score);
 }
 
 /**
@@ -324,7 +343,7 @@ function rankedActionChoices(
   });
 
   let evaluations = evaluateActions(state, playerId, actions);
-  evaluations = addRandomness(evaluations, difficulty);
+  evaluations = addRandomness(evaluations, difficulty, state);
   return { actions, evaluations };
 }
 

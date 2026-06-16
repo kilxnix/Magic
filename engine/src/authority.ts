@@ -16,7 +16,7 @@ import { getLegalActions } from './ai/legal-actions';
 import { getLegalTargets } from './ai/legal-actions';
 import { dispatchAIAction } from './ai/agent';
 import { canPlayLandDetailed } from './actions';
-import { canPayCost } from './mana';
+import { canPayCostWithLife } from './mana';
 import {
   checkTriggersForEvent,
   createETBTriggers,
@@ -35,6 +35,7 @@ import { validateStateInvariants } from './invariants';
 import { instanceHasKeyword } from './keywords';
 import { getCommanderDestinationZone } from './commander';
 import { hasPlayerDeclaredBlockers } from './combat';
+import { shuffleInPlace, type RngHost } from './rng';
 import type { AIAction } from './ai/types';
 import type { ActionFailure, GameEvent as ActionGameEvent } from './actions-public';
 import type { CardFilter, Effect, SearchLibraryEffect, TargetRef } from './effects/ast';
@@ -1388,6 +1389,16 @@ function isLegalRequestedAction(state: GameState, playerId: string, action: AIAc
   if (isValidatedOutOfBandAction(action)) {
     return dispatchAIAction(state, playerId, action).ok;
   }
+  // Combat declarations are validated SEMANTICALLY by the combat engine
+  // (turn/step/window via tryDeclareAttackers/tryDeclareBlockers, plus
+  // duplicates, attacker/blocker eligibility, goad, must-attack, attack
+  // taxes, and block-count limits via declareAttackers/declareBlockers).
+  // The legal-action menu only enumerates a few canonical sets (none /
+  // each-single / all / one split), so matching against it wrongly rejects
+  // every custom multi-attacker or multi-blocker selection a human makes.
+  if (action.kind === 'DeclareAttackers' || action.kind === 'DeclareBlockers') {
+    return dispatchAIAction(state, playerId, action).ok;
+  }
   const requestedKey = actionKey(action);
   return getLegalActions(state, playerId).some(legal =>
     actionKey(legal) === requestedKey || actionReferencesSameObject(legal, action),
@@ -2272,7 +2283,7 @@ function applyBattlefieldEntryFromSearch(state: GameState, cardInstanceId: strin
   if (!enteredCard || !definition) return nextState;
 
   if (definition.card_types.includes('land')) {
-    return checkTriggersForEvent(nextState, {
+    nextState = checkTriggersForEvent(nextState, {
       kind: 'LandETB',
       instanceId: cardInstanceId,
       controllerId: enteredCard.ownerId,
@@ -2280,12 +2291,19 @@ function applyBattlefieldEntryFromSearch(state: GameState, cardInstanceId: strin
   }
 
   if (definition.card_types.includes('creature')) {
-    return checkTriggersForEvent(nextState, {
+    nextState = checkTriggersForEvent(nextState, {
       kind: 'CreatureETB',
       instanceId: cardInstanceId,
       controllerId: enteredCard.ownerId,
     });
   }
+
+  // Slice 2: Fire PermanentETB for ALL permanents (used by AnotherLegendaryPermanentETB etc.)
+  nextState = checkTriggersForEvent(nextState, {
+    kind: 'PermanentETB',
+    instanceId: cardInstanceId,
+    controllerId: enteredCard.ownerId,
+  });
 
   return nextState;
 }
@@ -2626,12 +2644,15 @@ function targetFailureReason(
       return 'Not an artifact or enchantment';
     case 'ArtifactEnchantmentOrLand':
       return 'Not an artifact, enchantment, or land';
+    case 'CreatureOrPlaneswalker':
+      return 'Not a creature or planeswalker';
     case 'Spell':
     case 'NoncreatureSpell':
     case 'CreatureSpell':
     case 'CreatureOrEnchantmentSpell':
     case 'ArtifactOrCreatureSpell':
     case 'InstantOrSorcerySpell':
+    case 'EnchantmentInstantOrSorcerySpell':
       return 'Not a matching spell on the stack';
     case 'Any':
       return 'Not a legal any-target object';
@@ -2678,7 +2699,7 @@ export function createSelectTargetPromptRequest(
     expectedStateId,
     sourceInstanceId: options.sourceInstanceId,
     targetSpec,
-    minSelections: options.minSelections ?? count,
+    minSelections: options.minSelections ?? targetSpec.minCount ?? count,
     maxSelections: options.maxSelections ?? count,
     legalChoices,
     invalidChoices,
@@ -3178,7 +3199,11 @@ export function applyPayCostsPromptResponse(
   }
 
   const player = nextState.players.find(candidate => candidate.id === request.playerId);
-  if (!player || !canPayCost(player.manaPool, request.manaCost)) {
+  // Phyrexian-aware gate: phyrexian pips ({B/P} etc.) are payable with 2 life
+  // each by the actual spell-payment path, so the prompt gate must accept
+  // plans that leave them to life — otherwise auto-pay casts of cards like
+  // Vault Skirge are rejected even though the cast would succeed.
+  if (!player || !canPayCostWithLife(player.manaPool, request.manaCost, player.life)) {
     const message = 'Selected mana actions do not produce enough mana to pay this cost.';
     return {
       requestId: response.requestId,
@@ -3700,13 +3725,8 @@ export function applyNamedCardPromptResponse(
   };
 }
 
-function shuffleCardEntries(entries: [string, CardInstance][]): [string, CardInstance][] {
-  const shuffled = [...entries];
-  for (let index = shuffled.length - 1; index > 0; index -= 1) {
-    const swapIndex = Math.floor(Math.random() * (index + 1));
-    [shuffled[index], shuffled[swapIndex]] = [shuffled[swapIndex], shuffled[index]];
-  }
-  return shuffled;
+function shuffleCardEntries(host: RngHost, entries: [string, CardInstance][]): [string, CardInstance][] {
+  return shuffleInPlace(host, [...entries]);
 }
 
 function openingHandCards(state: GameState, playerId: string): CardInstance[] {
@@ -3736,7 +3756,7 @@ export function redrawOpeningHandForMulligan(
     }
   }
 
-  const shuffled = shuffleCardEntries(pool).map(([id, card], index) => [
+  const shuffled = shuffleCardEntries(state, pool).map(([id, card], index) => [
     id,
     { ...card, zone: index < handSize ? 'hand' : 'library' },
   ] as [string, CardInstance]);
@@ -3854,11 +3874,11 @@ export function applyOpeningMulliganRedraw(
   }
 
   const redrawn = Math.min(selectedEntries.length, libraryEntries.length);
-  const shuffledLibrary = shuffleCardEntries(libraryEntries).map(([id, card], index) => [
+  const shuffledLibrary = shuffleCardEntries(state, libraryEntries).map(([id, card], index) => [
     id,
     { ...card, zone: index < redrawn ? 'hand' : 'library' },
   ] as [string, CardInstance]);
-  const returnedSelected = shuffleCardEntries(selectedEntries);
+  const returnedSelected = shuffleCardEntries(state, selectedEntries);
   const nextState: GameState = {
     ...state,
     cards: new Map([...otherEntries, ...shuffledLibrary, ...returnedSelected]),
@@ -5324,9 +5344,20 @@ export function applyClientActionRequest(
     };
   }
 
+  // Custom combat declarations: the prompt menu only offers canonical sets
+  // (none / each-single / all / split), but a player may compose ANY legal
+  // set of attackers or blocks. As long as the current prompt is offering
+  // that decision type, accept the request here and let the semantic
+  // validation (isLegalRequestedAction → tryDeclareAttackers/Blockers) and
+  // the final dispatch enforce real legality.
+  const isCustomCombatDeclaration =
+    (request.action.kind === 'DeclareAttackers' || request.action.kind === 'DeclareBlockers')
+    && !!currentPrompt?.legalChoices.some(choice => choice.action.kind === request.action.kind);
+
   if (
     request.actionId
     && !isValidatedOutOfBandAction(request.action)
+    && !isCustomCombatDeclaration
     && (!currentPrompt || !currentPrompt.legalChoices.some(choice =>
       choice.id === request.actionId
         || (request.actionId === actionKey(request.action) && actionReferencesSameObject(choice.action, request.action)),

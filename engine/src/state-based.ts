@@ -3,7 +3,7 @@ import { isIndestructible } from './keywords';
 import { getCommanderDestinationZone } from './commander';
 import { getCardDefinition, pruneDetachedEffects } from './game-state';
 import { isEffectiveCreature } from './effective-types';
-import { applyReplacements } from './effects/replacement';
+import { applyReplacements, getSelfDieReplacementZone } from './effects/replacement';
 import { getEffectiveToughness as getLayeredEffectiveToughness } from './effects/continuous';
 import { validateTargetChoices, type TargetSpec } from './effects/targets';
 import { typeLineHasSubtype, typeLineHasSupertype } from './type-line';
@@ -44,6 +44,8 @@ export function checkStateBasedActions(state: GameState): GameState {
 
   // Track creatures that die during SBAs (for dies triggers)
   const creaturesDied: { instanceId: string; ownerId: string }[] = [];
+  // Track creatures that regenerated this check (removed from combat below).
+  const regeneratedIds = new Set<string>();
 
   // SBAs are checked repeatedly until no more changes occur
   while (stateChanged) {
@@ -67,6 +69,10 @@ export function checkStateBasedActions(state: GameState): GameState {
     const creatureDeathDest = (cardId: string, card: CardInstance): Zone | null => {
       const commanderDest = graveyardDest(cardId);
       if (commanderDest !== 'graveyard') return commanderDest;
+      // Self die-replacement printed on the card itself ("If ~ would die, exile it instead").
+      const selfDef = getCardDefinition(tempState, card);
+      const selfZone = getSelfDieReplacementZone(selfDef);
+      if (selfZone) return selfZone;
       const { event } = applyReplacements(tempState, {
         type: 'CreatureDies',
         cardInstanceId: cardId,
@@ -117,11 +123,29 @@ export function checkStateBasedActions(state: GameState): GameState {
 
       if ((card.damage >= effectiveToughness || hasLethalDeathtouchDamage) && effectiveToughness > 0) {
         if (!isIndestructible(state, id)) {
-          const destination = creatureDeathDest(id, card);
-          if (destination) {
-            newCards.set(id, { ...card, zone: destination, damage: 0, deathtouchDamage: undefined, tapped: false });
-            creaturesDied.push({ instanceId: id, ownerId: card.ownerId });
+          const shields = card.regenerationShields ?? 0;
+          // Slice 8/11: "can't be regenerated this turn" — granted via keyword 'CantBeRegenerated'.
+          // When the flag is set, regeneration shields cannot be used (CR 701.18c: "If the [ability]
+          // that would regenerate the creature is prevented...").
+          const cantRegen = card.grantedKeywords?.includes('CantBeRegenerated') ?? false;
+          if (shields > 0 && !cantRegen) {
+            // Regeneration shield (CR 701.18): tap, remove damage + from combat, consume one.
+            newCards.set(id, {
+              ...card,
+              regenerationShields: shields - 1,
+              damage: 0,
+              deathtouchDamage: undefined,
+              tapped: true,
+            });
+            regeneratedIds.add(id);
             stateChanged = true;
+          } else {
+            const destination = creatureDeathDest(id, card);
+            if (destination) {
+              newCards.set(id, { ...card, zone: destination, damage: 0, deathtouchDamage: undefined, tapped: false });
+              creaturesDied.push({ instanceId: id, ownerId: card.ownerId });
+              stateChanged = true;
+            }
           }
         }
       }
@@ -137,7 +161,8 @@ export function checkStateBasedActions(state: GameState): GameState {
 
       const def = getCardDefinition(tempState, card);
 
-      if (!typeLineHasSupertype(def.type_line, 'legendary')) continue;
+      // Slice-7: "except it isn't legendary" rider suppresses legendary supertype.
+      if (!typeLineHasSupertype(def.type_line, 'legendary') || card.nonLegendary) continue;
 
       const ownerMap = legendaryByOwner.get(card.ownerId) ?? new Map();
       const sameNameCards = ownerMap.get(def.name) ?? [];
@@ -246,6 +271,32 @@ export function checkStateBasedActions(state: GameState): GameState {
             eventContext: { cardInstanceId: died.instanceId },
           });
         }
+        // "Whenever another creature you control dies" /
+        // "Whenever a creature an opponent controls dies".
+        // The engine uses ownerId as the controller proxy. `other` excludes the
+        // source permanent itself from firing its own trigger.
+        if (ability.trigger.kind === 'OtherCreatureDies') {
+          const scope = ability.trigger as {
+            kind: 'OtherCreatureDies';
+            who: 'youControl' | 'opponentControl';
+            other?: boolean;
+          };
+          const scopeMatches =
+            scope.who === 'youControl'
+              ? died.ownerId === source.ownerId
+              : died.ownerId !== source.ownerId;
+          const notSelf = !scope.other || died.instanceId !== sourceInstanceId;
+          if (scopeMatches && notSelf) {
+            newPendingTriggers.push({
+              id: `trigger_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+              sourceInstanceId,
+              controllerId: source.ownerId,
+              ability,
+              requiredTargets: [],
+              eventContext: { cardInstanceId: died.instanceId },
+            });
+          }
+        }
         if (ability.trigger.kind === 'AttachedCreatureDies' && source.attachedTo === died.instanceId) {
           newPendingTriggers.push({
             id: `trigger_${Date.now()}_${Math.random().toString(36).slice(2)}`,
@@ -303,7 +354,19 @@ export function checkStateBasedActions(state: GameState): GameState {
     }
   }
 
-  return pruneDetachedEffects({ ...state, cards: newCards, players: newPlayers, pendingTriggers: newPendingTriggers, battlefieldAbilities: newBattlefieldAbilities });
+  // Remove regenerated creatures from combat (CR 701.18: regeneration removes the
+  // permanent from combat).
+  let newCombat = state.combat;
+  if (regeneratedIds.size > 0 && newCombat) {
+    newCombat = {
+      ...newCombat,
+      attackers: newCombat.attackers.filter(a => !regeneratedIds.has(a.cardInstanceId)),
+      blockers: newCombat.blockers.filter(b => !regeneratedIds.has(b.cardInstanceId)),
+    };
+  }
+
+  const newCreaturesDiedThisTurn = (state.creaturesDiedThisTurn ?? 0) + creaturesDied.length;
+  return pruneDetachedEffects({ ...state, cards: newCards, players: newPlayers, combat: newCombat, pendingTriggers: newPendingTriggers, battlefieldAbilities: newBattlefieldAbilities, creaturesDiedThisTurn: newCreaturesDiedThisTurn });
 }
 
 function attachmentTargetSpec(def: CardDefinition): TargetSpec | null {
@@ -396,6 +459,9 @@ export function cleanupDamage(state: GameState): GameState {
       const counters = { ...card.counters };
       delete counters['_powerMod'];
       delete counters['_toughnessMod'];
+      delete counters['_setBasePower'];
+      delete counters['_setBaseToughness'];
+      delete counters['_switchPT'];
 
       newCards.set(id, {
         ...card,
@@ -404,6 +470,11 @@ export function cleanupDamage(state: GameState): GameState {
         counters,
         grantedKeywords: undefined,
         lostKeywords: undefined,
+        regenerationShields: undefined, // regen shields last only until end of turn
+        becomesCopyOfDefinitionId: undefined, // Slice 7: becomes-copy clears at EOT
+        grantedAllCreatureTypes: undefined, // Slice 10: all-creature-types grant clears at EOT
+        grantedSubtypes: undefined, // Slice 4: SetCreatureType activated type-change clears at EOT
+        transientLosesAllAbilities: undefined, // Slice 7: transient polymorph (Turn to Frog family) clears at EOT
       });
     }
   }

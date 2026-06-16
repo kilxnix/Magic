@@ -12,7 +12,7 @@ import {
   type PlayLandOptions,
 } from './actions';
 import { castSpell, canCastSpell, getAdditionalLifeCostForCast, getCastSpellDefinition, getEffectiveCastCost, type CastSpellOptions } from './stack';
-import { canPaySpellCost, canPayUnrestrictedCost, parseManaString } from './mana';
+import { canPaySpellCost, canPayUnrestrictedCost, parseManaString, payUnrestrictedManaCost } from './mana';
 import { getCardDefinition } from './game-state';
 import { passPriority } from './priority';
 import { declareAttackers, declareBlockers, hasPlayerDeclaredBlockers } from './combat';
@@ -21,7 +21,7 @@ import { findCastZoneRestriction, getCommanderTaxForCast } from './casting-restr
 import { getCommanderDestinationZone } from './commander';
 import { populateParsedCache } from './cards/card-parser-cache';
 import { getCostIncrease, getCostReduction, getIntrinsicCostReduction } from './effects/continuous';
-import { executeEffects } from './effects/executor';
+import { executeEffects, parseMorphCostFromOracle, castMorphFaceDown, canTurnFaceUp, executeTurnFaceUp } from './effects/executor';
 import type { Effect } from './effects/ast';
 import { playerCanPayLife } from './game-outcome';
 
@@ -922,4 +922,104 @@ export function trySetPhaseStepManually(
     },
     ...runWinCheck(next),
   ]);
+}
+
+/**
+ * Slice 1 (Morph SUBSYSTEM): cast a morph/megamorph creature face-down.
+ *
+ * The controller pays {3} (generic morph cost) from their mana pool, and the
+ * card moves from their hand to the battlefield face-down as a 2/2 colorless
+ * creature with no name, text, or subtypes. The card's printed morph/megamorph
+ * cost is stored on the card instance for later retrieval by tryTurnFaceUp.
+ *
+ * Fails when:
+ *  - The card is not in the player's hand.
+ *  - The card does not have a Morph or Megamorph cost line in its oracle text.
+ *  - The controller cannot afford {3}.
+ */
+export function tryMorphCast(
+  state: GameState,
+  playerId: string,
+  cardInstanceId: string,
+): ActionResult {
+  const player = state.players.find(p => p.id === playerId);
+  if (!player) return fail('card_not_found', 'Player not found');
+
+  const card = state.cards.get(cardInstanceId);
+  if (!card) return fail('card_not_found', 'Card not found');
+  if (card.zone !== 'hand') return fail('not_in_zone', 'Card must be in hand to be cast face-down');
+  if (card.ownerId !== playerId) return fail('illegal_target', 'You do not own this card');
+
+  const def = state.cardDefinitions.get(card.definitionId);
+  if (!def) return fail('card_not_found', 'Card definition not found');
+
+  const morphInfo = parseMorphCostFromOracle(def.oracle_text);
+  if (!morphInfo) return fail('illegal_target', 'Card does not have a Morph or Megamorph cost');
+
+  // Morph casts always cost {3} face-down (CR 702.36b).
+  const faceDownCost = parseManaString('{3}');
+  if (!canPayUnrestrictedCost(player, faceDownCost)) {
+    return fail('insufficient_mana', 'Insufficient mana to cast face-down (requires {3})');
+  }
+
+  try {
+    // Pay {3} from the player's mana pool.
+    const updatedPlayer = payUnrestrictedManaCost({ ...player }, faceDownCost);
+    const newPlayers = state.players.map(p => p.id === playerId ? updatedPlayer : p);
+    let nextState: GameState = { ...state, players: newPlayers };
+
+    // Place the card face-down on the battlefield.
+    nextState = castMorphFaceDown(nextState, cardInstanceId, playerId, morphInfo.cost, morphInfo.isMegamorph);
+
+    nextState = { ...nextState, spellsCastThisTurn: (nextState.spellsCastThisTurn ?? 0) + 1 };
+
+    return success(nextState, [
+      { kind: 'SpellCast', playerId, cardId: cardInstanceId },
+      ...runWinCheck(nextState),
+    ]);
+  } catch (e) {
+    return failureFromCaughtError(e);
+  }
+}
+
+/**
+ * Slice 1 (Morph SUBSYSTEM): turn a face-down creature face up.
+ *
+ * The controller pays the card's printed morph/megamorph cost from their mana
+ * pool, the creature is revealed (faceDown clears), megamorph creatures gain a
+ * +1/+1 counter, and any "When this creature is turned face up, <effect>."
+ * trigger is queued as a pending trigger.
+ *
+ * Fails when:
+ *  - The card is not on the battlefield.
+ *  - The card is not face-down.
+ *  - The card is not controlled by the player.
+ *  - The controller cannot afford the morph/megamorph cost.
+ */
+export function tryTurnFaceUp(
+  state: GameState,
+  playerId: string,
+  cardInstanceId: string,
+): ActionResult {
+  if (!state.players.some(p => p.id === playerId)) return fail('card_not_found', 'Player not found');
+
+  const card = state.cards.get(cardInstanceId);
+  if (!card) return fail('card_not_found', 'Card not found');
+  if (card.zone !== 'battlefield') return fail('not_in_zone', 'Card must be on the battlefield to be turned face up');
+  if (!card.faceDown) return fail('illegal_target', 'Card is not face-down');
+  if (card.ownerId !== playerId) return fail('illegal_target', 'You do not control this creature');
+
+  if (!canTurnFaceUp(state, cardInstanceId, playerId)) {
+    return fail('insufficient_mana', 'Insufficient mana to turn the creature face up');
+  }
+
+  try {
+    const nextState = executeTurnFaceUp(state, cardInstanceId, playerId);
+    return success(nextState, [
+      { kind: 'AbilityActivated', playerId, cardId: cardInstanceId, abilityIndex: -1 },
+      ...runWinCheck(nextState),
+    ]);
+  } catch (e) {
+    return failureFromCaughtError(e);
+  }
 }
