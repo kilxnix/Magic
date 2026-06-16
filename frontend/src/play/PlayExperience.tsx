@@ -30,9 +30,84 @@ import type {
 } from './gameView.types';
 import { useGameView } from './useGameView';
 import { MulliganOverlay } from './components/MulliganOverlay';
+import { CardPickerModal } from './components/CardPickerModal';
+import { DiscardOverlay } from './components/DiscardOverlay';
+import { LibraryChoiceModal } from './components/LibraryChoiceModal';
+import { ReorderModal, type ReorderSection } from './components/ReorderModal';
 import { DecisionModal, type DecisionAccent } from './components/DecisionModal';
 import { DesktopBattlefield } from './shells/DesktopBattlefield';
 import { MobileTable } from './shells/MobileTable';
+
+interface ReorderModalContent {
+  key: string;
+  title: string;
+  hint: string;
+  accent: DecisionAccent;
+  confirmLabel: string;
+  sections: ReorderSection[];
+  onConfirm(orders: Record<string, string[]>): void;
+}
+
+/**
+ * Build ReorderModal content for whichever ordering prompt is pending: combat
+ * damage assignment (order each attacker's blockers) or trigger ordering (order
+ * simultaneous own triggers). Returns null when none is pending.
+ */
+function reorderModalContent(prompts: PlayPrompts | undefined): ReorderModalContent | null {
+  if (!prompts) return null;
+
+  const dmg = prompts.damageAssignment.choice;
+  if (dmg) {
+    return {
+      key: dmg.id,
+      title: dmg.title || 'Assign combat damage',
+      hint: 'Order each attacker’s blockers — lethal damage is assigned top-down.',
+      accent: 'rose',
+      confirmLabel: 'Confirm damage order',
+      sections: dmg.groups.map((g) => ({
+        key: g.attackerId,
+        heading: `${g.attackerName} (${g.attackerPower} power)`,
+        items: g.blockers.map((b) => ({
+          id: b.blockerId,
+          primary: b.blockerName,
+          secondary: `lethal ${b.lethalDamage}`,
+        })),
+      })),
+      onConfirm: (orders) =>
+        prompts.damageAssignment.onResolve(
+          dmg.groups.map((g) => ({
+            attackerId: g.attackerId,
+            blockerIds: orders[g.attackerId] ?? g.blockers.map((b) => b.blockerId),
+          })),
+        ),
+    };
+  }
+
+  const tr = prompts.triggerOrder.choice;
+  if (tr) {
+    return {
+      key: tr.id,
+      title: tr.title || 'Order triggers',
+      hint: 'Choose the order your triggers go on the stack (the last one ordered resolves first).',
+      accent: 'amber',
+      confirmLabel: 'Confirm order',
+      sections: [
+        {
+          key: 'triggers',
+          items: tr.triggers.map((t) => ({
+            id: t.triggerId,
+            primary: t.sourceName,
+            secondary: t.triggerKind,
+          })),
+        },
+      ],
+      onConfirm: (orders) =>
+        prompts.triggerOrder.onResolve(orders.triggers ?? tr.triggers.map((t) => t.triggerId)),
+    };
+  }
+
+  return null;
+}
 
 interface DecisionModalContent {
   accent: DecisionAccent;
@@ -561,6 +636,7 @@ export function PlayExperience({
   const mulliganOpen = Boolean(prompts?.mulligan.phase);
   const actionError = prompts?.actionError ?? null;
   const decision = decisionModalContent(prompts);
+  const reorder = reorderModalContent(prompts);
 
   return (
     <div data-testid="play-experience" className="relative h-full w-full">
@@ -648,6 +724,45 @@ export function PlayExperience({
           confirmDisabled={decision.confirmDisabled}
           onConfirm={decision.onConfirm}
           onDecline={decision.onDecline}
+        />
+      )}
+
+      {prompts?.tutor.phase && (
+        <CardPickerModal
+          title={prompts.tutor.title}
+          cards={prompts.tutor.cards}
+          onPick={prompts.tutor.onPick}
+          onCancel={prompts.tutor.onCancel}
+        />
+      )}
+
+      {prompts?.library.choice && (
+        <LibraryChoiceModal
+          key={prompts.library.choice.id}
+          mode={prompts.library.choice.mode}
+          title={prompts.library.choice.title}
+          cards={prompts.library.choice.cards}
+          onResolve={prompts.library.onResolve}
+        />
+      )}
+
+      {reorder && (
+        <ReorderModal
+          key={reorder.key}
+          title={reorder.title}
+          hint={reorder.hint}
+          accent={reorder.accent}
+          confirmLabel={reorder.confirmLabel}
+          sections={reorder.sections}
+          onConfirm={reorder.onConfirm}
+        />
+      )}
+
+      {prompts?.discard.phase && prompts.discard.count > 0 && (
+        <DiscardOverlay
+          hand={view.you.hand}
+          count={prompts.discard.count}
+          onDiscard={prompts.discard.onDiscard}
         />
       )}
     </div>
