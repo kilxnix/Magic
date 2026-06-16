@@ -1,5 +1,6 @@
 import type { LegalAction, PermanentView, YouView } from '../gameView.types';
 import { PermanentTile } from './PermanentTile';
+import { YouHud } from './YouHud';
 
 export interface PlayerBoardProps {
   you: YouView;
@@ -18,25 +19,18 @@ interface BoardRowProps {
 }
 
 /**
- * One labeled battlefield row (lands / creatures / other).
- *
- * The tiles live in a horizontally-scrollable, wrapping strip: on desktop they
- * wrap onto multiple lines (flex-wrap) so the whole board is visible; on mobile
- * the row stays a single thumb-swipe scroll strip (overflow-x-auto). Either way
- * the row is a normal in-flow block — it never floats over the interactive
- * layer, which is the dock-collision bug class this rebuild is killing.
+ * One labeled battlefield row. Renders ONLY when it has permanents — empty
+ * categories vanish entirely (no header, no placeholder box), matching the
+ * original board. The tiles live in a wrapping strip on desktop / a thumb-swipe
+ * scroll strip on mobile; always a normal in-flow block (never floats over the
+ * interactive layer).
  */
 function BoardRow({ testid, label, permanents, onAction, onExamine }: BoardRowProps) {
+  if (permanents.length === 0) return null;
   return (
-    <section
-      data-testid={testid}
-      aria-label={label}
-      className="min-w-0"
-    >
+    <section data-testid={testid} aria-label={label} className="min-w-0">
       <div className="mb-1 flex items-baseline gap-2 px-1">
-        <h3 className="text-[10px] font-bold uppercase tracking-wider text-stone-400">
-          {label}
-        </h3>
+        <h3 className="text-[10px] font-bold uppercase tracking-wider text-stone-400">{label}</h3>
         <span
           data-testid={`${testid}-count`}
           className="text-[10px] font-semibold tabular-nums text-stone-500"
@@ -44,26 +38,16 @@ function BoardRow({ testid, label, permanents, onAction, onExamine }: BoardRowPr
           {permanents.length}
         </span>
       </div>
-
-      {permanents.length === 0 ? (
-        <div className="flex h-24 items-center rounded-lg border border-dashed border-stone-700/60 px-3 text-[11px] font-medium uppercase tracking-wide text-stone-600 md:h-28">
-          None
-        </div>
-      ) : (
-        <div
-          // wrap on wide screens, single-line swipe strip on narrow ones.
-          className="flex gap-2 overflow-x-auto overflow-y-visible pb-1 md:flex-wrap md:overflow-x-visible"
-        >
-          {permanents.map((permanent) => (
-            <PermanentTile
-              key={permanent.id}
-              permanent={permanent}
-              onAction={onAction}
-              onExamine={() => onExamine(permanent.id)}
-            />
-          ))}
-        </div>
-      )}
+      <div className="flex gap-2 overflow-x-auto overflow-y-visible pb-1 md:flex-wrap md:overflow-x-visible">
+        {permanents.map((permanent) => (
+          <PermanentTile
+            key={permanent.id}
+            permanent={permanent}
+            onAction={onAction}
+            onExamine={() => onExamine(permanent.id)}
+          />
+        ))}
+      </div>
     </section>
   );
 }
@@ -71,44 +55,51 @@ function BoardRow({ testid, label, permanents, onAction, onExamine }: BoardRowPr
 /**
  * PlayerBoard — your half of the battlefield.
  *
- * PURE / PRESENTATIONAL: props in (`you`), callbacks out (`onAction`,
- * `onExamine`). No engine/hook access, no legality or zone logic — `you`
- * already carries the partitioned `lands` / `creatures` / `other` arrays and
- * each permanent its own `legalActions` from the view-model.
+ * PURE / PRESENTATIONAL: props in (`you`), callbacks out. No engine/hook access.
  *
- * Layout: three labeled rows (lands, creatures, other permanents), each a
- * responsive strip of `PermanentTile`s. Nothing here is position:fixed; the
- * whole board is in normal flow so feeds/docks (rendered by the layout shell as
- * side rails) never sit over the interactive tiles.
+ * Layout: a vitals HUD (life / mana / commander / graveyard / library) above a
+ * felt table surface holding your permanent rows. Empty rows are hidden; an empty
+ * board shows one quiet line, not three dashed "NONE" boxes. Nothing is
+ * position:fixed — the whole board is in normal flow.
  */
 export function PlayerBoard({ you, onAction, onExamine }: PlayerBoardProps) {
+  const rows = [
+    { testid: 'creatures-row', label: 'Creatures', permanents: you.creatures },
+    { testid: 'lands-row', label: 'Lands', permanents: you.lands },
+    { testid: 'other-row', label: 'Other Permanents', permanents: you.other },
+  ];
+  const boardEmpty = you.creatures.length + you.lands.length + you.other.length === 0;
+
   return (
     <div
       data-testid="player-board"
       aria-label="Your battlefield"
-      className="flex w-full min-w-0 flex-col gap-3 rounded-xl border border-stone-700/60 bg-stone-900/40 p-2 md:p-3"
+      className="flex h-full w-full min-w-0 flex-col gap-3"
     >
-      <BoardRow
-        testid="lands-row"
-        label="Lands"
-        permanents={you.lands}
-        onAction={onAction}
-        onExamine={onExamine}
-      />
-      <BoardRow
-        testid="creatures-row"
-        label="Creatures"
-        permanents={you.creatures}
-        onAction={onAction}
-        onExamine={onExamine}
-      />
-      <BoardRow
-        testid="other-row"
-        label="Other Permanents"
-        permanents={you.other}
-        onAction={onAction}
-        onExamine={onExamine}
-      />
+      <YouHud you={you} onAction={onAction} onExamine={onExamine} />
+
+      {/* Felt table surface — your permanents sit on it. */}
+      <div className="flex min-h-[8rem] w-full min-w-0 flex-1 flex-col gap-3 rounded-2xl border border-emerald-900/40 bg-[radial-gradient(ellipse_at_top,_rgba(16,52,40,0.55),_rgba(8,12,10,0.85))] p-3 shadow-inner shadow-black/40">
+        {boardEmpty ? (
+          <div
+            data-testid="board-empty"
+            className="flex flex-1 items-center justify-center text-center text-xs font-medium text-stone-500"
+          >
+            Your battlefield is empty — play a land to begin.
+          </div>
+        ) : (
+          rows.map((row) => (
+            <BoardRow
+              key={row.testid}
+              testid={row.testid}
+              label={row.label}
+              permanents={row.permanents}
+              onAction={onAction}
+              onExamine={onExamine}
+            />
+          ))
+        )}
+      </div>
     </div>
   );
 }

@@ -62,6 +62,12 @@ function makeView(over: Partial<GameView> = {}): GameView {
   return {
     you: {
       life: 40,
+      poison: 0,
+      manaPool: { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 },
+      commandZone: [],
+      graveyardCount: 0,
+      libraryCount: 0,
+      handCount: 2,
       creatures: [creature('you-c1')],
       lands: [land('you-l1'), land('you-l2')],
       other: [],

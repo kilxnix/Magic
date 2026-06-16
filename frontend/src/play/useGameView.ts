@@ -65,7 +65,19 @@ function bucket(
 }
 
 const EMPTY_VIEW: GameView = {
-  you: { life: 0, creatures: [], lands: [], other: [], hand: [] },
+  you: {
+    life: 0,
+    poison: 0,
+    manaPool: { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 },
+    commandZone: [],
+    graveyardCount: 0,
+    libraryCount: 0,
+    handCount: 0,
+    creatures: [],
+    lands: [],
+    other: [],
+    hand: [],
+  },
   opponents: [],
   stack: [],
   priority: {
@@ -126,6 +138,12 @@ export function buildGameView(input: GameViewInput): GameView {
   }));
   const you: YouView = {
     life: gameState.humanPlayer.life,
+    poison: gameState.humanPlayer.poisonCounters,
+    manaPool: gameState.manaPool,
+    commandZone: gameState.humanCommandZone.map(card => toPermanentView(card, permCtx)),
+    graveyardCount: gameState.humanGraveyard.length,
+    libraryCount: gameState.humanPlayer.libraryCount,
+    handCount: gameState.humanHand.length,
     creatures: youBuckets.creatures,
     lands: youBuckets.lands,
     other: youBuckets.other,

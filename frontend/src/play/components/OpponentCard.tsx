@@ -80,17 +80,18 @@ export function OpponentCard({ glance, onExplore }: OpponentCardProps) {
       </div>
 
       {/* Reads row: hand · open mana (emphasized) · threat */}
-      <div className="flex flex-wrap items-stretch gap-1.5">
+      <div className="flex items-stretch gap-1.5">
         <Stat label="Hand" value={handCount} />
         <Stat
-          label="Open mana"
+          label="Mana"
           value={openMana}
           emphasis={hasOpenMana ? 'open-mana' : 'muted'}
           testId="open-mana-stat"
+          title="Open (untapped) mana — can they respond?"
         />
         <Stat
           label="Threat"
-          value={`${creatureCount} · ${totalPower}`}
+          value={`${creatureCount}·${totalPower}`}
           title={`${creatureCount} creatures · ${totalPower} total power`}
         />
       </div>
@@ -141,12 +142,10 @@ function Stat({ label, value, emphasis, title, testId }: StatProps) {
     <span
       title={title}
       data-testid={testId}
-      className={`flex min-w-0 flex-1 items-baseline justify-between gap-1.5 rounded border px-2 py-1 ${emphasisClass}`}
+      className={`flex min-w-0 flex-1 flex-col items-center gap-0.5 rounded border px-1.5 py-1 ${emphasisClass}`}
     >
-      <span className="truncate text-[9px] font-bold uppercase tracking-wider opacity-80">
-        {label}
-      </span>
-      <span className="shrink-0 text-sm font-black tabular-nums leading-none">{value}</span>
+      <span className="text-[9px] font-bold uppercase tracking-wider opacity-80">{label}</span>
+      <span className="text-sm font-black tabular-nums leading-none">{value}</span>
     </span>
   );
 }

@@ -43,9 +43,12 @@ describe('StackView', () => {
     expect(screen.getByText(/resolves next/i)).toBeTruthy();
   });
 
-  it('renders the empty message when the stack is empty', () => {
+  it('collapses to a low-profile chip when the stack is empty', () => {
     render(<StackView stack={[]} guided={false} onRespond={noop} onLetResolve={noop} />);
 
-    expect(screen.getByText(/the stack is empty/i)).toBeTruthy();
+    // Idle stack stays visible (spec) but as a compact "Stack empty" chip, not
+    // the full screen-dominating panel.
+    expect(screen.getByText(/^stack$/i)).toBeTruthy();
+    expect(screen.getByText(/^empty$/i)).toBeTruthy();
   });
 });

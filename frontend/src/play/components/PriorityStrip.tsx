@@ -56,22 +56,24 @@ export function PriorityStrip({
       aria-label="Priority"
       className="flex w-full min-w-0 flex-col gap-2 rounded-lg border border-stone-700/60 bg-stone-900/70 px-3 py-2 text-stone-200"
     >
-      {/* Top row: phase + whose priority + respond chip + controls */}
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-sm font-black leading-tight text-stone-100">
-            {phaseLabel}
-          </div>
-          <div
-            data-testid="priority-holder"
-            className={`text-[10px] font-bold uppercase tracking-wider ${
-              hasPriority ? 'text-amber-300' : 'text-stone-500'
-            }`}
-          >
-            {hasPriority ? 'Your priority' : 'Waiting…'}
-          </div>
+      {/* Phase + whose priority — on its own full-width line so it never gets
+          squeezed to "M..." by the controls beside it. */}
+      <div className="min-w-0">
+        <div className="text-sm font-black leading-tight text-stone-100">
+          {phaseLabel}
         </div>
+        <div
+          data-testid="priority-holder"
+          className={`text-[10px] font-bold uppercase tracking-wider ${
+            hasPriority ? 'text-amber-300' : 'text-stone-500'
+          }`}
+        >
+          {hasPriority ? 'Your priority' : 'Waiting…'}
+        </div>
+      </div>
 
+      {/* Controls row: respond chip + pass / hold. */}
+      <div className="flex flex-wrap items-center gap-2">
         {/* "respond" chip — surfaces that a real decision is available. */}
         {hasMeaningfulResponse && (
           <span

@@ -282,8 +282,25 @@ export interface NarrationEntry {
 // You + top-level GameView
 // ----------------------------------------------------------------------------
 
+export interface ManaPoolView {
+  W: number;
+  U: number;
+  B: number;
+  R: number;
+  G: number;
+  C: number;
+}
+
 export interface YouView {
   life: number;
+  poison: number;
+  /** Mana currently floating in your pool. */
+  manaPool: ManaPoolView;
+  /** Your commander(s) in the command zone — each carries its cast action(s). */
+  commandZone: PermanentView[];
+  graveyardCount: number;
+  libraryCount: number;
+  handCount: number;
   creatures: PermanentView[];
   lands: PermanentView[];
   other: PermanentView[];

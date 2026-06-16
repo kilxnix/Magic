@@ -58,6 +58,12 @@ function creature(id: string): PermanentView {
 function makeYou(over: Partial<YouView> = {}): YouView {
   return {
     life: 40,
+    poison: 0,
+    manaPool: { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 },
+    commandZone: [],
+    graveyardCount: 0,
+    libraryCount: 0,
+    handCount: 0,
     lands: [land('l1'), land('l2'), land('l3')],
     creatures: [creature('c1'), creature('c2')],
     other: [],

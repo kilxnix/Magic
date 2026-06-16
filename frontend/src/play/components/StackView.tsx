@@ -22,28 +22,36 @@ export interface StackViewProps {
 export function StackView({ stack, guided, onRespond, onLetResolve }: StackViewProps) {
   const isEmpty = stack.length === 0;
 
+  // Idle: the stack is "always visible" per the spec, but as a low-profile chip
+  // — not a screen-dominating empty box. It expands to the full panel only when
+  // something is actually on the stack.
+  if (isEmpty) {
+    return (
+      <div
+        aria-label="The stack"
+        className="flex w-full items-center gap-2 rounded-lg border border-stone-800 bg-stone-900/40 px-3 py-1.5"
+      >
+        <span className="text-[10px] font-bold uppercase tracking-wider text-stone-500">Stack</span>
+        <span className="text-[11px] text-stone-600">empty</span>
+      </div>
+    );
+  }
+
   return (
     <section
       aria-label="The stack"
-      className="flex w-full flex-col gap-2 rounded-xl border border-stone-700/70 bg-stone-900/80 p-3 text-stone-100 shadow-lg"
+      className="flex w-full flex-col gap-2 rounded-xl border border-amber-500/40 bg-stone-900/90 p-3 text-stone-100 shadow-lg ring-1 ring-amber-500/10"
     >
       <header className="flex items-baseline justify-between">
         <h2 className="text-xs font-semibold uppercase tracking-wide text-amber-200/90">
           The Stack
         </h2>
-        {!isEmpty && (
-          <span className="text-[11px] tabular-nums text-stone-400">
-            {stack.length} {stack.length === 1 ? 'item' : 'items'}
-          </span>
-        )}
+        <span className="text-[11px] tabular-nums text-stone-400">
+          {stack.length} {stack.length === 1 ? 'item' : 'items'}
+        </span>
       </header>
 
-      {isEmpty ? (
-        <p className="rounded-lg border border-dashed border-stone-700/60 bg-stone-950/40 px-3 py-6 text-center text-sm text-stone-400">
-          The stack is empty.
-        </p>
-      ) : (
-        <>
+      <>
           {guided && (
             <p className="rounded-md border border-amber-500/25 bg-amber-950/30 px-2.5 py-1.5 text-[11px] leading-snug text-amber-100/90">
               Last in, first out: the item on top resolves first, before anything
@@ -120,7 +128,6 @@ export function StackView({ stack, guided, onRespond, onLetResolve }: StackViewP
             </button>
           </footer>
         </>
-      )}
     </section>
   );
 }
