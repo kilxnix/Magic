@@ -5,9 +5,12 @@ export const FLOATING_TABLE_LAYOUT = {
   reviewRail: 'hidden',
   table: 'relative flex h-full min-w-0 flex-1 flex-col overflow-hidden bg-neutral-900 pt-[3.95rem] pb-[calc(env(safe-area-inset-bottom)+12.75rem)] md:pt-[4.25rem] md:pb-36',
   opponentStrip: 'relative z-10 max-h-[29svh] shrink-0 overflow-y-auto overscroll-contain border-b border-neutral-800/70 bg-neutral-950/50 px-2 pb-1 pt-1 backdrop-blur-sm md:max-h-none md:px-4',
-  actionsDock: 'absolute inset-x-2 bottom-[calc(env(safe-area-inset-bottom)+12.95rem)] z-40 max-h-[7.75rem] overflow-y-auto overscroll-contain rounded-lg border border-amber-500/35 bg-neutral-950/95 px-2 py-2 shadow-2xl shadow-black/45 backdrop-blur md:left-auto md:right-3 md:bottom-[12.95rem] md:w-[min(34rem,44vw)] md:max-h-[15rem] md:px-3',
-  phaseDock: 'absolute inset-x-2 bottom-[calc(env(safe-area-inset-bottom)+9.05rem)] z-40 max-h-[3.35rem] overflow-y-auto overscroll-contain rounded-lg border border-neutral-700/75 bg-neutral-950/95 px-2 py-1 shadow-xl shadow-black/35 backdrop-blur md:inset-x-3 md:bottom-[9.2rem] md:max-h-[3.4rem] md:px-3',
-  handDock: 'absolute inset-x-2 bottom-[calc(env(safe-area-inset-bottom)+0.5rem)] z-50 max-h-[8.25rem] overflow-hidden rounded-lg border border-neutral-700/70 bg-neutral-950/95 px-2 py-1.5 shadow-2xl shadow-black/40 backdrop-blur md:inset-x-3 md:bottom-3 md:max-h-none md:px-3',
+  // Dock max-heights carry viewport (svh) caps so high browser zoom (rem
+  // inflation) cannot grow a dock past the screen and overlap its neighbors —
+  // content scrolls within the capped dock instead.
+  actionsDock: 'absolute inset-x-2 bottom-[calc(env(safe-area-inset-bottom)+min(12.95rem,46svh))] z-40 max-h-[min(7.75rem,24svh)] overflow-y-auto overscroll-contain rounded-lg border border-amber-500/35 bg-neutral-950/95 px-2 py-2 shadow-2xl shadow-black/45 backdrop-blur md:left-auto md:right-3 md:bottom-[min(12.95rem,46svh)] md:w-[min(34rem,44vw)] md:max-h-[min(15rem,38svh)] md:px-3',
+  phaseDock: 'absolute inset-x-2 bottom-[calc(env(safe-area-inset-bottom)+min(9.05rem,32svh))] z-40 max-h-[min(3.35rem,12svh)] overflow-y-auto overscroll-contain rounded-lg border border-neutral-700/75 bg-neutral-950/95 px-2 py-1 shadow-xl shadow-black/35 backdrop-blur md:inset-x-3 md:bottom-[min(9.2rem,32svh)] md:max-h-[min(3.4rem,12svh)] md:px-3',
+  handDock: 'absolute inset-x-2 bottom-[calc(env(safe-area-inset-bottom)+0.5rem)] z-50 max-h-[min(8.25rem,28svh)] overflow-hidden rounded-lg border border-neutral-700/70 bg-neutral-950/95 px-2 py-1.5 shadow-2xl shadow-black/40 backdrop-blur md:inset-x-3 md:bottom-3 md:max-h-[min(24rem,60svh)] md:px-3',
 } as const;
 
 export const CARD_TILE_LAYOUT = {

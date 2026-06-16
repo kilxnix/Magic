@@ -323,8 +323,18 @@ export function buildDecisionReview(
     score: Number(selectedScore.toFixed(1)),
     reasoning: selectedEval?.reasoning,
   };
-  const best = alternatives[0];
-  const scoreDelta = Number(Math.max(0, (best?.score ?? selected.score) - selected.score).toFixed(1));
+  // A land drop is a prerequisite tempo play, not an alternative to the spells
+  // it enables: you play the land AND cast the spell on the same turn. Grading a
+  // land play against a higher-scoring spell wrongly flags a correct, necessary
+  // play as a blunder ("preferred Cast X by N points"). For land plays, treat
+  // the land itself as the best line so it is never penalised, while still
+  // keeping the full ranked `alternatives` list for the detail view.
+  const selectedIsLandPlay = selectedAction._engineAction.kind === 'PlayLand';
+  const topAlternative = alternatives[0];
+  const best = selectedIsLandPlay ? selected : topAlternative;
+  const scoreDelta = selectedIsLandPlay
+    ? 0
+    : Number(Math.max(0, (topAlternative?.score ?? selected.score) - selected.score).toFixed(1));
   const confidenceReasons: string[] = [];
 
   if (!selectedEval) {

@@ -167,3 +167,51 @@ export function deleteAdminEvent(token: string, eventId: string, reason = '') {
     body: JSON.stringify({ reason }),
   });
 }
+
+// --- Card-support licensing API keys ---------------------------------------
+
+export interface ApiKey {
+  keyId: string;
+  label: string;
+  quota: number | null;
+  requestsUsed: number;
+  remaining: number | null;
+  rateLimitPerMinute: number | null;
+  status: string;
+  createdAt: string;
+  lastUsedAt: string | null;
+  createdBy: string | null;
+}
+
+// create returns the same shape plus the one-time-visible secret.
+export interface CreatedApiKey extends ApiKey {
+  secret: string;
+}
+
+export function listApiKeys(token: string): Promise<{ keys: ApiKey[] }> {
+  return adminJson('/api/admin/api-keys', token);
+}
+
+export function createApiKey(
+  token: string,
+  body: { label: string; quota: number | null; rateLimitPerMinute: number | null },
+): Promise<CreatedApiKey> {
+  return adminJson('/api/admin/api-keys', token, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+}
+
+export function topupApiKey(token: string, keyId: string, addQuota: number) {
+  return adminJson(`/api/admin/api-keys/${keyId}/topup`, token, {
+    method: 'POST',
+    body: JSON.stringify({ addQuota }),
+  });
+}
+
+export function revokeApiKey(token: string, keyId: string) {
+  return adminJson(`/api/admin/api-keys/${keyId}/revoke`, token, {
+    method: 'POST',
+    body: '{}',
+  });
+}

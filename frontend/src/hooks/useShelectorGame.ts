@@ -9,6 +9,7 @@
 import { useState, useCallback, useRef } from 'react';
 import {
   initGameFromDecks,
+  applyPregameActions,
   getCardsInZone,
   getCardDefinition,
   getCastSpellDefinition,
@@ -290,10 +291,17 @@ export interface SimpleLegalAction {
   _engineAction: AIAction;
 }
 
-interface TargetActionChoice {
+export interface TargetActionChoice {
   targetId: string;
   label: string;
   action: SimpleLegalAction;
+}
+
+export interface BoardTargetingPrompt {
+  label: string;
+  sourceName: string;
+  sourceInstanceId?: string;
+  choices: TargetActionChoice[];
 }
 
 function displayNameForTarget(engineState: GameState, targetId: string): string {
@@ -2757,6 +2765,10 @@ export function useShelectorGame() {
   const [tutorPhase, setTutorPhase] = useState(false);
   const [tutorCards, setTutorCards] = useState<TutorCardOption[]>([]);
   const [tutorTitle, setTutorTitle] = useState('');
+  // Board-based targeting: when a multi-target spell/ability is chosen, we highlight
+  // its legal targets on the board and let the player tap one, instead of covering
+  // the board with a search modal.
+  const [targetingPrompt, setTargetingPrompt] = useState<BoardTargetingPrompt | null>(null);
   const [libraryChoice, setLibraryChoice] = useState<LibraryManipulationChoice | null>(null);
   const tutorDestinationRef = useRef<SearchDestination>('hand');
   const tutorFilterSpecRef = useRef<SearchFilterSpec | undefined>(undefined);
@@ -4413,7 +4425,22 @@ export function useShelectorGame() {
         if (stopKey && priorityStopsRef.current[stopKey]) {
           return true;
         }
-        if (s.stack.length === 0) return false;
+        if (s.stack.length === 0) {
+          // Empty-stack windows are normally auto-passed so opponent turns
+          // don't demand a click at every step — EXCEPT the flash windows:
+          // the opponent's combat steps and end step. Pausing there (only
+          // when the human can actually do something at instant speed) is
+          // what makes Flash creatures and instants castable at the classic
+          // "end of your turn" / combat-trick timings.
+          const humanIndex = s.players.findIndex(p => p.id === humanIdRef.current);
+          const humanIsActive = s.activePlayerIndex === humanIndex;
+          const flashWindowStep =
+            s.step === 'end'
+            || s.step === 'declare_attackers'
+            || s.step === 'declare_blockers';
+          if (humanIsActive || !flashWindowStep) return false;
+          return hasMeaningfulHumanActionForAutoSkip(s, humanIdRef.current);
+        }
         if (holdPriorityRef.current && controllerIdForStackItem(s.stack[s.stack.length - 1]) === humanIdRef.current) {
           return true;
         }
@@ -5651,6 +5678,27 @@ export function useShelectorGame() {
     setSelectedMulliganCardIds([]);
     setMulliganBottomSelectionActive(false);
     setMulliganPhase(false);
+
+    // Pre-game actions (CR 103.6): cards that may begin the game on the
+    // battlefield (the Leyline cycle) are placed for every player now that
+    // all hands are kept \u2014 before the first turn begins.
+    {
+      let current: GameState = engineRef.current || engine;
+      for (const player of current.players) {
+        const pregame = applyPregameActions(current, player.id);
+        current = pregame.state;
+        for (const cardName of pregame.placedCardNames) {
+          addMessage(
+            'system',
+            player.id === humanIdRef.current
+              ? `You begin the game with ${cardName} on the battlefield.`
+              : `${aiCommanderNamesRef.current[player.id] || player.name || player.id} begins the game with ${cardName} on the battlefield.`,
+          );
+        }
+      }
+      engineRef.current = current as GameStateWithAI;
+    }
+
     addMessage('system', 'Game started! You are on the play.');
     addMessage('system', `Turn 1 \u2014 Your precombat main phase.`);
 
@@ -7478,6 +7526,13 @@ export function useShelectorGame() {
 
       resetLoopDetector();
 
+      // Any committed action clears a pending board-targeting prompt. The
+      // multi-target branch below re-arms it; everything else (including the
+      // chosen target's concrete action) leaves it cleared. setState bails out
+      // when already null, so this is a no-op render in the common case.
+      setTargetingPrompt(null);
+      pendingTargetChoiceRef.current = null;
+
       if (action.kind === 'SkipRestOfTurn') {
         skipRestOfTurn();
         return;
@@ -7489,38 +7544,26 @@ export function useShelectorGame() {
       }
 
       if (action.targetChoices?.length) {
+        // No decision when there's exactly one legal targeting — auto-pick it and
+        // resolve immediately instead of surfacing a one-option target picker.
+        if (action.targetChoices.length === 1) {
+          submitActionRef.current?.(action.targetChoices[0].action);
+          return;
+        }
+        // Board-based targeting: surface a slim banner and highlight the legal
+        // targets directly on the board (the player taps a glowing permanent or
+        // player). No modal covers the battlefield.
         pendingTargetChoiceRef.current = {
           label: action.label,
           choices: action.targetChoices,
         };
-        tutorRemainingRef.current = 0;
-        tutorFilterRef.current = undefined;
-        tutorFilterSpecRef.current = undefined;
-        tutorTappedRef.current = false;
-        tutorShuffleRef.current = false;
-        tutorSourceNameRef.current = action.label;
-        tutorSourceInstanceIdRef.current = action.cardInstanceId;
-        tutorPromptRequestRef.current = null;
-        setTutorTitle(action.label);
-        setTutorCards(action.targetChoices.map(choice => {
-          const card = engine.cards.get(choice.targetId);
-          const def = card ? getCardDefinition(engine, card) : undefined;
-          const player = engine.players.find(candidate => candidate.id === choice.targetId);
-          return {
-            instanceId: choice.targetId,
-            name: choice.label,
-            typeLine: def?.type_line || (player ? 'Player' : 'Target'),
-            manaCost: def?.mana_cost || '',
-            oracleText: def?.oracle_text,
-            colors: def?.colors,
-            cmc: def?.cmc,
-            legal: true,
-            reason: 'Selectable target from the current engine prompt',
-            destination: 'choice' as const,
-          };
-        }));
-        setTutorPhase(true);
-        addMessage('system', `Choose a target for ${action.label}.`);
+        setTargetingPrompt({
+          label: action.label,
+          sourceName: action.cardName || action.label,
+          sourceInstanceId: action.cardInstanceId,
+          choices: action.targetChoices,
+        });
+        addMessage('system', `Choose a target for ${action.cardName || action.label} on the board.`);
         syncState();
         return;
       }
@@ -8547,6 +8590,12 @@ export function useShelectorGame() {
   );
   submitActionRef.current = submitAction;
 
+  const cancelTargeting = useCallback(() => {
+    pendingTargetChoiceRef.current = null;
+    setTargetingPrompt(null);
+    addMessage('system', 'Targeting cancelled.');
+  }, [addMessage]);
+
   const exportGameSave = useCallback((): ShelectorGameSaveSnapshot | null => {
     const engine = engineRef.current;
     if (!engine) return null;
@@ -8820,6 +8869,7 @@ export function useShelectorGame() {
     tutorPhase,
     tutorCards,
     tutorTitle,
+    targetingPrompt,
       libraryChoice,
       optionalTriggerChoice,
       taxPaymentChoice,
@@ -8873,6 +8923,7 @@ export function useShelectorGame() {
     discardCard,
     resolveTutor,
     cancelTutor,
+    cancelTargeting,
     resolveLibraryChoice,
     resolveOptionalTriggerChoice,
     resolveTaxPaymentChoice,

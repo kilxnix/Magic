@@ -162,6 +162,9 @@ export interface GameConfig {
   opponentCount: number;
   difficulty: number;
   personalities: string[];
+  /** Starting life for all players. Defaults to 40 (Commander). Lower values
+   *  (e.g. 25/30) make for faster, punchier games. */
+  startingLife?: number;
 }
 
 export interface GameEngine {
@@ -1665,6 +1668,7 @@ export function useCommanderEngine(): GameEngine {
           aiDifficulty: config.difficulty,
           cardLookup: lookup,
           humanGoesFirst: true,
+          ...(config.startingLife ? { startingLife: config.startingLife } : {}),
         };
 
         const state = initGameFromDecks(gameInitConfig);
@@ -1763,6 +1767,7 @@ export function useCommanderEngine(): GameEngine {
             cardLookup: fullLookup,
             aiPersonalities: config.personalities.map(p => (p || 'Balanced') as AIPersonality),
             humanGoesFirst: true,
+            ...(config.startingLife ? { startingLife: config.startingLife } : {}),
           };
 
           const state = initGameFromDecks(gameInitConfig);

@@ -31,27 +31,27 @@ export function OptimizerPage() {
   };
 
   return (
-    <div className="min-h-screen bg-stone-100">
+    <div className="min-h-screen bg-stone-950 text-stone-100">
       {/* Header */}
-      <header className="bg-white border-b border-stone-200">
+      <header className="bg-stone-900 border-b border-stone-800">
         <div className="max-w-5xl mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
               <Link
                 to="/"
-                className="flex items-center gap-2 text-stone-600 hover:text-stone-900 transition-colors"
+                className="flex items-center gap-2 text-stone-300 hover:text-white transition-colors"
               >
                 <ArrowLeft className="w-4 h-4" />
                 Back
               </Link>
-              <h1 className="text-xl font-serif text-stone-900">Card Optimizer</h1>
+              <h1 className="text-xl font-serif text-stone-100">Card Optimizer</h1>
             </div>
           </div>
         </div>
       </header>
 
       {/* Tabs */}
-      <div className="bg-white border-b border-stone-200">
+      <div className="bg-stone-900 border-b border-stone-800">
         <div className="max-w-5xl mx-auto px-4">
           <div className="flex gap-1">
             <button
@@ -59,8 +59,8 @@ export function OptimizerPage() {
               className={cn(
                 'flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors',
                 activeTab === 'alternatives'
-                  ? 'border-stone-900 text-stone-900'
-                  : 'border-transparent text-stone-500 hover:text-stone-700'
+                  ? 'border-amber-500 text-amber-400'
+                  : 'border-transparent text-stone-400 hover:text-stone-200'
               )}
             >
               <Search className="w-4 h-4" />
@@ -71,8 +71,8 @@ export function OptimizerPage() {
               className={cn(
                 'flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors',
                 activeTab === 'optimizer'
-                  ? 'border-stone-900 text-stone-900'
-                  : 'border-transparent text-stone-500 hover:text-stone-700'
+                  ? 'border-amber-500 text-amber-400'
+                  : 'border-transparent text-stone-400 hover:text-stone-200'
               )}
             >
               <TrendingDown className="w-4 h-4" />
@@ -86,27 +86,27 @@ export function OptimizerPage() {
       <main className="max-w-5xl mx-auto px-4 py-8">
         {activeTab === 'alternatives' && (
           <div className="space-y-6">
-            <div className="bg-white rounded-lg shadow-sm p-6">
-              <h2 className="text-lg font-medium text-stone-900 mb-2">Find Cheaper Alternatives</h2>
-              <p className="text-sm text-stone-600 mb-4">
+            <div className="bg-stone-800 border border-stone-700 rounded-lg shadow-sm p-6">
+              <h2 className="text-lg font-medium text-stone-100 mb-2">Find Cheaper Alternatives</h2>
+              <p className="text-sm text-stone-300 mb-4">
                 Enter a card name to find cheaper alternatives with similar effects.
                 Uses ensemble ranking (FAISS + GPT2 + Qwen + functional tags).
               </p>
 
               <form onSubmit={handleSearch} className="flex gap-3">
                 <div className="flex-1 relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-500" />
                   <input
                     type="text"
                     value={cardName}
                     onChange={(e) => setCardName(e.target.value)}
                     placeholder="Enter card name (e.g., Swords to Plowshares)"
-                    className="w-full pl-10 pr-4 py-2 border border-stone-300 rounded-lg focus:ring-2 focus:ring-stone-400 focus:border-stone-400"
+                    className="w-full pl-10 pr-4 py-2 bg-stone-900 text-stone-100 placeholder-stone-500 border border-stone-600 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
                   />
                 </div>
                 <button
                   type="submit"
-                  className="px-6 py-2 bg-stone-900 text-white font-medium rounded-lg hover:bg-stone-800 transition-colors"
+                  className="px-6 py-2 bg-amber-500 text-stone-950 font-medium rounded-lg hover:bg-amber-400 transition-colors"
                 >
                   Search
                 </button>
@@ -114,7 +114,7 @@ export function OptimizerPage() {
             </div>
 
             {searchedCard && (
-              <div className="bg-white rounded-lg shadow-sm p-6">
+              <div className="bg-stone-800 border border-stone-700 rounded-lg shadow-sm p-6">
                 <CardAlternatives cardName={searchedCard} />
               </div>
             )}
@@ -122,7 +122,7 @@ export function OptimizerPage() {
         )}
 
         {activeTab === 'optimizer' && (
-          <div className="bg-white rounded-lg shadow-sm p-6">
+          <div className="bg-stone-800 border border-stone-700 rounded-lg shadow-sm p-6">
             <DeckOptimizer />
           </div>
         )}

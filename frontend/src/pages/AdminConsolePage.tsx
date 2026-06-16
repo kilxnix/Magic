@@ -5,9 +5,12 @@ import {
   ArrowLeft,
   Ban,
   CheckCircle2,
+  Copy,
   Database,
   Download,
+  KeyRound,
   Megaphone,
+  Plus,
   RefreshCw,
   Shield,
   Trash2,
@@ -20,15 +23,21 @@ import {
   banAdminSeat,
   closeAdminEvent,
   closeAdminRoom,
+  createApiKey,
   deleteAdminEvent,
   deleteAdminRoom,
   fetchAdminOverview,
   kickAdminSeat,
+  listApiKeys,
   muteAdminSeat,
   removeAdminChat,
+  revokeApiKey,
+  topupApiKey,
   unmuteAdminSeat,
   type AdminOverview,
   type AdminRoomSummary,
+  type ApiKey,
+  type CreatedApiKey,
 } from '../lib/admin';
 import { auditPlaySaveSnapshot } from '../lib/playSaveAudit';
 import { auditCanonicalPlayEngineSave } from '../lib/playCanonicalSave';
@@ -112,6 +121,246 @@ function scorePracticeAttemptSummary(summary: string): { score: number; label: s
     score,
     label: `score ${score.toFixed(1)} / life ${life} / board ${board} / hand ${hand} / opp avg ${averageOpponentLife.toFixed(1)}`,
   };
+}
+
+function ApiKeysPanel({ token }: { token: string }) {
+  const [keys, setKeys] = useState<ApiKey[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [label, setLabel] = useState('');
+  const [quota, setQuota] = useState('');
+  const [rateLimit, setRateLimit] = useState('');
+  const [creating, setCreating] = useState(false);
+  const [newKey, setNewKey] = useState<CreatedApiKey | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const refresh = async () => {
+    setError(null);
+    try {
+      const res = await listApiKeys(token);
+      setKeys(res.keys);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to load API keys');
+    }
+  };
+
+  useEffect(() => {
+    void refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
+
+  const create = async () => {
+    setCreating(true);
+    setError(null);
+    setNewKey(null);
+    try {
+      const created = await createApiKey(token, {
+        label: label.trim(),
+        quota: quota.trim() ? Math.max(1, parseInt(quota, 10)) : null,
+        rateLimitPerMinute: rateLimit.trim() ? Math.max(1, parseInt(rateLimit, 10)) : null,
+      });
+      setNewKey(created);
+      setLabel('');
+      setQuota('');
+      setRateLimit('');
+      await refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to create key');
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const revoke = async (keyId: string) => {
+    if (!window.confirm('Revoke this key? It stops authenticating immediately.')) return;
+    try {
+      await revokeApiKey(token, keyId);
+      await refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to revoke key');
+    }
+  };
+
+  const topup = async (keyId: string) => {
+    const input = window.prompt("Add how many requests to this key's allowance?", '100000');
+    if (!input) return;
+    const amount = parseInt(input, 10);
+    if (!Number.isFinite(amount) || amount < 1) return;
+    try {
+      await topupApiKey(token, keyId, amount);
+      await refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to top up key');
+    }
+  };
+
+  const copySecret = async () => {
+    if (!newKey) return;
+    try {
+      await navigator.clipboard.writeText(newKey.secret);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      /* clipboard may be unavailable; the secret is still visible to copy manually */
+    }
+  };
+
+  const fmt = (n: number | null) => (n === null ? '∞' : n.toLocaleString());
+
+  return (
+    <section className="mb-5 rounded-lg border border-stone-800 bg-stone-900">
+      <div className="flex flex-col gap-2 border-b border-stone-800 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 className="flex items-center gap-2 text-sm font-black uppercase tracking-wider text-stone-300">
+            <KeyRound className="h-4 w-4 text-amber-300" />
+            Card-Support API Keys
+          </h2>
+          <p className="mt-1 text-xs text-stone-500">
+            Issue licensing keys with a request allowance (quota). Usage depletes the quota and blocks at zero until you top it up.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => void refresh()}
+          className="flex min-h-9 items-center justify-center gap-2 rounded border border-stone-700 px-3 text-xs font-bold text-stone-200 hover:bg-stone-800"
+        >
+          <RefreshCw className="h-3.5 w-3.5" />
+          Refresh
+        </button>
+      </div>
+
+      <div className="space-y-4 p-4">
+        {error && (
+          <div className="rounded border border-rose-500/40 bg-rose-950/40 px-3 py-2 text-xs text-rose-200">
+            {error}
+          </div>
+        )}
+
+        {newKey && (
+          <div className="rounded border border-emerald-500/50 bg-emerald-950/40 p-3">
+            <div className="text-xs font-bold text-emerald-200">
+              Key “{newKey.label || newKey.keyId}” created — copy it now, it will not be shown again.
+            </div>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <code className="flex-1 break-all rounded bg-stone-950 px-2 py-1.5 text-xs text-emerald-100">
+                {newKey.secret}
+              </code>
+              <button
+                type="button"
+                onClick={() => void copySecret()}
+                className="flex min-h-9 items-center gap-1.5 rounded border border-emerald-500/40 px-3 text-xs font-bold text-emerald-100 hover:bg-emerald-900/40"
+              >
+                <Copy className="h-3.5 w-3.5" />
+                {copied ? 'Copied' : 'Copy'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Create form */}
+        <div className="grid gap-2 sm:grid-cols-[1fr_auto_auto_auto]">
+          <input
+            value={label}
+            onChange={e => setLabel(e.target.value)}
+            placeholder="Label (e.g. acme-bots)"
+            className="rounded border border-stone-700 bg-stone-950 px-2 py-1.5 text-xs text-stone-100 placeholder:text-stone-600"
+          />
+          <input
+            value={quota}
+            onChange={e => setQuota(e.target.value)}
+            type="number"
+            min={1}
+            placeholder="Quota (blank = ∞)"
+            className="w-36 rounded border border-stone-700 bg-stone-950 px-2 py-1.5 text-xs text-stone-100 placeholder:text-stone-600"
+          />
+          <input
+            value={rateLimit}
+            onChange={e => setRateLimit(e.target.value)}
+            type="number"
+            min={1}
+            placeholder="Rate/min (blank = default)"
+            className="w-40 rounded border border-stone-700 bg-stone-950 px-2 py-1.5 text-xs text-stone-100 placeholder:text-stone-600"
+          />
+          <button
+            type="button"
+            onClick={() => void create()}
+            disabled={creating}
+            className="flex min-h-9 items-center justify-center gap-1.5 rounded border border-amber-500/50 px-3 text-xs font-bold text-amber-100 hover:bg-amber-950/40 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            {creating ? 'Creating…' : 'Create key'}
+          </button>
+        </div>
+
+        {/* Key table */}
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs">
+            <thead className="text-stone-500">
+              <tr className="border-b border-stone-800">
+                <th className="px-2 py-1.5 font-bold uppercase tracking-wider">Label</th>
+                <th className="px-2 py-1.5 font-bold uppercase tracking-wider">Used / Quota</th>
+                <th className="px-2 py-1.5 font-bold uppercase tracking-wider">Remaining</th>
+                <th className="px-2 py-1.5 font-bold uppercase tracking-wider">Rate/min</th>
+                <th className="px-2 py-1.5 font-bold uppercase tracking-wider">Status</th>
+                <th className="px-2 py-1.5 font-bold uppercase tracking-wider">Last used</th>
+                <th className="px-2 py-1.5 font-bold uppercase tracking-wider">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="text-stone-300">
+              {keys.length === 0 && (
+                <tr>
+                  <td colSpan={7} className="px-2 py-4 text-center text-stone-500">
+                    No API keys yet. Create one above.
+                  </td>
+                </tr>
+              )}
+              {keys.map(k => (
+                <tr key={k.keyId} className="border-b border-stone-800/60">
+                  <td className="px-2 py-1.5">
+                    <div className="font-bold text-stone-100">{k.label || '—'}</div>
+                    <div className="font-mono text-[10px] text-stone-500">{k.keyId}</div>
+                  </td>
+                  <td className="px-2 py-1.5">{k.requestsUsed.toLocaleString()} / {fmt(k.quota)}</td>
+                  <td className="px-2 py-1.5">{fmt(k.remaining)}</td>
+                  <td className="px-2 py-1.5">{k.rateLimitPerMinute ?? 'default'}</td>
+                  <td className="px-2 py-1.5">
+                    <span className={`rounded border px-1.5 py-0.5 text-[10px] font-bold ${
+                      k.status === 'active'
+                        ? 'border-emerald-500/40 bg-emerald-950/40 text-emerald-200'
+                        : 'border-stone-700 bg-stone-900 text-stone-400'
+                    }`}>
+                      {k.status}
+                    </span>
+                  </td>
+                  <td className="px-2 py-1.5 text-stone-400">{timeAgo(k.lastUsedAt)}</td>
+                  <td className="px-2 py-1.5">
+                    <div className="flex gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => void topup(k.keyId)}
+                        className="rounded border border-sky-500/40 px-2 py-0.5 text-[10px] font-bold text-sky-100 hover:bg-sky-950/40"
+                      >
+                        Top up
+                      </button>
+                      {k.status === 'active' && (
+                        <button
+                          type="button"
+                          onClick={() => void revoke(k.keyId)}
+                          className="flex items-center gap-1 rounded border border-rose-500/40 px-2 py-0.5 text-[10px] font-bold text-rose-200 hover:bg-rose-950/40"
+                        >
+                          <Ban className="h-3 w-3" />
+                          Revoke
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  );
 }
 
 export function AdminConsolePage() {
@@ -437,6 +686,8 @@ export function AdminConsolePage() {
                 </div>
               ))}
             </section>
+
+            <ApiKeysPanel token={token} />
 
             <section className="mb-5 rounded-lg border border-stone-800 bg-stone-900">
               <div className="flex flex-col gap-2 border-b border-stone-800 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">

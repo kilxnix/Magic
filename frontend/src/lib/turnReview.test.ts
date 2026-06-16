@@ -126,6 +126,53 @@ describe('turn review coaching filters', () => {
     expect(review?.confidenceReasons.some(reason => reason.includes('Rules audit rejected selected action'))).toBe(true);
   });
 
+  it('does not penalise a prerequisite land drop against the spells it enables', () => {
+    const bomb = def('bomb', 'Big Bomb', '', 6);
+    const forest = landDef('forest', 'Forest');
+    const state: GameState = {
+      players: [createPlayer('p1', 'You'), createPlayer('p2', 'Opponent')],
+      cards: new Map([
+        ['forest-1', card('forest-1', forest.id)],
+        ['bomb-1', card('bomb-1', bomb.id)],
+      ]),
+      cardDefinitions: new Map([
+        [forest.id, forest],
+        [bomb.id, bomb],
+      ]),
+      activePlayerIndex: 0,
+      priorityPlayerIndex: 0,
+      phase: 'precombat_main',
+      step: 'end',
+      turnNumber: 1,
+      spellsCastThisTurn: 0,
+      hasPriorityPassed: [false, false],
+      stack: [],
+      combat: null,
+      battlefieldAbilities: new Map(),
+      pendingTriggers: [],
+      delayedTriggers: [],
+    };
+
+    const landAction: AIAction = { kind: 'PlayLand', cardInstanceId: 'forest-1' };
+    const castAction: AIAction = { kind: 'CastSpell', cardInstanceId: 'bomb-1', targets: [] };
+
+    const review = buildDecisionReview(
+      state,
+      'p1',
+      { kind: 'PlayLand', label: 'Play Forest', _engineAction: landAction },
+      [
+        { kind: 'PlayLand', label: 'Play Forest', _engineAction: landAction },
+        { kind: 'CastSpell', label: 'Cast Big Bomb', _engineAction: castAction },
+      ],
+    );
+
+    // The land drop must not be graded against the creature it enables.
+    expect(review?.scoreDelta).toBe(0);
+    expect(review?.best?.label).toBe('Play Forest');
+    const coach = coachMessageFromDecision(review!);
+    expect(coach === null || !/preferred|consider/i.test(coach)).toBe(true);
+  });
+
   it('adds deck-specific coaching for Xenagos dragon practice decisions', () => {
     const review: DecisionReview = {
       schemaVersion: 1,

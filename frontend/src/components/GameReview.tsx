@@ -51,19 +51,18 @@ function authorityReviewEntries(
 
   authorityUpdates.forEach((update, updateIndex) => {
     update.rulesEvents.forEach((event, eventIndex) => {
-      if (event.kind !== 'ActionRejected' && event.kind !== 'PromptResponseRejected' && event.kind !== 'PromptResponseAccepted') {
+      // Only genuine rule violations are worth recording as diagnostics.
+      // "PromptResponseAccepted" (e.g. an internal PayCosts prompt succeeding)
+      // is engine bookkeeping with no coaching value and must never surface as
+      // a player-facing move.
+      if (event.kind !== 'ActionRejected' && event.kind !== 'PromptResponseRejected') {
         return;
       }
 
-      const isRejected = event.kind === 'ActionRejected' || event.kind === 'PromptResponseRejected';
       const action = event.kind === 'ActionRejected'
         ? `Rejected ${event.actionKind}`
-        : event.kind === 'PromptResponseRejected'
-          ? `Rejected ${event.promptKind} response`
-          : `${event.promptKind} response accepted`;
-      const reason = event.kind === 'PromptResponseAccepted'
-        ? `${event.promptKind} response was accepted by the engine authority.`
-        : event.message;
+        : `Rejected ${event.promptKind} response`;
+      const reason = event.message;
 
       entries.push({
         turnNumber: update.turnNumber,
@@ -75,7 +74,7 @@ function authorityReviewEntries(
         timestamp: updateIndex * 1000 + eventIndex,
         playByPlay: reason,
         rulesAudit: {
-          severity: isRejected ? 'error' : 'info',
+          severity: 'error',
           reason,
         },
         ...stats,
@@ -99,6 +98,12 @@ function replayAuditReviewEntry(
     engineEventLogSeeds: eventLogSeeds,
     engineEventLogInitialState: eventLogInitialState,
   });
+  // The replay audit is an engine-integrity diagnostic, not a player decision.
+  // Surface failures to the developer console; it is excluded from the grade and
+  // hidden from the player-facing move list (see calculateGrade / filteredEntries).
+  if (!audit.ok) {
+    console.warn('[GameReview] replay audit failed:', audit.developerMessage || audit.message, audit);
+  }
   const stats = emptyReviewStats(finalState);
 
   return [{
@@ -412,7 +417,10 @@ function xenagosReviewInsights(entries: RatedEntry[], finalState: SimpleGameStat
 // ========== Grade Calculation ==========
 
 function calculateGrade(ratedEntries: RatedEntry[]): { grade: string; accuracy: number; counts: Record<MoveRating, number> } {
-  const humanEntries = ratedEntries.filter(e => e.player === 'human');
+  // Grade only real player decisions. Internal engine diagnostics (rule-violation
+  // rejections, replay-audit results) carry `rulesAudit` and must never count
+  // toward the player's grade or the Excellent…Blunder tally.
+  const humanEntries = ratedEntries.filter(e => e.player === 'human' && !e.rulesAudit);
   if (humanEntries.length === 0) {
     return { grade: 'N/A', accuracy: 0, counts: { excellent: 0, good: 0, okay: 0, bad: 0, blunder: 0 } };
   }
@@ -489,10 +497,13 @@ export function GameReview({
   const { grade, accuracy, counts } = useMemo(() => calculateGrade(ratedEntries), [ratedEntries]);
   const xenagosInsights = useMemo(() => xenagosReviewInsights(ratedEntries, finalState), [finalState, ratedEntries]);
 
-  // Filter entries
+  // Filter entries. Internal engine diagnostics (rule-violation rejections and
+  // replay-audit results, identified by `rulesAudit`) are not player decisions
+  // and must not appear in the player-facing timeline.
   const filteredEntries = useMemo(() => {
-    if (filterPlayer === 'all') return ratedEntries;
-    return ratedEntries.filter(e => e.player === filterPlayer);
+    const visible = ratedEntries.filter(e => !e.rulesAudit);
+    if (filterPlayer === 'all') return visible;
+    return visible.filter(e => e.player === filterPlayer);
   }, [ratedEntries, filterPlayer]);
 
   // Group entries by turn

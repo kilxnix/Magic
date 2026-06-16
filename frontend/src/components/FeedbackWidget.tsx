@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useState } from 'react';
-import { Bug, Heart, MessageSquare, Send, X } from 'lucide-react';
+import { Bug, Coffee, Heart, MessageSquare, Send, X } from 'lucide-react';
 import { siteConfig } from '../lib/siteConfig';
 import { isInteractiveGamePath, useCurrentPathname } from '../lib/pageSurfaces';
 
@@ -63,14 +63,15 @@ export function FeedbackWidget() {
     }
   }
 
-  const useCompactGameTab = gameSurface && activePlaySurface;
   const useSideFeedbackTab = gameSurface && activePlaySurface;
   const containerPosition = open
     ? useSideFeedbackTab
       ? 'right-2 top-[calc(env(safe-area-inset-top)+4rem)] sm:right-4 sm:top-24'
       : 'bottom-16 right-3 sm:right-5'
+    // Collapsed: a small, low-footprint icon cluster tucked into the corner so it
+    // doesn't cover the board. On the play surface it hugs the right edge.
     : useSideFeedbackTab
-      ? 'right-0 top-[calc(env(safe-area-inset-top)+4rem)] sm:top-1/2 sm:-translate-y-1/2'
+      ? 'right-1 top-[calc(env(safe-area-inset-top)+4rem)] sm:top-1/2 sm:-translate-y-1/2'
       : 'bottom-4 right-3 sm:bottom-5 sm:right-5';
 
   return (
@@ -175,22 +176,30 @@ export function FeedbackWidget() {
           {status ? <p className="mt-3 text-sm font-bold text-stone-700">{status}</p> : null}
         </form>
       ) : (
-        <button
-          type="button"
-          onClick={() => setOpen(true)}
-          className={`inline-flex items-center justify-center gap-2 border border-stone-300 bg-white text-sm font-black text-stone-950 shadow-xl shadow-stone-950/15 transition hover:bg-amber-100 focus:outline-none focus:ring-2 focus:ring-amber-400 ${
-            useSideFeedbackTab
-              ? `${useCompactGameTab ? 'min-h-11 w-9 px-2 py-2 hover:w-10' : 'min-h-24 w-10 px-2 py-3 hover:w-11'} rounded-l-lg border-r-0`
-              : 'min-h-11 rounded-full px-3 py-2'
-          }`}
-          aria-label="Open feedback"
-          aria-expanded={open}
-        >
-          <Bug size={17} />
-          <span className={`select-none ${useSideFeedbackTab ? `[writing-mode:vertical-rl] ${useCompactGameTab ? 'sr-only sm:not-sr-only' : ''}` : ''}`}>
-            Feedback
-          </span>
-        </button>
+        <div className="flex items-center gap-1.5">
+          {siteConfig.donationUrl ? (
+            <a
+              href={siteConfig.donationUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              title="Buy me a coffee (Ko-fi)"
+              aria-label="Buy me a coffee on Ko-fi"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-amber-300 bg-amber-100 text-stone-950 shadow-lg shadow-stone-950/15 transition hover:bg-amber-200 focus:outline-none focus:ring-2 focus:ring-amber-400"
+            >
+              <Coffee size={16} />
+            </a>
+          ) : null}
+          <button
+            type="button"
+            onClick={() => setOpen(true)}
+            title="Send feedback"
+            aria-label="Open feedback"
+            aria-expanded={open}
+            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-stone-300 bg-white text-stone-950 shadow-lg shadow-stone-950/15 transition hover:bg-amber-100 focus:outline-none focus:ring-2 focus:ring-amber-400"
+          >
+            <Bug size={16} />
+          </button>
+        </div>
       )}
     </div>
   );

@@ -8,7 +8,7 @@
 
 import { useEffect, useState } from 'react';
 import type { PointerEvent } from 'react';
-import type { DamageAssignmentChoice, LibraryManipulationChoice, OptionalTriggerChoice, PriorityStopKey, PriorityStops, SimpleGameState, SimpleLegalAction, SimpleCard, LastPlayedCard, TaxPaymentChoice, TriggerOrderChoiceState, WardPaymentChoice } from '../hooks/useShelectorGame';
+import type { BoardTargetingPrompt, DamageAssignmentChoice, LibraryManipulationChoice, OptionalTriggerChoice, PriorityStopKey, PriorityStops, SimpleGameState, SimpleLegalAction, SimpleCard, LastPlayedCard, TaxPaymentChoice, TriggerOrderChoiceState, WardPaymentChoice } from '../hooks/useShelectorGame';
 import type { DamageAssignmentOrder } from 'commander-engine';
 import type { EnginePrompt, EngineStateUpdate } from 'commander-engine';
 import { Loader2, ChevronDown, ChevronRight, Search, X, Lightbulb, Menu, Undo2, BookmarkPlus } from 'lucide-react';
@@ -131,6 +131,9 @@ interface GameBoardProps {
   tutorTitle?: string;
   onTutorPick?: (cardInstanceId: string) => void;
   onTutorCancel?: () => void;
+  /** Active board-targeting prompt: highlight legal targets, tap one to resolve. */
+  targetingPrompt?: BoardTargetingPrompt | null;
+  onCancelTargeting?: () => void;
   libraryChoice?: LibraryManipulationChoice | null;
   onResolveLibraryChoice?: (topIds: string[], movedIds: string[]) => void;
   optionalTriggerChoice?: OptionalTriggerChoice | null;
@@ -321,18 +324,6 @@ const PROMPT_TYPE_LABELS: Record<string, string> = {
   'declare-blockers': 'Blockers',
   'game-over': 'Complete',
 };
-
-function promptMeta(prompt: EnginePrompt | null | undefined): string {
-  if (!prompt) return '';
-  const choiceCount = prompt.legalChoices.length;
-  const stackText = prompt.priority.stackSize > 0
-    ? ` - stack ${prompt.priority.stackSize}${prompt.priority.stackTop?.name ? `: ${prompt.priority.stackTop.name}` : ''}`
-    : '';
-  const passText = prompt.priority.passedPriorityPlayerIds.length > 0
-    ? ` - passed ${prompt.priority.passedPriorityPlayerIds.length}`
-    : '';
-  return `${choiceCount} option${choiceCount === 1 ? '' : 's'}${stackText}${passText}`;
-}
 
 function promptChoiceSummaryText(prompt: EnginePrompt | null | undefined): string {
   const summary = prompt?.legalChoiceSummary;
@@ -693,14 +684,10 @@ function CardTile({
   testId?: string;
 }) {
   const isCreature = card.cardTypes.includes('creature');
-  const isLand = card.cardTypes.includes('land');
   const counterBadges = getCounterBadges(card.counters);
   const interactive = playable || !!onClick;
   // Floating table mode: compact enough to see both boards without losing click area.
   const w = compact ? CARD_TILE_LAYOUT.compactSize : CARD_TILE_LAYOUT.defaultSize;
-  const buttonSpacing = compact ? CARD_TILE_LAYOUT.compactButton : CARD_TILE_LAYOUT.defaultButton;
-  const titleClass = compact ? CARD_TILE_LAYOUT.compactTitle : CARD_TILE_LAYOUT.defaultTitle;
-  const metaClass = compact ? CARD_TILE_LAYOUT.compactMeta : CARD_TILE_LAYOUT.defaultMeta;
   const keywordBadges = (card.keywords || []).filter(Boolean).slice(0, compact ? 2 : 4);
   const openInspectOnPointerDown = (event: PointerEvent) => {
     if (!inspectOnPointerDown || !onInspect) return;
@@ -754,129 +741,104 @@ function CardTile({
             : card.name
         }
         className={`
-          absolute inset-0 flex h-full w-full flex-col justify-between
+          absolute inset-0 flex h-full w-full flex-col justify-end
           overflow-hidden rounded-lg border text-left transition-all
-          ${buttonSpacing}
-          ${card.tapped ? 'rotate-6 opacity-60' : ''}
+          ${card.tapped ? 'rotate-6 opacity-70 saturate-50' : ''}
           ${borderClass}
         `}
       >
-        {/* Card name */}
-        <div className={titleClass}>
-          {card.name}
+        {/* Real card art fills the tile */}
+        <CardImage
+          cardName={card.name}
+          size="normal"
+          showHoverZoom={false}
+          className="pointer-events-none absolute inset-0 h-full w-full [&_img]:rounded-none [&_img]:object-cover"
+        />
+
+        {/* Bottom legibility gradient for the dynamic state badges */}
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-2/5 bg-gradient-to-t from-black/90 via-black/45 to-transparent" />
+
+        {/* Always-legible name strip (top) */}
+        <div className="pointer-events-none absolute inset-x-0 top-0 bg-gradient-to-b from-black/80 via-black/40 to-transparent px-1 pb-2 pt-0.5">
+          <div className={`line-clamp-1 break-words font-semibold leading-tight text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)] ${compact ? 'text-[8px]' : 'text-[8px] md:text-[10px]'}`}>
+            {card.name}
+          </div>
         </div>
 
-        {/* Mana cost */}
-        {card.manaCost && (
-          <div className="mt-0.5 line-clamp-1 text-[8px] leading-tight text-stone-400 md:text-[10px]">
-            {card.manaCost}
+        {/* Keyword badges (bottom-left, above the P/T) */}
+        {keywordBadges.length > 0 && (
+          <div className="pointer-events-none absolute inset-x-1 bottom-5 flex flex-wrap gap-0.5">
+            {keywordBadges.map(keyword => (
+              <span
+                key={keyword}
+                className="rounded bg-sky-950/85 px-1 text-[6px] font-bold uppercase leading-tight text-sky-200 ring-1 ring-sky-400/20 md:text-[7px]"
+              >
+                {keyword}
+              </span>
+            ))}
           </div>
         )}
 
-        {/* Type line */}
-        <div className={metaClass}>
-          {card.typeLine}
-        </div>
-
-        {/* Oracle text preview (hand cards only, not compact) */}
-        {!compact && card.oracleText && (
-          <div className="text-stone-400 text-[7px] md:text-[9px] mt-0.5 leading-tight line-clamp-2">
-            {card.oracleText}
+        {/* Power/Toughness (current, dynamic) — prominent bottom-right pill */}
+        {isCreature && card.power != null && card.toughness != null && (
+          <div className="pointer-events-none absolute bottom-1 right-1 rounded-md bg-neutral-950/85 px-1.5 py-0.5 text-right text-xs font-black leading-none text-white ring-1 ring-white/15 md:text-sm">
+            {card.power}/{card.toughness}
           </div>
         )}
 
-        {/* Power/Toughness or Land indicator */}
-        <div className="mt-auto pt-0.5 md:pt-1">
-          {keywordBadges.length > 0 && (
-            <div className="mb-0.5 flex flex-wrap gap-0.5">
-              {keywordBadges.map(keyword => (
-                <span
-                  key={keyword}
-                  className="rounded bg-sky-950/80 px-1 text-[6px] font-bold uppercase leading-tight text-sky-200 md:text-[7px]"
-                >
-                  {keyword}
-                </span>
-              ))}
-            </div>
-          )}
-          {isCreature && card.power != null && card.toughness != null && (
-            <div className="text-right text-stone-200 font-bold text-xs md:text-sm">
-              {card.power}/{card.toughness}
-            </div>
-          )}
-          {isLand && (
-            <div className="text-right text-stone-500 text-[8px] md:text-[10px] italic">
-              Land
-            </div>
-          )}
-        </div>
-
-        {/* Tapped indicator */}
-        {card.tapped && (
-          <div className="absolute top-1 right-1 text-[7px] md:text-[8px] text-stone-500 italic">
-            tapped
-          </div>
-        )}
-
-        {/* Counter badges (top-right, stacked below tapped indicator) */}
+        {/* Counter badges (top-right) */}
         {counterBadges.length > 0 && (
-          <div className={`absolute ${card.tapped ? 'top-4' : 'top-1'} right-1 flex flex-col gap-0.5`}>
+          <div className="pointer-events-none absolute right-1 top-1 flex flex-col items-end gap-0.5">
             {counterBadges.map(({ label, count }) => (
               <div
                 key={label}
-                className="bg-green-700 text-green-100 text-[7px] md:text-[8px] font-bold px-1 py-px rounded leading-tight whitespace-nowrap"
+                className="rounded bg-emerald-600/95 px-1 py-px text-[7px] font-bold leading-tight text-white shadow ring-1 ring-emerald-300/30 md:text-[8px]"
               >
-                {label === '+1/+1' || label === '-1/-1' ? `${label}: ${count}` : `${label}: ${count}`}
+                {label}: {count}
               </div>
             ))}
           </div>
         )}
 
-        {/* Token badge */}
-        {card.isToken && (
-          <div className="absolute top-1 left-1 text-[7px] md:text-[8px] text-violet-300 font-bold bg-violet-900/70 px-1 rounded">
-            TOKEN
+        {/* Token / target / stack / commander markers */}
+        {card.isToken && !targetable && stackCount <= 1 && (
+          <div className="pointer-events-none absolute left-1 top-1 rounded bg-violet-700/90 px-1 text-[7px] font-bold uppercase leading-tight text-violet-100 shadow md:text-[8px]">
+            Token
           </div>
         )}
-
         {targetable && (
-          <div className="absolute left-1 top-1 rounded bg-sky-400 px-1 py-px text-[7px] font-black uppercase leading-none text-neutral-950 shadow">
+          <div className="pointer-events-none absolute left-1 top-1 rounded bg-sky-400 px-1 py-px text-[7px] font-black uppercase leading-none text-neutral-950 shadow">
             Target
           </div>
         )}
-
-        {/* Stack count */}
         {stackCount > 1 && (
-          <div className="absolute top-1 left-1 rounded bg-amber-500 px-1.5 py-0.5 text-[9px] font-black leading-none text-neutral-950 shadow">
+          <div className="pointer-events-none absolute left-1 top-1 rounded bg-amber-500 px-1.5 py-0.5 text-[9px] font-black leading-none text-neutral-950 shadow">
             x{stackCount}
           </div>
         )}
-
         {selected && (
-          <div className="absolute inset-x-1 top-1 rounded bg-amber-400 px-1 py-px text-center text-[7px] font-black uppercase leading-none text-neutral-950">
+          <div className="pointer-events-none absolute inset-x-1 top-1 rounded bg-amber-400 px-1 py-px text-center text-[7px] font-black uppercase leading-none text-neutral-950 shadow">
             {selectedLabel || 'Selected'}
           </div>
         )}
-
-        {/* Commander badge */}
         {card.isCommander && (
-          <div className="absolute bottom-1 right-1 text-[7px] md:text-[8px] text-amber-400 font-bold">
+          <div className="pointer-events-none absolute bottom-1 left-1 rounded bg-amber-500/90 px-1 text-[7px] font-black uppercase leading-tight text-neutral-950 shadow md:text-[8px]">
             CMD
           </div>
         )}
 
         {/* Playable glow */}
         {playable && (
-          <div className="absolute inset-0 rounded-lg border-2 border-green-400/40 pointer-events-none" />
+          <div className="pointer-events-none absolute inset-0 rounded-lg ring-2 ring-inset ring-green-400/50" />
         )}
 
         {/* Attachments (equipment/auras) */}
         {card.attachments && card.attachments.length > 0 && (
-          <div className="absolute -bottom-1 left-0 right-0 flex flex-col items-center gap-px">
+          <div className="pointer-events-none absolute -bottom-1 left-0 right-0 flex flex-col items-center gap-px">
             {card.attachments.map(att => (
               <div
                 key={att.instanceId}
-                className="bg-amber-800/90 border border-amber-600/50 text-amber-200 text-[6px] md:text-[7px] font-bold px-1 py-px rounded-sm leading-tight truncate max-w-full"
+                className="max-w-full truncate rounded-sm border border-amber-600/50 bg-amber-800/95 px-1 py-px text-[6px] font-bold leading-tight text-amber-100 md:text-[7px]"
                 title={att.oracleText}
               >
                 {att.name}
@@ -1087,7 +1049,7 @@ function CardHoverPreview({
   return (
     <div
       data-testid="card-hover-preview"
-      className="pointer-events-none fixed left-1/2 top-1/2 z-[65] max-h-[min(82vh,44rem)] w-[min(26rem,86vw)] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-lg border border-amber-500/35 bg-neutral-950 shadow-2xl shadow-black/45"
+      className="pointer-events-none fixed left-1/2 top-1/2 z-[65] hidden max-h-[min(82vh,44rem)] w-[min(26rem,86vw)] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-lg border border-amber-500/35 bg-neutral-950 shadow-2xl shadow-black/45 [@media(hover:hover)_and_(pointer:fine)]:block"
     >
       <div className="grid grid-cols-[7.5rem_1fr] gap-3 p-3">
         <CardImage
@@ -2721,6 +2683,8 @@ export function GameBoard({
   tutorTitle,
   onTutorPick,
   onTutorCancel,
+  targetingPrompt,
+  onCancelTargeting,
   libraryChoice,
   onResolveLibraryChoice,
   optionalTriggerChoice,
@@ -2784,6 +2748,13 @@ export function GameBoard({
   const [showPlayerCounters, setShowPlayerCounters] = useState(false);
   const [showPhaseCorrection, setShowPhaseCorrection] = useState(false);
   const [attachSourceCardId, setAttachSourceCardId] = useState<string | null>(null);
+  // Combat composer: build custom multi-attacker / multi-blocker declarations
+  // by tapping creatures, then confirming once. The prefab menu actions only
+  // cover none/single/all, so this is the only way to declare arbitrary sets.
+  const [attackSelection, setAttackSelection] = useState<Set<string>>(new Set());
+  const [attackDefenderId, setAttackDefenderId] = useState<string | null>(null);
+  const [blockAssignments, setBlockAssignments] = useState<Record<string, string>>({});
+  const [pendingBlockerId, setPendingBlockerId] = useState<string | null>(null);
   const activeGameCoachingEnabled = false;
 
   const handleCardHover = (card: SimpleCard | null) => {
@@ -2849,24 +2820,32 @@ export function GameBoard({
       .map(a => a.cardInstanceId!)
   );
   const targetActionById = new Map<string, SimpleLegalAction>();
-  for (const action of legalActions) {
-    if (action.targetChoices?.length) {
-      for (const choice of action.targetChoices) {
-        if (!targetActionById.has(choice.targetId)) {
-          targetActionById.set(choice.targetId, choice.action);
-        }
+  if (targetingPrompt?.choices?.length) {
+    // Focused board targeting: a multi-target spell/ability is awaiting a target,
+    // so ONLY its legal targets glow. This keeps the battlefield uncluttered —
+    // the player taps the spell, then taps one highlighted permanent/player.
+    for (const choice of targetingPrompt.choices) {
+      if (!targetActionById.has(choice.targetId)) {
+        targetActionById.set(choice.targetId, choice.action);
       }
-      continue;
     }
-    const rawTargets = (action._engineAction as { targets?: unknown }).targets;
-    const targets = Array.isArray(rawTargets)
-      ? rawTargets.filter((target): target is string => typeof target === 'string')
-      : [];
-    const equipTarget = (action._engineAction as { targetCreatureId?: unknown }).targetCreatureId;
-    if (typeof equipTarget === 'string') targets.push(equipTarget);
-    for (const targetId of targets) {
-      if (!targetActionById.has(targetId)) {
-        targetActionById.set(targetId, action);
+  } else {
+    // No active targeting prompt: highlight only targets that are already baked
+    // into a legal action (equip, single-target casts/abilities). Collapsed
+    // multi-target spells (action.targetChoices) stay dark until their spell is
+    // chosen — tapping the spell arms the focused prompt above.
+    for (const action of legalActions) {
+      if (action.targetChoices?.length) continue;
+      const rawTargets = (action._engineAction as { targets?: unknown }).targets;
+      const targets = Array.isArray(rawTargets)
+        ? rawTargets.filter((target): target is string => typeof target === 'string')
+        : [];
+      const equipTarget = (action._engineAction as { targetCreatureId?: unknown }).targetCreatureId;
+      if (typeof equipTarget === 'string') targets.push(equipTarget);
+      for (const targetId of targets) {
+        if (!targetActionById.has(targetId)) {
+          targetActionById.set(targetId, action);
+        }
       }
     }
   }
@@ -2903,6 +2882,113 @@ export function GameBoard({
   );
   const hasHumanDeclareBlockersDecision = combatActions.some(action => action.kind === 'DeclareBlockers');
   const hasHumanDeclareAttackersDecision = combatActions.some(action => action.kind === 'DeclareAttackers');
+
+  // Combat composer data, derived from the engine's enumerated menu actions:
+  // every eligible attacker appears in some menu option, and every legal
+  // (blocker, attacker) pair appears in some block option.
+  const eligibleAttackerIds = new Set<string>();
+  const eligibleDefenderIds: string[] = [];
+  const legalBlockPairs = new Map<string, Set<string>>(); // blockerId -> attackerIds
+  for (const action of combatActions) {
+    const engineAction = action._engineAction;
+    if (engineAction.kind === 'DeclareAttackers') {
+      for (const attack of engineAction.attacks) {
+        eligibleAttackerIds.add(attack.cardInstanceId);
+        if (!eligibleDefenderIds.includes(attack.defendingPlayerId)) {
+          eligibleDefenderIds.push(attack.defendingPlayerId);
+        }
+      }
+    } else if (engineAction.kind === 'DeclareBlockers') {
+      for (const block of engineAction.blocks) {
+        const pairs = legalBlockPairs.get(block.cardInstanceId) ?? new Set<string>();
+        pairs.add(block.blockingAttackerId);
+        legalBlockPairs.set(block.cardInstanceId, pairs);
+      }
+    }
+  }
+  const blockableAttackerIds = new Set<string>(
+    [...legalBlockPairs.values()].flatMap(set => [...set]),
+  );
+  const blockCount = Object.keys(blockAssignments).length;
+  const composerDefenderId = attackDefenderId && eligibleDefenderIds.includes(attackDefenderId)
+    ? attackDefenderId
+    : eligibleDefenderIds[0];
+
+  // Reset composer state whenever the respective combat window closes.
+  useEffect(() => {
+    if (!hasHumanDeclareAttackersDecision && attackSelection.size > 0) {
+      setAttackSelection(new Set());
+      setAttackDefenderId(null);
+    }
+    if (!hasHumanDeclareBlockersDecision && (blockCount > 0 || pendingBlockerId)) {
+      setBlockAssignments({});
+      setPendingBlockerId(null);
+    }
+  }, [hasHumanDeclareAttackersDecision, hasHumanDeclareBlockersDecision, attackSelection.size, blockCount, pendingBlockerId]);
+
+  const toggleAttacker = (instanceId: string) => {
+    setAttackSelection(prev => {
+      const next = new Set(prev);
+      if (next.has(instanceId)) next.delete(instanceId);
+      else next.add(instanceId);
+      return next;
+    });
+  };
+
+  const handleBlockerTap = (instanceId: string) => {
+    if (blockAssignments[instanceId]) {
+      // Tapping an assigned blocker unassigns it.
+      setBlockAssignments(prev => {
+        const next = { ...prev };
+        delete next[instanceId];
+        return next;
+      });
+      setPendingBlockerId(null);
+      return;
+    }
+    setPendingBlockerId(prev => (prev === instanceId ? null : instanceId));
+  };
+
+  const handleBlockTargetTap = (attackerInstanceId: string) => {
+    if (!pendingBlockerId) return;
+    if (!legalBlockPairs.get(pendingBlockerId)?.has(attackerInstanceId)) return;
+    setBlockAssignments(prev => ({ ...prev, [pendingBlockerId]: attackerInstanceId }));
+    setPendingBlockerId(null);
+  };
+
+  const confirmComposedAttack = () => {
+    if (attackSelection.size === 0 || !composerDefenderId) return;
+    onAction({
+      kind: 'DeclareAttackers',
+      label: `Attack with ${attackSelection.size}`,
+      _engineAction: {
+        kind: 'DeclareAttackers',
+        attacks: [...attackSelection].map(cardInstanceId => ({
+          cardInstanceId,
+          defendingPlayerId: composerDefenderId,
+        })),
+      },
+    } as SimpleLegalAction);
+    setAttackSelection(new Set());
+    setAttackDefenderId(null);
+  };
+
+  const confirmComposedBlocks = () => {
+    if (blockCount === 0) return;
+    onAction({
+      kind: 'DeclareBlockers',
+      label: `Block with ${blockCount}`,
+      _engineAction: {
+        kind: 'DeclareBlockers',
+        blocks: Object.entries(blockAssignments).map(([cardInstanceId, blockingAttackerId]) => ({
+          cardInstanceId,
+          blockingAttackerId,
+        })),
+      },
+    } as SimpleLegalAction);
+    setBlockAssignments({});
+    setPendingBlockerId(null);
+  };
   const hasPhaseMovement = hasHumanActionWindow && !gameState.gameOver && !mulliganPhase && (
     skipRestAction || skipEmptyAction || passAction || combatActions.length > 0
   );
@@ -3112,6 +3198,49 @@ export function GameBoard({
                     : undefined;
                   const targetableCard = group.cards.find(card => getTargetAction(card));
                   const targetAction = targetableCard ? getTargetAction(targetableCard) : undefined;
+
+                  // Combat composer interactions (multi-attacker / multi-blocker).
+                  let combatClick: (() => void) | undefined;
+                  let combatLabel: string | undefined;
+                  if (owner === 'human' && hasHumanDeclareAttackersDecision) {
+                    const groupEligible = group.cards.filter(card => eligibleAttackerIds.has(card.instanceId));
+                    if (groupEligible.length > 0) {
+                      const selectedInGroup = groupEligible.filter(card => attackSelection.has(card.instanceId));
+                      const nextUnselected = groupEligible.find(card => !attackSelection.has(card.instanceId));
+                      combatLabel = selectedInGroup.length > 0
+                        ? (groupEligible.length > 1
+                            ? `Attacking ${selectedInGroup.length}/${groupEligible.length}`
+                            : 'Attacking — tap to cancel')
+                        : 'Tap to attack';
+                      combatClick = () => {
+                        if (nextUnselected) toggleAttacker(nextUnselected.instanceId);
+                        else selectedInGroup.forEach(card => toggleAttacker(card.instanceId));
+                      };
+                    }
+                  } else if (owner === 'human' && hasHumanDeclareBlockersDecision) {
+                    const groupBlockers = group.cards.filter(card => legalBlockPairs.has(card.instanceId));
+                    if (groupBlockers.length > 0) {
+                      const actionable = groupBlockers.find(card =>
+                        card.instanceId === pendingBlockerId || blockAssignments[card.instanceId])
+                        || groupBlockers.find(card => !blockAssignments[card.instanceId])
+                        || groupBlockers[0];
+                      combatLabel = blockAssignments[actionable.instanceId]
+                        ? 'Blocking — tap to cancel'
+                        : pendingBlockerId === actionable.instanceId
+                        ? 'Now tap an attacker'
+                        : 'Tap to block';
+                      combatClick = () => handleBlockerTap(actionable.instanceId);
+                    }
+                  } else if (owner === 'ai' && hasHumanDeclareBlockersDecision && pendingBlockerId) {
+                    const attackerCard = group.cards.find(card =>
+                      blockableAttackerIds.has(card.instanceId)
+                      && legalBlockPairs.get(pendingBlockerId)?.has(card.instanceId));
+                    if (attackerCard) {
+                      combatLabel = 'Block this attacker';
+                      combatClick = () => handleBlockTargetTap(attackerCard.instanceId);
+                    }
+                  }
+
                   const displayCard = playableCard || untappableCard || targetableCard || group.card;
                   return (
                     <div key={group.key} className="flex shrink-0 flex-col gap-1">
@@ -3119,15 +3248,17 @@ export function GameBoard({
                       key={group.key}
                       card={displayCard}
                       playable={!!playableCard || !!untappableCard}
-                      targetable={!playableCard && !!targetAction}
-                      targetLabel={targetAction?.label}
+                      targetable={!!combatClick || (!playableCard && !!targetAction)}
+                      targetLabel={combatLabel ?? targetAction?.label}
                       compact={owner === 'ai'}
                       inspectable
-                      inspectOnPointerDown={!playableCard && !untappableCard && !targetAction}
+                      inspectOnPointerDown={!playableCard && !untappableCard && !targetAction && !combatClick}
                       stackCount={group.cards.length}
                       onHoverCard={handleCardHover}
                       onClick={
-                        playableCard
+                        combatClick
+                          ? combatClick
+                          : playableCard
                           ? () => handleCardClick(playableCard)
                           : untappableCard && onUntapMana
                           ? () => onUntapMana(untappableCard.instanceId)
@@ -3142,8 +3273,9 @@ export function GameBoard({
                       aria-label={`View ${displayCard.name}`}
                       onFocus={() => setInspectedCard(displayCard)}
                       onClick={() => setInspectedCard(displayCard)}
-                      className="min-h-7 rounded border border-neutral-700 bg-neutral-900/90 px-1 text-[10px] font-bold text-stone-300 transition-colors hover:border-amber-400 hover:text-amber-200"
+                      className="flex min-h-[1.15rem] items-center justify-center gap-1 rounded border border-neutral-800 bg-neutral-900/70 text-[9px] font-semibold uppercase tracking-wide text-stone-400 transition-colors hover:border-amber-400/60 hover:text-amber-200"
                     >
+                      <Search className="h-2.5 w-2.5" />
                       View
                     </button>
                     </div>
@@ -3266,6 +3398,29 @@ export function GameBoard({
 
   return (
     <div className="relative h-full min-h-0 overflow-hidden bg-neutral-950 text-stone-200">
+      {/* Board-targeting banner: spell is chosen, tap a glowing target */}
+      {targetingPrompt && (
+        <div className="pointer-events-none absolute inset-x-0 top-0 z-[60] flex justify-center px-2 pt-2">
+          <div className="pointer-events-auto flex max-w-[94vw] items-center gap-2 rounded-full border border-amber-400/60 bg-neutral-950/95 px-3 py-1.5 shadow-lg shadow-black/50 ring-1 ring-amber-400/20">
+            <span className="relative flex h-2 w-2 shrink-0">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400/70" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-amber-400" />
+            </span>
+            <span className="truncate text-xs font-semibold text-amber-100">
+              Tap a highlighted target for <span className="text-amber-300">{targetingPrompt.sourceName}</span>
+            </span>
+            {onCancelTargeting && (
+              <button
+                type="button"
+                onClick={onCancelTargeting}
+                className="ml-1 shrink-0 rounded-full border border-neutral-700 bg-neutral-900 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-stone-300 transition-colors hover:border-amber-400/60 hover:text-amber-200"
+              >
+                Cancel
+              </button>
+            )}
+          </div>
+        </div>
+      )}
       {/* Tutor card picker overlay */}
       {tutorPhase && tutorCards && onTutorPick && (
         <CardPickerModal
@@ -3407,9 +3562,9 @@ export function GameBoard({
         />
       )}
       <div className={FLOATING_TABLE_LAYOUT.table}>
-        <div className="pointer-events-none absolute inset-x-0 top-1/2 z-0 hidden h-1 -translate-y-1/2 bg-red-500/70 xl:block" />
-        <div className="pointer-events-none absolute left-1/2 top-1/2 z-0 hidden h-28 w-28 -translate-x-1/2 -translate-y-1/2 rounded-full border-4 border-red-500/70 xl:flex items-center justify-center">
-          <span className="text-3xl font-black text-red-500/60">M</span>
+        <div className="pointer-events-none absolute inset-x-8 top-1/2 z-0 hidden h-px -translate-y-1/2 bg-gradient-to-r from-transparent via-amber-400/25 to-transparent xl:block" />
+        <div className="pointer-events-none absolute left-1/2 top-1/2 z-0 hidden h-24 w-24 -translate-x-1/2 -translate-y-1/2 rounded-full border border-amber-400/15 xl:flex items-center justify-center">
+          <span className="font-serif text-3xl font-black text-amber-400/15">M</span>
         </div>
       {/* Phase Bar */}
       <div className="absolute left-2 right-2 top-2 z-40 flex min-h-10 items-center gap-1.5 overflow-x-auto rounded-lg border border-neutral-700/70 bg-neutral-950/90 px-2 py-1.5 shadow-xl shadow-black/30 backdrop-blur md:left-3 md:right-3 md:top-3 md:gap-3 md:px-3">
@@ -3440,7 +3595,27 @@ export function GameBoard({
         <span className="text-stone-400 text-[10px] md:text-xs whitespace-nowrap hidden sm:inline">
           {STEP_DISPLAY[gameState.step] || gameState.step}
         </span>
-        <div className="ml-auto flex items-center gap-1.5 md:gap-2 shrink-0">
+        {/* Always-visible life scoreboard so totals are never hidden behind the
+            engine feed or other overlays (this bar sits above them at z-40). */}
+        <div className="ml-auto flex items-center gap-1 shrink-0" aria-label="Life totals">
+          {[{ p: gameState.humanPlayer, label: 'You', me: true },
+            ...opponentPlayers.map((p, i) => ({ p, label: `AI ${i + 1}`, me: false }))
+          ].map(({ p, label, me }) => (
+            <div
+              key={p.id}
+              title={`${me ? 'You' : p.name}: ${p.life} life`}
+              className={`flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] md:text-xs font-bold tabular-nums whitespace-nowrap border ${
+                me
+                  ? 'border-emerald-600/60 bg-emerald-950/70 text-emerald-200'
+                  : 'border-red-800/60 bg-red-950/70 text-red-200'
+              } ${gameState.priorityPlayerId === p.id ? 'ring-1 ring-amber-400/70' : ''}`}
+            >
+              <span className="opacity-75">{label}</span>
+              <span>{p.life}</span>
+            </div>
+          ))}
+        </div>
+        <div className="flex items-center gap-1.5 md:gap-2 shrink-0">
           {isLoading && <Loader2 className="w-3.5 h-3.5 md:w-4 md:h-4 animate-spin text-amber-400" />}
           <span className={`max-w-[9rem] truncate text-[10px] md:text-xs font-semibold px-1.5 md:px-2 py-0.5 rounded whitespace-nowrap md:max-w-[12rem] ${
             hasHumanActionWindow
@@ -3734,7 +3909,10 @@ export function GameBoard({
       {recentAuthorityUpdates.length > 0 && (
         <div
           aria-label="Engine event feed"
-          className="absolute right-2 top-14 z-30 hidden w-[22rem] max-w-[calc(100%-1rem)] rounded-lg border border-sky-500/20 bg-neutral-950/82 p-2 shadow-xl shadow-black/25 backdrop-blur lg:block"
+          // pointer-events-none: this panel is read-only telemetry — it must
+          // never intercept clicks meant for cards/buttons underneath it
+          // (it overlaps the board and, at high zoom, the action docks).
+          className="pointer-events-none absolute right-2 top-14 z-30 hidden max-h-[32vh] w-[22rem] max-w-[calc(100%-1rem)] select-none overflow-hidden rounded-lg border border-sky-500/20 bg-neutral-950/82 p-2 shadow-xl shadow-black/25 backdrop-blur lg:block"
         >
           <div className="mb-1 flex items-center justify-between gap-2">
             <div className="text-[9px] font-black uppercase tracking-wider text-sky-300/80">
@@ -4496,6 +4674,9 @@ export function GameBoard({
               </div>
               <div className="truncate text-[11px] font-semibold text-stone-300">
                 {currentPrompt?.title || `${visibleActionCount} available`}
+                {currentPrompt && promptChoiceSummaryText(currentPrompt) && (
+                  <span className="ml-1 font-normal text-amber-100/70">· {promptChoiceSummaryText(currentPrompt)}</span>
+                )}
               </div>
             </div>
             <div className="flex shrink-0 items-center gap-1.5">
@@ -4523,27 +4704,12 @@ export function GameBoard({
               </button>
             </div>
           </div>
-          {!actionsCollapsed && currentPrompt && (
-            <div className="mb-2 flex items-start gap-2 rounded border border-sky-500/25 bg-sky-950/30 px-2 py-1.5 text-xs text-stone-100">
-              <div className="shrink-0 rounded bg-sky-400/15 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-sky-200">
-                {PROMPT_TYPE_LABELS[currentPrompt.type] || 'Prompt'}
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
-                  <div className="font-semibold leading-snug">{currentPrompt.title}</div>
-                  {promptChoiceSummaryText(currentPrompt) && (
-                    <div className="text-[10px] font-semibold leading-snug text-amber-100/80">
-                      {promptChoiceSummaryText(currentPrompt)}
-                    </div>
-                  )}
-                </div>
-                <div className="text-[10px] leading-snug text-sky-100/70">{promptMeta(currentPrompt)}</div>
-                {currentPrompt.guidance && (
-                  <div className="mt-0.5 hidden text-[10px] leading-snug text-sky-100/85 sm:block">
-                    {currentPrompt.guidance}
-                  </div>
-                )}
-              </div>
+          {/* Prompt title + choice summary now live in the Actions header above;
+              guidance (when present) shows as a slim line on wider screens only,
+              so the mobile action dock isn't padded with a redundant panel. */}
+          {!actionsCollapsed && currentPrompt?.guidance && (
+            <div className="mb-2 hidden text-[10px] leading-snug text-sky-100/80 sm:block">
+              {currentPrompt.guidance}
             </div>
           )}
           {!actionsCollapsed && showDecisionMap && (complexTurnSignals.length > 0 || practiceFocusTags.length > 0 || branchPreviews.length > 0 || activeDrillLabel) && (
@@ -4793,15 +4959,78 @@ export function GameBoard({
                 {passAction.label}
               </button>
             )}
-            {combatActions.map((action, i) => (
-              <button
-                key={`combat-phase-${i}`}
-                onClick={() => onAction(action)}
-                className="min-h-10 shrink-0 whitespace-nowrap rounded border border-red-600/30 bg-red-900/60 px-3 py-1 text-xs font-semibold text-red-200 transition-colors hover:bg-red-800/70 md:min-h-8"
-              >
-                {action.label}
-              </button>
-            ))}
+            {hasHumanDeclareAttackersDecision && attackSelection.size > 0 && (
+              <>
+                {eligibleDefenderIds.length > 1 && (
+                  <select
+                    value={composerDefenderId}
+                    onChange={event => setAttackDefenderId(event.target.value)}
+                    className="min-h-10 shrink-0 rounded border border-amber-500/50 bg-neutral-900 px-2 text-xs font-semibold text-amber-100 md:min-h-8"
+                    aria-label="Choose defending player"
+                  >
+                    {eligibleDefenderIds.map(defenderId => (
+                      <option key={defenderId} value={defenderId}>
+                        Attack {playerNameForId(defenderId)}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                <button
+                  onClick={confirmComposedAttack}
+                  className="min-h-10 shrink-0 whitespace-nowrap rounded bg-red-600 px-3 py-1 text-xs font-black text-white shadow-sm shadow-red-900/40 transition-colors hover:bg-red-500 md:min-h-8"
+                >
+                  Confirm {attackSelection.size} attacker{attackSelection.size === 1 ? '' : 's'}
+                </button>
+                <button
+                  onClick={() => { setAttackSelection(new Set()); setAttackDefenderId(null); }}
+                  className="min-h-10 shrink-0 whitespace-nowrap rounded border border-neutral-700 bg-neutral-900 px-3 py-1 text-xs font-semibold text-stone-300 transition-colors hover:border-amber-400/60 md:min-h-8"
+                >
+                  Clear
+                </button>
+              </>
+            )}
+            {hasHumanDeclareBlockersDecision && (blockCount > 0 || pendingBlockerId) && (
+              <>
+                {pendingBlockerId && (
+                  <div className="flex min-h-10 shrink-0 items-center rounded border border-sky-500/50 bg-sky-950/40 px-2 text-[10px] font-bold uppercase tracking-wider text-sky-200 md:min-h-8">
+                    Tap an attacker to block
+                  </div>
+                )}
+                {blockCount > 0 && (
+                  <button
+                    onClick={confirmComposedBlocks}
+                    className="min-h-10 shrink-0 whitespace-nowrap rounded bg-sky-600 px-3 py-1 text-xs font-black text-white shadow-sm shadow-sky-900/40 transition-colors hover:bg-sky-500 md:min-h-8"
+                  >
+                    Confirm {blockCount} block{blockCount === 1 ? '' : 's'}
+                  </button>
+                )}
+                <button
+                  onClick={() => { setBlockAssignments({}); setPendingBlockerId(null); }}
+                  className="min-h-10 shrink-0 whitespace-nowrap rounded border border-neutral-700 bg-neutral-900 px-3 py-1 text-xs font-semibold text-stone-300 transition-colors hover:border-amber-400/60 md:min-h-8"
+                >
+                  Clear
+                </button>
+              </>
+            )}
+            {combatActions.map((action, i) => {
+              // Emphasize the main commit ("Declare attackers/blockers"); render the
+              // specific block/attack assignments and "no blocks/attacks" as a cohesive
+              // secondary set.
+              const emphasize = /^declare\b/i.test(action.label);
+              return (
+                <button
+                  key={`combat-phase-${i}`}
+                  onClick={() => onAction(action)}
+                  className={`min-h-10 shrink-0 whitespace-nowrap rounded px-3 py-1 text-xs font-bold transition-colors md:min-h-8 ${
+                    emphasize
+                      ? 'bg-amber-500 text-neutral-950 shadow-sm shadow-amber-900/30 hover:bg-amber-400'
+                      : 'border border-amber-500/40 bg-amber-950/40 text-amber-100 hover:border-amber-400/70 hover:bg-amber-900/50'
+                  }`}
+                >
+                  {action.label}
+                </button>
+              );
+            })}
           </div>
         </div>
       )}

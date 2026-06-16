@@ -10,24 +10,24 @@ interface CardImageProps {
   face?: 'back';
 }
 
-// Card skeleton that mimics an MTG card shape
+// Card skeleton that mimics an MTG card shape (dark-themed to match the app)
 function CardSkeleton() {
   return (
-    <div className="absolute inset-0 bg-stone-200 rounded-lg overflow-hidden">
+    <div className="absolute inset-0 overflow-hidden rounded-lg bg-neutral-800">
       {/* Card frame simulation */}
-      <div className="absolute inset-1 bg-stone-300 rounded-md">
+      <div className="absolute inset-1 rounded-md bg-neutral-900/80">
         {/* Title bar */}
-        <div className="h-[12%] bg-stone-400/50 m-1 rounded-t animate-pulse" />
+        <div className="m-1 h-[12%] animate-pulse rounded-t bg-neutral-700/60" />
         {/* Art box */}
-        <div className="h-[40%] bg-stone-400/30 mx-1 animate-pulse" style={{ animationDelay: '150ms' }} />
+        <div className="mx-1 h-[40%] animate-pulse bg-neutral-700/40" style={{ animationDelay: '150ms' }} />
         {/* Type line */}
-        <div className="h-[8%] bg-stone-400/40 mx-1 mt-1 animate-pulse" style={{ animationDelay: '300ms' }} />
+        <div className="mx-1 mt-1 h-[8%] animate-pulse bg-neutral-700/50" style={{ animationDelay: '300ms' }} />
         {/* Text box */}
-        <div className="h-[30%] bg-stone-400/20 mx-1 mt-1 rounded-b animate-pulse" style={{ animationDelay: '450ms' }}>
-          <div className="p-2 space-y-1">
-            <div className="h-2 bg-stone-400/30 rounded w-3/4" />
-            <div className="h-2 bg-stone-400/30 rounded w-full" />
-            <div className="h-2 bg-stone-400/30 rounded w-2/3" />
+        <div className="mx-1 mt-1 h-[30%] animate-pulse rounded-b bg-neutral-700/30" style={{ animationDelay: '450ms' }}>
+          <div className="space-y-1 p-2">
+            <div className="h-2 w-3/4 rounded bg-neutral-700/40" />
+            <div className="h-2 w-full rounded bg-neutral-700/40" />
+            <div className="h-2 w-2/3 rounded bg-neutral-700/40" />
           </div>
         </div>
       </div>
@@ -115,8 +115,8 @@ export function CardImage({
 
       {/* Error state - image not in local cache */}
       {hasError && (
-        <div className="absolute inset-0 bg-stone-200 rounded-lg flex items-center justify-center p-2">
-          <span className="text-xs text-stone-500 text-center">{cleanName}</span>
+        <div className="absolute inset-0 flex items-center justify-center rounded-lg border border-neutral-700/60 bg-gradient-to-br from-neutral-800 to-neutral-900 p-2">
+          <span className="text-center text-xs font-medium text-stone-300">{cleanName}</span>
         </div>
       )}
 

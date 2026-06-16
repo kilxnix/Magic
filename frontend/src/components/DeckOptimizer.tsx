@@ -52,42 +52,42 @@ function SwapCard({
       className={cn(
         'border rounded-lg transition-all',
         applied
-          ? 'border-green-300 bg-green-50'
-          : 'border-stone-200 bg-white hover:shadow-md'
+          ? 'border-green-700 bg-green-950/40'
+          : 'border-stone-700 bg-stone-900 hover:shadow-md'
       )}
     >
       <div className="p-4">
         <div className="flex items-center gap-3">
           {/* Original card */}
           <div className="flex-1">
-            <div className="text-sm font-medium text-stone-900">{suggestion.original_card}</div>
-            <div className="text-xs text-stone-500">
+            <div className="text-sm font-medium text-stone-100">{suggestion.original_card}</div>
+            <div className="text-xs text-stone-400">
               ${suggestion.original_price.toFixed(2)}
             </div>
           </div>
 
-          <ArrowRight className="w-4 h-4 text-stone-400 shrink-0" />
+          <ArrowRight className="w-4 h-4 text-stone-500 shrink-0" />
 
           {/* Alternative card */}
           <div className="flex-1">
-            <div className="text-sm font-medium text-stone-900">
+            <div className="text-sm font-medium text-stone-100">
               {suggestion.alternative.name}
             </div>
-            <div className="text-xs text-stone-500">
+            <div className="text-xs text-stone-400">
               ${suggestion.alternative.price_usd?.toFixed(2) || '0.00'}
             </div>
           </div>
 
           {/* Savings */}
           <div className="text-right shrink-0">
-            <div className="text-lg font-semibold text-green-700">
+            <div className="text-lg font-semibold text-green-400">
               -${suggestion.savings.toFixed(2)}
             </div>
-            <div className="text-xs text-stone-500">savings</div>
+            <div className="text-xs text-stone-400">savings</div>
           </div>
         </div>
 
-        <p className="mt-3 text-sm text-stone-600 italic">
+        <p className="mt-3 text-sm text-stone-300 italic">
           {suggestion.alternative.tradeoff_explanation}
         </p>
 
@@ -95,7 +95,7 @@ function SwapCard({
           {suggestion.alternative.functional_tags.slice(0, 3).map((tag) => (
             <span
               key={tag}
-              className="text-xs bg-stone-100 text-stone-600 px-2 py-0.5 rounded-full"
+              className="text-xs bg-stone-700 text-stone-300 px-2 py-0.5 rounded-full"
             >
               {tag}
             </span>
@@ -103,36 +103,36 @@ function SwapCard({
 
           <button
             onClick={() => setExpanded(!expanded)}
-            className="ml-auto text-xs text-stone-500 hover:text-stone-700"
+            className="ml-auto text-xs text-stone-400 hover:text-stone-200"
           >
             {expanded ? 'Less' : 'More'}
           </button>
         </div>
 
         {expanded && (
-          <div className="mt-3 pt-3 border-t border-stone-100 space-y-2">
+          <div className="mt-3 pt-3 border-t border-stone-700 space-y-2">
             <div className="grid grid-cols-2 gap-4 text-xs">
               <div>
-                <span className="text-stone-500">Type: </span>
-                <span className="text-stone-700">{suggestion.alternative.type_line}</span>
+                <span className="text-stone-400">Type: </span>
+                <span className="text-stone-200">{suggestion.alternative.type_line}</span>
               </div>
               <div>
-                <span className="text-stone-500">Mana: </span>
-                <span className="text-stone-700">{suggestion.alternative.mana_cost || 'N/A'}</span>
+                <span className="text-stone-400">Mana: </span>
+                <span className="text-stone-200">{suggestion.alternative.mana_cost || 'N/A'}</span>
               </div>
               <div>
-                <span className="text-stone-500">CMC: </span>
-                <span className="text-stone-700">{suggestion.alternative.cmc}</span>
+                <span className="text-stone-400">CMC: </span>
+                <span className="text-stone-200">{suggestion.alternative.cmc}</span>
               </div>
               <div>
-                <span className="text-stone-500">Match: </span>
-                <span className="text-stone-700">
+                <span className="text-stone-400">Match: </span>
+                <span className="text-stone-200">
                   {(suggestion.alternative.final_score * 100).toFixed(0)}%
                 </span>
               </div>
             </div>
 
-            <p className="text-xs text-stone-600 line-clamp-2">
+            <p className="text-xs text-stone-300 line-clamp-2">
               {suggestion.alternative.oracle_text}
             </p>
 
@@ -144,7 +144,7 @@ function SwapCard({
                     href={url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800"
+                    className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300"
                   >
                     {vendor} <ExternalLink className="w-3 h-3" />
                   </a>
@@ -156,7 +156,7 @@ function SwapCard({
       </div>
 
       {onApply && !applied && (
-        <div className="border-t border-stone-100 p-2">
+        <div className="border-t border-stone-700 p-2">
           <button
             onClick={onApply}
             className="w-full px-3 py-1.5 text-xs font-medium text-white bg-green-600 rounded hover:bg-green-700 transition-colors"
@@ -167,7 +167,7 @@ function SwapCard({
       )}
 
       {applied && (
-        <div className="border-t border-green-200 p-2 flex items-center justify-center gap-2 text-green-700 text-xs">
+        <div className="border-t border-green-800 p-2 flex items-center justify-center gap-2 text-green-400 text-xs">
           <Check className="w-4 h-4" />
           Swap applied
         </div>
@@ -231,34 +231,34 @@ export function DeckOptimizer({ deck, onApplySwap }: DeckOptimizerProps) {
     <div className="space-y-6">
       <div className="space-y-4">
         <div className="flex items-center gap-2">
-          <TrendingDown className="w-5 h-5 text-green-600" />
-          <h3 className="text-lg font-medium text-stone-900">Deck Optimizer</h3>
+          <TrendingDown className="w-5 h-5 text-green-400" />
+          <h3 className="text-lg font-medium text-stone-100">Deck Optimizer</h3>
         </div>
-        <p className="text-sm text-stone-600">
+        <p className="text-sm text-stone-300">
           Find cheaper alternatives for expensive cards in your deck.
         </p>
       </div>
 
       {!deck && (
         <div>
-          <label className="block text-sm font-medium text-stone-700 mb-1">
+          <label className="block text-sm font-medium text-stone-200 mb-1">
             Paste your deck list (one card per line)
           </label>
           <textarea
             value={manualCards}
             onChange={(e) => setManualCards(e.target.value)}
             placeholder="1x Sol Ring&#10;1x Mana Crypt&#10;1x Cyclonic Rift&#10;..."
-            className="w-full h-40 px-3 py-2 text-sm font-mono border border-stone-300 rounded-lg focus:ring-1 focus:ring-stone-400 focus:border-stone-400 resize-none"
+            className="w-full h-40 px-3 py-2 text-sm font-mono bg-stone-900 text-stone-100 placeholder-stone-500 border border-stone-600 rounded-lg focus:ring-1 focus:ring-amber-500 focus:border-amber-500 resize-none"
           />
         </div>
       )}
 
       {deck && (
-        <div className="p-4 bg-stone-50 rounded-lg">
+        <div className="p-4 bg-stone-800 rounded-lg">
           <div className="flex items-center justify-between">
             <div>
-              <div className="font-medium text-stone-900">{deck.commander}</div>
-              <div className="text-sm text-stone-500">
+              <div className="font-medium text-stone-100">{deck.commander}</div>
+              <div className="text-sm text-stone-400">
                 {deck.card_count} cards | {deck.estimated_price}
               </div>
             </div>
@@ -266,7 +266,7 @@ export function DeckOptimizer({ deck, onApplySwap }: DeckOptimizerProps) {
               {deck.colors.map((color) => (
                 <span
                   key={color}
-                  className="w-6 h-6 rounded-full bg-stone-200 text-stone-700 text-xs flex items-center justify-center font-medium"
+                  className="w-6 h-6 rounded-full bg-stone-700 text-stone-200 text-xs flex items-center justify-center font-medium"
                 >
                   {color}
                 </span>
@@ -278,28 +278,28 @@ export function DeckOptimizer({ deck, onApplySwap }: DeckOptimizerProps) {
 
       <div className="flex items-end gap-4 flex-wrap">
         <div className="w-40">
-          <label className="block text-xs text-stone-500 mb-1">Target Savings</label>
+          <label className="block text-xs text-stone-400 mb-1">Target Savings</label>
           <div className="relative">
-            <DollarSign className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
+            <DollarSign className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-500" />
             <input
               type="number"
               value={targetSavings}
               onChange={(e) => setTargetSavings(e.target.value)}
               placeholder="Any"
-              className="w-full pl-7 pr-2 py-2 text-sm border border-stone-300 rounded focus:ring-1 focus:ring-stone-400 focus:border-stone-400"
+              className="w-full pl-7 pr-2 py-2 text-sm bg-stone-900 text-stone-100 placeholder-stone-500 border border-stone-600 rounded focus:ring-1 focus:ring-amber-500 focus:border-amber-500"
             />
           </div>
         </div>
 
         <div className="w-32">
-          <label className="block text-xs text-stone-500 mb-1">Max Swaps</label>
+          <label className="block text-xs text-stone-400 mb-1">Max Swaps</label>
           <input
             type="number"
             value={maxSwaps}
             onChange={(e) => setMaxSwaps(e.target.value)}
             min="1"
             max="20"
-            className="w-full px-3 py-2 text-sm border border-stone-300 rounded focus:ring-1 focus:ring-stone-400 focus:border-stone-400"
+            className="w-full px-3 py-2 text-sm bg-stone-900 text-stone-100 placeholder-stone-500 border border-stone-600 rounded focus:ring-1 focus:ring-amber-500 focus:border-amber-500"
           />
         </div>
 
@@ -309,7 +309,7 @@ export function DeckOptimizer({ deck, onApplySwap }: DeckOptimizerProps) {
           className={cn(
             'px-6 py-2 text-sm font-medium rounded transition-colors',
             loading
-              ? 'bg-stone-300 text-stone-500 cursor-not-allowed'
+              ? 'bg-stone-700 text-stone-500 cursor-not-allowed'
               : 'bg-green-600 text-white hover:bg-green-700'
           )}
         >
@@ -325,27 +325,27 @@ export function DeckOptimizer({ deck, onApplySwap }: DeckOptimizerProps) {
       </div>
 
       {error && (
-        <div className="p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">
+        <div className="p-3 bg-red-950/40 border border-red-800 rounded text-red-300 text-sm">
           {error}
         </div>
       )}
 
       {response && (
         <div className="space-y-4">
-          <div className="flex items-center justify-between p-4 bg-green-50 border border-green-200 rounded-lg">
+          <div className="flex items-center justify-between p-4 bg-green-950/40 border border-green-800 rounded-lg">
             <div>
-              <div className="text-sm text-green-800">
+              <div className="text-sm text-green-300">
                 Found {response.swap_count} potential swap{response.swap_count !== 1 ? 's' : ''}
               </div>
-              <div className="text-2xl font-bold text-green-700">
+              <div className="text-2xl font-bold text-green-400">
                 Save up to ${response.total_savings.toFixed(2)}
               </div>
             </div>
-            <TrendingDown className="w-8 h-8 text-green-600" />
+            <TrendingDown className="w-8 h-8 text-green-400" />
           </div>
 
           {response.suggestions.length === 0 ? (
-            <div className="text-center py-8 text-stone-500">
+            <div className="text-center py-8 text-stone-400">
               No optimization opportunities found. Your deck is already budget-friendly!
             </div>
           ) : (

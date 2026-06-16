@@ -231,6 +231,7 @@ export function PlayPage() {
     tutorPhase,
     tutorCards,
     tutorTitle,
+    targetingPrompt,
     libraryChoice,
     optionalTriggerChoice,
     taxPaymentChoice,
@@ -257,6 +258,7 @@ export function PlayPage() {
     discardCard,
     resolveTutor,
     cancelTutor,
+    cancelTargeting,
     resolveLibraryChoice,
     resolveOptionalTriggerChoice,
     resolveTaxPaymentChoice,
@@ -318,6 +320,9 @@ export function PlayPage() {
     W: false, U: false, B: false, R: false, G: false,
   });
   const [personality, setPersonality] = useState<string>('Balanced');
+  // Starting life for the practice match. 40 = standard Commander; lower values
+  // make for faster, punchier games.
+  const [startingLife, setStartingLife] = useState<number>(40);
   const [spawnedOpponents, setSpawnedOpponents] = useState<SpawnedOpponent[]>([]);
   const [spawnProgress, setSpawnProgress] = useState('');
   const [isSpawning, setIsSpawning] = useState(false);
@@ -2845,7 +2850,7 @@ export function PlayPage() {
           cardData: data.card_data,
         },
         aiDecks,
-        { aiDifficulty: restartSpawnBracket },
+        { aiDifficulty: restartSpawnBracket, startingLife },
       );
       if (!started) {
         throw new Error('Failed to initialize the repeated practice game.');
@@ -2973,7 +2978,8 @@ export function PlayPage() {
           sideboard: importResult.sideboard || [],
           cardData: importResult.card_data,
         },
-        aiDecks
+        aiDecks,
+        { startingLife }
       );
       if (started) {
         setStep('game');
@@ -3140,6 +3146,8 @@ export function PlayPage() {
             tutorTitle={tutorTitle}
             onTutorPick={resolveTutor}
             onTutorCancel={cancelTutor}
+            targetingPrompt={targetingPrompt}
+            onCancelTargeting={cancelTargeting}
             libraryChoice={libraryChoice}
             onResolveLibraryChoice={resolveLibraryChoice}
             optionalTriggerChoice={optionalTriggerChoice}
@@ -3882,6 +3890,29 @@ export function PlayPage() {
                     }`}
                   >
                     {b}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Starting life — lower = faster games */}
+            <div className="mb-4">
+              <label className="text-sm text-stone-400 block mb-2">
+                Starting Life <span className="text-stone-500">(lower = faster game)</span>
+              </label>
+              <div className="flex gap-2 flex-wrap">
+                {[20, 25, 30, 40].map(life => (
+                  <button
+                    key={life}
+                    onClick={() => setStartingLife(life)}
+                    className={`min-w-[3rem] h-11 sm:h-10 px-3 rounded-lg font-bold transition-colors ${
+                      startingLife === life
+                        ? 'bg-amber-600 text-white'
+                        : 'bg-stone-700 text-stone-300 hover:bg-stone-600'
+                    }`}
+                    title={life === 40 ? 'Standard Commander' : `Faster game (${life} life)`}
+                  >
+                    {life}
                   </button>
                 ))}
               </div>

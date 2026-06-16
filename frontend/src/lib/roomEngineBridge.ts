@@ -1,10 +1,10 @@
 import {
-  advanceStep,
+  advanceStepWithTurnActions,
   allPlayersPassed,
+  checkStateBasedActions,
   getPlayerView,
   getCardDefinition,
   initRoomGame,
-  performUntapStep,
   resolveCombatDamage,
   resolveTopOfStack,
   createCardLookup,
@@ -201,6 +201,19 @@ export function applyPendingRoomAction(
   state: GameState,
   pending: PendingRealGameAction,
 ): { state: GameState; ok: true; event: string } | { state: GameState; ok: false; error: string } {
+  const result = applyPendingRoomActionRaw(state, pending);
+  if (!result.ok) return result;
+  // State-based actions run after every action (CR 704): creatures with lethal
+  // damage / 0 toughness die, players at 0 life (or 21 commander damage) lose,
+  // the legend rule applies, etc. The room turn loop omitted this, so combat and
+  // life loss had no effect. Mirrors the single-player authority path.
+  return { ...result, state: checkStateBasedActions(result.state) };
+}
+
+function applyPendingRoomActionRaw(
+  state: GameState,
+  pending: PendingRealGameAction,
+): { state: GameState; ok: true; event: string } | { state: GameState; ok: false; error: string } {
   if (pending.action.kind === 'pass_priority') {
     const result = tryPassPriority(state, pending.player_id);
     if (!result.ok) return { state, ok: false, error: result.message };
@@ -219,9 +232,14 @@ export function applyPendingRoomAction(
             event += ' No combat damage to resolve.';
           }
         }
-        nextState = nextState.step === 'untap'
-          ? advanceStep(performUntapStep(nextState))
-          : advanceStep(nextState);
+        // Canonical step-advance + turn-based actions (untap, draw, SBA), shared
+        // with the single-player path so the 1v1 and 1v1v1v1 engines can't drift.
+        const handBefore = nextState.players[nextState.activePlayerIndex];
+        nextState = advanceStepWithTurnActions(nextState);
+        const active = nextState.players[nextState.activePlayerIndex];
+        if (nextState.step === 'draw' && active.id === handBefore.id) {
+          event += ` ${active.name ?? 'Active player'} drew for the turn.`;
+        }
         event += ` All players passed; advanced to ${nextState.phase} / ${nextState.step}.`;
       }
     }

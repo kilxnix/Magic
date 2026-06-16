@@ -58,6 +58,8 @@ import {
 import { BEGINNER_DECKS } from '../lib/beginnerDecks';
 import { parseRoomDeckList } from '../lib/deckListParser';
 import { typeLineHasType } from '../lib/typeLine';
+import { GameBoard } from '../components/GameBoard';
+import { roomViewToSimpleGameState } from '../lib/roomViewToSimpleGameState';
 import {
   applyPendingRoomAction,
   createRoomEngineState,
@@ -2807,6 +2809,18 @@ export function MultiplayerPage() {
                         Sync
                       </button>
                     </div>
+
+                    {scopedView && (
+                      <div className="mb-3 overflow-hidden rounded-lg border border-cyan-200/20 bg-stone-950">
+                        <GameBoard
+                          gameState={roomViewToSimpleGameState(scopedView)}
+                          legalActions={[]}
+                          isHumanTurn={false}
+                          isLoading={false}
+                          onAction={() => {}}
+                        />
+                      </div>
+                    )}
 
                     {scopedView && (
                       <div className="rounded-lg border border-cyan-200/20 bg-stone-950 p-3">

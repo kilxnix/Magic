@@ -12,10 +12,24 @@ export interface UnsupportedEngineCard {
   reason: string;
 }
 
+// Cards the engine can technically parse but a player/bot cannot actually run
+// (physical dexterity or a sub-game). This is a deliberately NARROW hard-block
+// list — it must stay in sync with the backend's canonical known-manual set
+// (engine/scripts/build-support-manifest.cjs KNOWN_MANUAL_CARDS, surfaced via
+// the /api/card-support endpoints) so the client pre-launch gate and the server
+// never give a different answer for the same card. The reason strings below are
+// the manifest's exact `knownManual` wording; the drift test in
+// frontend/tests/enginePreflight.test.ts cross-checks both the card set and the
+// wording against mtg_data/card_support.json.
+//
+// NOTE: this is intentionally not the full server preflight. The server reports
+// every card with any unparsed clause; using that as a hard launch gate would
+// block far more decks than intended. This list only blocks the truly-unplayable
+// manual cards.
 export const ENGINE_UNSUPPORTED_CARD_REASONS: Record<string, string> = {
-  'Chaos Orb': 'Manual dexterity / physical-card resolution is not automated.',
-  'Falling Star': 'Manual dexterity / physical-card resolution is not automated.',
-  Shahrazad: 'Subgame creation is not automated.',
+  'Chaos Orb': 'Manual dexterity / subgame not automated',
+  'Falling Star': 'Manual dexterity / subgame not automated',
+  Shahrazad: 'Manual dexterity / subgame not automated',
 };
 
 function normalizeCardNameForPreflight(raw: string | undefined): string {

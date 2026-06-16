@@ -538,6 +538,9 @@ export interface CreateEventInput {
 export interface RoomWithPlayer {
   room: RoomDetail;
   player_id: string;
+  /** Secret per-seat credential, returned only to the seat owner. Required to
+   * act in the room; `player_id` is a public engine identity and is not enough. */
+  auth_token?: string;
 }
 
 export interface RoomWithSpectator {
@@ -613,17 +616,79 @@ async function apiRequest<T>(path: string, options: RequestInit = {}): Promise<T
   return response.json();
 }
 
+// ── Per-seat auth credential ────────────────────────────────────────────────
+// The server now separates a public `player_id` (the engine identity baked into
+// every player's board view) from a secret `auth_token` (the credential). We
+// remember each seat's token, persist it so a page refresh can keep acting, and
+// auto-attach it to every request that carries a `player_id`.
+const AUTH_TOKEN_PREFIX = 'deckreps_mp_auth_';
+const authTokens = new Map<string, string>();
+
+export function rememberPlayerAuth(playerId?: string | null, token?: string | null) {
+  if (!playerId || !token) return;
+  authTokens.set(playerId, token);
+  try {
+    window.localStorage.setItem(`${AUTH_TOKEN_PREFIX}${playerId}`, token);
+  } catch {
+    // Storage may be unavailable (private mode); the in-memory map still works.
+  }
+}
+
+export function forgetPlayerAuth(playerId?: string | null) {
+  if (!playerId) return;
+  authTokens.delete(playerId);
+  try {
+    window.localStorage.removeItem(`${AUTH_TOKEN_PREFIX}${playerId}`);
+  } catch {
+    // ignore
+  }
+}
+
+function authTokenFor(playerId?: string | null): string | undefined {
+  if (!playerId) return undefined;
+  let token = authTokens.get(playerId);
+  if (!token && typeof window !== 'undefined') {
+    try {
+      token = window.localStorage.getItem(`${AUTH_TOKEN_PREFIX}${playerId}`) || undefined;
+    } catch {
+      token = undefined;
+    }
+    if (token) authTokens.set(playerId, token);
+  }
+  return token;
+}
+
+function withAuth<T extends { player_id?: string }>(input: T): T & { auth_token?: string } {
+  if ((input as { auth_token?: string }).auth_token) return input;
+  const token = authTokenFor(input.player_id);
+  return token ? { ...input, auth_token: token } : input;
+}
+
+function authedParams(playerId: string, extra?: Record<string, string>): URLSearchParams {
+  const params = new URLSearchParams({ player_id: playerId, ...(extra || {}) });
+  const token = authTokenFor(playerId);
+  if (token) params.set('auth_token', token);
+  return params;
+}
+
+function rememberFromResponse(result: RoomWithPlayer): RoomWithPlayer {
+  rememberPlayerAuth(result.player_id, result.auth_token);
+  return result;
+}
+
 export function listRooms(tag?: string) {
   const params = new URLSearchParams();
   if (tag) params.set('tag', tag);
   return apiRequest<RoomSummary[]>(`/rooms${params.toString() ? `?${params}` : ''}`);
 }
 
-export function createRoom(input: CreateRoomInput) {
-  return apiRequest<RoomWithPlayer>('/rooms', {
-    method: 'POST',
-    body: JSON.stringify(input),
-  });
+export async function createRoom(input: CreateRoomInput) {
+  return rememberFromResponse(
+    await apiRequest<RoomWithPlayer>('/rooms', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  );
 }
 
 export function getRoom(roomId: string) {
@@ -727,15 +792,17 @@ export function addReplayAnnotation(
 ) {
   return apiRequest<ReplayReport>(`/rooms/${encodeURIComponent(roomId)}/replay/annotations`, {
     method: 'POST',
-    body: JSON.stringify(input),
+    body: JSON.stringify(withAuth(input)),
   });
 }
 
-export function joinRoom(roomId: string, input: JoinRoomInput) {
-  return apiRequest<RoomWithPlayer>(`/rooms/${encodeURIComponent(roomId)}/join`, {
-    method: 'POST',
-    body: JSON.stringify(input),
-  });
+export async function joinRoom(roomId: string, input: JoinRoomInput) {
+  return rememberFromResponse(
+    await apiRequest<RoomWithPlayer>(`/rooms/${encodeURIComponent(roomId)}/join`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  );
 }
 
 export function spectateRoom(roomId: string, input: SpectateRoomInput) {
@@ -757,7 +824,7 @@ export function updateRoomSettings(
 ) {
   return apiRequest<RoomDetail>(`/rooms/${encodeURIComponent(roomId)}/settings`, {
     method: 'POST',
-    body: JSON.stringify(input),
+    body: JSON.stringify(withAuth(input)),
   });
 }
 
@@ -767,57 +834,54 @@ export function updateSeat(
 ) {
   return apiRequest<RoomDetail>(`/rooms/${encodeURIComponent(roomId)}/seat`, {
     method: 'POST',
-    body: JSON.stringify(input),
+    body: JSON.stringify(withAuth(input)),
   });
 }
 
 export function sendRoomChat(roomId: string, input: { player_id: string; message: string }) {
   return apiRequest<RoomDetail>(`/rooms/${encodeURIComponent(roomId)}/chat`, {
     method: 'POST',
-    body: JSON.stringify(input),
+    body: JSON.stringify(withAuth(input)),
   });
 }
 
 export function startRoom(roomId: string, playerId: string) {
   return apiRequest<RoomDetail>(`/rooms/${encodeURIComponent(roomId)}/start`, {
     method: 'POST',
-    body: JSON.stringify({ player_id: playerId }),
+    body: JSON.stringify(withAuth({ player_id: playerId })),
   });
 }
 
 export function startRealGame(roomId: string, playerId: string) {
   return apiRequest<RoomDetail>(`/rooms/${encodeURIComponent(roomId)}/start-real-game`, {
     method: 'POST',
-    body: JSON.stringify({ player_id: playerId }),
+    body: JSON.stringify(withAuth({ player_id: playerId })),
   });
 }
 
 export function getEnginePreflight(roomId: string, playerId: string) {
-  const params = new URLSearchParams({ player_id: playerId });
-  return apiRequest<EnginePreflightResponse>(`/rooms/${encodeURIComponent(roomId)}/engine-preflight?${params}`);
+  return apiRequest<EnginePreflightResponse>(`/rooms/${encodeURIComponent(roomId)}/engine-preflight?${authedParams(playerId)}`);
 }
 
 export function rematchRoom(roomId: string, playerId: string) {
   return apiRequest<RoomDetail>(`/rooms/${encodeURIComponent(roomId)}/rematch`, {
     method: 'POST',
-    body: JSON.stringify({ player_id: playerId }),
+    body: JSON.stringify(withAuth({ player_id: playerId })),
   });
 }
 
 export function getRealGameStartPayload(roomId: string, playerId: string) {
-  const params = new URLSearchParams({ player_id: playerId });
-  return apiRequest<StartRealGamePayload>(`/rooms/${encodeURIComponent(roomId)}/real-game/start-payload?${params}`);
+  return apiRequest<StartRealGamePayload>(`/rooms/${encodeURIComponent(roomId)}/real-game/start-payload?${authedParams(playerId)}`);
 }
 
 export function getPendingRealGameActions(roomId: string, playerId: string) {
-  const params = new URLSearchParams({ player_id: playerId });
-  return apiRequest<PendingRealGameAction[]>(`/rooms/${encodeURIComponent(roomId)}/real-game/actions?${params}`);
+  return apiRequest<PendingRealGameAction[]>(`/rooms/${encodeURIComponent(roomId)}/real-game/actions?${authedParams(playerId)}`);
 }
 
 export function submitRealGameAction(roomId: string, input: { player_id: string; action: RealGameAction; view_revision?: number }) {
   return apiRequest<PendingRealGameAction>(`/rooms/${encodeURIComponent(roomId)}/real-game/action`, {
     method: 'POST',
-    body: JSON.stringify(input),
+    body: JSON.stringify(withAuth(input)),
   });
 }
 
@@ -835,13 +899,12 @@ export function publishRealGameSnapshot(
 ) {
   return apiRequest<RoomDetail>(`/rooms/${encodeURIComponent(roomId)}/real-game/snapshot`, {
     method: 'POST',
-    body: JSON.stringify(input),
+    body: JSON.stringify(withAuth(input)),
   });
 }
 
 export function getRealGameView(roomId: string, playerId: string) {
-  const params = new URLSearchParams({ player_id: playerId });
-  return apiRequest<RealGameViewResponse>(`/rooms/${encodeURIComponent(roomId)}/real-game/view?${params}`);
+  return apiRequest<RealGameViewResponse>(`/rooms/${encodeURIComponent(roomId)}/real-game/view?${authedParams(playerId)}`);
 }
 
 export function getRealGameSpectatorView(roomId: string, spectatorId: string) {
@@ -852,7 +915,7 @@ export function getRealGameSpectatorView(roomId: string, spectatorId: string) {
 export function leaveRoom(roomId: string, playerId: string) {
   return apiRequest<RoomDetail>(`/rooms/${encodeURIComponent(roomId)}/leave`, {
     method: 'POST',
-    body: JSON.stringify({ player_id: playerId }),
+    body: JSON.stringify(withAuth({ player_id: playerId })),
   });
 }
 
@@ -874,6 +937,6 @@ export function sendGameAction(
 ) {
   return apiRequest<RoomDetail>(`/rooms/${encodeURIComponent(roomId)}/game/action`, {
     method: 'POST',
-    body: JSON.stringify(input),
+    body: JSON.stringify(withAuth(input)),
   });
 }
