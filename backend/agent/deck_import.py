@@ -1,8 +1,13 @@
 """Deck import: parse, validate, and fill decklists for Commander."""
 
+import json
+import os
 import re
+import time
 from difflib import get_close_matches
 from typing import Dict, List, Optional, Set, Tuple
+
+import requests
 
 from backend.rules import COMMANDER_BANNED_CARDS
 
@@ -290,6 +295,71 @@ def _remove_commanders_from_main_deck(parsed: dict, commander_names: List[str]) 
 _DUPLICATE_NONBASIC_ERROR_RE = re.compile(r"^Duplicate non-basic card: '(.+)'$")
 _QUANTITY_NONBASIC_ERROR_RE = re.compile(r"^Non-basic card '(.+)' has quantity \d+ \(only 1 allowed\)$")
 
+# "A deck can have any number of cards named …" / "up to seven cards named …"
+_ANY_NUMBER_RE = re.compile(r"a deck can have any number of cards named")
+_UP_TO_N_RE = re.compile(r"a deck can have up to (\w+) cards named")
+_NUMBER_WORDS = {
+    "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+    "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+}
+_UNLIMITED_COPIES = 10**9
+
+
+def _singleton_copy_limit(data: dict) -> Optional[int]:
+    """Max allowed copies for a card that relaxes the singleton rule via its
+    own text (Relentless Rats, Cid Timeless Artificer, Seven Dwarves, Nazgûl…).
+    Returns None for normal singleton cards."""
+    oracle = (data.get("oracle_text") or "").lower()
+    if _ANY_NUMBER_RE.search(oracle):
+        return _UNLIMITED_COPIES
+    match = _UP_TO_N_RE.search(oracle)
+    if match:
+        word = match.group(1)
+        return _NUMBER_WORDS.get(word) or (int(word) if word.isdigit() else None)
+    return None
+
+
+def _filter_singleton_exempt_errors(
+    errors: List[str], parsed: dict, card_db: dict, warnings: List[str]
+) -> List[str]:
+    """Drop singleton-duplicate parse errors for cards whose own rules text
+    allows multiple copies, as long as the deck stays within that card's limit."""
+    flagged = {name for name in (_singleton_duplicate_error_name(e) for e in errors) if name}
+    if not flagged:
+        return errors
+
+    copy_counts: dict = {}
+    for name in parsed.get("cards", []):
+        key = str(name).strip().lower()
+        copy_counts[key] = copy_counts.get(key, 0) + 1
+
+    exempt: Set[str] = set()
+    for name in flagged:
+        resolved, _ = _resolve_card_name(name, card_db)
+        if not resolved:
+            continue
+        limit = _singleton_copy_limit(card_db[resolved])
+        if limit is None:
+            continue
+        copies = copy_counts.get(name.strip().lower(), 0)
+        if copies <= limit:
+            exempt.add(name.lower())
+            if limit == _UNLIMITED_COPIES:
+                warnings.append(
+                    f"'{resolved}' allows any number of copies; keeping {copies}."
+                )
+            else:
+                warnings.append(
+                    f"'{resolved}' allows up to {limit} copies; keeping {copies}."
+                )
+
+    if not exempt:
+        return errors
+    return [
+        e for e in errors
+        if (_singleton_duplicate_error_name(e) or "").lower() not in exempt
+    ]
+
 
 def _singleton_duplicate_error_name(error: str) -> Optional[str]:
     """Return the card name for singleton duplicate parse errors."""
@@ -300,26 +370,44 @@ def _singleton_duplicate_error_name(error: str) -> Optional[str]:
     return None
 
 
-def repair_singleton_duplicates(parsed: dict) -> List[str]:
-    """Remove extra non-basic copies while preserving one legal copy.
+def repair_singleton_duplicates(parsed: dict, card_db: Optional[dict] = None) -> List[str]:
+    """Remove extra non-basic copies while preserving each card's legal count.
 
     This is intended for user-facing import repair. Validation still flags the
     original list first, but the /import-deck workflow can repair duplicate
     singleton copies and fill the resulting slot for practice.
+
+    Cards whose own rules text allows extra copies (Relentless Rats, Seven
+    Dwarves, Cid Timeless Artificer, …) keep up to their printed limit when a
+    card_db is provided to read that limit from.
     """
-    seen: Set[str] = set()
+    seen_counts: dict = {}
+    limit_cache: dict = {}
     removed: List[str] = []
+
+    def copy_limit(clean_name: str) -> int:
+        key = clean_name.lower()
+        if key in limit_cache:
+            return limit_cache[key]
+        limit = 1
+        if card_db:
+            resolved, _ = _resolve_card_name(clean_name, card_db)
+            if resolved:
+                limit = _singleton_copy_limit(card_db[resolved]) or 1
+        limit_cache[key] = limit
+        return limit
 
     for zone in ("cards", "lands"):
         kept: List[str] = []
         for name in parsed.get(zone, []):
             clean_name = str(name).strip()
             key = clean_name.lower()
-            if clean_name not in BASIC_LAND_NAMES and key in seen:
-                removed.append(clean_name)
-                continue
             if clean_name not in BASIC_LAND_NAMES:
-                seen.add(key)
+                count = seen_counts.get(key, 0)
+                if count >= copy_limit(clean_name):
+                    removed.append(clean_name)
+                    continue
+                seen_counts[key] = count + 1
             kept.append(name)
         parsed[zone] = kept
 
@@ -337,6 +425,139 @@ def repair_singleton_duplicates(parsed: dict) -> List[str]:
     return removed
 
 
+# Scryfall fallback for names the local DB doesn't know. This is how we
+# resolve FLAVOR NAMES — alternate names printed on themed reprints (e.g.
+# "Thrum of the Vestige" is the FINAL FANTASY: Through the Ages printing of
+# Lightning Bolt). Scryfall's named?exact= endpoint maps a flavor name to the
+# canonical card. Results (including misses) are cached on disk so repeat
+# imports don't re-query.
+_SCRYFALL_NAMED_URL = "https://api.scryfall.com/cards/named"
+_SCRYFALL_HEADERS = {
+    # Scryfall rejects requests without a descriptive User-Agent.
+    "User-Agent": "deckreps.app/1.0 (+https://deckreps.app; deck importer)",
+    "Accept": "application/json",
+}
+_SCRYFALL_CACHE_PATH = os.path.join("data", "scryfall_name_cache.json")
+_scryfall_name_cache: Optional[Dict[str, Optional[dict]]] = None
+
+# Local flavor-name map built by `python -m data.data_pipeline extract-flavors`
+# (flavor name -> canonical card name, e.g. "Thrum of the Vestige" -> Lightning
+# Bolt). Lets themed-reprint names resolve without any network call.
+_FLAVOR_NAMES_PATH = os.path.join("mtg_data", "flavor_names.json")
+_flavor_name_map: Optional[Dict[str, str]] = None
+
+
+def _load_flavor_names() -> Dict[str, str]:
+    global _flavor_name_map
+    if _flavor_name_map is None:
+        _flavor_name_map = {}
+        try:
+            with open(_FLAVOR_NAMES_PATH, encoding="utf-8") as f:
+                raw = json.load(f)
+            _flavor_name_map = {str(k).lower(): str(v) for k, v in raw.items()}
+        except Exception:
+            pass
+    return _flavor_name_map
+
+
+def _load_scryfall_cache() -> Dict[str, Optional[dict]]:
+    global _scryfall_name_cache
+    if _scryfall_name_cache is None:
+        _scryfall_name_cache = {}
+        try:
+            with open(_SCRYFALL_CACHE_PATH, encoding="utf-8") as f:
+                _scryfall_name_cache = json.load(f)
+        except Exception:
+            pass
+    return _scryfall_name_cache
+
+
+def _save_scryfall_cache() -> None:
+    try:
+        os.makedirs(os.path.dirname(_SCRYFALL_CACHE_PATH), exist_ok=True)
+        with open(_SCRYFALL_CACHE_PATH, "w", encoding="utf-8") as f:
+            json.dump(_scryfall_name_cache or {}, f)
+    except Exception:
+        pass
+
+
+def _card_entry_from_scryfall(payload: dict) -> dict:
+    """Convert a Scryfall card payload into a cards_min.jsonl-shaped entry."""
+    entry = {
+        "id": payload.get("id"),
+        "name": payload.get("name"),
+        "type_line": payload.get("type_line") or "",
+        "oracle_text": payload.get("oracle_text") or "",
+        "mana_cost": payload.get("mana_cost") or "",
+        "cmc": payload.get("cmc") or 0,
+        "colors": payload.get("colors") or [],
+        "color_identity": payload.get("color_identity") or [],
+        "keywords": payload.get("keywords") or [],
+        "legalities": payload.get("legalities") or {},
+        "rarity": payload.get("rarity") or "",
+        "set": payload.get("set") or "",
+        "power": payload.get("power"),
+        "toughness": payload.get("toughness"),
+    }
+    faces = payload.get("card_faces")
+    if faces:
+        entry["card_faces"] = [
+            {
+                "name": f.get("name"),
+                "type_line": f.get("type_line") or "",
+                "oracle_text": f.get("oracle_text") or "",
+                "mana_cost": f.get("mana_cost") or "",
+                "colors": f.get("colors") or [],
+                "power": f.get("power"),
+                "toughness": f.get("toughness"),
+            }
+            for f in faces
+        ]
+        if not entry["oracle_text"]:
+            entry["oracle_text"] = "\n//\n".join(
+                f.get("oracle_text") or "" for f in faces
+            )
+    return entry
+
+
+def _scryfall_lookup(name: str) -> Optional[dict]:
+    """Look up a card name on Scryfall (exact, then fuzzy). Returns the card
+    payload or None. Network failures return None without caching so a
+    transient outage doesn't poison the miss-cache."""
+    if os.environ.get("DISABLE_SCRYFALL_FALLBACK"):
+        return None
+    key = name.strip().lower()
+    cache = _load_scryfall_cache()
+    if key in cache:
+        return cache[key]
+
+    payload: Optional[dict] = None
+    try:
+        time.sleep(0.1)  # Scryfall politeness delay
+        resp = requests.get(
+            _SCRYFALL_NAMED_URL, params={"exact": name},
+            headers=_SCRYFALL_HEADERS, timeout=10,
+        )
+        if resp.status_code == 404:
+            time.sleep(0.1)
+            resp = requests.get(
+                _SCRYFALL_NAMED_URL, params={"fuzzy": name},
+                headers=_SCRYFALL_HEADERS, timeout=10,
+            )
+        if resp.status_code == 200:
+            data = resp.json()
+            if data.get("object") == "card":
+                payload = data
+        elif resp.status_code != 404:
+            return None  # transient error — don't cache
+    except Exception:
+        return None  # network failure — don't cache
+
+    cache[key] = payload
+    _save_scryfall_cache()
+    return payload
+
+
 def _resolve_card_name(name: str, card_db: dict) -> Tuple[Optional[str], Optional[str]]:
     """Try to find a card in the database, with fuzzy matching.
 
@@ -351,10 +572,34 @@ def _resolve_card_name(name: str, card_db: dict) -> Tuple[Optional[str], Optiona
     if face_match:
         return face_match, None
 
+    # Local flavor-name map (themed reprints printed under alternate names,
+    # e.g. Secret Lair and FINAL FANTASY: Through the Ages) — exact alias
+    # lookup beats fuzzy guessing and needs no network.
+    flavor_canonical = _load_flavor_names().get(name.strip().lower())
+    if flavor_canonical:
+        db_key = _exact_card_name(flavor_canonical, card_db)
+        if db_key:
+            return db_key, f"'{name}' is an alternate printing name for '{flavor_canonical}'"
+
     # Fuzzy match using difflib (close matches from all card names)
     matches = get_close_matches(name, card_db.keys(), n=1, cutoff=0.85)
     if matches:
         return matches[0], f"'{name}' matched to '{matches[0]}' (fuzzy)"
+
+    # Scryfall fallback — resolves flavor names (themed reprints printed under
+    # an alternate name) and cards newer than the local database. This must
+    # run BEFORE the low-confidence guess, which otherwise substitutes a
+    # wrong card and trips color-identity errors.
+    payload = _scryfall_lookup(name)
+    if payload and payload.get("name"):
+        canonical = str(payload["name"])
+        db_key = _exact_card_name(canonical, card_db)
+        if not db_key:
+            card_db[canonical] = _card_entry_from_scryfall(payload)
+            db_key = canonical
+        if canonical.lower() == name.strip().lower():
+            return db_key, f"'{name}' resolved via Scryfall (new card added to database)"
+        return db_key, f"'{name}' is an alternate printing name for '{canonical}' (resolved via Scryfall)"
 
     # Search with looser cutoff
     matches = get_close_matches(name, card_db.keys(), n=3, cutoff=0.6)
@@ -895,6 +1140,75 @@ def _parse_line(line: str) -> tuple:
     return 0, ""
 
 
+def _is_commander_eligible(data: dict) -> bool:
+    """True if a card can be a commander (legendary creature / planeswalker, or
+    any legendary permanent with 'can be your commander')."""
+    type_line = (data.get("type_line") or "").lower()
+    oracle = (data.get("oracle_text") or "").lower()
+    if "legendary" in type_line and ("creature" in type_line or "planeswalker" in type_line):
+        return True
+    return "can be your commander" in oracle
+
+
+def _is_plain_partner(data: dict) -> bool:
+    """Generic 'Partner' (pairs with any other generic Partner) — excludes the
+    specific 'Partner with <name>' variant."""
+    oracle = (data.get("oracle_text") or "").lower()
+    keywords = [k.lower() for k in (data.get("keywords") or [])]
+    if "partner with" in oracle:
+        return False
+    return "partner" in keywords or re.search(r"(^|\n)\s*partner\b", oracle) is not None
+
+
+def _detect_partner_commander(
+    first_data: dict, remaining_names: List[str], card_db: dict
+) -> Optional[str]:
+    """Given an auto-detected first commander, find its partner among the
+    remaining cards (Moxfield headerless exports list both commanders first).
+    Handles 'Partner with <name>', generic Partner pairs, Backgrounds, and
+    'Friends forever'. Returns the partner's resolved name or None.
+    """
+    first_oracle = (first_data.get("oracle_text") or "").lower()
+
+    def resolved_eligible(name: str) -> Optional[str]:
+        res, _ = _resolve_card_name(name, card_db)
+        return res if res else None
+
+    # "Partner with <Name>" — a specific named partner.
+    match = re.search(r"partner with ([^\n(.,;]+)", first_oracle)
+    if match:
+        target = match.group(1).strip().rstrip(".").strip().lower()
+        for name in remaining_names:
+            res = resolved_eligible(name)
+            if res and res.lower() == target:
+                return res
+        return None
+
+    # Generic Partner — pairs with the next generic-Partner commander.
+    if _is_plain_partner(first_data):
+        for name in remaining_names:
+            res = resolved_eligible(name)
+            if res and _is_commander_eligible(card_db[res]) and _is_plain_partner(card_db[res]):
+                return res
+        return None
+
+    # "Choose a Background" / "can have a Background" — pairs with a Background.
+    if "background" in first_oracle:
+        for name in remaining_names:
+            res = resolved_eligible(name)
+            if res and "background" in (card_db[res].get("type_line") or "").lower():
+                return res
+        return None
+
+    # "Friends forever" — pairs with another "Friends forever" card.
+    if "friends forever" in first_oracle:
+        for name in remaining_names:
+            res = resolved_eligible(name)
+            if res and "friends forever" in (card_db[res].get("oracle_text") or "").lower():
+                return res
+    return None
+
+
 def validate_deck(parsed: dict, card_db: dict) -> dict:
     """Validate a parsed deck against Commander rules.
 
@@ -954,20 +1268,48 @@ def validate_deck(parsed: dict, card_db: dict) -> dict:
             "color_identity": [],
         }
 
-    # ── Auto-detect commander if not specified ───────────────────────
-    # If no commander was marked, check if the first card is legendary
-    if not commander and cards:
-        first_card = cards[0]
-        resolved, _ = _resolve_card_name(first_card, card_db)
-        if resolved:
-            data = card_db[resolved]
-            type_line = (data.get("type_line") or "").lower()
-            if "legendary" in type_line and ("creature" in type_line or "can be your commander" in (data.get("oracle_text") or "").lower()):
-                commander = resolved
-                parsed["commander"] = resolved
-                cards = cards[1:]  # Remove from card list
-                parsed["cards"] = cards
-                warnings.append(f"Auto-detected commander: {resolved} (first card in list)")
+    # ── Singleton exemptions ─────────────────────────────────────────
+    # Cards like Relentless Rats / Seven Dwarves / Cid, Timeless Artificer
+    # allow extra copies via their own rules text; clear those parse errors.
+    errors = _filter_singleton_exempt_errors(errors, parsed, card_db, warnings)
+
+    # ── Auto-detect commander(s) if not specified ────────────────────
+    # Headerless exports (e.g. Moxfield "copy") list the commander(s) first with
+    # no "Commander" section. Detect the leading commander-eligible card, and —
+    # crucially for PARTNER decks — its partner among the remaining cards, so a
+    # dual-commander deck isn't reduced to one commander (which then wrongly
+    # color-identity-rejects the second commander and its cards).
+    if not commander and not parsed.get("commanders") and cards:
+        first_resolved, _ = _resolve_card_name(cards[0], card_db)
+        if first_resolved and _is_commander_eligible(card_db[first_resolved]):
+            detected = [first_resolved]
+            partner = _detect_partner_commander(card_db[first_resolved], cards[1:], card_db)
+            if partner:
+                detected.append(partner)
+
+            # Remove the detected commander(s) from the main card list (first
+            # occurrence of each, by resolved or raw name).
+            remaining: List[str] = []
+            to_remove = {name.lower() for name in detected}
+            for raw in cards:
+                res, _ = _resolve_card_name(raw, card_db)
+                key = (res or raw).lower()
+                if key in to_remove:
+                    to_remove.discard(key)
+                    continue
+                remaining.append(raw)
+            cards = remaining
+            parsed["cards"] = cards
+
+            if len(detected) > 1:
+                parsed["commanders"] = detected
+                commander = " // ".join(detected)
+                parsed["commander"] = commander
+                warnings.append(f"Auto-detected partner commanders: {' + '.join(detected)} (first cards in list)")
+            else:
+                commander = detected[0]
+                parsed["commander"] = detected[0]
+                warnings.append(f"Auto-detected commander: {detected[0]} (first card in list)")
 
     # ── Commander checks ──────────────────────────────────────────────
     color_identity: List[str] = []
@@ -996,10 +1338,24 @@ def validate_deck(parsed: dict, card_db: dict) -> dict:
                         f"Commander '{resolved_cmd}' is not legendary"
                     )
                 if "creature" not in type_line and "can be your commander" not in oracle_text:
-                    errors.append(
-                        f"Commander '{resolved_cmd}' is not a creature "
-                        "(and does not have 'can be your commander')"
-                    )
+                    # Some legal commanders are non-creature legendary permanents
+                    # whose Oracle text omits "can be your commander" — notably
+                    # precon FACE commanders that are Vehicles (e.g. Shorikai,
+                    # Genesis Engine) or planeswalkers. The deck explicitly
+                    # designated this card as its commander, and the engine can
+                    # put any legendary permanent in the command zone, so we
+                    # accept it. Only a legendary instant/sorcery genuinely can't
+                    # be a commander (it can't stay in a zone as a permanent).
+                    if "instant" in type_line or "sorcery" in type_line:
+                        errors.append(
+                            f"Commander '{resolved_cmd}' is not a creature "
+                            "(and does not have 'can be your commander')"
+                        )
+                    else:
+                        warnings.append(
+                            f"Commander '{resolved_cmd}' is a non-creature legendary "
+                            "permanent; treating it as your designated commander."
+                        )
                 # Union color identities from all commanders (partners)
                 for c in _effective_commander_color_identity(cmd_data):
                     if c not in color_identity:

@@ -94,6 +94,7 @@ def test_admin_can_mute_and_unmute_room_player(monkeypatch, tmp_path):
     joined = client.post(f"/api/multiplayer/rooms/{room_id}/join", json={"player_name": "Guest"})
     assert joined.status_code == 200
     guest_id = joined.json()["player_id"]
+    guest_token = joined.json().get("auth_token")
 
     muted = client.post(
         f"/api/admin/rooms/{room_id}/seats/2/mute",
@@ -105,7 +106,7 @@ def test_admin_can_mute_and_unmute_room_player(monkeypatch, tmp_path):
 
     rejected = client.post(
         f"/api/multiplayer/rooms/{room_id}/chat",
-        json={"player_id": guest_id, "message": "normal mtg table chat"},
+        json={"player_id": guest_id, "auth_token": guest_token, "message": "normal mtg table chat"},
     )
     assert rejected.status_code == 403
     assert rejected.json()["detail"] == "This player is muted in the room"
@@ -120,7 +121,7 @@ def test_admin_can_mute_and_unmute_room_player(monkeypatch, tmp_path):
 
     accepted = client.post(
         f"/api/multiplayer/rooms/{room_id}/chat",
-        json={"player_id": guest_id, "message": "ready to play"},
+        json={"player_id": guest_id, "auth_token": guest_token, "message": "ready to play"},
     )
     assert accepted.status_code == 200
     assert accepted.json()["chat"][-1]["message"] == "ready to play"

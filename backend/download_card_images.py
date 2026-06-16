@@ -38,6 +38,8 @@ from backend.database import (
 SCRYFALL_BULK_API = "https://api.scryfall.com/bulk-data"
 RATE_LIMIT_MS = 100  # Scryfall requires 100ms between requests
 REQUEST_TIMEOUT = 30
+# Scryfall rejects the default python-requests User-Agent with HTTP 400.
+from backend.price_service import SCRYFALL_HEADERS
 
 # Image versions to download
 IMAGE_SIZES = {
@@ -49,7 +51,7 @@ IMAGE_SIZES = {
 def get_bulk_data_url() -> str:
     """Get the URL for the Oracle Cards bulk data."""
     print("Fetching bulk data manifest...")
-    response = requests.get(SCRYFALL_BULK_API, timeout=REQUEST_TIMEOUT)
+    response = requests.get(SCRYFALL_BULK_API, headers=SCRYFALL_HEADERS, timeout=REQUEST_TIMEOUT)
     response.raise_for_status()
 
     data = response.json()
@@ -64,7 +66,7 @@ def get_bulk_data_url() -> str:
 def download_bulk_data(url: str) -> list[dict]:
     """Download and parse the bulk card data."""
     print(f"Downloading bulk card data from {url}...")
-    response = requests.get(url, timeout=120, stream=True)
+    response = requests.get(url, headers=SCRYFALL_HEADERS, timeout=120, stream=True)
     response.raise_for_status()
 
     # Parse JSON
@@ -116,7 +118,7 @@ def get_image_uri(card: dict, size: str) -> Optional[str]:
 def download_image(url: str) -> Optional[bytes]:
     """Download an image from a URL."""
     try:
-        response = requests.get(url, timeout=REQUEST_TIMEOUT)
+        response = requests.get(url, headers=SCRYFALL_HEADERS, timeout=REQUEST_TIMEOUT)
         response.raise_for_status()
         return response.content
     except requests.RequestException as e:

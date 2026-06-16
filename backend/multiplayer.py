@@ -480,6 +480,33 @@ def _find_authorized_player(room: dict, player_id: str) -> dict:
     return seat
 
 
+def _new_auth_token() -> str:
+    return secrets.token_urlsafe(24)
+
+
+def _authenticate(room: dict, player_id: str, auth_token: Optional[str]) -> dict:
+    """Authorize a state-changing request.
+
+    `player_id` is a *public* engine identity: it is embedded in every player's
+    board view (so opponents can render the table) and in room detail. It must
+    therefore never be the auth secret. The secret is the seat's `auth_token`,
+    returned only to the seat owner at join/create time.
+
+    A seat that carries an `auth_token` (every seat created after this change)
+    requires a constant-time match. Seats with no token are legacy/transitional
+    (e.g. pre-existing rooms, organizer-seeded event matches) and remain
+    player_id-only — they keep working but are not protected. They migrate to the
+    secure path the next time their owner joins.
+    """
+    seat = _find_player(room, player_id)
+    _ensure_not_room_banned(room, player_id=player_id, player_name=seat.get("name"))
+    expected = seat.get("auth_token")
+    if expected:
+        if not auth_token or not secrets.compare_digest(str(auth_token), str(expected)):
+            raise HTTPException(status_code=403, detail="Invalid or missing player credential")
+    return seat
+
+
 def _add_chat(room: dict, player_name: str, message: str, *, system: bool = False) -> None:
     room["chat"].append(
         {
@@ -1292,6 +1319,10 @@ class RoomDetail(RoomSummary):
 class RoomWithPlayer(BaseModel):
     room: RoomDetail
     player_id: str
+    # Secret per-seat credential. `player_id` is a public engine identity that
+    # appears in every player's board view, so it cannot also be the auth secret.
+    # Clients must send this token to act; it is returned only to the seat owner.
+    auth_token: str = ""
 
 
 class RoomWithSpectator(BaseModel):
@@ -1321,6 +1352,7 @@ class SpectateRoomRequest(BaseModel):
 
 class RoomSettingsRequest(BaseModel):
     player_id: str
+    auth_token: Optional[str] = None
     spectators_allowed: Optional[bool] = None
     spectator_delay_seconds: Optional[int] = Field(None, ge=0, le=600)
     scheduled_for: Optional[str] = Field(None, max_length=64)
@@ -1329,6 +1361,7 @@ class RoomSettingsRequest(BaseModel):
 
 class SeatUpdateRequest(BaseModel):
     player_id: str
+    auth_token: Optional[str] = None
     ready: bool
     deck_name: Optional[str] = Field(None, max_length=80)
     commander: Optional[str] = Field(None, max_length=80)
@@ -1337,15 +1370,18 @@ class SeatUpdateRequest(BaseModel):
 
 class ChatRequest(BaseModel):
     player_id: str
+    auth_token: Optional[str] = None
     message: str = Field(..., min_length=1, max_length=500)
 
 
 class PlayerActionRequest(BaseModel):
     player_id: str
+    auth_token: Optional[str] = None
 
 
 class GameActionRequest(BaseModel):
     player_id: str
+    auth_token: Optional[str] = None
     action: GameAction
     amount: int = Field(1, ge=1, le=99)
     phase: Optional[GamePhase] = None
@@ -1360,16 +1396,19 @@ class GameActionRequest(BaseModel):
 
 class SubmitRealGameActionRequest(BaseModel):
     player_id: str
+    auth_token: Optional[str] = None
     action: dict[str, Any]
     view_revision: Optional[int] = Field(None, ge=0)
 
 
 class RealGameAuthorityRequest(BaseModel):
     player_id: str
+    auth_token: Optional[str] = None
 
 
 class RealGameSnapshotRequest(BaseModel):
     player_id: str
+    auth_token: Optional[str] = None
     revision: int = Field(..., ge=0)
     views: dict[str, dict[str, Any]] = Field(default_factory=dict)
     engine_state: Optional[dict[str, Any]] = None
@@ -1380,6 +1419,7 @@ class RealGameSnapshotRequest(BaseModel):
 
 class ReplayAnnotationRequest(BaseModel):
     player_id: Optional[str] = None
+    auth_token: Optional[str] = None
     display_name: Optional[str] = Field(None, max_length=40)
     event_id: Optional[str] = Field(None, max_length=96)
     message: str = Field(..., min_length=1, max_length=500)
@@ -2582,6 +2622,8 @@ def _event_create_match_room(event: dict, match: dict) -> dict:
     player2_name = _event_player_name(event, match["player2_id"]) or "Player 2"
     host_id = secrets.token_urlsafe(18)
     guest_id = secrets.token_urlsafe(18)
+    host_token = _new_auth_token()
+    guest_token = _new_auth_token()
     room_id = _make_room_id()
     room = {
         "id": room_id,
@@ -2604,10 +2646,10 @@ def _event_create_match_room(event: dict, match: dict) -> dict:
         },
         "spectators": [],
         "seats": [
-            {"seat": 1, "player_id": host_id, "name": player1_name, "ready": False, "deck_name": None, "commander": None, "deck": None, "disconnected": False},
-            {"seat": 2, "player_id": guest_id, "name": player2_name, "ready": False, "deck_name": None, "commander": None, "deck": None, "disconnected": False},
-            {"seat": 3, "player_id": None, "name": None, "ready": False, "deck_name": None, "commander": None, "deck": None, "disconnected": False},
-            {"seat": 4, "player_id": None, "name": None, "ready": False, "deck_name": None, "commander": None, "deck": None, "disconnected": False},
+            {"seat": 1, "player_id": host_id, "auth_token": host_token, "name": player1_name, "ready": False, "deck_name": None, "commander": None, "deck": None, "disconnected": False},
+            {"seat": 2, "player_id": guest_id, "auth_token": guest_token, "name": player2_name, "ready": False, "deck_name": None, "commander": None, "deck": None, "disconnected": False},
+            {"seat": 3, "player_id": None, "auth_token": None, "name": None, "ready": False, "deck_name": None, "commander": None, "deck": None, "disconnected": False},
+            {"seat": 4, "player_id": None, "auth_token": None, "name": None, "ready": False, "deck_name": None, "commander": None, "deck": None, "disconnected": False},
         ],
         "chat": [],
     }
@@ -2616,6 +2658,8 @@ def _event_create_match_room(event: dict, match: dict) -> dict:
     match["room_id"] = room_id
     match["host_player_id"] = host_id
     match["guest_player_id"] = guest_id
+    match["host_auth_token"] = host_token
+    match["guest_auth_token"] = guest_token
     return room
 
 
@@ -2952,6 +2996,8 @@ async def create_event_match_room(event_id: str, match_id: str, req: OrganizerEv
             "room_id": room["id"],
             "host_player_id": match.get("host_player_id"),
             "guest_player_id": match.get("guest_player_id"),
+            "host_auth_token": match.get("host_auth_token"),
+            "guest_auth_token": match.get("guest_auth_token"),
         }
 
 
@@ -2989,6 +3035,7 @@ async def create_room(req: CreateRoomRequest):
     tags = _clean_tags(req.tags)
     password_salt, password_hash = _password_record(req.password)
     player_id = secrets.token_urlsafe(18)
+    auth_token = _new_auth_token()
 
     with _lock:
         room_id = _make_room_id()
@@ -3015,6 +3062,7 @@ async def create_room(req: CreateRoomRequest):
                 {
                     "seat": index + 1,
                     "player_id": player_id if index == 0 else None,
+                    "auth_token": auth_token if index == 0 else None,
                     "name": host_name if index == 0 else None,
                     "ready": False,
                     "deck_name": None,
@@ -3029,7 +3077,7 @@ async def create_room(req: CreateRoomRequest):
         _add_chat(room, "System", f"{host_name} created the room.", system=True)
         _rooms[room_id] = room
         _save_rooms_locked()
-        return RoomWithPlayer(room=_room_detail(room), player_id=player_id)
+        return RoomWithPlayer(room=_room_detail(room), player_id=player_id, auth_token=auth_token)
 
 
 @router.get("/rooms/{room_id}", response_model=RoomDetail)
@@ -3049,10 +3097,10 @@ async def get_room(room_id: str):
 
 
 @router.get("/rooms/{room_id}/engine-preflight", response_model=EnginePreflightResponse)
-async def get_engine_preflight(room_id: str, player_id: str = Query(...)):
+async def get_engine_preflight(room_id: str, player_id: str = Query(...), auth_token: Optional[str] = Query(None)):
     with _lock:
         room = _find_room(room_id)
-        _find_authorized_player(room, player_id)
+        _authenticate(room, player_id, auth_token)
         return _engine_preflight(room)
 
 
@@ -3102,7 +3150,7 @@ async def add_room_replay_annotation(room_id: str, req: ReplayAnnotationRequest)
         if req.event_id and not any(event.get("id") == req.event_id for event in game.get("replay_events", [])):
             raise HTTPException(status_code=404, detail="Replay event not found")
         if req.player_id:
-            author = _find_player(room, req.player_id)["name"]
+            author = _authenticate(room, req.player_id, req.auth_token)["name"]
         else:
             author = _clean_public_text(req.display_name or "Replay Viewer", field_name="Annotation name", max_length=40, min_length=2)
         message = CONTROL_CHARS_RE.sub("", req.message)
@@ -3143,19 +3191,30 @@ async def join_room(room_id: str, req: JoinRoomRequest):
         if existing_seat:
             _ensure_not_room_banned(room, player_id=existing_seat.get("player_id"), player_name=player_name)
             existing_seat["disconnected"] = False
+            # Reconnecting owner reclaims their seat. Ensure the seat carries a
+            # secret token (migrates legacy tokenless seats) and hand it back so
+            # the client can authenticate subsequent actions.
+            if not existing_seat.get("auth_token"):
+                existing_seat["auth_token"] = _new_auth_token()
             _add_chat(room, "System", f"{player_name} rejoined the room.", system=True)
             _ensure_real_game_authority_locked(room)
             _save_rooms_locked()
-            return RoomWithPlayer(room=_room_detail(room), player_id=existing_seat["player_id"])
+            return RoomWithPlayer(
+                room=_room_detail(room),
+                player_id=existing_seat["player_id"],
+                auth_token=existing_seat["auth_token"],
+            )
         if room["status"] != "waiting":
             raise HTTPException(status_code=409, detail="Room has already started. Rejoin with an existing seat name.")
         open_seat = next((seat for seat in room["seats"] if not seat.get("player_id")), None)
         if not open_seat:
             raise HTTPException(status_code=409, detail="Room is full")
         player_id = secrets.token_urlsafe(18)
+        auth_token = _new_auth_token()
         open_seat.update(
             {
                 "player_id": player_id,
+                "auth_token": auth_token,
                 "name": player_name,
                 "ready": False,
                 "deck_name": None,
@@ -3166,7 +3225,7 @@ async def join_room(room_id: str, req: JoinRoomRequest):
         )
         _add_chat(room, "System", f"{player_name} joined the room.", system=True)
         _save_rooms_locked()
-        return RoomWithPlayer(room=_room_detail(room), player_id=player_id)
+        return RoomWithPlayer(room=_room_detail(room), player_id=player_id, auth_token=auth_token)
 
 
 @router.post("/rooms/{room_id}/spectate", response_model=RoomWithSpectator)
@@ -3201,7 +3260,7 @@ async def spectate_room(room_id: str, req: SpectateRoomRequest):
 async def update_room_settings(room_id: str, req: RoomSettingsRequest):
     with _lock:
         room = _find_room(room_id)
-        _find_authorized_player(room, req.player_id)
+        _authenticate(room, req.player_id, req.auth_token)
         if req.player_id != room["host_player_id"]:
             raise HTTPException(status_code=403, detail="Only the host can update room settings")
         settings = _settings_for_room(room)
@@ -3234,7 +3293,7 @@ async def update_seat(room_id: str, req: SeatUpdateRequest):
         room = _find_room(room_id)
         if room["status"] != "waiting":
             raise HTTPException(status_code=409, detail="Room has already started")
-        seat = _find_authorized_player(room, req.player_id)
+        seat = _authenticate(room, req.player_id, req.auth_token)
         seat["ready"] = req.ready
         seat["deck_name"] = _clean_name(req.deck_name, field_name="Deck name", max_length=80) if req.deck_name else None
         seat["commander"] = _clean_name(req.commander, field_name="Commander", max_length=80) if req.commander else None
@@ -3265,7 +3324,7 @@ async def send_chat(room_id: str, req: ChatRequest):
     message = _clean_chat_message(req.message)
     with _lock:
         room = _find_room(room_id)
-        seat = _find_authorized_player(room, req.player_id)
+        seat = _authenticate(room, req.player_id, req.auth_token)
         _ensure_not_room_muted(room, req.player_id)
         _add_chat(room, seat["name"], message)
         _save_rooms_locked()
@@ -3276,7 +3335,7 @@ async def send_chat(room_id: str, req: ChatRequest):
 async def start_room(room_id: str, req: PlayerActionRequest):
     with _lock:
         room = _find_room(room_id)
-        _find_authorized_player(room, req.player_id)
+        _authenticate(room, req.player_id, req.auth_token)
         if req.player_id != room["host_player_id"]:
             raise HTTPException(status_code=403, detail="Only the host can start the room")
         occupied = _occupied_seats(room)
@@ -3295,7 +3354,7 @@ async def start_room(room_id: str, req: PlayerActionRequest):
 async def rematch_room(room_id: str, req: PlayerActionRequest):
     with _lock:
         room = _find_room(room_id)
-        _find_authorized_player(room, req.player_id)
+        _authenticate(room, req.player_id, req.auth_token)
         if req.player_id != room["host_player_id"]:
             raise HTTPException(status_code=403, detail="Only the host can start a new shared table")
         occupied = _occupied_seats(room)
@@ -3313,7 +3372,7 @@ async def rematch_room(room_id: str, req: PlayerActionRequest):
 async def start_real_game(room_id: str, req: PlayerActionRequest):
     with _lock:
         room = _find_room(room_id)
-        _find_authorized_player(room, req.player_id)
+        _authenticate(room, req.player_id, req.auth_token)
         if req.player_id != room["host_player_id"]:
             raise HTTPException(status_code=403, detail="Only the host can start the real engine session")
         occupied = _occupied_seats(room)
@@ -3348,13 +3407,13 @@ async def start_real_game(room_id: str, req: PlayerActionRequest):
 
 
 @router.get("/rooms/{room_id}/real-game/start-payload", response_model=StartRealGamePayload)
-async def get_real_game_start_payload(room_id: str, player_id: str = Query(...)):
+async def get_real_game_start_payload(room_id: str, player_id: str = Query(...), auth_token: Optional[str] = Query(None)):
     with _lock:
         room = _find_room(room_id)
         real_game = room.get("real_game")
         if not real_game:
             raise HTTPException(status_code=409, detail="The real engine session has not started")
-        _find_authorized_player(room, player_id)
+        _authenticate(room, player_id, auth_token)
         _ensure_real_game_authority_locked(room)
         if player_id != real_game["authority_player_id"]:
             raise HTTPException(status_code=403, detail="Only the authority player can fetch the full start payload")
@@ -3367,13 +3426,13 @@ async def get_real_game_start_payload(room_id: str, player_id: str = Query(...))
 
 
 @router.get("/rooms/{room_id}/real-game/actions", response_model=list[PendingRealGameAction])
-async def get_pending_real_game_actions(room_id: str, player_id: str = Query(...)):
+async def get_pending_real_game_actions(room_id: str, player_id: str = Query(...), auth_token: Optional[str] = Query(None)):
     with _lock:
         room = _find_room(room_id)
         real_game = room.get("real_game")
         if not real_game:
             raise HTTPException(status_code=409, detail="The real engine session has not started")
-        _find_authorized_player(room, player_id)
+        _authenticate(room, player_id, auth_token)
         _ensure_real_game_authority_locked(room)
         if player_id != real_game["authority_player_id"]:
             raise HTTPException(status_code=403, detail="Only the authority player can fetch pending actions")
@@ -3398,7 +3457,7 @@ async def submit_real_game_action(room_id: str, req: SubmitRealGameActionRequest
         if not real_game:
             raise HTTPException(status_code=409, detail="The real engine session has not started")
         _ensure_real_game_authority_locked(room)
-        seat = _find_authorized_player(room, req.player_id)
+        seat = _authenticate(room, req.player_id, req.auth_token)
         clean_action = _clean_real_game_action(req.action)
         kind = clean_action["kind"]
         pending = real_game.setdefault("pending_actions", [])
@@ -3432,11 +3491,25 @@ async def publish_real_game_snapshot(room_id: str, req: RealGameSnapshotRequest)
         real_game = room.get("real_game")
         if not real_game:
             raise HTTPException(status_code=409, detail="The real engine session has not started")
-        _find_authorized_player(room, req.player_id)
+        _authenticate(room, req.player_id, req.auth_token)
         _ensure_real_game_authority_locked(room)
         if req.player_id != real_game["authority_player_id"]:
             raise HTTPException(status_code=403, detail="Only the authority player can publish engine snapshots")
         _touch_real_authority(room, req.player_id)
+        # Integrity invariants that hold regardless of the engine internals, so
+        # they cannot false-positive on legal play but still bound how far a
+        # compromised/cheating authority can distort the shared record:
+        #   1. Revisions never go backwards — blocks replaying or rewinding the
+        #      table to an earlier (e.g. pre-removal) state. Equal is allowed so
+        #      an idempotent re-publish after a transient failure still works.
+        if req.revision < real_game.get("revision", 0):
+            raise HTTPException(status_code=409, detail="Snapshot revision is behind the table; refusing to rewind state")
+        #   2. Views may only describe players actually seated in this room — an
+        #      authority cannot fabricate phantom players or relabel seats.
+        seated_ids = {seat["player_id"] for seat in _occupied_seats(room)}
+        stray_view_ids = {str(pid) for pid in (req.views or {}).keys()} - seated_ids
+        if stray_view_ids:
+            raise HTTPException(status_code=400, detail="Snapshot views reference players who are not seated in this room")
         _safe_json_size(req.views, max_bytes=MAX_REAL_GAME_VIEW_BYTES, field_name="Real engine views")
         _reject_links_in_json(req.views, field_name="Real engine views", max_depth=MAX_REAL_GAME_VIEW_DEPTH)
         if req.engine_state is not None:
@@ -3491,13 +3564,13 @@ async def publish_real_game_snapshot(room_id: str, req: RealGameSnapshotRequest)
 
 
 @router.get("/rooms/{room_id}/real-game/view", response_model=RealGameViewResponse)
-async def get_real_game_view(room_id: str, player_id: str = Query(...)):
+async def get_real_game_view(room_id: str, player_id: str = Query(...), auth_token: Optional[str] = Query(None)):
     with _lock:
         room = _find_room(room_id)
         real_game = room.get("real_game")
         if not real_game:
             raise HTTPException(status_code=409, detail="The real engine session has not started")
-        _find_authorized_player(room, player_id)
+        _authenticate(room, player_id, auth_token)
         if player_id == real_game.get("authority_player_id"):
             _touch_real_authority(room, player_id)
         else:
@@ -3570,7 +3643,7 @@ async def apply_game_action(room_id: str, req: GameActionRequest):
         game = room.get("game")
         if not game:
             raise HTTPException(status_code=409, detail="The shared tracker has not started")
-        _find_authorized_player(room, req.player_id)
+        _authenticate(room, req.player_id, req.auth_token)
         if game["status"] == "finished" and req.action != "undo":
             raise HTTPException(status_code=409, detail="The shared game has finished")
         player = _find_game_player(room, req.player_id)
@@ -3819,7 +3892,7 @@ async def apply_game_action(room_id: str, req: GameActionRequest):
 async def leave_room(room_id: str, req: PlayerActionRequest):
     with _lock:
         room = _find_room(room_id)
-        seat = _find_authorized_player(room, req.player_id)
+        seat = _authenticate(room, req.player_id, req.auth_token)
         player_name = seat["name"]
         if room["status"] == "in_game":
             seat["disconnected"] = True
@@ -3827,7 +3900,7 @@ async def leave_room(room_id: str, req: PlayerActionRequest):
             _ensure_real_game_authority_locked(room)
             _save_rooms_locked()
             return _room_detail(room)
-        seat.update({"player_id": None, "name": None, "ready": False, "deck_name": None, "commander": None, "deck": None, "disconnected": False})
+        seat.update({"player_id": None, "auth_token": None, "name": None, "ready": False, "deck_name": None, "commander": None, "deck": None, "disconnected": False})
         occupied = _occupied_seats(room)
         if not occupied:
             room["status"] = "closed"
@@ -3843,7 +3916,7 @@ async def leave_room(room_id: str, req: PlayerActionRequest):
 async def close_room(room_id: str, req: PlayerActionRequest):
     with _lock:
         room = _find_room(room_id)
-        _find_authorized_player(room, req.player_id)
+        _authenticate(room, req.player_id, req.auth_token)
         if req.player_id != room["host_player_id"]:
             raise HTTPException(status_code=403, detail="Only the host can close the room")
         room["status"] = "closed"

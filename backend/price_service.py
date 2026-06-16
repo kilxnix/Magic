@@ -7,15 +7,27 @@ Supports:
 
 import json
 import time
+import logging
 import requests
 from typing import Dict, Optional
 from pathlib import Path
 from datetime import datetime
 from urllib.parse import quote_plus
 
+logger = logging.getLogger(__name__)
+
 # API URLs
 SCRYFALL_NAMED_URL = "https://api.scryfall.com/cards/named"
 MTGJSON_PRICES_URL = "https://mtgjson.com/api/v5/AllPrices.json"
+
+# Scryfall now rejects requests that use the default ``python-requests`` (or an
+# empty) User-Agent with HTTP 400. Their API policy requires clients to send a
+# descriptive User-Agent and an Accept header, so set both on every request.
+# See https://scryfall.com/docs/api (Rate Limits & Good Citizenship).
+SCRYFALL_HEADERS = {
+    "User-Agent": "MagicBrains/1.0 (+https://deckreps.app)",
+    "Accept": "application/json;q=0.9,*/*;q=0.8",
+}
 
 # Cache paths
 PRICE_CACHE_PATH = Path(__file__).parent.parent / "data" / "price_cache.json"
@@ -124,6 +136,7 @@ def fetch_card_prices_scryfall(card_name: str, force_refresh: bool = False) -> D
         response = requests.get(
             SCRYFALL_NAMED_URL,
             params={"fuzzy": card_name},
+            headers=SCRYFALL_HEADERS,
             timeout=30
         )
         response.raise_for_status()
@@ -145,10 +158,18 @@ def fetch_card_prices_scryfall(card_name: str, force_refresh: bool = False) -> D
         return prices
 
     except requests.exceptions.HTTPError as e:
-        if e.response.status_code == 404:
+        status = getattr(e.response, "status_code", None)
+        if status == 404:
             # Card not found
             return {}
-        raise
+        # Any other HTTP error (e.g. Scryfall 400/403/429) must not take down the
+        # whole alternatives feature. Degrade gracefully to "no price data".
+        logger.warning("Scryfall price lookup failed for %r: HTTP %s", card_name, status)
+        return {}
+    except requests.exceptions.RequestException as e:
+        # Network/timeout errors are transient; degrade gracefully.
+        logger.warning("Scryfall price lookup error for %r: %s", card_name, e)
+        return {}
 
 
 def _save_scryfall_cache() -> None:

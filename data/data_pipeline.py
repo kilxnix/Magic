@@ -23,6 +23,7 @@ EMBEDDINGS_PATH = DATA_DIR / "card_embeddings.npy"
 EMBEDDINGS_META_PATH = DATA_DIR / "card_embeddings_meta.json"
 FAISS_INDEX_PATH = DATA_DIR / "card_index.faiss"
 PIPELINE_META_PATH = DATA_DIR / "pipeline_meta.json"
+FLAVOR_NAMES_JSON_PATH = DATA_DIR / "flavor_names.json"
 
 
 def _card_to_text(card: Dict) -> str:
@@ -202,6 +203,42 @@ class MTGDataPipeline:
         self._write_meta(draft_cards_extracted_at=datetime.now().isoformat(), draft_card_count=count)
         return DRAFT_CARDS_JSONL_PATH
 
+    def extract_flavor_names(self, force: bool = False) -> Path:
+        """Map alternate printing names (flavor names) to canonical card names.
+
+        Themed reprints (e.g. FINAL FANTASY: Through the Ages prints Lightning
+        Bolt as "Thrum of the Vestige") carry a printing-level flavor_name that
+        deck builders export instead of the real name. Flavor names only exist
+        in the default-cards bulk (oracle cards are canonical-only), so this
+        scans printings and writes a flavor -> canonical name map.
+        """
+        if FLAVOR_NAMES_JSON_PATH.exists() and not force:
+            return FLAVOR_NAMES_JSON_PATH
+        source_path = self.download_default_cards(force=False)
+        mapping: Dict[str, str] = {}
+        for card in iter_cards_from_bulk(source_path):
+            if card.get("lang") != "en":
+                continue
+            name = card.get("name")
+            if not name:
+                continue
+            flavor = card.get("flavor_name")
+            if flavor and flavor != name:
+                mapping[flavor] = name
+            for face in card.get("card_faces") or []:
+                face_flavor = face.get("flavor_name")
+                if face_flavor and face_flavor != face.get("name"):
+                    # Map face flavor names to the full canonical card name so
+                    # lookups resolve to a real card_db entry.
+                    mapping.setdefault(face_flavor, name)
+        with open(FLAVOR_NAMES_JSON_PATH, "w", encoding="utf-8") as f:
+            json.dump(mapping, f, ensure_ascii=False, sort_keys=True)
+        self._write_meta(
+            flavor_names_extracted_at=datetime.now().isoformat(),
+            flavor_name_count=len(mapping),
+        )
+        return FLAVOR_NAMES_JSON_PATH
+
     def refresh_prices(self, force: bool = True) -> int:
         """Refresh current Scryfall price fields while preserving card order.
 
@@ -329,6 +366,11 @@ def _cmd_extract_draft(args: argparse.Namespace) -> None:
     MTGDataPipeline().extract_draft_cards(force=args.force)
 
 
+def _cmd_extract_flavors(args: argparse.Namespace) -> None:
+    path = MTGDataPipeline().extract_flavor_names(force=args.force)
+    print(f"Flavor name map written to {path}")
+
+
 def _cmd_embed(args: argparse.Namespace) -> None:
     MTGDataPipeline().build_embeddings(batch_size=args.batch_size, force=args.force)
 
@@ -382,6 +424,10 @@ def main() -> None:
     draft_p = sub.add_parser("extract-draft", help="extract set-printing data for draft pools")
     draft_p.add_argument("--force", action="store_true")
     draft_p.set_defaults(func=_cmd_extract_draft)
+
+    flavors_p = sub.add_parser("extract-flavors", help="extract flavor-name -> canonical-name map")
+    flavors_p.add_argument("--force", action="store_true")
+    flavors_p.set_defaults(func=_cmd_extract_flavors)
 
     embed_p = sub.add_parser("embed", help="build embeddings")
     embed_p.add_argument("--force", action="store_true")

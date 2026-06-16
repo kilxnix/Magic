@@ -35,7 +35,9 @@ mtg_data/*
 !mtg_data/card_embeddings.npy
 !mtg_data/card_embeddings_meta.json
 !mtg_data/card_index.faiss
+!mtg_data/card_support.json
 !mtg_data/draft_cards.jsonl
+!mtg_data/flavor_names.json
 
 models
 final-model-*

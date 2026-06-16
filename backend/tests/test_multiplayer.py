@@ -7,12 +7,53 @@ from fastapi.testclient import TestClient
 from backend import multiplayer
 
 
+class _AuthInjectingClient(TestClient):
+    """Test client that mirrors the real frontend: it remembers each seat's
+    secret ``auth_token`` (returned by create/join) and automatically attaches it
+    to subsequent requests — in the JSON body for POSTs and as a query param for
+    GETs — keyed by ``player_id``. This lets the existing tests keep passing only
+    ``player_id`` while still exercising the credential enforcement."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._auth_tokens: dict[str, str] = {}
+
+    def _remember(self, response):
+        try:
+            data = response.json()
+        except Exception:
+            return
+        if not isinstance(data, dict):
+            return
+        if data.get("player_id") and data.get("auth_token"):
+            self._auth_tokens[data["player_id"]] = data["auth_token"]
+        # Event-match rooms hand the organizer both seats' ids + tokens at once.
+        for id_key, token_key in (("host_player_id", "host_auth_token"), ("guest_player_id", "guest_auth_token")):
+            if data.get(id_key) and data.get(token_key):
+                self._auth_tokens[data[id_key]] = data[token_key]
+
+    def request(self, method, url, *args, **kwargs):  # type: ignore[override]
+        body = kwargs.get("json")
+        if isinstance(body, dict) and body.get("player_id") and "auth_token" not in body:
+            token = self._auth_tokens.get(body["player_id"])
+            if token:
+                kwargs["json"] = {**body, "auth_token": token}
+        params = kwargs.get("params")
+        if isinstance(params, dict) and params.get("player_id") and "auth_token" not in params:
+            token = self._auth_tokens.get(params["player_id"])
+            if token:
+                kwargs["params"] = {**params, "auth_token": token}
+        response = super().request(method, url, *args, **kwargs)
+        self._remember(response)
+        return response
+
+
 def make_client(monkeypatch):
     multiplayer._rooms.clear()
     monkeypatch.setattr(multiplayer, "_save_rooms_locked", lambda: None)
     app = FastAPI()
     app.include_router(multiplayer.router)
-    return TestClient(app)
+    return _AuthInjectingClient(app)
 
 
 def test_shared_game_starts_and_syncs_actions(monkeypatch):
@@ -642,6 +683,102 @@ def test_real_engine_session_routes_actions_and_scoped_views(monkeypatch):
     )
     assert duplicate_action.status_code == 409
     assert duplicate_action.json()["detail"] == "You already have a pending real engine action"
+
+
+def test_turn_injection_requires_secret_auth_token(monkeypatch):
+    """An attacker who learns a victim's public player_id (it appears in every
+    player's board view and in room detail) must NOT be able to act as them.
+    Only the secret auth_token, returned solely to the seat owner, authorizes
+    actions — this is the core anti-turn-injection guarantee."""
+    client = make_client(monkeypatch)
+
+    created = client.post(
+        "/api/multiplayer/rooms",
+        json={"name": "Locked Down", "host_name": "Authority", "tags": [], "is_private": False, "tier": "free"},
+    ).json()
+    room_id = created["room"]["id"]
+    host_id = created["player_id"]
+    host_token = created["auth_token"]
+    assert host_token  # owner receives a secret credential
+    guest = client.post(f"/api/multiplayer/rooms/{room_id}/join", json={"player_name": "Guest"}).json()
+    guest_id = guest["player_id"]
+    assert guest["auth_token"] and guest["auth_token"] != host_token
+
+    host_deck = {"commander": "Goreclaw, Terror of Qal Sisma", "list": ["Forest"] * 99, "colors": ["G"]}
+    guest_deck = {"commander": "Talrand, Sky Summoner", "list": ["Island"] * 99, "colors": ["U"]}
+    client.post(
+        f"/api/multiplayer/rooms/{room_id}/seat",
+        json={"player_id": host_id, "ready": True, "deck_name": "Stompy", "commander": host_deck["commander"], "deck": host_deck},
+    )
+    client.post(
+        f"/api/multiplayer/rooms/{room_id}/seat",
+        json={"player_id": guest_id, "ready": True, "deck_name": "Spells", "commander": guest_deck["commander"], "deck": guest_deck},
+    )
+    started = client.post(f"/api/multiplayer/rooms/{room_id}/start-real-game", json={"player_id": host_id})
+    assert started.status_code == 200
+
+    # The public player_id IS exposed to everyone (it keys the board views) —
+    # confirm it leaks, then prove that leak alone buys an attacker nothing.
+    detail = client.get(f"/api/multiplayer/rooms/{room_id}").json()
+    leaked_ids = {player["id"] for player in detail["real_game"]["players"]}
+    assert guest_id in leaked_ids and host_id in leaked_ids
+
+    forged = "forged-token-aaaaaaaaaaaaaaaaaaaa"
+
+    # 1. Cannot submit an action impersonating the guest with a wrong token.
+    impersonate = client.post(
+        f"/api/multiplayer/rooms/{room_id}/real-game/action",
+        json={"player_id": guest_id, "auth_token": forged, "action": {"kind": "pass_priority"}},
+    )
+    assert impersonate.status_code == 403
+
+    # 2. Cannot submit at all with no token once the seat is protected.
+    missing = client.post(
+        f"/api/multiplayer/rooms/{room_id}/real-game/action",
+        json={"player_id": guest_id, "auth_token": "", "action": {"kind": "pass_priority"}},
+    )
+    assert missing.status_code == 403
+
+    # 3. Cannot hijack the authority to publish an arbitrary engine snapshot
+    #    (the catastrophic "push any game state" vector).
+    hijack = client.post(
+        f"/api/multiplayer/rooms/{room_id}/real-game/snapshot",
+        json={"player_id": host_id, "auth_token": forged, "revision": 99, "views": {}},
+    )
+    assert hijack.status_code == 403
+
+    # 4. Cannot fetch the authority-only pending action queue / full start payload.
+    peek_actions = client.get(
+        f"/api/multiplayer/rooms/{room_id}/real-game/actions",
+        params={"player_id": host_id, "auth_token": forged},
+    )
+    assert peek_actions.status_code == 403
+
+    # 5. The legitimate owner, with the correct token, still acts normally.
+    legit = client.post(
+        f"/api/multiplayer/rooms/{room_id}/real-game/action",
+        json={"player_id": guest_id, "auth_token": guest["auth_token"], "action": {"kind": "pass_priority"}},
+    )
+    assert legit.status_code == 200
+
+    # 6. Snapshot integrity invariants bound even a cheating authority:
+    #    a valid snapshot is accepted, but the table cannot be rewound to an
+    #    earlier revision, nor can phantom (unseated) players be fabricated.
+    good_snapshot = client.post(
+        f"/api/multiplayer/rooms/{room_id}/real-game/snapshot",
+        json={"player_id": host_id, "revision": 5, "views": {host_id: {}, guest_id: {}}},
+    )
+    assert good_snapshot.status_code == 200
+    rewind = client.post(
+        f"/api/multiplayer/rooms/{room_id}/real-game/snapshot",
+        json={"player_id": host_id, "revision": 4, "views": {host_id: {}}},
+    )
+    assert rewind.status_code == 409
+    phantom = client.post(
+        f"/api/multiplayer/rooms/{room_id}/real-game/snapshot",
+        json={"player_id": host_id, "revision": 6, "views": {"ghost-player": {}}},
+    )
+    assert phantom.status_code == 400
 
 
 def test_real_engine_authority_fails_over_when_authority_disconnects(monkeypatch):

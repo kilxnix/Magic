@@ -120,7 +120,7 @@ class DeckGenerator:
         if CARDS_JSONL_PATH.exists():
             with open(CARDS_JSONL_PATH, 'r', encoding='utf-8') as f:
                 self.cards = [json.loads(line) for line in f]
-            self.card_by_name = {c['name']: c for c in self.cards}
+            self.card_by_name = self._build_card_by_name(self.cards)
         else:
             raise FileNotFoundError(f"Cards file not found: {CARDS_JSONL_PATH}")
 
@@ -410,10 +410,35 @@ class DeckGenerator:
                 valid.append(card)
         return valid
 
-    def _is_token_card(self, card: Dict) -> bool:
+    @staticmethod
+    def _is_token_card(card: Dict) -> bool:
         """Check if a card is a token (not a real card that belongs in a deck)."""
         type_line = (card.get('type_line') or '').lower()
-        return 'token' in type_line
+        return 'token' in type_line or (card.get('layout') == 'token')
+
+    @classmethod
+    def _build_card_by_name(cls, cards: List[Dict]) -> Dict[str, Dict]:
+        """Build the name -> card index, preferring real/playable printings.
+
+        Some names collide with a token printing (e.g. "Llanowar Elves" exists
+        as both the real ``{G}`` creature and a ``layout=token`` entry with an
+        empty mana cost). A naive ``{c['name']: c}`` comprehension keeps the LAST
+        row, so a trailing token printing would shadow the real card — it would
+        then be served to the game engine via /api/cards-batch and load as a
+        free-to-cast token, desyncing game state. Always let a non-token printing
+        win over a token one regardless of file order.
+        """
+        index: Dict[str, Dict] = {}
+        for card in cards:
+            name = card.get('name')
+            if not name:
+                continue
+            existing = index.get(name)
+            if existing is None:
+                index[name] = card
+            elif cls._is_token_card(existing) and not cls._is_token_card(card):
+                index[name] = card
+        return index
 
     def _is_land(self, card: Dict) -> bool:
         """Check if a card is a land."""

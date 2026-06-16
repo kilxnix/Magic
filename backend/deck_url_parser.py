@@ -1,7 +1,9 @@
 """Deck URL parser — fetch decklists from Moxfield, Archidekt, TappedOut, MTGGoldfish."""
 
 import logging
+import random
 import re
+import time
 from html import unescape
 from html.parser import HTMLParser
 from typing import Optional
@@ -227,6 +229,17 @@ def parse_decklist_text(text: str) -> dict:
 
 _REQUEST_TIMEOUT = 15  # seconds
 
+# Several deck sites (and APIs like Scryfall) reject the default ``python-requests``
+# User-Agent with HTTP 400/403. Always present a real browser User-Agent so deck
+# imports keep working even when a host tightens its bot filtering.
+_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+    ),
+    "Accept": "application/json, text/plain, text/html;q=0.9, */*;q=0.8",
+}
+
 
 def _safe_quantity(value) -> int:
     try:
@@ -292,17 +305,51 @@ def _find_mtggoldfish_text_download_url(html: str, page_url: str) -> Optional[st
     return urljoin(page_url, hrefs[0])
 
 
-def fetch_moxfield(deck_id: str) -> dict:
-    """Fetch a deck from Moxfield's public API using cloudscraper to bypass Cloudflare.
+def _moxfield_api_get(api_url: str):
+    """Fetch a Moxfield API URL, retrying through Cloudflare's *intermittent*
+    managed-challenge 403s.
 
-    Moxfield's API is behind Cloudflare bot protection. We use cloudscraper
-    which solves JS challenges automatically.
+    Moxfield sits behind Cloudflare, which sporadically challenges requests from
+    datacenter IPs (the same VPS IP gets a 403 on one request and a 200 on the
+    next). A single attempt therefore fails unpredictably. We retry several times
+    with backoff + jitter, alternating a fresh cloudscraper session (solves JS
+    challenges) with a plain browser-User-Agent request — both succeed when the
+    IP isn't currently being challenged. Returns the first non-403 Response, or
+    the last 403 Response if every attempt is blocked.
+    """
+    def _via_cloudscraper():
+        return cloudscraper.create_scraper().get(api_url, timeout=_REQUEST_TIMEOUT)
+
+    def _via_requests():
+        return requests.get(api_url, headers=_HEADERS, timeout=_REQUEST_TIMEOUT)
+
+    attempts = [_via_cloudscraper, _via_requests, _via_cloudscraper, _via_requests, _via_cloudscraper]
+    last_resp = None
+    for index, fetch in enumerate(attempts):
+        try:
+            resp = fetch()
+        except Exception as exc:  # network blip — treat like a retryable failure
+            logger.info("Moxfield fetch attempt %d errored: %s", index + 1, exc)
+            resp = None
+        if resp is not None and resp.status_code != 403:
+            return resp
+        last_resp = resp if resp is not None else last_resp
+        if index < len(attempts) - 1:
+            time.sleep(0.8 + index * 0.9 + random.uniform(0.0, 0.7))
+    return last_resp
+
+
+def fetch_moxfield(deck_id: str) -> dict:
+    """Fetch a deck from Moxfield's public API.
+
+    Moxfield's API is behind Cloudflare bot protection that intermittently
+    challenges datacenter IPs, so we retry through transient 403s (see
+    ``_moxfield_api_get``) before giving up.
     """
     api_url = f"https://api2.moxfield.com/v3/decks/all/{deck_id}"
-    scraper = cloudscraper.create_scraper()
-    resp = scraper.get(api_url, timeout=_REQUEST_TIMEOUT)
+    resp = _moxfield_api_get(api_url)
 
-    if resp.status_code == 403:
+    if resp is None or resp.status_code == 403:
         raise ValueError(
             "Moxfield blocked this request (bot protection). "
             "Please use Moxfield's Export button to copy your decklist, "
@@ -342,7 +389,7 @@ def fetch_moxfield(deck_id: str) -> dict:
 def fetch_archidekt(deck_id: str) -> dict:
     """Fetch a deck from Archidekt's public API."""
     api_url = f"https://archidekt.com/api/decks/{deck_id}/"
-    resp = requests.get(api_url, timeout=_REQUEST_TIMEOUT)
+    resp = requests.get(api_url, headers=_HEADERS, timeout=_REQUEST_TIMEOUT)
     resp.raise_for_status()
     data = resp.json()
 
@@ -377,7 +424,7 @@ def fetch_archidekt(deck_id: str) -> dict:
 def fetch_tappedout(deck_id: str) -> dict:
     """Fetch a deck from TappedOut via text export."""
     export_url = f"https://tappedout.net/mtg-decks/{deck_id}/?fmt=txt"
-    resp = requests.get(export_url, timeout=_REQUEST_TIMEOUT)
+    resp = requests.get(export_url, headers=_HEADERS, timeout=_REQUEST_TIMEOUT)
     resp.raise_for_status()
     return parse_decklist_text(resp.text)
 
@@ -392,7 +439,7 @@ def _infer_mtggoldfish_commander(html: str) -> Optional[str]:
 
 def _mtggoldfish_download_url_from_archetype(deck_slug: str) -> tuple[str, Optional[str]]:
     archetype_url = f"https://www.mtggoldfish.com/archetype/{deck_slug}"
-    resp = requests.get(archetype_url, timeout=_REQUEST_TIMEOUT)
+    resp = requests.get(archetype_url, headers=_HEADERS, timeout=_REQUEST_TIMEOUT)
     resp.raise_for_status()
     download_url = _find_mtggoldfish_text_download_url(resp.text, archetype_url)
     if download_url is None:
@@ -407,7 +454,7 @@ def fetch_mtggoldfish(deck_id: str) -> dict:
         download_url, commander_hint = _mtggoldfish_download_url_from_archetype(deck_id)
     else:
         download_url = f"https://www.mtggoldfish.com/deck/download/{deck_id}"
-    resp = requests.get(download_url, timeout=_REQUEST_TIMEOUT)
+    resp = requests.get(download_url, headers=_HEADERS, timeout=_REQUEST_TIMEOUT)
     resp.raise_for_status()
     parsed = parse_decklist_text(resp.text)
 
@@ -417,7 +464,7 @@ def fetch_mtggoldfish(deck_id: str) -> dict:
     if not commander_hint and deck_id.isdigit():
         try:
             page_url = f"https://www.mtggoldfish.com/deck/{deck_id}"
-            page_resp = requests.get(page_url, timeout=_REQUEST_TIMEOUT)
+            page_resp = requests.get(page_url, headers=_HEADERS, timeout=_REQUEST_TIMEOUT)
             page_resp.raise_for_status()
             commander_hint = _extract_mtggoldfish_commander_from_html(page_resp.text)
         except Exception as e:

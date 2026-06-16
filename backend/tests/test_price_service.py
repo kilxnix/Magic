@@ -81,6 +81,59 @@ class TestFetchCardPricesScryfall:
         assert result == {}
 
 
+class TestScryfallRequestHeaders:
+    """Regression tests for the Scryfall 400/500 outage.
+
+    Scryfall rejects the default ``python-requests`` (and empty) User-Agent with
+    HTTP 400. That bubbled up unhandled and 500'd the whole alternatives feature.
+    """
+
+    def test_scryfall_request_sends_descriptive_user_agent(self):
+        import requests as _requests
+
+        captured = {}
+
+        def fake_get(url, **kwargs):
+            captured["headers"] = kwargs.get("headers")
+            resp = MagicMock()
+            resp.raise_for_status = MagicMock()
+            resp.json.return_value = {"name": "Sol Ring", "prices": {"usd": "1.00"}}
+            return resp
+
+        with patch("backend.price_service.requests.get", side_effect=fake_get):
+            with patch("backend.price_service._save_scryfall_cache"):
+                fetch_card_prices_scryfall("Sol Ring", force_refresh=True)
+
+        assert captured["headers"], "Scryfall request sent no headers"
+        ua = captured["headers"].get("User-Agent", "")
+        assert ua and "python-requests" not in ua.lower()
+
+    def test_non_404_http_error_degrades_to_empty_dict(self):
+        import requests as _requests
+
+        def fake_get(url, **kwargs):
+            resp = MagicMock()
+            resp.status_code = 400
+            err = _requests.exceptions.HTTPError(response=resp)
+            resp.raise_for_status.side_effect = err
+            return resp
+
+        with patch("backend.price_service.requests.get", side_effect=fake_get):
+            # Must NOT raise — a Scryfall 400 should degrade gracefully.
+            result = fetch_card_prices_scryfall("Cultivate", force_refresh=True)
+        assert result == {}
+
+    def test_network_error_degrades_to_empty_dict(self):
+        import requests as _requests
+
+        def fake_get(url, **kwargs):
+            raise _requests.exceptions.ConnectionError("boom")
+
+        with patch("backend.price_service.requests.get", side_effect=fake_get):
+            result = fetch_card_prices_scryfall("Cultivate", force_refresh=True)
+        assert result == {}
+
+
 class TestGetCardPrices:
     """Tests for get_card_prices function (uses real Scryfall API)."""
 

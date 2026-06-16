@@ -1,5 +1,7 @@
 """FastAPI backend for MTG Commander deck generation."""
 
+import hashlib
+import json
 import logging
 import os
 import re
@@ -11,7 +13,7 @@ from pathlib import Path
 from typing import List, Optional
 
 import requests
-from fastapi import FastAPI, HTTPException, Query, Request, Response
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
@@ -20,10 +22,12 @@ from backend.deck_generator import get_generator, reload_generator
 from backend.rules import COMMANDER_BRACKETS, PRICE_TIERS, get_core_staples_for_colors
 from backend.database import (
     init_db, save_deck, get_deck, get_recent_decks, get_decks_by_ids,
-    init_images_db, get_card_image, get_image_stats, has_card_image
+    init_images_db, get_card_image, get_image_stats, has_card_image,
+    resolve_api_key, consume_api_key_quota, refresh_api_key_cache,
+    refund_api_key_quota, get_api_key_status,
 )
 from backend.card_alternatives import get_alternative_finder, CardAlternative
-from backend.price_service import get_card_prices, get_cheapest_price, get_price_category
+from backend.price_service import get_card_prices, get_cheapest_price, get_price_category, SCRYFALL_HEADERS
 from backend.deck_url_parser import fetch_deck_from_url, detect_site
 from backend.draft import get_cards_for_draft_sets, get_draft_set_summaries
 from backend.feedback import router as feedback_router
@@ -63,7 +67,46 @@ RATE_LIMIT_WINDOW_SECONDS = int(os.getenv("RATE_LIMIT_WINDOW_SECONDS", "60"))
 RATE_LIMIT_DEFAULT = int(os.getenv("RATE_LIMIT_DEFAULT_PER_MINUTE", "240"))
 RATE_LIMIT_QA_BYPASS_ENABLED = os.getenv("RATE_LIMIT_QA_BYPASS_ENABLED", "true").lower() == "true"
 TRUST_PROXY_HEADERS = os.getenv("TRUST_PROXY_HEADERS", "true").lower() == "true"
+# Number of trusted reverse-proxy hops in front of the app (Caddy = 1). The real
+# client IP is this many entries from the RIGHT of X-Forwarded-For; reading the
+# leftmost (client-supplied) value would let a caller spoof the header to rotate
+# identities and bypass per-IP rate limits.
+TRUSTED_PROXY_HOPS = max(1, int(os.getenv("TRUSTED_PROXY_HOPS", "1")))
 RATE_LIMIT_MULTIPLAYER_DEFAULT = int(os.getenv("RATE_LIMIT_MULTIPLAYER_PER_MINUTE", "1200"))
+
+
+def _parse_api_keys(raw: str) -> dict:
+    """Parse a "key1:label1,key2,key3:label3" env string into {key: label}.
+
+    Labels are optional and used only for human attribution in logs — never for
+    rate-metering (that's keyed on a hash of the secret, so colliding/duplicate
+    labels can't merge two licensees' quotas). Keys must not contain ':' (the
+    label delimiter); tokens generated with secrets.token_urlsafe never do. A
+    bare key gets a hash-derived fingerprint label that leaks no key bytes."""
+    out: dict = {}
+    for item in (raw or "").split(","):
+        item = item.strip()
+        if not item:
+            continue
+        if ":" in item:
+            key, _, label = item.partition(":")
+            key, label = key.strip(), label.strip()
+        else:
+            key, label = item, ""
+        if key:
+            out[key] = label or f"key-{hashlib.sha256(key.encode()).hexdigest()[:8]}"
+    return out
+
+
+# --- Card-support licensing API: auth + dedicated rate bucket -----------------
+# Keys are issued to integrators. When CARD_SUPPORT_REQUIRE_AUTH is on, a valid
+# key is required (401 otherwise); keyed callers are metered per key (so a
+# licensee's quota can't be exhausted by someone spoofing their IP), while
+# anonymous callers (when auth isn't required) get a stricter shared IP bucket.
+CARD_SUPPORT_API_KEYS = _parse_api_keys(os.getenv("CARD_SUPPORT_API_KEYS", ""))
+CARD_SUPPORT_REQUIRE_AUTH = os.getenv("CARD_SUPPORT_REQUIRE_AUTH", "false").lower() == "true"
+CARD_SUPPORT_RATE_LIMIT = int(os.getenv("CARD_SUPPORT_RATE_LIMIT_PER_MINUTE", "600"))
+CARD_SUPPORT_ANON_RATE_LIMIT = int(os.getenv("CARD_SUPPORT_ANON_RATE_LIMIT_PER_MINUTE", "60"))
 
 RATE_LIMIT_RULES = [
     ("/api/generate-deck", int(os.getenv("RATE_LIMIT_DECK_GENERATION_PER_MINUTE", "6"))),
@@ -94,6 +137,10 @@ RATE_LIMIT_EXEMPT_PATHS = {
 }
 
 _rate_limit_buckets: dict[str, deque[float]] = defaultdict(deque)
+# Periodic empty/stale bucket sweep so the dict can't grow without bound across
+# many distinct client identities over time.
+_rate_limit_gc = {"tick": 0}
+_RATE_LIMIT_GC_EVERY = 5000
 
 app = FastAPI(
     title="Magic Brains Commander Practice",
@@ -122,7 +169,13 @@ def _client_ip(request: Request) -> str:
     if TRUST_PROXY_HEADERS:
         forwarded_for = request.headers.get("x-forwarded-for", "")
         if forwarded_for:
-            return forwarded_for.split(",", 1)[0].strip()
+            # Each proxy APPENDS the address it received the request from, so the
+            # genuine client is TRUSTED_PROXY_HOPS entries from the right end. If
+            # the chain is shorter than expected, fall back to the RIGHTMOST
+            # (closest-to-app, proxy-set) entry — never the spoofable leftmost.
+            parts = [p.strip() for p in forwarded_for.split(",") if p.strip()]
+            if parts:
+                return parts[-min(TRUSTED_PROXY_HOPS, len(parts))]
         real_ip = request.headers.get("x-real-ip")
         if real_ip:
             return real_ip.strip()
@@ -153,6 +206,89 @@ def _require_admin(request: Request) -> None:
 
     if not _has_valid_admin_token(request):
         raise HTTPException(status_code=403, detail="Admin token required")
+
+
+def _extract_api_key(request: Request) -> str:
+    """Pull the presented key from `X-API-Key` or `Authorization: Bearer`."""
+    provided = request.headers.get("x-api-key", "").strip()
+    if not provided:
+        auth = request.headers.get("authorization", "")
+        if auth.startswith("Bearer "):
+            provided = auth[len("Bearer "):].strip()
+    return provided
+
+
+def _resolve_card_support_key(request: Request) -> Optional[dict]:
+    """Resolve a presented key to {key_id, source, rate_limit} or None.
+
+    Checks the static env keys first (unlimited bootstrap keys), then the
+    DB-backed keys (which carry depleting quotas, managed from the admin
+    console). The key_id is a hash fingerprint — unique per key, no key bytes —
+    used as the rate-metering bucket id. Env comparison is on UTF-8 bytes so a
+    non-ASCII header byte denies cleanly instead of raising."""
+    provided = _extract_api_key(request)
+    if not provided:
+        return None
+    provided_bytes = provided.encode("utf-8", "ignore")
+    for key in CARD_SUPPORT_API_KEYS:
+        if secrets.compare_digest(provided_bytes, key.encode("utf-8")):
+            return {
+                "key_id": hashlib.sha256(key.encode("utf-8")).hexdigest()[:16],
+                "source": "env",
+                "rate_limit": None,
+            }
+    db_key = resolve_api_key(provided)
+    if db_key is not None:
+        return {
+            "key_id": db_key["key_id"],
+            "source": "db",
+            "rate_limit": db_key.get("rate_limit_per_minute"),
+        }
+    return None
+
+
+def _card_support_key_id(request: Request) -> Optional[str]:
+    """The opaque rate-metering id for the valid key on this request, or None."""
+    info = _resolve_card_support_key(request)
+    return info["key_id"] if info else None
+
+
+def require_card_support_access(request: Request) -> Optional[str]:
+    """FastAPI dependency gating the card-support licensing API.
+
+    Returns the caller's opaque key id (or None when auth isn't required). Raises
+    401 when auth is required and no valid key is presented (or a DB key was
+    revoked), or 403 when a valid DB key has exhausted its quota.
+
+    For DB keys the quota is charged here (atomic), and the charge is recorded on
+    request.state so `production_guardrails` can REFUND it if the response ends
+    up an error — i.e. licensees are billed only for successful (2xx) calls."""
+    info = _resolve_card_support_key(request)
+    if info is None:
+        if CARD_SUPPORT_REQUIRE_AUTH:
+            raise HTTPException(
+                status_code=401,
+                detail="A valid API key is required. Send it in the 'X-API-Key' header.",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        return None
+    if info["source"] == "db":
+        if consume_api_key_quota(info["key_id"]):
+            request.state.card_support_charged_key_id = info["key_id"]
+        elif get_api_key_status(info["key_id"]) != "active":
+            # Revoked between resolution and charge (e.g. stale cache) — not a
+            # quota problem, so deny as unauthenticated.
+            raise HTTPException(
+                status_code=401,
+                detail="API key is no longer valid.",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        else:
+            raise HTTPException(
+                status_code=403,
+                detail="API key quota exhausted. Contact the operator to top up your key.",
+            )
+    return info["key_id"]
 
 
 def _should_bypass_rate_limit(request: Request, path: str) -> bool:
@@ -186,10 +322,31 @@ async def production_guardrails(request: Request, call_next):
         and path not in RATE_LIMIT_EXEMPT_PATHS
         and not _should_bypass_rate_limit(request, path)
     ):
-        bucket_name, limit = _rate_limit_for_path(path)
+        if path.startswith("/api/card-support"):
+            # Licensing API: meter authenticated callers by their API key
+            # fingerprint (which can't be spoofed like an IP), anonymous callers
+            # by real IP. ANON limit of 0 means "unlimited" (the `if limit > 0`
+            # guard below) — to deny anonymous access entirely, set
+            # CARD_SUPPORT_REQUIRE_AUTH=true, which 401s them at the route.
+            bucket_name = "card-support"
+            keyinfo = _resolve_card_support_key(request)
+            if keyinfo is not None:
+                identity = f"key:{keyinfo['key_id']}"
+                # Explicit None check: a per-key limit of 0 means "deny", not
+                # "use default" (which `or` would wrongly do).
+                limit = (
+                    CARD_SUPPORT_RATE_LIMIT
+                    if keyinfo["rate_limit"] is None
+                    else keyinfo["rate_limit"]
+                )
+            else:
+                identity, limit = _client_ip(request), CARD_SUPPORT_ANON_RATE_LIMIT
+        else:
+            bucket_name, limit = _rate_limit_for_path(path)
+            identity = _client_ip(request)
         if limit > 0:
             now = time.monotonic()
-            bucket_key = f"{_client_ip(request)}:{bucket_name}"
+            bucket_key = f"{identity}:{bucket_name}"
             bucket = _rate_limit_buckets[bucket_key]
             cutoff = now - RATE_LIMIT_WINDOW_SECONDS
             while bucket and bucket[0] < cutoff:
@@ -203,7 +360,23 @@ async def production_guardrails(request: Request, call_next):
                 )
             bucket.append(now)
 
+            _rate_limit_gc["tick"] += 1
+            if _rate_limit_gc["tick"] >= _RATE_LIMIT_GC_EVERY:
+                _rate_limit_gc["tick"] = 0
+                stale = [
+                    bk for bk, dq in _rate_limit_buckets.items()
+                    if not dq or dq[-1] < cutoff
+                ]
+                for bk in stale:
+                    _rate_limit_buckets.pop(bk, None)
+
     response = await call_next(request)
+    # Refund a charged API-key request that ended in an error response, so
+    # licensees pay only for successful (2xx/3xx) calls — not for our 5xx, their
+    # 4xx validation errors, or 404 not-found lookups.
+    charged_key_id = getattr(request.state, "card_support_charged_key_id", None)
+    if charged_key_id and response.status_code >= 400:
+        refund_api_key_quota(charged_key_id)
     response.headers["X-Request-ID"] = request_id
     return response
 
@@ -457,6 +630,7 @@ async def startup_event():
     logger.info("Initializing databases...")
     init_db()
     init_images_db()
+    refresh_api_key_cache()
     logger.info("Loading deck generator...")
     try:
         generator = get_generator()
@@ -999,6 +1173,556 @@ async def launch_game_endpoint(request: GameLaunchRequest):
         raise HTTPException(status_code=500, detail=f"Failed to launch game: {str(e)}")
 
 
+# ---------------------------------------------------------------------------
+# Per-card engine-support manifest API (licensing deliverable).
+#
+# Backed by mtg_data/card_support.json, produced by
+# engine/scripts/build-support-manifest.cjs using the SAME honesty crediting as
+# the parser-coverage audit. Lets bot integrators ask "is card X fully supported
+# by the engine, and if not, which clauses aren't?".
+# ---------------------------------------------------------------------------
+
+CARD_SUPPORT_MANIFEST_PATH = Path(
+    os.getenv(
+        "CARD_SUPPORT_MANIFEST_PATH",
+        str(Path(__file__).parent.parent / "mtg_data" / "card_support.json"),
+    )
+)
+CARD_SUPPORT_BATCH_LIMIT = 500
+
+# Hard caps applied BEFORE any regex runs over caller-supplied names. Real Magic
+# card names are < 120 chars and real decklist lines < ~200 chars, so anything
+# longer is never legitimate — capping bounds every normalization regex to a
+# tiny input and is the load-bearing defense against ReDoS on these public,
+# unauthenticated licensing endpoints.
+_MAX_CARD_NAME_LEN = 256
+_MAX_DECK_LINE_LEN = 512
+_MAX_DECK_QTY = 1000
+
+# Lazy module-level cache: manifest dict, normalized-name -> exact-name index,
+# a content version (sha256 of the manifest file) for ETag/cache validation,
+# and a memoized "not playable" feed.
+_card_support_manifest: Optional[dict] = None
+_card_support_name_index: Optional[dict] = None
+_card_support_version: Optional[str] = None
+_card_support_unsupported_cache: Optional[list] = None
+
+
+class CardSupportFace(BaseModel):
+    """Support status for a single card face."""
+    name: str
+    kind: str
+    supported: bool
+    unsupportedText: Optional[str] = None
+
+
+class CardSupportEntry(BaseModel):
+    """Engine-support manifest entry for a single card.
+
+    `supported` = the engine parses/runs every ability. `playable` = the safe
+    boolean a bot should gate on (supported AND not a known-manual card such as
+    Chaos Orb, which parses but needs physical dexterity)."""
+    name: str
+    supported: bool
+    playable: bool = True
+    viaOverride: bool
+    faces: List[CardSupportFace]
+    knownManual: Optional[str] = None
+
+
+class CardSupportMeta(BaseModel):
+    """Overall manifest statistics."""
+    generatedAt: Optional[str] = None
+    engineCoveragePercent: Optional[float] = None
+    totalCards: int
+    supportedCards: int
+    playableCards: Optional[int] = None
+    source: Optional[str] = None
+    # Stable content hash of the manifest. Changes iff the support data changes,
+    # so integrators can poll this (or the ETag header) instead of re-syncing.
+    version: Optional[str] = None
+
+
+class CardSupportBatchRequest(BaseModel):
+    """Request for batch card-support lookup."""
+    names: List[str] = Field(..., description="Card names to look up (max 500).")
+
+
+class CardSupportBatchSummary(BaseModel):
+    requested: int
+    supported: int
+    playable: int = 0
+    unsupported: int
+    unknown: int
+
+
+class CardSupportBatchResponse(BaseModel):
+    results: dict
+    summary: CardSupportBatchSummary
+
+
+class DeckPreflightRequest(BaseModel):
+    """Pre-flight a whole deck before a bot tries to play it.
+
+    Supply EITHER a raw multi-line `decklist` (Moxfield/Archidekt/MTGO export
+    text, with quantities, set codes and section headers — they're parsed and
+    deduped) OR an explicit `names` list. If both are given, they're merged."""
+    decklist: Optional[str] = Field(
+        None, description="Raw decklist text, one card per line."
+    )
+    names: Optional[List[str]] = Field(
+        None, description="Explicit card names (alternative to decklist text)."
+    )
+
+
+class DeckPreflightCard(BaseModel):
+    """A single resolved deck entry the bot can't (or can) play."""
+    name: str
+    quantity: int
+    reasons: List[str] = []
+    knownManual: Optional[str] = None
+
+
+class DeckPreflightSummary(BaseModel):
+    totalCards: int          # sum of quantities across recognized lines
+    uniqueCards: int         # distinct resolved names
+    playableCards: int       # distinct names a bot can run end-to-end
+    unsupportedCards: int    # distinct names the engine can't fully run
+    unknownCards: int        # distinct names absent from the manifest
+
+
+class DeckPreflightResponse(BaseModel):
+    """Conservative, honest verdict: `deckPlayable` is True only when EVERY
+    recognized card is playable AND none are unknown to the engine. A bot that
+    wants to ignore unknowns can gate on `summary.unsupportedCards == 0`."""
+    deckPlayable: bool
+    summary: DeckPreflightSummary
+    unsupported: List[DeckPreflightCard] = []
+    unknown: List[DeckPreflightCard] = []
+    engineCoveragePercent: Optional[float] = None
+    generatedAt: Optional[str] = None
+
+
+# Standalone lines in deck exports that are section headers, not cards.
+_DECK_SECTION_HEADERS = frozenset({
+    "commander", "commanders", "deck", "mainboard", "main", "sideboard",
+    "maybeboard", "companion", "tokens", "token", "about", "lands", "land",
+    "creatures", "creature", "instants", "instant", "sorceries", "sorcery",
+    "artifacts", "artifact", "enchantments", "enchantment", "planeswalkers",
+    "planeswalker", "battles", "battle", "other", "spells",
+})
+DECK_PREFLIGHT_MAX_CHARS = 200_000
+DECK_PREFLIGHT_MAX_UNIQUE = 1000
+
+# A deck line's leading quantity: "1 ", "2x ", "3 x [foo] ".
+_DECK_QTY_RE = re.compile(r"^\s*(\d+)\s*x?\s+", re.IGNORECASE)
+# Trailing "(12)" count Archidekt appends to category headers. Anchored at a
+# literal "(" with no leading/trailing "\s*", so it can't backtrack on a long
+# whitespace run (the line is already .strip()ped when this runs).
+_TRAILING_COUNT_RE = re.compile(r"\(\d{1,9}\)$")
+# Leading section prefix on a card line, e.g. MTGO "SB: 1 Card".
+_DECK_LINE_PREFIX_RE = re.compile(
+    r"^(?:sb|sideboard|cmdr|commander|mb|mainboard)\s*:\s*", re.IGNORECASE
+)
+
+
+def _parse_decklist_lines(decklist: str) -> "list[str]":
+    """Parse raw decklist text into an ordered list of candidate card lines.
+
+    Skips blank lines, comments (`//`/`#`), over-long lines, and section /
+    Archidekt category headers, and strips MTGO "SB:"-style line prefixes. The
+    leading quantity is NOT stripped here: the candidate is kept intact so the
+    caller can try an EXACT manifest match first (preserving the honesty bar for
+    real cards whose name ends in "(...)" or starts with a number)."""
+    out: "list[str]" = []
+    for raw_line in decklist.splitlines():
+        if len(raw_line) > _MAX_DECK_LINE_LEN:
+            continue  # never a real card line; also bounds regex cost
+        line = raw_line.strip()
+        if not line or line.startswith("//") or line.startswith("#"):
+            continue
+        line = _DECK_LINE_PREFIX_RE.sub("", line).strip()
+        if not line:
+            continue
+        # Header detection only applies to quantity-less, decoration-free lines,
+        # so a real card with a leading quantity ("1 Companion") is never
+        # mistaken for a header.
+        if not _DECK_QTY_RE.match(line):
+            without_count = _TRAILING_COUNT_RE.sub("", line).strip()
+            if without_count.lower() in _DECK_SECTION_HEADERS:
+                continue
+            # "<words> (N)" with no other parens => Archidekt category label.
+            if without_count != line and "(" not in without_count:
+                continue
+        out.append(line)
+    return out
+
+
+def _normalize_card_support_name(raw: Optional[str]) -> str:
+    """Lenient name normalization mirroring the frontend's
+    normalizeCardNameForPreflight (frontend/src/lib/enginePreflight.ts), so a
+    decklist line like "1 Sol Ring (LEA) 1" resolves to "Sol Ring"."""
+    name = (raw or "")
+    # Hard cap BEFORE any regex: bounds every pattern below to a tiny input so
+    # none can blow up on a hostile token. A truncated over-long name simply
+    # fails to match the manifest (reported unknown — the safe direction).
+    if len(name) > _MAX_CARD_NAME_LEN:
+        name = name[:_MAX_CARD_NAME_LEN]
+    # Strip a trailing "# comment". Cutting at the literal "#" is linear; the
+    # old `\s+#.*$` form was O(n^2) on a long whitespace run with no "#".
+    hash_idx = name.find("#")
+    if hash_idx != -1:
+        name = name[:hash_idx]
+    name = re.sub(r"^[*\-]\s*", "", name).strip()
+    # Leading quantity: "1 ", "2x ", "3 x [foo] ".
+    qty = re.match(r"^\s*\d+\s*x?\s*(?:\[[^\]]+\]\s*)?(.+)$", name, re.IGNORECASE)
+    if qty:
+        name = qty.group(1).strip()
+    # Trailing *foil*-style annotations, all in one linear pass (the old
+    # per-group `while` loop was O(groups * len)).
+    name = re.sub(r"(?:\s+\*[^*]+\*)+\s*$", "", name).strip()
+    # Trailing set bracket "[LEA]" / "[LEA] 123" and parenthetical "(LEA) 1".
+    name = re.sub(r"\s+\[[^\]]+\](?:\s+\S+)?$", "", name, flags=re.IGNORECASE)
+    name = re.sub(r"\s+\([^)]+\).*$", "", name, flags=re.IGNORECASE)
+    return re.sub(r"\s+", " ", name).strip()
+
+
+def _load_card_support_manifest() -> Optional[dict]:
+    """Load the support manifest once and cache it. Returns None if missing."""
+    global _card_support_manifest, _card_support_name_index
+    global _card_support_version, _card_support_unsupported_cache
+    if _card_support_manifest is not None:
+        return _card_support_manifest
+    if not CARD_SUPPORT_MANIFEST_PATH.exists():
+        return None
+    raw_bytes = CARD_SUPPORT_MANIFEST_PATH.read_bytes()
+    data = json.loads(raw_bytes.decode("utf-8"))
+    # Pass 1: index every real manifest key under its normalized name.
+    index: dict = {}
+    for key in data:
+        if key == "_meta":
+            continue
+        norm = _normalize_card_support_name(key).lower()
+        if norm and norm not in index:
+            index[norm] = key
+    # Pass 2: add front-face aliases for "Front // Back" cards (DFC, modal-DFC,
+    # split, adventure, aftermath) so a decklist line that names only the front
+    # face resolves. Single-face cards already claimed their slot in pass 1 and
+    # are never overwritten, so this can't shadow a real standalone card.
+    for key in data:
+        if key == "_meta" or " // " not in key:
+            continue
+        front = _normalize_card_support_name(key.split(" // ", 1)[0]).lower()
+        if front and front not in index:
+            index[front] = key
+    _card_support_manifest = data
+    _card_support_name_index = index
+    _card_support_version = hashlib.sha256(raw_bytes).hexdigest()[:16]
+    _card_support_unsupported_cache = None
+    return _card_support_manifest
+
+
+def _lookup_card_support(name: str) -> Optional[CardSupportEntry]:
+    """Resolve a (possibly decorated) card name to its manifest entry, or None."""
+    manifest = _load_card_support_manifest()
+    if manifest is None:
+        raise HTTPException(status_code=503, detail="support manifest not built")
+    entry = manifest.get(name)
+    if entry is None and _card_support_name_index is not None:
+        exact = _card_support_name_index.get(_normalize_card_support_name(name).lower())
+        if exact is not None:
+            entry = manifest.get(exact)
+            name = exact
+    if entry is None:
+        return None
+    return CardSupportEntry(name=name, **entry)
+
+
+def _resolve_deck_line(line: str) -> "tuple[Optional[CardSupportEntry], int, str]":
+    """Resolve one candidate decklist line to (entry, quantity, display_name).
+
+    Tries the whole line as an exact card name first — so a real card whose name
+    starts with a number ("1996 World Champion") or ends in "(...)" isn't
+    mis-parsed — then peels a leading quantity and resolves the remainder. Exact
+    manifest keys always beat the lenient normalized index, upholding the
+    honesty bar (a distinct unplayable card never collapses onto a playable
+    namesake)."""
+    manifest = _card_support_manifest
+    if manifest is not None and line in manifest:
+        return _lookup_card_support(line), 1, line
+    qty = 1
+    rest = line
+    m = _DECK_QTY_RE.match(line)
+    if m:
+        qty = min(_MAX_DECK_QTY, max(1, int(m.group(1))))
+        stripped = line[m.end():].strip()
+        if stripped:
+            rest = stripped
+    entry = _lookup_card_support(rest)
+    display = entry.name if entry is not None else (
+        _normalize_card_support_name(rest) or rest
+    )
+    return entry, qty, display
+
+
+@app.get(
+    "/api/card-support",
+    response_model=CardSupportMeta,
+    tags=["card-support"],
+    dependencies=[Depends(require_card_support_access)],
+)
+async def card_support_meta(request: Request, response: Response):
+    """Return overall engine-support statistics (coverage %, counts, version).
+
+    Emits an ETag (the manifest content version); a matching `If-None-Match`
+    yields 304 so integrators can cheaply poll for changes rather than re-pull
+    the whole manifest."""
+    manifest = _load_card_support_manifest()
+    if manifest is None:
+        raise HTTPException(status_code=503, detail="support manifest not built")
+    etag = f'"{_card_support_version}"' if _card_support_version else None
+    if etag and request.headers.get("if-none-match") == etag:
+        return Response(status_code=304, headers={"ETag": etag})
+    if etag:
+        response.headers["ETag"] = etag
+    meta = dict(manifest.get("_meta", {"totalCards": 0, "supportedCards": 0}))
+    meta["version"] = _card_support_version
+    return CardSupportMeta(**meta)
+
+
+@app.post(
+    "/api/card-support/batch",
+    response_model=CardSupportBatchResponse,
+    tags=["card-support"],
+    dependencies=[Depends(require_card_support_access)],
+)
+async def card_support_batch(request: CardSupportBatchRequest):
+    """Look up engine support for up to 500 cards at once."""
+    if _load_card_support_manifest() is None:
+        raise HTTPException(status_code=503, detail="support manifest not built")
+    if len(request.names) > CARD_SUPPORT_BATCH_LIMIT:
+        raise HTTPException(
+            status_code=400,
+            detail=f"batch too large: max {CARD_SUPPORT_BATCH_LIMIT} names",
+        )
+
+    results: dict = {}
+    supported = playable = unsupported = unknown = 0
+    for raw_name in request.names:
+        entry = _lookup_card_support(raw_name)
+        results[raw_name] = entry.model_dump() if entry is not None else None
+        if entry is None:
+            unknown += 1
+            continue
+        if entry.supported:
+            supported += 1
+        else:
+            unsupported += 1
+        if entry.playable:
+            playable += 1
+
+    return CardSupportBatchResponse(
+        results=results,
+        summary=CardSupportBatchSummary(
+            requested=len(request.names),
+            supported=supported,
+            playable=playable,
+            unsupported=unsupported,
+            unknown=unknown,
+        ),
+    )
+
+
+@app.post(
+    "/api/card-support/preflight",
+    response_model=DeckPreflightResponse,
+    tags=["card-support"],
+    dependencies=[Depends(require_card_support_access)],
+)
+async def card_support_preflight(request: DeckPreflightRequest):
+    """Pre-flight an entire deck: can a bot run every card, and if not, which?
+
+    The bot-facing licensing endpoint. Accepts raw decklist text and/or an
+    explicit name list, resolves and dedupes to distinct cards, and returns a
+    conservative `deckPlayable` verdict plus the exact unplayable cards with
+    reasons."""
+    manifest = _load_card_support_manifest()
+    if manifest is None:
+        raise HTTPException(status_code=503, detail="support manifest not built")
+    if not request.decklist and not request.names:
+        raise HTTPException(
+            status_code=400, detail="provide a decklist or a names list"
+        )
+    if request.decklist and len(request.decklist) > DECK_PREFLIGHT_MAX_CHARS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"decklist too large: max {DECK_PREFLIGHT_MAX_CHARS} chars",
+        )
+
+    candidates = _parse_decklist_lines(request.decklist or "")
+    candidates.extend(n for n in (request.names or []) if n and n.strip())
+
+    # Resolve each candidate, then dedupe by CANONICAL identity — the manifest's
+    # own card name for known cards, the normalized lower-case name for unknowns
+    # — so case/printing variants of the same card collapse to one distinct
+    # entry and quantities sum.
+    aggregated: dict = {}
+    order: List[str] = []
+    for cand in candidates:
+        entry, qty, display = _resolve_deck_line(cand)
+        key = entry.name if entry is not None else display.lower()
+        if not key:
+            continue
+        if key not in aggregated:
+            aggregated[key] = {"qty": 0, "entry": entry, "name": display}
+            order.append(key)
+            if len(aggregated) > DECK_PREFLIGHT_MAX_UNIQUE:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"too many distinct cards: max {DECK_PREFLIGHT_MAX_UNIQUE}",
+                )
+        aggregated[key]["qty"] += qty
+
+    total = playable = 0
+    unsupported: List[DeckPreflightCard] = []
+    unknown: List[DeckPreflightCard] = []
+    for key in order:
+        item = aggregated[key]
+        qty = item["qty"]
+        entry = item["entry"]
+        total += qty
+        if entry is None:
+            unknown.append(DeckPreflightCard(name=item["name"], quantity=qty))
+            continue
+        if entry.playable:
+            playable += 1
+            continue
+        # Not playable: collect the unsupported clause(s), or the manual reason.
+        reasons = [
+            face.unsupportedText
+            for face in entry.faces
+            if not face.supported and face.unsupportedText
+        ]
+        if not reasons and entry.knownManual:
+            reasons = [entry.knownManual]
+        unsupported.append(
+            DeckPreflightCard(
+                name=entry.name,
+                quantity=qty,
+                reasons=reasons,
+                knownManual=entry.knownManual,
+            )
+        )
+
+    meta = manifest.get("_meta", {})
+    return DeckPreflightResponse(
+        deckPlayable=not unsupported and not unknown,
+        summary=DeckPreflightSummary(
+            totalCards=total,
+            uniqueCards=len(order),
+            playableCards=playable,
+            unsupportedCards=len(unsupported),
+            unknownCards=len(unknown),
+        ),
+        unsupported=unsupported,
+        unknown=unknown,
+        engineCoveragePercent=meta.get("engineCoveragePercent"),
+        generatedAt=meta.get("generatedAt"),
+    )
+
+
+class CardSupportListEntry(BaseModel):
+    name: str
+    supported: bool
+    playable: bool
+    knownManual: Optional[str] = None
+    reasons: List[str] = []
+
+
+class CardSupportListResponse(BaseModel):
+    count: int          # total not-playable cards in the manifest
+    returned: int       # cards in this page
+    offset: int
+    version: Optional[str] = None
+    cards: List[CardSupportListEntry]
+
+
+def _build_unsupported_feed() -> list:
+    """Memoized list of every card a bot CANNOT run (not playable), sorted."""
+    global _card_support_unsupported_cache
+    if _card_support_unsupported_cache is not None:
+        return _card_support_unsupported_cache
+    manifest = _load_card_support_manifest()
+    if manifest is None:
+        raise HTTPException(status_code=503, detail="support manifest not built")
+    feed: list = []
+    for name, e in manifest.items():
+        if name == "_meta":
+            continue
+        playable = bool(
+            e.get("playable", e.get("supported") and not e.get("knownManual"))
+        )
+        if playable:
+            continue
+        reasons = [
+            f.get("unsupportedText")
+            for f in e.get("faces", [])
+            if not f.get("supported") and f.get("unsupportedText")
+        ]
+        if not reasons and e.get("knownManual"):
+            reasons = [e["knownManual"]]
+        feed.append(
+            CardSupportListEntry(
+                name=name,
+                supported=bool(e.get("supported")),
+                playable=False,
+                knownManual=e.get("knownManual"),
+                reasons=reasons,
+            )
+        )
+    feed.sort(key=lambda c: c.name)
+    _card_support_unsupported_cache = feed
+    return feed
+
+
+@app.get(
+    "/api/card-support/unsupported",
+    response_model=CardSupportListResponse,
+    tags=["card-support"],
+    dependencies=[Depends(require_card_support_access)],
+)
+async def card_support_unsupported(
+    offset: int = Query(0, ge=0),
+    limit: int = Query(2000, ge=1, le=10000),
+):
+    """List every card a bot CANNOT run (unsupported or known-manual) with
+    reasons, so integrators can pre-filter a card pool offline in one pass
+    instead of paging the whole DB through the batch endpoint. Paginated."""
+    feed = _build_unsupported_feed()
+    page = feed[offset:offset + limit]
+    return CardSupportListResponse(
+        count=len(feed),
+        returned=len(page),
+        offset=offset,
+        version=_card_support_version,
+        cards=page,
+    )
+
+
+@app.get(
+    "/api/card-support/{name:path}",
+    response_model=CardSupportEntry,
+    tags=["card-support"],
+    dependencies=[Depends(require_card_support_access)],
+)
+async def card_support_lookup(name: str):
+    """Return the engine-support manifest entry for a single card."""
+    entry = _lookup_card_support(name)
+    if entry is None:
+        raise HTTPException(status_code=404, detail=f"card not in manifest: {name}")
+    return entry
+
+
 class CardPrinting(BaseModel):
     """A single printing of a card."""
     id: str
@@ -1044,7 +1768,7 @@ async def get_card_printings(card_name: str):
             "unique": "prints",
             "order": "released",
         }
-        response = requests.get(url, params=params, timeout=10)
+        response = requests.get(url, params=params, headers=SCRYFALL_HEADERS, timeout=10)
 
         if response.status_code == 404:
             # No results found

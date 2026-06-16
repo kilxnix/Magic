@@ -113,7 +113,7 @@ class TestFetchMTGGoldfish:
         archetype_url = "https://www.mtggoldfish.com/archetype/commander-y-shtola-night-s-blessed"
         download_url = "https://www.mtggoldfish.com/deck/download/7804834"
 
-        def fake_get(url, timeout):
+        def fake_get(url, timeout=None, headers=None):
             calls.append(url)
             if url == archetype_url:
                 return FakeResponse(
@@ -137,6 +137,70 @@ class TestFetchMTGGoldfish:
         assert result["commander"] == "Y'shtola, Night's Blessed"
         assert result["cards"] == ["Sol Ring", "Command Tower", "Spell Pierce"]
 
+
+class _FakeMoxResponse:
+    def __init__(self, status_code, payload=None):
+        self.status_code = status_code
+        self._payload = payload or {}
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise AssertionError("raise_for_status called on error response")
+
+    def json(self):
+        return self._payload
+
+
+_MOX_OK_PAYLOAD = {
+    "boards": {
+        "mainboard": {"cards": {"a": {"quantity": 2, "card": {"name": "Sol Ring"}},
+                                 "b": {"quantity": 1, "card": {"name": "Command Tower"}}}},
+        "commanders": {"cards": {"c": {"card": {"name": "Atraxa, Praetors' Voice"}}}},
+    }
+}
+
+
+class TestFetchMoxfieldRetry:
+    """Moxfield's Cloudflare intermittently 403s datacenter IPs; the fetch must
+    retry through transient 403s instead of failing on the first one."""
+
+    def test_retries_through_transient_403_then_succeeds(self, monkeypatch):
+        monkeypatch.setattr(deck_url_parser.time, "sleep", lambda *_a, **_k: None)
+        # First two attempts (cloudscraper, then requests) get 403; third succeeds.
+        seq = [_FakeMoxResponse(403), _FakeMoxResponse(403),
+               _FakeMoxResponse(200, _MOX_OK_PAYLOAD)]
+        calls = {"n": 0}
+
+        def next_resp():
+            resp = seq[min(calls["n"], len(seq) - 1)]
+            calls["n"] += 1
+            return resp
+
+        class FakeScraper:
+            def get(self, *_a, **_k):
+                return next_resp()
+
+        monkeypatch.setattr(deck_url_parser.cloudscraper, "create_scraper", lambda *a, **k: FakeScraper())
+        monkeypatch.setattr(deck_url_parser.requests, "get", lambda *a, **k: next_resp())
+
+        result = deck_url_parser.fetch_moxfield("deckid")
+        assert calls["n"] >= 3  # retried past the two 403s
+        assert result["commander"] == "Atraxa, Praetors' Voice"
+        assert result["cards"] == ["Sol Ring", "Sol Ring", "Command Tower"]
+
+    def test_raises_friendly_error_when_all_attempts_blocked(self, monkeypatch):
+        monkeypatch.setattr(deck_url_parser.time, "sleep", lambda *_a, **_k: None)
+
+        class BlockedScraper:
+            def get(self, *_a, **_k):
+                return _FakeMoxResponse(403)
+
+        monkeypatch.setattr(deck_url_parser.cloudscraper, "create_scraper", lambda *a, **k: BlockedScraper())
+        monkeypatch.setattr(deck_url_parser.requests, "get", lambda *a, **k: _FakeMoxResponse(403))
+
+        with pytest.raises(ValueError, match="Moxfield blocked this request"):
+            deck_url_parser.fetch_moxfield("deckid")
+
     def test_archetype_trims_commander_sideboard_overflow(self, monkeypatch):
         class FakeResponse:
             def __init__(self, text):
@@ -145,7 +209,7 @@ class TestFetchMTGGoldfish:
             def raise_for_status(self):
                 return None
 
-        def fake_get(url, timeout):
+        def fake_get(url, timeout=None, headers=None):
             if "/archetype/" in url:
                 return FakeResponse(
                     "<title>Quandrix, the Proof Deck for Magic: the Gathering</title>"
@@ -171,7 +235,7 @@ class TestFetchMTGGoldfish:
             def raise_for_status(self):
                 return None
 
-        def fake_get(url, timeout):
+        def fake_get(url, timeout=None, headers=None):
             if url == "https://www.mtggoldfish.com/deck/download/7767508":
                 return FakeResponse(
                     "1 Dargo, the Shipwrecker 1 Tymna the Weaver 1 Sol Ring 1 Arcane Signet 97 Swamp"

@@ -631,7 +631,7 @@ async def import_deck(req: ImportDeckRequest):
     repaired_duplicates: list[str] = []
     repair_warnings: list[str] = []
     if card_db and format_name == "commander" and validation["errors"]:
-        repaired_duplicates = repair_singleton_duplicates(parsed)
+        repaired_duplicates = repair_singleton_duplicates(parsed, card_db)
         if repaired_duplicates:
             unique_repaired = sorted(set(repaired_duplicates))
             repair_warnings.append(

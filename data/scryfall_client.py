@@ -12,11 +12,17 @@ BULK_DATA_URL = "https://api.scryfall.com/bulk-data"
 SETS_URL = "https://api.scryfall.com/sets"
 DEFAULT_BULK_NAME = "Oracle Cards"
 
+# Scryfall rejects requests without a descriptive User-Agent (HTTP 400).
+_HEADERS = {
+    "User-Agent": "deckreps.app/1.0 (+https://deckreps.app; card data pipeline)",
+    "Accept": "application/json",
+}
+
 
 def _request_json(url: str, retries: int = 5, backoff_s: float = 0.5) -> Dict:
     for attempt in range(retries):
         try:
-            resp = requests.get(url, timeout=30)
+            resp = requests.get(url, headers=_HEADERS, timeout=30)
             resp.raise_for_status()
             return resp.json()
         except requests.RequestException:
@@ -41,7 +47,7 @@ def get_sets_data() -> Dict:
 def download_bulk_data(dest_path: Path, bulk_name: str = DEFAULT_BULK_NAME) -> Path:
     dest_path.parent.mkdir(parents=True, exist_ok=True)
     url = get_bulk_data_url(bulk_name)
-    with requests.get(url, stream=True, timeout=60) as resp:
+    with requests.get(url, headers=_HEADERS, stream=True, timeout=60) as resp:
         resp.raise_for_status()
         with open(dest_path, "wb") as f:
             for chunk in resp.iter_content(chunk_size=1024 * 1024):

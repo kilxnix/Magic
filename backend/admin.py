@@ -18,7 +18,7 @@ from typing import Any, Literal, Optional
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from backend import multiplayer, ops
+from backend import database, multiplayer, ops
 
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -35,6 +35,16 @@ class AdminActionRequest(BaseModel):
 
 class AdminAnnouncementRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=500)
+
+
+class CreateApiKeyRequest(BaseModel):
+    label: str = Field("", max_length=120)
+    quota: Optional[int] = Field(None, ge=1, le=1_000_000_000, description="Total request allowance; null = unlimited")
+    rateLimitPerMinute: Optional[int] = Field(None, ge=1, le=1_000_000, description="Per-minute cap; null = default")
+
+
+class TopupApiKeyRequest(BaseModel):
+    addQuota: int = Field(..., ge=1, le=1_000_000_000, description="Requests to add to the key's allowance")
 
 
 class AdminAuthResponse(BaseModel):
@@ -429,3 +439,50 @@ async def delete_event(event_id: str, req: AdminActionRequest, request: Request)
         multiplayer._save_events_locked()
         audit = _append_audit("delete_event", "event", event_id, {"reason": req.reason})
         return {"ok": True, "audit": audit}
+
+
+# --- Card-support licensing API keys -----------------------------------------
+
+@router.get("/api-keys")
+async def list_api_keys(request: Request) -> dict[str, Any]:
+    """List all issued keys with usage (no secrets are ever returned)."""
+    _require_admin(request)
+    return {"keys": database.list_api_keys()}
+
+
+@router.post("/api-keys")
+async def create_api_key(req: CreateApiKeyRequest, request: Request) -> dict[str, Any]:
+    """Mint a new key. The raw `secret` is returned ONCE — it can't be recovered."""
+    _require_admin(request)
+    created = database.create_api_key(
+        label=req.label,
+        quota=req.quota,
+        rate_limit_per_minute=req.rateLimitPerMinute,
+        created_by="admin",
+    )
+    _append_audit(
+        "api_key.create", "api_key", created["keyId"],
+        {"label": req.label, "quota": req.quota, "rateLimitPerMinute": req.rateLimitPerMinute},
+    )
+    return created
+
+
+@router.post("/api-keys/{key_id}/topup")
+async def topup_api_key(key_id: str, req: TopupApiKeyRequest, request: Request) -> dict[str, Any]:
+    """Add to a key's allowance (and reactivate it if it was revoked)."""
+    _require_admin(request)
+    updated = database.topup_api_key(key_id, add_quota=req.addQuota)
+    if updated is None:
+        raise HTTPException(status_code=404, detail="API key not found")
+    _append_audit("api_key.topup", "api_key", key_id, {"addQuota": req.addQuota})
+    return {"ok": True, "key": updated}
+
+
+@router.post("/api-keys/{key_id}/revoke")
+async def revoke_api_key(key_id: str, request: Request) -> dict[str, Any]:
+    """Revoke a key immediately (it stops authenticating on the next request)."""
+    _require_admin(request)
+    if not database.revoke_api_key(key_id):
+        raise HTTPException(status_code=404, detail="API key not found")
+    _append_audit("api_key.revoke", "api_key", key_id, {})
+    return {"ok": True}

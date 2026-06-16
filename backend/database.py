@@ -1,10 +1,14 @@
 """SQLite database for storing generated decks and card images."""
 
+import hashlib
 import json
 import os
+import secrets
 import sqlite3
+import threading
+import time
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -78,6 +82,34 @@ def init_db():
             conn.execute("ALTER TABLE decks ADD COLUMN synergy_queries TEXT DEFAULT '[]'")
         except sqlite3.OperationalError:
             pass  # Column already exists
+        # Card-support licensing API keys. Stores only a hash of each secret —
+        # the raw key is shown to the admin once at creation and never persisted.
+        # quota = total request allowance (NULL = unlimited); it depletes as
+        # requests_used grows and blocks at quota.
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS api_keys (
+                key_id TEXT PRIMARY KEY,
+                key_hash TEXT UNIQUE NOT NULL,
+                label TEXT NOT NULL DEFAULT '',
+                quota INTEGER,
+                requests_used INTEGER NOT NULL DEFAULT 0,
+                rate_limit_per_minute INTEGER,
+                status TEXT NOT NULL DEFAULT 'active',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                last_used_at TIMESTAMP,
+                created_by TEXT
+            )
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_api_keys_hash ON api_keys(key_hash)
+        """)
+        # WAL lets readers and a writer proceed concurrently, reducing lock
+        # contention between per-request quota charges and other writes. It's a
+        # persistent, file-level setting applied once here.
+        try:
+            conn.execute("PRAGMA journal_mode=WAL")
+        except sqlite3.OperationalError:
+            pass
         conn.commit()
 
 
@@ -127,8 +159,12 @@ def get_images_connection():
 
 @contextmanager
 def get_connection():
-    """Get a database connection with context manager."""
-    conn = sqlite3.connect(DATABASE_PATH)
+    """Get a database connection with context manager.
+
+    timeout=30 sets SQLite's busy-timeout so concurrent writers (e.g. per-request
+    quota charges alongside deck writes) wait for the lock instead of immediately
+    raising SQLITE_BUSY -> 500."""
+    conn = sqlite3.connect(DATABASE_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
     try:
         yield conn
@@ -415,3 +451,210 @@ def get_latest_prices(card_name: str) -> dict:
         """, (card_name.lower(),)).fetchall()
 
         return {row['source']: {'usd': row['price_usd'], 'updated': row['recorded_at']} for row in rows}
+
+
+# ---------------------------------------------------------------------------
+# Card-support licensing API keys (DB-backed, with depleting per-key quotas).
+#
+# Only a hash of each secret is stored. Validation hashes the presented key and
+# looks it up in an in-memory cache of ACTIVE keys (refreshed on every mutation),
+# so the request path never hits the DB just to validate. Quota is enforced with
+# a single atomic UPDATE per request (consume_api_key_quota).
+# ---------------------------------------------------------------------------
+
+API_KEY_PREFIX = "csk_"  # card-support key
+
+_api_key_cache: dict[str, dict] = {}
+_api_key_cache_lock = threading.RLock()
+_api_key_cache_loaded_at = 0.0
+# Bounds how stale the per-process cache can get vs the shared DB (e.g. a key
+# revoked by another worker propagates within this window). New keys propagate
+# instantly via the DB fallback on cache miss.
+_API_KEY_CACHE_TTL_SECONDS = 30.0
+
+
+def _hash_api_key(secret: str) -> str:
+    return hashlib.sha256(secret.encode("utf-8")).hexdigest()
+
+
+def generate_api_key_secret() -> str:
+    """A fresh opaque secret. The 'csk_' prefix aids recognition/leak scanning."""
+    return API_KEY_PREFIX + secrets.token_urlsafe(32)
+
+
+def refresh_api_key_cache() -> None:
+    """Reload the in-memory cache of ACTIVE keys (hash -> {key_id, rate limit})."""
+    global _api_key_cache_loaded_at
+    cache: dict[str, dict] = {}
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT key_id, key_hash, rate_limit_per_minute FROM api_keys WHERE status='active'"
+        ).fetchall()
+    for row in rows:
+        cache[row["key_hash"]] = {
+            "key_id": row["key_id"],
+            "rate_limit_per_minute": row["rate_limit_per_minute"],
+        }
+    with _api_key_cache_lock:
+        _api_key_cache.clear()
+        _api_key_cache.update(cache)
+        _api_key_cache_loaded_at = time.monotonic()
+
+
+def _api_key_db_lookup(key_hash: str) -> Optional[dict]:
+    try:
+        with get_connection() as conn:
+            row = conn.execute(
+                "SELECT key_id, rate_limit_per_minute FROM api_keys "
+                "WHERE key_hash=? AND status='active'",
+                (key_hash,),
+            ).fetchone()
+    except sqlite3.Error:
+        return None  # DB/table unavailable -> treat as no match (fail closed)
+    if row is None:
+        return None
+    return {"key_id": row["key_id"], "rate_limit_per_minute": row["rate_limit_per_minute"]}
+
+
+def resolve_api_key(secret: str) -> Optional[dict]:
+    """Validate a presented key. Returns {key_id, rate_limit_per_minute} for an
+    active key, else None. Lookup is by hash (preimage-resistant), so no
+    constant-time compare is needed. The cache self-heals on a TTL, and a cache
+    miss falls back to an authoritative DB lookup so a key minted on another
+    worker still validates immediately."""
+    if not secret:
+        return None
+    if (time.monotonic() - _api_key_cache_loaded_at) > _API_KEY_CACHE_TTL_SECONDS:
+        try:
+            refresh_api_key_cache()
+        except Exception:
+            pass
+    key_hash = _hash_api_key(secret)
+    with _api_key_cache_lock:
+        cached = _api_key_cache.get(key_hash)
+    if cached is not None:
+        return cached
+    found = _api_key_db_lookup(key_hash)
+    if found is not None:
+        with _api_key_cache_lock:
+            _api_key_cache[key_hash] = found
+    return found
+
+
+def refund_api_key_quota(key_id: str) -> None:
+    """Return one charged request (used when a charged request ends in an error
+    response, so licensees are billed only for successful calls)."""
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE api_keys SET requests_used = MAX(requests_used - 1, 0) WHERE key_id=?",
+            (key_id,),
+        )
+        conn.commit()
+
+
+def get_api_key_status(key_id: str) -> Optional[str]:
+    """The current status ('active'/'revoked') of a key, or None if absent."""
+    with get_connection() as conn:
+        row = conn.execute("SELECT status FROM api_keys WHERE key_id=?", (key_id,)).fetchone()
+    return row["status"] if row else None
+
+
+def consume_api_key_quota(key_id: str) -> bool:
+    """Atomically record one request against a key. Returns False if the key is
+    inactive or has exhausted its quota (the UPDATE matches no row)."""
+    now = datetime.now(timezone.utc).isoformat()
+    with get_connection() as conn:
+        cur = conn.execute(
+            "UPDATE api_keys SET requests_used = requests_used + 1, last_used_at = ? "
+            "WHERE key_id = ? AND status = 'active' "
+            "AND (quota IS NULL OR requests_used < quota)",
+            (now, key_id),
+        )
+        conn.commit()
+        return cur.rowcount > 0
+
+
+def _row_to_api_key(row) -> dict:
+    quota = row["quota"]
+    used = row["requests_used"]
+    return {
+        "keyId": row["key_id"],
+        "label": row["label"],
+        "quota": quota,
+        "requestsUsed": used,
+        "remaining": None if quota is None else max(0, quota - used),
+        "rateLimitPerMinute": row["rate_limit_per_minute"],
+        "status": row["status"],
+        "createdAt": row["created_at"],
+        "lastUsedAt": row["last_used_at"],
+        "createdBy": row["created_by"],
+    }
+
+
+def create_api_key(
+    label: str = "",
+    quota: Optional[int] = None,
+    rate_limit_per_minute: Optional[int] = None,
+    created_by: Optional[str] = None,
+) -> dict:
+    """Mint a new key. Returns its metadata PLUS the raw `secret` (shown once)."""
+    secret = generate_api_key_secret()
+    key_hash = _hash_api_key(secret)
+    key_id = key_hash[:16]
+    with get_connection() as conn:
+        conn.execute(
+            "INSERT INTO api_keys (key_id, key_hash, label, quota, rate_limit_per_minute, created_by) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (key_id, key_hash, label or "", quota, rate_limit_per_minute, created_by),
+        )
+        conn.commit()
+    refresh_api_key_cache()
+    return {
+        "keyId": key_id,
+        "label": label or "",
+        "quota": quota,
+        "requestsUsed": 0,
+        "remaining": quota,
+        "rateLimitPerMinute": rate_limit_per_minute,
+        "status": "active",
+        "secret": secret,
+    }
+
+
+def list_api_keys() -> list[dict]:
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT key_id, label, quota, requests_used, rate_limit_per_minute, status, "
+            "created_at, last_used_at, created_by FROM api_keys ORDER BY created_at DESC"
+        ).fetchall()
+    return [_row_to_api_key(row) for row in rows]
+
+
+def revoke_api_key(key_id: str) -> bool:
+    with get_connection() as conn:
+        cur = conn.execute("UPDATE api_keys SET status='revoked' WHERE key_id=?", (key_id,))
+        conn.commit()
+        changed = cur.rowcount > 0
+    refresh_api_key_cache()
+    return changed
+
+
+def topup_api_key(key_id: str, add_quota: int) -> Optional[dict]:
+    """Increase a key's allowance by `add_quota` and reactivate it. Unlimited
+    keys (quota NULL) are left unlimited. Returns the updated row, or None."""
+    with get_connection() as conn:
+        row = conn.execute("SELECT quota FROM api_keys WHERE key_id=?", (key_id,)).fetchone()
+        if row is None:
+            return None
+        new_quota = row["quota"] if row["quota"] is None else row["quota"] + add_quota
+        conn.execute(
+            "UPDATE api_keys SET quota=?, status='active' WHERE key_id=?", (new_quota, key_id)
+        )
+        conn.commit()
+        updated = conn.execute(
+            "SELECT key_id, label, quota, requests_used, rate_limit_per_minute, status, "
+            "created_at, last_used_at, created_by FROM api_keys WHERE key_id=?",
+            (key_id,),
+        ).fetchone()
+    refresh_api_key_cache()
+    return _row_to_api_key(updated) if updated else None

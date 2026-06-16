@@ -1,7 +1,7 @@
 from fastapi import FastAPI
-from fastapi.testclient import TestClient
 
 from backend import multiplayer
+from backend.tests.test_multiplayer import _AuthInjectingClient
 
 
 def make_client(monkeypatch):
@@ -11,7 +11,7 @@ def make_client(monkeypatch):
     monkeypatch.setattr(multiplayer, "_save_events_locked", lambda: None)
     app = FastAPI()
     app.include_router(multiplayer.router)
-    return TestClient(app)
+    return _AuthInjectingClient(app)
 
 
 def register_players(client, event_id, names):
