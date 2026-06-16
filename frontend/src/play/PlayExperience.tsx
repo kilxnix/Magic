@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   SimpleGameState,
   SimpleLegalAction,
@@ -6,6 +6,20 @@ import type {
   ChatMessage,
   DamageAssignmentChoice,
 } from '../hooks/useShelectorGame';
+
+// At an idle window (empty stack, no combat) the engine offers SkipEmptyPhases /
+// SkipRestOfTurn INSTEAD of PassPriority, and only the opponent's idle windows
+// are auto-passed by the hook. So "pass / advance" must consider all three, in
+// least-aggressive-first order.
+const PASS_ACTION_KINDS = ['PassPriority', 'SkipEmptyPhases', 'SkipRestOfTurn'] as const;
+
+function findPassAction(actions: SimpleLegalAction[]): SimpleLegalAction | undefined {
+  for (const kind of PASS_ACTION_KINDS) {
+    const found = actions.find(a => a.kind === kind);
+    if (found) return found;
+  }
+  return undefined;
+}
 import type {
   GameView,
   GameViewInput,
@@ -155,6 +169,23 @@ export function PlayExperience({
     setSelectedTargetIds([]);
   }, [targetingPrompt]);
 
+  // The hook empties `legalActions` at idle priority / mid-resolution windows and
+  // routes the legal choices into `currentPrompt.legalChoices` instead (each choice
+  // carries the engine action under `.action`). Source from there when
+  // `legalActions` is empty, otherwise the UI has nothing to act on — no pass, no
+  // play, no cast. This is what made the board render but never advance.
+  const effectiveLegalActions: SimpleLegalAction[] = useMemo(() => {
+    if (legalActions.length > 0) return legalActions;
+    const choices = currentPrompt?.legalChoices;
+    if (!choices || choices.length === 0) return legalActions;
+    return choices.map(c => ({
+      kind: c.kind,
+      label: c.label ?? '',
+      cardInstanceId: c.cardInstanceId,
+      _engineAction: c.action,
+    })) as SimpleLegalAction[];
+  }, [legalActions, currentPrompt]);
+
   // ── Combat composer data (derived EXACTLY as GameBoard derives it) ────────
   // Every eligible attacker appears in some DeclareAttackers menu option; every
   // legal (blocker, attacker) pair appears in some DeclareBlockers option.
@@ -168,7 +199,7 @@ export function PlayExperience({
     const pairs = new Map<string, Set<string>>();
     let hasAtk = false;
     let hasBlk = false;
-    for (const action of legalActions) {
+    for (const action of effectiveLegalActions) {
       const engineAction = action._engineAction;
       if (engineAction?.kind === 'DeclareAttackers') {
         hasAtk = true;
@@ -192,7 +223,7 @@ export function PlayExperience({
       hasDeclareAttackers: hasAtk,
       hasDeclareBlockers: hasBlk,
     };
-  }, [legalActions]);
+  }, [effectiveLegalActions]);
 
   // Reset the composer whenever the respective combat window closes (mirrors
   // GameBoard's effect so a stale selection never leaks across steps).
@@ -214,7 +245,7 @@ export function PlayExperience({
   );
   const input: GameViewInput = {
     gameState,
-    legalActions,
+    legalActions: effectiveLegalActions,
     isHumanTurn,
     winner,
     guided,
@@ -270,9 +301,9 @@ export function PlayExperience({
   // passAction = legalActions.find(kind === 'PassPriority')). "Hold" has no
   // engine action in this surface; it is a UI affordance only.
   const handlePass = useCallback(() => {
-    const passAction = legalActions.find(a => a.kind === 'PassPriority');
+    const passAction = findPassAction(effectiveLegalActions);
     if (passAction) onAction(passAction);
-  }, [legalActions, onAction]);
+  }, [effectiveLegalActions, onAction]);
   const handleHold = useCallback(() => {
     // No engine "hold" on this prop surface; toggling stops is the page's job.
   }, []);
@@ -288,9 +319,31 @@ export function PlayExperience({
     // dispatch here beyond keeping the window open.
   }, []);
   const handleLetResolve = useCallback(() => {
-    const passAction = legalActions.find(a => a.kind === 'PassPriority');
+    const passAction = findPassAction(effectiveLegalActions);
     if (passAction) onAction(passAction);
-  }, [legalActions, onAction]);
+  }, [effectiveLegalActions, onAction]);
+
+  // Auto-advance idle windows: when the human's ONLY legal actions are
+  // pass/skip kinds (nothing meaningful to do) and they aren't holding with
+  // "always stop", submit the pass automatically so the game flows. Guarded by
+  // a signature of the current actions so an unchanged state is never passed
+  // twice (no tight loop); each real engine advance changes the signature.
+  const lastAutoPassSig = useRef<string>('');
+  useEffect(() => {
+    if (alwaysStop) return;
+    if (guidedPromptOpen) return; // wait for the guided choice before auto-flowing
+    if (effectiveLegalActions.length === 0) return;
+    const passAction = findPassAction(effectiveLegalActions);
+    if (!passAction) return;
+    const onlyPassActions = effectiveLegalActions.every(
+      a => (PASS_ACTION_KINDS as readonly string[]).includes(a.kind),
+    );
+    if (!onlyPassActions) return; // a real choice exists — let the human decide
+    const sig = effectiveLegalActions.map(a => `${a.kind}:${a.cardInstanceId ?? ''}`).join('|');
+    if (sig === lastAutoPassSig.current) return;
+    lastAutoPassSig.current = sig;
+    onAction(passAction);
+  }, [effectiveLegalActions, alwaysStop, guidedPromptOpen, onAction]);
 
   // Targeting: the board-target prompt resolves ONE target per tap (max = 1).
   //   toggle  → record the locally-selected id (or clear it if re-tapped);

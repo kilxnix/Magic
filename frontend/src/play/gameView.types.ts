@@ -28,6 +28,17 @@ export type {
   ChatMessage,
 };
 
+/** One choice in a prompt — carries the engine action under `action`. When the
+ * hook empties `legalActions` (idle priority / mid-resolution windows), the legal
+ * choices live HERE instead, so the UI must source actions from this. */
+export interface PromptChoiceLike {
+  id?: string;
+  kind: string;
+  label?: string;
+  cardInstanceId?: string;
+  action: unknown;
+}
+
 /** Engine-authored prompt members the selectors actually read (structural subset). */
 export interface CurrentPromptLike {
   type?: string;
@@ -38,6 +49,7 @@ export interface CurrentPromptLike {
     canResolveTopOfStack?: boolean;
     stackSize?: number;
   };
+  legalChoices?: PromptChoiceLike[];
 }
 
 /** Mid-resolution combat damage-order decision (hook's `damageAssignmentChoice`). */
