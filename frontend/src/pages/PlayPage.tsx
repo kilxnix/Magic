@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { ArrowLeft, ClipboardPaste, Download, Loader2, Swords, Link as LinkIcon, History, Trash2, Shield, Trophy, Users, Lightbulb, X, Save, FolderOpen, Database, BookmarkPlus, Rocket, Upload, BarChart3, Target } from 'lucide-react';
 import { useShelectorGame, type GameLogEntry, type ImportedCards, type ShelectorGameSaveSnapshot } from '../hooks/useShelectorGame';
 import { GameBoard } from '../components/GameBoard';
+import { PlayExperience } from '../play/PlayExperience';
 import { GameReview } from '../components/GameReview';
 import { EndGameModal } from '../components/shelector/EndGameModal';
 import { DraftTournament } from '../components/DraftTournament';
@@ -295,6 +296,15 @@ export function PlayPage() {
     playItOut,
     reviewLog,
   } = useShelectorGame();
+
+  // Feature flag: opt into the rebuilt play UI (PlayExperience) with ?newui=1.
+  // Defaults off — the existing <GameBoard> stays the default board.
+  const useNewPlayUi = useMemo(
+    () =>
+      typeof window !== 'undefined' &&
+      new URLSearchParams(window.location.search).get('newui') === '1',
+    [],
+  );
 
   // Pre-game state
   const [step, setStep] = useState<'import' | 'opponent' | 'draft' | 'standard' | 'game'>('import');
@@ -3123,6 +3133,20 @@ export function PlayPage() {
         )}
 
         <div className={FLOATING_TABLE_LAYOUT.board}>
+          {useNewPlayUi ? (
+            <PlayExperience
+              gameState={gameState}
+              legalActions={legalActions}
+              isHumanTurn={isHumanTurn}
+              winner={winner}
+              onAction={submitAction}
+              targetingPrompt={targetingPrompt}
+              onCancelTargeting={cancelTargeting}
+              currentPrompt={currentPrompt}
+              damageAssignmentChoice={damageAssignmentChoice}
+              newPlayerMode={inGameCoachingEnabled ? newPlayerMode : false}
+            />
+          ) : (
           <GameBoard
             gameState={gameState}
             legalActions={legalActions}
@@ -3232,6 +3256,7 @@ export function PlayPage() {
                 : []),
             ]}
           />
+          )}
         </div>
 
         {/* Review modal */}
