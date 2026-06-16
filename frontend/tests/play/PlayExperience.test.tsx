@@ -226,6 +226,47 @@ describe('PlayExperience', () => {
     expect((onAction.mock.calls[0][0] as SimpleLegalAction).kind).toBe('PassPriority');
   });
 
+  it('renders an optional-trigger decision and routes Use / Decline', () => {
+    setViewport(1280);
+    const prompts = noopPrompts();
+    prompts.optionalTrigger.choice = {
+      id: 'ot1',
+      triggerId: 't1',
+      sourceName: 'Soul Warden',
+      triggerKind: 'etb',
+      title: 'Gain 1 life?',
+    } as PlayPrompts['optionalTrigger']['choice'];
+    renderExperience(vi.fn(), { prompts });
+
+    expect(screen.getByTestId('decision-modal').textContent).toContain('Soul Warden');
+    fireEvent.click(screen.getByTestId('decision-confirm'));
+    expect(prompts.optionalTrigger.onResolve).toHaveBeenCalledWith(true);
+    fireEvent.click(screen.getByTestId('decision-decline'));
+    expect(prompts.optionalTrigger.onResolve).toHaveBeenCalledWith(false);
+  });
+
+  it('disables Pay on a tax prompt the player cannot afford', () => {
+    setViewport(1280);
+    const prompts = noopPrompts();
+    prompts.tax.choice = {
+      id: 'tx1',
+      stackItemId: 's1',
+      sourceName: 'Rhystic Study',
+      controllerId: 'ai1',
+      controllerName: 'Atraxa',
+      casterId: 'human',
+      casterName: 'You',
+      taxAmount: 1,
+      effect: 'draw',
+      effectCount: 1,
+      canPay: false,
+    } as PlayPrompts['tax']['choice'];
+    renderExperience(vi.fn(), { prompts });
+
+    const confirm = screen.getByTestId('decision-confirm') as HTMLButtonElement;
+    expect(confirm.disabled).toBe(true);
+  });
+
   it('does NOT auto-pass while a blocking choice is pending (no pass under a hidden decision)', () => {
     setViewport(1280);
     const onAction = vi.fn();

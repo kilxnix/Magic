@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   SimpleGameState,
   SimpleLegalAction,
@@ -30,8 +30,95 @@ import type {
 } from './gameView.types';
 import { useGameView } from './useGameView';
 import { MulliganOverlay } from './components/MulliganOverlay';
+import { DecisionModal, type DecisionAccent } from './components/DecisionModal';
 import { DesktopBattlefield } from './shells/DesktopBattlefield';
 import { MobileTable } from './shells/MobileTable';
+
+interface DecisionModalContent {
+  accent: DecisionAccent;
+  title: string;
+  body: ReactNode;
+  confirmLabel: string;
+  declineLabel: string;
+  confirmDisabled: boolean;
+  onConfirm(): void;
+  onDecline(): void;
+}
+
+/**
+ * Build the DecisionModal content for whichever blocking yes/no choice is
+ * pending (ward > tax > optional-trigger, most-urgent first — only one is ever
+ * pending at a time, but this fixes a deterministic precedence). Returns null
+ * when none is pending. Copy mirrors GameBoard's three modals.
+ */
+function decisionModalContent(prompts: PlayPrompts | undefined): DecisionModalContent | null {
+  if (!prompts) return null;
+
+  const ward = prompts.ward.choice;
+  if (ward) {
+    return {
+      accent: 'rose',
+      title: `Ward — ${ward.targetName}`,
+      body: (
+        <span>
+          <b>{ward.sourceName}</b> targets <b>{ward.targetName}</b>. Pay {ward.costLabel} or it will
+          be countered by ward.
+        </span>
+      ),
+      confirmLabel: `Pay ${ward.costLabel}`,
+      confirmDisabled: !ward.canPay,
+      declineLabel: 'Decline',
+      onConfirm: () => prompts.ward.onResolve(true),
+      onDecline: () => prompts.ward.onResolve(false),
+    };
+  }
+
+  const tax = prompts.tax.choice;
+  if (tax) {
+    const cost = `{${tax.taxAmount}}`;
+    const effectText =
+      tax.effect === 'draw'
+        ? `${tax.controllerName} draws ${tax.effectCount} card${tax.effectCount === 1 ? '' : 's'}`
+        : tax.effect === 'treasure'
+          ? `${tax.controllerName} makes ${tax.effectCount} Treasure`
+          : 'the trigger resolves';
+    return {
+      accent: 'sky',
+      title: `Tax — ${tax.sourceName}`,
+      body: (
+        <span>
+          <b>{tax.casterName}</b> may pay {cost}. If not, {effectText}.
+        </span>
+      ),
+      confirmLabel: `Pay ${cost}`,
+      confirmDisabled: !tax.canPay,
+      declineLabel: 'Decline',
+      onConfirm: () => prompts.tax.onResolve(true),
+      onDecline: () => prompts.tax.onResolve(false),
+    };
+  }
+
+  const ot = prompts.optionalTrigger.choice;
+  if (ot) {
+    return {
+      accent: 'amber',
+      title: ot.title || 'Optional trigger',
+      body: (
+        <span>
+          <b>{ot.sourceName}</b>
+          {ot.triggerKind ? ` — ${ot.triggerKind}` : ''}. Use this triggered ability?
+        </span>
+      ),
+      confirmLabel: 'Use',
+      confirmDisabled: false,
+      declineLabel: 'Decline',
+      onConfirm: () => prompts.optionalTrigger.onResolve(true),
+      onDecline: () => prompts.optionalTrigger.onResolve(false),
+    };
+  }
+
+  return null;
+}
 
 // ============================================================================
 // PlayExperience — the top-level that wires the pure play view-model
@@ -473,6 +560,7 @@ export function PlayExperience({
 
   const mulliganOpen = Boolean(prompts?.mulligan.phase);
   const actionError = prompts?.actionError ?? null;
+  const decision = decisionModalContent(prompts);
 
   return (
     <div data-testid="play-experience" className="relative h-full w-full">
@@ -547,6 +635,19 @@ export function PlayExperience({
           onMulligan={prompts.mulligan.onMulligan}
           onToggleCard={prompts.mulligan.onToggleCard}
           onToggleBottom={prompts.mulligan.onToggleBottom}
+        />
+      )}
+
+      {decision && (
+        <DecisionModal
+          accent={decision.accent}
+          title={decision.title}
+          body={decision.body}
+          confirmLabel={decision.confirmLabel}
+          declineLabel={decision.declineLabel}
+          confirmDisabled={decision.confirmDisabled}
+          onConfirm={decision.onConfirm}
+          onDecline={decision.onDecline}
         />
       )}
     </div>
