@@ -35,6 +35,7 @@ import { DiscardOverlay } from './components/DiscardOverlay';
 import { LibraryChoiceModal } from './components/LibraryChoiceModal';
 import { ReorderModal, type ReorderSection } from './components/ReorderModal';
 import { DecisionModal, type DecisionAccent } from './components/DecisionModal';
+import { CardDetailOverlay } from './components/CardDetailOverlay';
 import { DesktopBattlefield } from './shells/DesktopBattlefield';
 import { MobileTable } from './shells/MobileTable';
 
@@ -480,12 +481,40 @@ export function PlayExperience({
     [onAction],
   );
 
-  // Examine / explore: pure look-only UI state. The shells own the
-  // OpponentExplorer overlay (open by playerId) and a card-detail open by id;
-  // there is no engine dispatch, so these are intentional no-ops at this level.
-  const handleExamine = useCallback((_id: string) => {
-    // Look-only: handled inside the shells (card detail) — no engine commit.
-  }, []);
+  // Examine: the look-only "what is this card?" zoom. We resolve the tapped id to
+  // a card NAME by walking every card-bearing collection in the view (your zones +
+  // command zone + each opponent's board/command zone), then open the portaled
+  // CardDetailOverlay. Free + reversible — never commits an engine action.
+  const idToName = useMemo(() => {
+    const map = new Map<string, string>();
+    const add = (cards: { id: string; name: string }[]) => {
+      for (const c of cards) if (!map.has(c.id)) map.set(c.id, c.name);
+    };
+    const y = view.you;
+    add(y.hand);
+    add(y.commandZone);
+    add(y.creatures);
+    add(y.artifacts);
+    add(y.enchantments);
+    add(y.lands);
+    add(y.other);
+    for (const opp of view.opponents) {
+      add(opp.creatures);
+      add(opp.lands);
+      add(opp.other);
+      add(opp.commandZone);
+    }
+    return map;
+  }, [view]);
+
+  const [examineName, setExamineName] = useState<string | null>(null);
+  const handleExamine = useCallback(
+    (id: string) => {
+      const name = idToName.get(id);
+      if (name) setExamineName(name);
+    },
+    [idToName],
+  );
   const handleExploreOpponent = useCallback((_playerId: string) => {
     // Look-only: the shell opens its OpponentExplorer — no engine commit.
   }, []);
@@ -796,6 +825,10 @@ export function PlayExperience({
           onDiscard={prompts.discard.onDiscard}
         />
       )}
+
+      {/* Look-only card zoom — the destination of every onExamine gesture.
+          Portaled to body, so it's rendered here at the top level. */}
+      <CardDetailOverlay cardName={examineName} onClose={() => setExamineName(null)} />
     </div>
   );
 }
