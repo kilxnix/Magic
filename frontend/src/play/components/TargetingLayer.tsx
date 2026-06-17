@@ -39,12 +39,12 @@ export function canConfirmTargets(targeting: Pick<
  * bottom sheet next to the board, never floating over the board's interactive
  * layer where it could swallow taps.
  *
- * Naming note: the contract's `TargetingContext` carries target *ids* only
- * (`legalTargetIds` / `selectedTargetIds`), not card names. With no name there
- * is no art to resolve, so this view deliberately does NOT render <CardImage>
- * (rendering art from an id would fabricate the wrong card — against the
- * project's honesty bar). When the view-model later surfaces per-target names,
- * the chip body is where <CardImage cardName={...}> would slot in.
+ * Naming note: `TargetingContext.legalTargets` carries each target's human label
+ * (e.g. "Llanowar Elves"), resolved upstream by the hook's targetPickerLabel — so
+ * the chips show readable names, not raw engine instance ids. Card ART is still
+ * not rendered here: a label is not guaranteed to be a unique printable card name
+ * (it can read "Goblin (opponent)" / a player name), and fabricating art from an
+ * ambiguous label would be against the project's honesty bar.
  */
 export function TargetingLayer({
   targeting,
@@ -56,7 +56,7 @@ export function TargetingLayer({
     return null;
   }
 
-  const { prompt, minTargets, maxTargets, legalTargetIds, selectedTargetIds } = targeting;
+  const { prompt, minTargets, maxTargets, legalTargetIds, legalTargets, selectedTargetIds } = targeting;
   const selectedCount = selectedTargetIds.length;
   const confirmEnabled = canConfirmTargets(targeting);
   const selectedSet = new Set(selectedTargetIds);
@@ -73,7 +73,7 @@ export function TargetingLayer({
     <section
       aria-label="Choose targets"
       data-testid="targeting-layer"
-      className="flex w-full flex-col gap-3 rounded-xl border border-amber-500/40 bg-stone-900/90 p-3 text-stone-100 shadow-lg"
+      className="flex w-full flex-col gap-3 rounded-xl border border-amber-500/40 bg-gradient-to-b from-stone-900/90 to-neutral-950/90 p-3 text-stone-100 shadow-lg shadow-black/40 ring-1 ring-amber-500/10"
     >
       <header className="flex items-baseline justify-between gap-2">
         <h2 className="text-xs font-semibold uppercase tracking-wide text-amber-200/90">
@@ -96,20 +96,20 @@ export function TargetingLayer({
         </p>
       ) : (
         <ul className="flex flex-wrap gap-2" aria-label="Legal targets">
-          {legalTargetIds.map((id) => {
-            const selected = selectedSet.has(id);
+          {legalTargets.map((t) => {
+            const selected = selectedSet.has(t.id);
             // At max with this one unselected → picking it would overflow; dim it.
             const atMax = selectedCount >= maxTargets;
             const disabled = !selected && atMax && maxTargets > 0;
             return (
-              <li key={id}>
+              <li key={t.id}>
                 <button
                   type="button"
                   data-testid="target-option"
-                  data-target-id={id}
+                  data-target-id={t.id}
                   aria-pressed={selected}
                   disabled={disabled}
-                  onClick={() => onToggleTarget(id)}
+                  onClick={() => onToggleTarget(t.id)}
                   className={[
                     'min-h-10 rounded-lg border px-3 py-2 text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/60',
                     selected
@@ -118,7 +118,7 @@ export function TargetingLayer({
                     'disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-stone-600/70 disabled:hover:bg-stone-800/70',
                   ].join(' ')}
                 >
-                  {id}
+                  {t.name}
                 </button>
               </li>
             );

@@ -55,15 +55,15 @@ export function DecisionModal({
       role="dialog"
       aria-modal="true"
       aria-label={title}
-      className="absolute inset-0 z-[45] flex items-center justify-center bg-neutral-950/80 px-4 backdrop-blur-sm"
+      className="absolute inset-0 z-[45] flex animate-fade-in items-center justify-center bg-neutral-950/80 px-4 backdrop-blur-sm"
     >
       <div
         className={cn(
-          'w-full max-w-sm rounded-xl border bg-neutral-950 p-5 shadow-2xl shadow-black/60',
+          'w-full max-w-sm animate-tile-in rounded-xl border bg-gradient-to-b from-stone-900 to-neutral-950 p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_24px_60px_rgba(0,0,0,0.6)]',
           theme.ring,
         )}
       >
-        <h2 className="text-base font-black uppercase tracking-wide text-stone-100">{title}</h2>
+        <h2 className="font-serif text-base font-bold tracking-tight text-stone-100">{title}</h2>
         <div className="mt-2 text-sm leading-relaxed text-stone-300">{body}</div>
 
         <div className="mt-5 flex items-center justify-end gap-2">

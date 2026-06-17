@@ -53,7 +53,7 @@ export function OpponentCard({ glance, onExplore }: OpponentCardProps) {
       onClick={onExplore}
       aria-label={`Explore ${name}'s board`}
       data-testid="opponent-card"
-      className="group flex w-full min-w-0 flex-col gap-2 overflow-hidden rounded-xl border border-rose-900/30 bg-gradient-to-b from-stone-800/85 to-neutral-950/80 px-3 py-2.5 text-left shadow-lg shadow-black/30 transition-colors hover:border-amber-400/60 hover:from-stone-700/85 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/60"
+      className="group flex w-full min-w-0 flex-col gap-2 overflow-hidden rounded-xl border border-rose-900/30 bg-gradient-to-b from-stone-800/85 to-neutral-950/80 px-3 py-2.5 text-left shadow-lg shadow-black/30 transition-all duration-200 will-change-transform hover:-translate-y-px hover:border-amber-400/60 hover:from-stone-700/85 hover:shadow-xl hover:shadow-black/40 active:translate-y-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/60"
     >
       {/* Header: commander art + name + prominent life */}
       <div className="flex items-center gap-2">

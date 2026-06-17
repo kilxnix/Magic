@@ -87,7 +87,18 @@ export function CombatFlow({
     return null;
   }
 
+  // Damage ordering is owned by the ReorderModal (fed the same
+  // damageAssignmentChoice). The CombatContext here carries no combatant
+  // list/picker and onConfirm is a no-op for this step, so a banner would be a
+  // dead, empty surface behind the modal. Render nothing.
+  if (step === 'order-damage') {
+    return null;
+  }
+
   const copy = STEP_COPY[step];
+  // Assigned-combatant badge verb is step-aware: in declare-blockers the same
+  // control assigns a BLOCKER, so "attacking" would be wrong.
+  const assignVerb = step === 'declare-blockers' ? 'blocking' : 'attacking';
   const skipLabel = step === 'declare-attackers' ? 'No attacks' : step === 'declare-blockers' ? 'No blocks' : null;
   // Defender picker only matters with >1 defender (opponent + their planeswalkers).
   const showDefenderPicker =
@@ -100,15 +111,12 @@ export function CombatFlow({
       data-testid="combat-flow"
       data-step={step}
       aria-label="Combat"
-      className="flex w-full min-w-0 flex-col gap-3 rounded-xl border border-amber-500/45 bg-stone-900/90 p-3 text-stone-100 shadow-lg"
+      className="flex w-full min-w-0 flex-col gap-3 rounded-xl border border-amber-500/45 bg-gradient-to-b from-stone-900/90 to-neutral-950/90 p-3 text-stone-100 shadow-lg shadow-black/40 ring-1 ring-amber-500/10"
     >
-      <header className="flex items-baseline justify-between gap-2">
+      <header className="flex items-baseline gap-2">
         <h2 className="text-xs font-semibold uppercase tracking-wide text-amber-200/90">
           Combat
         </h2>
-        <span className="shrink-0 text-[10px] font-bold uppercase tracking-wider text-stone-400">
-          Step
-        </span>
       </header>
 
       <div>
@@ -172,7 +180,7 @@ export function CombatFlow({
                   <span className="font-bold">{c.name}</span>
                   {pt && <span className="ml-1 tabular-nums text-stone-400">{pt.trim()}</span>}
                   {isAssigned && (
-                    <span className="ml-1.5 text-[11px] font-bold text-amber-200/80">✓ attacking</span>
+                    <span className="ml-1.5 text-[11px] font-bold text-amber-200/80">✓ {assignVerb}</span>
                   )}
                 </button>
               </li>

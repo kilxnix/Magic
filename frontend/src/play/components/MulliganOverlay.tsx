@@ -59,10 +59,10 @@ export function MulliganOverlay({
       data-testid="mulligan-overlay"
       role="dialog"
       aria-label="Mulligan decision"
-      className="absolute inset-0 z-40 flex flex-col items-center justify-center gap-4 bg-neutral-950/92 px-4 py-6 backdrop-blur-sm"
+      className="absolute inset-0 z-40 flex animate-fade-in flex-col items-center justify-center gap-4 bg-neutral-950/92 px-4 py-6 backdrop-blur-sm"
     >
       <div className="text-center">
-        <h2 className="text-lg font-black uppercase tracking-wide text-amber-300">{heading}</h2>
+        <h2 className="font-serif text-lg font-bold tracking-tight text-amber-300">{heading}</h2>
         <p className="mx-auto mt-1 max-w-md text-xs font-medium text-stone-300">{subline}</p>
       </div>
 

@@ -69,8 +69,11 @@ export const DESKTOP_BATTLEFIELD_LAYOUT = {
 
   // In-flow overlay slot (targeting / combat). NOT fixed — it sits in the center
   // column's flow above the hand so it never covers the board's tiles silently.
+  // Capped + internally scrollable so a tall banner (e.g. many attackers) can't
+  // crush the flex-1 board past the screen or get its Confirm footer clipped by
+  // the center column's overflow-hidden.
   decisionSlot:
-    'shrink-0',
+    'shrink-0 overflow-y-auto overscroll-contain max-h-[min(22rem,42svh)]',
 } as const;
 
 export type DesktopBattlefieldLayout = typeof DESKTOP_BATTLEFIELD_LAYOUT;
@@ -119,7 +122,7 @@ export const MOBILE_TABLE_LAYOUT = {
   // capped + internally scrollable so a deep stack never pushes the hand off or
   // covers the board.
   decisionSheet:
-    'shrink-0 overflow-y-auto overscroll-contain rounded-xl border border-amber-500/35 bg-stone-900/95 p-2 shadow-2xl shadow-black/50 max-h-[min(20rem,42svh)]',
+    'shrink-0 overflow-y-auto overscroll-contain rounded-xl border border-amber-500/35 bg-stone-900/95 p-2 shadow-2xl shadow-black/50 max-h-[min(16rem,32svh)]',
 
   // Priority strip — always present at the bottom even when no sheet surfaces,
   // so "whose call is it / pass" is always reachable (no-dead-ends invariant).
@@ -132,7 +135,7 @@ export const MOBILE_TABLE_LAYOUT = {
   handPullupSummary:
     'flex cursor-pointer list-none items-center justify-between px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-amber-200/90 [&::-webkit-details-marker]:hidden',
   handPullupBody:
-    'overflow-x-auto overflow-y-visible max-h-[min(13rem,30svh)]',
+    'overflow-x-auto overflow-y-visible max-h-[min(10rem,22svh)]',
 
   // Narration — a bounded pull-up (the NarrationFeed renders its own <details>
   // on mobile); this just sizes the slot. In flow, never over the board.

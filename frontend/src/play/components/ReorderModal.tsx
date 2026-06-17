@@ -70,10 +70,10 @@ export function ReorderModal({
       role="dialog"
       aria-modal="true"
       aria-label={title}
-      className="absolute inset-0 z-[46] flex items-center justify-center bg-neutral-950/85 px-4 backdrop-blur-sm"
+      className="absolute inset-0 z-[46] flex animate-fade-in items-center justify-center bg-neutral-950/85 px-4 backdrop-blur-sm"
     >
-      <div className="flex max-h-[88%] w-full max-w-md flex-col rounded-xl border border-amber-500/40 bg-neutral-950 p-4 shadow-2xl shadow-black/60">
-        <h2 className="text-base font-black uppercase tracking-wide text-amber-200">{title}</h2>
+      <div className="flex max-h-[88%] w-full max-w-md animate-tile-in flex-col rounded-xl border border-amber-500/40 bg-gradient-to-b from-stone-900 to-neutral-950 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_24px_60px_rgba(0,0,0,0.6)]">
+        <h2 className="font-serif text-base font-bold tracking-tight text-amber-100">{title}</h2>
         {hint && <p className="mt-1 text-xs text-stone-400">{hint}</p>}
 
         <div className="mt-3 flex flex-col gap-3 overflow-y-auto">

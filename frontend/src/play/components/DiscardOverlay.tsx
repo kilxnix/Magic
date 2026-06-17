@@ -20,10 +20,10 @@ export function DiscardOverlay({ hand, count, onDiscard }: DiscardOverlayProps) 
       data-testid="discard-overlay"
       role="dialog"
       aria-label="Discard to hand size"
-      className="absolute inset-0 z-40 flex flex-col items-center justify-center gap-4 bg-neutral-950/92 px-4 py-6 backdrop-blur-sm"
+      className="absolute inset-0 z-40 flex animate-fade-in flex-col items-center justify-center gap-4 bg-neutral-950/92 px-4 py-6 backdrop-blur-sm"
     >
       <div className="text-center">
-        <h2 className="text-lg font-black uppercase tracking-wide text-rose-300">
+        <h2 className="font-serif text-lg font-bold tracking-tight text-rose-300">
           Discard {count} card{count === 1 ? '' : 's'}
         </h2>
         <p className="mt-1 text-xs font-medium text-stone-300">

@@ -25,6 +25,20 @@ describe('targeting', () => {
     expect(ctx.active).toBe(true);
     expect(ctx.prompt).toBe('Choose a target for Lightning Bolt');
     expect(ctx.legalTargetIds).toEqual(['t1', 't2']);
+    // Regression: the overlay must show human names, not raw instance ids.
+    expect(ctx.legalTargets).toEqual([
+      { id: 't1', name: 'Bear' },
+      { id: 't2', name: 'Elf' },
+    ]);
+  });
+
+  it('falls back to the target id as the name when a choice has no label', () => {
+    const ctx = targeting({
+      label: 'Pick',
+      sourceName: 'X',
+      choices: [{ targetId: 't9', label: '', action: {} as never }],
+    });
+    expect(ctx.legalTargets).toEqual([{ id: 't9', name: 't9' }]);
   });
 
   it('approximates min/max as 1 (single-tap-per-target flow) with no selection', () => {

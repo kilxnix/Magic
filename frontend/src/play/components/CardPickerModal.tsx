@@ -44,10 +44,10 @@ export function CardPickerModal({ title, cards, onPick, onCancel }: CardPickerMo
       role="dialog"
       aria-modal="true"
       aria-label={title}
-      className="absolute inset-0 z-[46] flex items-center justify-center bg-neutral-950/85 px-4 backdrop-blur-sm"
+      className="absolute inset-0 z-[46] flex animate-fade-in items-center justify-center bg-neutral-950/85 px-4 backdrop-blur-sm"
     >
-      <div className="flex max-h-[88%] w-full max-w-2xl flex-col rounded-xl border border-amber-500/40 bg-neutral-950 p-4 shadow-2xl shadow-black/60">
-        <h2 className="text-base font-black uppercase tracking-wide text-amber-200">{title}</h2>
+      <div className="flex max-h-[88%] w-full max-w-2xl animate-tile-in flex-col rounded-xl border border-amber-500/40 bg-gradient-to-b from-stone-900 to-neutral-950 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_24px_60px_rgba(0,0,0,0.6)]">
+        <h2 className="font-serif text-base font-bold tracking-tight text-amber-100">{title}</h2>
 
         <div className="mt-3 grid max-h-[55vh] grid-cols-2 gap-2 overflow-y-auto sm:grid-cols-3">
           {cards.length === 0 && (

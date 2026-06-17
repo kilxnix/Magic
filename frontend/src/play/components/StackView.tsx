@@ -19,7 +19,7 @@ export interface StackViewProps {
  * normal in-flow panel meant to live in a side rail / center column. It uses NO
  * position:fixed and never floats over the board's interactive layer.
  */
-export function StackView({ stack, guided, onRespond, onLetResolve }: StackViewProps) {
+export function StackView({ stack, guided, onLetResolve }: StackViewProps) {
   const isEmpty = stack.length === 0;
 
   // Idle: the stack is "always visible" per the spec, but as a low-profile chip
@@ -40,7 +40,7 @@ export function StackView({ stack, guided, onRespond, onLetResolve }: StackViewP
   return (
     <section
       aria-label="The stack"
-      className="flex w-full flex-col gap-2 rounded-xl border border-amber-500/40 bg-stone-900/90 p-3 text-stone-100 shadow-lg ring-1 ring-amber-500/10"
+      className="flex w-full flex-col gap-2 rounded-xl border border-amber-500/40 bg-gradient-to-b from-stone-900/90 to-neutral-950/90 p-3 text-stone-100 shadow-lg shadow-black/40 ring-1 ring-amber-500/10"
     >
       <header className="flex items-baseline justify-between">
         <h2 className="text-xs font-semibold uppercase tracking-wide text-amber-200/90">
@@ -69,7 +69,7 @@ export function StackView({ stack, guided, onRespond, onLetResolve }: StackViewP
                   key={item.id}
                   data-testid="stack-item"
                   className={[
-                    'flex items-start gap-2.5 rounded-lg border px-2.5 py-2 transition-colors',
+                    'flex animate-fade-in items-start gap-2.5 rounded-lg border px-2.5 py-2 transition-colors',
                     emphasised
                       ? 'border-amber-400/70 bg-amber-950/30 ring-1 ring-amber-400/30'
                       : 'border-stone-700/60 bg-stone-950/40',
@@ -111,18 +111,19 @@ export function StackView({ stack, guided, onRespond, onLetResolve }: StackViewP
             })}
           </ol>
 
-          <footer className="mt-1 flex gap-2 border-t border-stone-700/50 pt-2">
-            <button
-              type="button"
-              onClick={onRespond}
-              className="flex-1 rounded-lg border border-amber-500/40 bg-amber-600/20 px-3 py-2 text-sm font-medium text-amber-100 transition-colors hover:bg-amber-600/30 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/60"
-            >
-              Respond
-            </button>
+          {/* Respond is not a one-click action — you respond by casting an instant
+              or activating an ability (from your hand / board). So instead of an
+              inert "Respond" button, teach the path and offer the one real action:
+              let the top of the stack resolve (passes priority). */}
+          <footer className="mt-1 flex items-center gap-3 border-t border-stone-700/50 pt-2">
+            <p className="flex-1 text-[11px] leading-snug text-stone-400">
+              To respond, cast an instant or activate an ability from your hand or
+              board. Otherwise let the top of the stack resolve.
+            </p>
             <button
               type="button"
               onClick={onLetResolve}
-              className="flex-1 rounded-lg border border-stone-600/60 bg-stone-800/70 px-3 py-2 text-sm font-medium text-stone-200 transition-colors hover:bg-stone-700/70 focus:outline-none focus-visible:ring-2 focus-visible:ring-stone-400/50"
+              className="shrink-0 rounded-lg border border-amber-500/40 bg-amber-600/20 px-3 py-2 text-sm font-medium text-amber-100 transition-colors hover:bg-amber-600/30 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/60"
             >
               Let it resolve
             </button>

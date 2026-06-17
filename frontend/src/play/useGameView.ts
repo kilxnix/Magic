@@ -120,7 +120,7 @@ const EMPTY_VIEW: GameView = {
     canPass: false,
     canHold: false,
   },
-  targeting: { active: false, prompt: '', minTargets: 0, maxTargets: 0, legalTargetIds: [], selectedTargetIds: [] },
+  targeting: { active: false, prompt: '', minTargets: 0, maxTargets: 0, legalTargetIds: [], legalTargets: [], selectedTargetIds: [] },
   combat: { step: 'none', eligibleIds: [], eligible: [], eligibleDefenders: [], assignments: {} },
   narration: [],
   guided: false,

@@ -263,6 +263,10 @@ export interface TargetingContext {
   minTargets: number;
   maxTargets: number;
   legalTargetIds: string[];
+  /** Legal targets resolved to their human label (e.g. "Llanowar Elves"),
+   * parallel to legalTargetIds. The hook already builds these names; the
+   * overlay renders them instead of raw engine instance ids. */
+  legalTargets: { id: string; name: string }[];
   selectedTargetIds: string[];
 }
 

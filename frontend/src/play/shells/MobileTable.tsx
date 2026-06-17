@@ -192,8 +192,11 @@ export function MobileTable({
         />
       </section>
 
-      {/* ── HAND: swipes up from the bottom — a capped, in-flow pull-up. ──────── */}
-      <details open data-testid="hand-pullup" className={L.handPullup}>
+      {/* ── HAND: swipes up from the bottom — a capped, in-flow pull-up. Auto-
+          collapses while a decision sheet (stack/targeting/combat) is up so the
+          tall hand body and the sheet are never both expanded crowding the board
+          to nothing; the summary bar stays tappable. ────────────────────────── */}
+      <details open={!showDecisionSheet} data-testid="hand-pullup" className={L.handPullup}>
         <summary className={L.handPullupSummary}>
           <span>Your hand</span>
           <span aria-hidden="true" className="text-stone-500">

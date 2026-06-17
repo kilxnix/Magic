@@ -11,6 +11,10 @@ function makeTargeting(overrides: Partial<TargetingContext> = {}): TargetingCont
     minTargets: 1,
     maxTargets: 1,
     legalTargetIds: ['t-1', 't-2'],
+    legalTargets: [
+      { id: 't-1', name: 'Grizzly Bears' },
+      { id: 't-2', name: 'Llanowar Elves' },
+    ],
     selectedTargetIds: [],
     ...overrides,
   };

@@ -18,6 +18,7 @@ export function targeting(prompt: BoardTargetingPrompt | null | undefined): Targ
       minTargets: 0,
       maxTargets: 0,
       legalTargetIds: [],
+      legalTargets: [],
       selectedTargetIds: [],
     };
   }
@@ -32,6 +33,10 @@ export function targeting(prompt: BoardTargetingPrompt | null | undefined): Targ
     minTargets: 1,
     maxTargets: 1,
     legalTargetIds: prompt.choices.map(choice => choice.targetId),
+    legalTargets: prompt.choices.map(choice => ({
+      id: choice.targetId,
+      name: choice.label || choice.targetId,
+    })),
     selectedTargetIds: [],
   };
 }
