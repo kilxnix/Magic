@@ -89,7 +89,7 @@ export function PriorityStrip({
         {hasMeaningfulResponse && (
           <span
             data-testid="respond-chip"
-            className="shrink-0 rounded-full border border-amber-500/45 bg-amber-950/50 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-amber-100"
+            className="shrink-0 rounded-full border border-amber-400/60 bg-amber-500/20 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-amber-100 shadow-[0_0_14px_rgba(251,191,36,0.35)]"
           >
             Respond
           </span>
@@ -103,7 +103,7 @@ export function PriorityStrip({
                 type="button"
                 onClick={onHold}
                 data-testid="priority-hold"
-                className="rounded-md border border-stone-600 bg-stone-800 px-3 py-1 text-xs font-bold text-stone-100 transition-colors hover:border-amber-400/60 hover:bg-stone-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/60"
+                className="rounded-md border border-stone-600 bg-stone-800 px-3 py-1 text-xs font-bold text-stone-100 transition-all duration-150 hover:-translate-y-px hover:border-amber-400/60 hover:bg-stone-700 active:translate-y-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/60"
               >
                 Hold
               </button>
@@ -113,7 +113,7 @@ export function PriorityStrip({
                 type="button"
                 onClick={onPass}
                 data-testid="priority-pass"
-                className="rounded-md border border-amber-500/40 bg-amber-950/40 px-3 py-1 text-xs font-black uppercase tracking-wide text-amber-100 transition-colors hover:border-amber-400/70 hover:bg-amber-900/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/60"
+                className="rounded-md border border-amber-400/70 bg-gradient-to-b from-amber-400 to-amber-500 px-3.5 py-1 text-xs font-black uppercase tracking-wide text-neutral-950 shadow-[0_4px_12px_rgba(251,191,36,0.25),inset_0_1px_0_rgba(255,255,255,0.4)] transition-all duration-150 will-change-transform hover:-translate-y-px hover:from-amber-300 hover:to-amber-400 hover:shadow-[0_6px_16px_rgba(251,191,36,0.4),inset_0_1px_0_rgba(255,255,255,0.5)] active:translate-y-0 active:shadow-[0_2px_6px_rgba(251,191,36,0.3)] focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300/80"
               >
                 Pass
               </button>

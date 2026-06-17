@@ -75,16 +75,16 @@ export function HandView({ hand, onAction, onExamine }: HandViewProps) {
             className={cn(
               // Each card is its own positioning context so the inline
               // ActionMenu can anchor above it without leaving the flow.
-              'relative shrink-0 transition-transform duration-150',
-              // Desktop fan: rotate-less, lift on hover/open so the fanned
+              'group relative shrink-0 transition-transform duration-200 will-change-transform',
+              // Desktop fan: rotate-less, lift + zoom on hover/open so the fanned
               // (overlapping) cards fan out and the active one comes forward.
-              'lg:hover:z-20 lg:hover:-translate-y-4',
-              isOpen ? 'z-30 -translate-y-4' : 'z-0',
+              'lg:hover:z-20 lg:hover:-translate-y-4 lg:hover:scale-[1.06]',
+              isOpen ? 'z-30 -translate-y-4 scale-[1.04]' : 'z-0',
             )}
           >
             <div
               className={cn(
-                'overflow-hidden rounded-lg border bg-stone-900 shadow-lg shadow-black/40 transition-colors',
+                'overflow-hidden rounded-lg border bg-stone-900 shadow-lg shadow-black/40 transition-all duration-200 lg:group-hover:shadow-[0_16px_34px_rgba(0,0,0,0.6)]',
                 isOpen
                   ? 'border-amber-400/80 ring-2 ring-amber-400/40'
                   : 'border-stone-600/70 hover:border-amber-400/50',

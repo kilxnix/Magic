@@ -20,7 +20,7 @@ export const DESKTOP_BATTLEFIELD_LAYOUT = {
   // Root: fills the viewport height with an svh cap so zoom can't push the grid
   // taller than the screen. The whole shell is one scroll-isolated surface.
   shell:
-    'h-[100svh] max-h-[100svh] w-full bg-[radial-gradient(150%_120%_at_50%_-15%,#15231e_0%,#0d1714_42%,#080b0a_100%)] text-stone-100 overflow-hidden overscroll-none',
+    'h-[100svh] max-h-[100svh] w-full bg-[radial-gradient(125%_125%_at_50%_35%,transparent_50%,rgba(0,0,0,0.5)_100%),radial-gradient(150%_120%_at_50%_-15%,#15231e_0%,#0d1714_42%,#080b0a_100%)] text-stone-100 overflow-hidden overscroll-none',
 
   // The persistent three-column grid: left rail | center board | right rail.
   // The center column is the only flexible track (1fr); the rails are fixed,
@@ -98,7 +98,7 @@ export const MOBILE_TABLE_LAYOUT = {
   // Root: fills the viewport with an svh cap; the shell is one vertical flex
   // column and the single scroll-isolated surface.
   shell:
-    'flex h-[100svh] max-h-[100svh] w-full flex-col gap-1.5 overflow-hidden overscroll-none bg-[radial-gradient(150%_110%_at_50%_-10%,#15231e_0%,#0d1714_45%,#080b0a_100%)] p-1.5 text-stone-100',
+    'flex h-[100svh] max-h-[100svh] w-full flex-col gap-1.5 overflow-hidden overscroll-none bg-[radial-gradient(125%_125%_at_50%_38%,transparent_48%,rgba(0,0,0,0.5)_100%),radial-gradient(150%_110%_at_50%_-10%,#15231e_0%,#0d1714_45%,#080b0a_100%)] p-1.5 text-stone-100',
 
   // Opponents collapse to a top strip — a single horizontal swipe row of glance
   // cards, capped so many opponents never crowd the board below.
