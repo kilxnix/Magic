@@ -124,7 +124,7 @@ export function YouHud({ you, onAction, onExamine }: YouHudProps) {
               key={c}
               data-testid={`mana-${c}`}
               className={cn(
-                'flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[11px] font-black tabular-nums',
+                'flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[11px] font-black tabular-nums ring-1 ring-black/15 shadow-[inset_0_1px_1px_rgba(255,255,255,0.55),inset_0_-1px_1px_rgba(0,0,0,0.25),0_1px_2px_rgba(0,0,0,0.45)]',
                 PIP[c].bg,
                 PIP[c].text,
               )}

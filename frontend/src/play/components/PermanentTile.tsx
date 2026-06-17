@@ -139,7 +139,7 @@ export function PermanentTile({ permanent, onAction, onExamine }: PermanentTileP
         title={name}
         className={cn(
           'absolute inset-0 flex h-full w-full flex-col justify-end overflow-hidden rounded-lg border text-left transition-all duration-200 ease-out will-change-transform',
-          'border-stone-600 bg-stone-800 hover:-translate-y-1 hover:bg-stone-700 hover:shadow-[0_12px_28px_rgba(0,0,0,0.6),0_0_0_2px_rgba(251,191,36,0.4)] focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/70',
+          'border-stone-600 bg-stone-800 hover:-translate-y-1 hover:bg-stone-700 hover:shadow-[0_12px_28px_rgba(0,0,0,0.6),0_0_0_2px_rgba(251,191,36,0.4)] active:scale-[0.97] focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/70',
           accentClass,
           tapped && 'rotate-6 opacity-70 saturate-50',
         )}

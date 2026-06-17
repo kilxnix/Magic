@@ -64,7 +64,7 @@ export function OpponentCard({ glance, onExplore }: OpponentCardProps) {
           className="h-12 w-9 shrink-0 overflow-hidden rounded border border-stone-600 bg-stone-900 [&_img]:object-cover"
         />
         <div className="min-w-0 flex-1">
-          <div className="truncate text-sm font-black leading-tight text-stone-100">
+          <div className="truncate font-serif text-sm font-bold leading-tight text-stone-100">
             {name}
           </div>
           {commanderDamageToYou > 0 && (
@@ -74,7 +74,9 @@ export function OpponentCard({ glance, onExplore }: OpponentCardProps) {
           )}
         </div>
         <div className="shrink-0 text-right leading-none">
-          <div className="text-2xl font-black tabular-nums text-stone-50">{life}</div>
+          <div className="text-2xl font-black tabular-nums text-stone-50 drop-shadow-[0_1px_2px_rgba(0,0,0,0.7)]">
+            {life}
+          </div>
           <div className="text-[9px] font-bold uppercase tracking-wider text-stone-400">life</div>
         </div>
       </div>
