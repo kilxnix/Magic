@@ -3,6 +3,7 @@ import type { LegalAction, PermanentView } from '../gameView.types';
 import { CardImage } from '../../components/CardImage';
 import { ActionMenu } from './ActionMenu';
 import { AnchoredMenu } from './AnchoredMenu';
+import { useCardHoverPreview } from './CardHoverPreview';
 import { cn } from '../../lib/utils';
 
 export interface PermanentTileProps {
@@ -58,6 +59,7 @@ export function PermanentTile({ permanent, onAction, onExamine }: PermanentTileP
   } = permanent;
 
   const [menuOpen, setMenuOpen] = useState(false);
+  const hoverPreview = useCardHoverPreview(name);
   const containerRef = useRef<HTMLDivElement>(null);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // When a long-press fires, suppress the click that follows so it can't open
@@ -123,8 +125,12 @@ export function PermanentTile({ permanent, onAction, onExamine }: PermanentTileP
       ref={containerRef}
       data-testid="permanent-tile"
       data-permanent-id={permanent.id}
+      onPointerEnter={hoverPreview.bind.onPointerEnter}
+      onPointerLeave={hoverPreview.bind.onPointerLeave}
+      onPointerDownCapture={hoverPreview.bind.onPointerDown}
       className="group relative inline-block h-24 w-[4.5rem] shrink-0 select-none align-top animate-tile-in md:h-28 md:w-20"
     >
+      {hoverPreview.node}
       <button
         type="button"
         onClick={handleTileClick}
