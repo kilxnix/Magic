@@ -351,6 +351,9 @@ export function PlayExperience({
   //   attackers → Set<attackerId>; blockers → blockerId -> attackerId.
   const [attackSelection, setAttackSelection] = useState<Set<string>>(() => new Set());
   const [blockAssignments, setBlockAssignments] = useState<Record<string, string>>({});
+  // Which defender (opponent / their planeswalker) the declared attackers hit.
+  // null → default to the first eligible defender.
+  const [selectedDefenderId, setSelectedDefenderId] = useState<string | null>(null);
 
   // Clear stale board-target selection whenever the prompt changes/closes.
   useEffect(() => {
@@ -416,10 +419,11 @@ export function PlayExperience({
   // Reset the composer whenever the respective combat window closes (mirrors
   // GameBoard's effect so a stale selection never leaks across steps).
   useEffect(() => {
-    if (!hasDeclareAttackers && attackSelection.size > 0) {
-      setAttackSelection(new Set());
+    if (!hasDeclareAttackers) {
+      if (attackSelection.size > 0) setAttackSelection(new Set());
+      if (selectedDefenderId !== null) setSelectedDefenderId(null);
     }
-  }, [hasDeclareAttackers, attackSelection.size]);
+  }, [hasDeclareAttackers, attackSelection.size, selectedDefenderId]);
   useEffect(() => {
     if (!hasDeclareBlockers && Object.keys(blockAssignments).length > 0) {
       setBlockAssignments({});
@@ -450,8 +454,9 @@ export function PlayExperience({
   const view: GameView = useMemo(() => {
     const assignments: Record<string, string[]> = {};
     if (baseView.combat.step === 'declare-attackers') {
+      const defenderId = selectedDefenderId ?? eligibleDefenderIds[0];
       for (const attackerId of attackSelection) {
-        assignments[attackerId] = eligibleDefenderIds.length > 0 ? [eligibleDefenderIds[0]] : [];
+        assignments[attackerId] = defenderId ? [defenderId] : [];
       }
     } else if (baseView.combat.step === 'declare-blockers') {
       for (const [blockerId, attackerId] of Object.entries(blockAssignments)) {
@@ -463,7 +468,7 @@ export function PlayExperience({
       targeting: { ...baseView.targeting, selectedTargetIds },
       combat: { ...baseView.combat, assignments },
     };
-  }, [baseView, selectedTargetIds, attackSelection, blockAssignments, eligibleDefenderIds]);
+  }, [baseView, selectedTargetIds, attackSelection, blockAssignments, eligibleDefenderIds, selectedDefenderId]);
 
   // ── Callback bag → hook dispatchers ───────────────────────────────────────
 
@@ -581,7 +586,7 @@ export function PlayExperience({
   // and submit it through the single commit path.
   const handleConfirmCombat = useCallback(() => {
     if (hasDeclareAttackers) {
-      const defenderId = eligibleDefenderIds[0];
+      const defenderId = selectedDefenderId ?? eligibleDefenderIds[0];
       // Empty selection is a valid "no attacks" declaration (the engine offers a
       // "Skip attacks" DeclareAttackers with attacks:[]). Submit it instead of
       // no-opping, so the player is never stuck at declare-attackers.
@@ -611,7 +616,12 @@ export function PlayExperience({
       } as SimpleLegalAction);
       setBlockAssignments({});
     }
-  }, [hasDeclareAttackers, hasDeclareBlockers, eligibleDefenderIds, attackSelection, blockAssignments, onAction]);
+  }, [hasDeclareAttackers, hasDeclareBlockers, eligibleDefenderIds, selectedDefenderId, attackSelection, blockAssignments, onAction]);
+
+  // Pick which defender (player / planeswalker) the declared attackers hit.
+  const handleSelectDefender = useCallback((id: string) => {
+    setSelectedDefenderId(id);
+  }, []);
 
   // Explicit skip: declare NO attackers / NO blockers and move on.
   const handleSkipCombat = useCallback(() => {
@@ -650,6 +660,8 @@ export function PlayExperience({
     onAssignCombat: handleAssignCombat,
     onConfirmCombat: handleConfirmCombat,
     onSkipCombat: handleSkipCombat,
+    selectedDefenderId,
+    onSelectDefender: handleSelectDefender,
   };
 
   const mulliganOpen = Boolean(prompts?.mulligan.phase);

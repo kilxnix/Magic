@@ -50,7 +50,7 @@ export function combat(input: CombatInput): CombatContext {
     if (attackerId) {
       assignments[attackerId] = damageAssignmentChoice.blockerInstanceIds ?? [];
     }
-    return { step: 'order-damage', eligibleIds: Object.keys(assignments), eligible: [], assignments };
+    return { step: 'order-damage', eligibleIds: Object.keys(assignments), eligible: [], eligibleDefenders: [], assignments };
   }
 
   let combatStep: CombatStep = 'none';
@@ -64,5 +64,5 @@ export function combat(input: CombatInput): CombatContext {
     eligibleIds = eligibleBlockerIds(legalActions);
   }
 
-  return { step: combatStep, eligibleIds, eligible: [], assignments: {} };
+  return { step: combatStep, eligibleIds, eligible: [], eligibleDefenders: [], assignments: {} };
 }

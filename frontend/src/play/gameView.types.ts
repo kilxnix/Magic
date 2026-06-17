@@ -281,6 +281,8 @@ export interface CombatContext {
   eligibleIds: string[];
   /** The eligible combatants with names/P-T (resolved from your board). */
   eligible: Combatant[];
+  /** Who your attackers can attack — the opponent + any of their planeswalkers. */
+  eligibleDefenders: { id: string; name: string }[];
   assignments: Record<string, string[]>;
 }
 

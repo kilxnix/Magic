@@ -121,7 +121,7 @@ const EMPTY_VIEW: GameView = {
     canHold: false,
   },
   targeting: { active: false, prompt: '', minTargets: 0, maxTargets: 0, legalTargetIds: [], selectedTargetIds: [] },
-  combat: { step: 'none', eligibleIds: [], eligible: [], assignments: {} },
+  combat: { step: 'none', eligibleIds: [], eligible: [], eligibleDefenders: [], assignments: {} },
   narration: [],
   guided: false,
   isYourTurn: false,
@@ -222,12 +222,34 @@ export function buildGameView(input: GameViewInput): GameView {
   // Resolve eligible combatants (always YOUR creatures) to names + P/T so the
   // combat UI shows "Seedborn Muse 2/4", not a raw card instance id.
   const myCreatureById = new Map(gameState.humanBattlefield.map(c => [c.instanceId, c]));
+
+  // Eligible defenders (who your attackers can attack): unique defendingPlayerIds
+  // across the engine's DeclareAttackers actions, resolved to player/planeswalker
+  // names. >1 only when the opponent has planeswalkers (then the UI offers a pick).
+  const defenderName = (id: string): string => {
+    if (id === gameState.humanPlayer.id) return gameState.humanPlayer.name;
+    const ai = gameState.aiPlayers.find(p => p.id === id);
+    if (ai) return ai.name;
+    for (const bf of [gameState.humanBattlefield, ...Object.values(gameState.aiBattlefields)]) {
+      const card = bf.find(c => c.instanceId === id);
+      if (card) return card.name;
+    }
+    return id;
+  };
+  const defenderIds = new Set<string>();
+  for (const action of input.legalActions) {
+    const engine = action._engineAction;
+    if (engine?.kind === 'DeclareAttackers') {
+      for (const attack of engine.attacks) defenderIds.add(attack.defendingPlayerId);
+    }
+  }
   const combatView: CombatContext = {
     ...combatCtx,
     eligible: combatCtx.eligibleIds.map(id => {
       const card = myCreatureById.get(id);
       return { id, name: card?.name ?? id, power: card?.power, toughness: card?.toughness };
     }),
+    eligibleDefenders: [...defenderIds].map(id => ({ id, name: defenderName(id) })),
   };
 
   return {

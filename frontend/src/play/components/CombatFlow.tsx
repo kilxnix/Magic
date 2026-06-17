@@ -41,6 +41,10 @@ export interface CombatFlowProps {
   onConfirm(): void;
   /** Declare NO attackers / NO blockers and move on (the explicit skip path). */
   onSkip?(): void;
+  /** Currently-chosen defender (null → first eligible). */
+  selectedDefenderId?: string | null;
+  /** Choose which defender (opponent / planeswalker) the attackers hit. */
+  onSelectDefender?(id: string): void;
 }
 
 /** Plain-language copy for each combat step (label + the action verb on Confirm). */
@@ -68,8 +72,15 @@ const STEP_COPY: Record<Exclude<CombatStep, 'none'>, { label: string; cta: strin
  * the step. Each eligible combatant is exposed as a small assignment control so
  * the shell can wire taps back through `onAssign`.
  */
-export function CombatFlow({ combat, onAssign, onConfirm, onSkip }: CombatFlowProps) {
-  const { step, eligible, assignments } = combat;
+export function CombatFlow({
+  combat,
+  onAssign,
+  onConfirm,
+  onSkip,
+  selectedDefenderId,
+  onSelectDefender,
+}: CombatFlowProps) {
+  const { step, eligible, eligibleDefenders, assignments } = combat;
 
   // No combat in progress → render nothing (no banner, no layout footprint).
   if (step === 'none') {
@@ -78,6 +89,10 @@ export function CombatFlow({ combat, onAssign, onConfirm, onSkip }: CombatFlowPr
 
   const copy = STEP_COPY[step];
   const skipLabel = step === 'declare-attackers' ? 'No attacks' : step === 'declare-blockers' ? 'No blocks' : null;
+  // Defender picker only matters with >1 defender (opponent + their planeswalkers).
+  const showDefenderPicker =
+    step === 'declare-attackers' && eligibleDefenders.length > 1 && Boolean(onSelectDefender);
+  const activeDefenderId = selectedDefenderId ?? eligibleDefenders[0]?.id;
 
   return (
     // Normal-flow banner — never fixed/absolute. The shell sizes it via className.
@@ -102,6 +117,31 @@ export function CombatFlow({ combat, onAssign, onConfirm, onSkip }: CombatFlowPr
         </p>
         <p className="mt-0.5 text-[11px] leading-snug text-stone-400">{copy.hint}</p>
       </div>
+
+      {showDefenderPicker && (
+        <div data-testid="defender-picker" className="flex flex-col gap-1">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-stone-400">Attack</span>
+          <div className="flex flex-wrap gap-1.5">
+            {eligibleDefenders.map((d) => (
+              <button
+                key={d.id}
+                type="button"
+                data-testid="defender-option"
+                aria-pressed={d.id === activeDefenderId}
+                onClick={() => onSelectDefender?.(d.id)}
+                className={[
+                  'rounded-md border px-2.5 py-1 text-xs font-bold transition-colors',
+                  d.id === activeDefenderId
+                    ? 'border-rose-400/70 bg-rose-500/20 text-rose-100'
+                    : 'border-stone-600/70 bg-stone-800/70 text-stone-200 hover:border-rose-400/50',
+                ].join(' ')}
+              >
+                {d.name}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {eligible.length > 0 && (
         <ul className="flex flex-wrap gap-2" aria-label="Combatants">

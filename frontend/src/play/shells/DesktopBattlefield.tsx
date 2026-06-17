@@ -75,6 +75,9 @@ export interface DesktopBattlefieldProps {
   onAssignCombat(a: string, b: string): void;
   onConfirmCombat(): void;
   onSkipCombat(): void;
+  /** Which defender attackers hit (null → first eligible). */
+  selectedDefenderId: string | null;
+  onSelectDefender(id: string): void;
 }
 
 export function DesktopBattlefield({
@@ -94,6 +97,8 @@ export function DesktopBattlefield({
   onAssignCombat,
   onConfirmCombat,
   onSkipCombat,
+  selectedDefenderId,
+  onSelectDefender,
 }: DesktopBattlefieldProps) {
   const { you, opponents, stack, priority, targeting, combat, narration, guided } = view;
 
@@ -188,6 +193,8 @@ export function DesktopBattlefield({
                 onAssign={onAssignCombat}
                 onConfirm={onConfirmCombat}
                 onSkip={onSkipCombat}
+                selectedDefenderId={selectedDefenderId}
+                onSelectDefender={onSelectDefender}
               />
             </section>
           )}

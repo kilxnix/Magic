@@ -14,6 +14,7 @@ function makeCombat(overrides: Partial<CombatContext> = {}): CombatContext {
       { id: 'c-1', name: 'Llanowar Elves', power: 1, toughness: 1 },
       { id: 'c-2', name: 'Grizzly Bears', power: 2, toughness: 2 },
     ],
+    eligibleDefenders: [{ id: 'ai1', name: 'Atraxa' }],
     assignments: {},
     ...overrides,
   };
@@ -49,6 +50,35 @@ describe('CombatFlow', () => {
     // The explicit "No attacks" skip path (the gap that froze the playtest).
     fireEvent.click(screen.getByTestId('combat-skip'));
     expect(onSkip).toHaveBeenCalledTimes(1);
+  });
+
+  it('offers a defender picker when there is more than one defender', () => {
+    const onSelectDefender = vi.fn();
+    render(
+      <CombatFlow
+        combat={makeCombat({
+          eligibleDefenders: [
+            { id: 'ai1', name: 'Atraxa' },
+            { id: 'pw1', name: 'Teferi' },
+          ],
+        })}
+        onAssign={() => {}}
+        onConfirm={() => {}}
+        selectedDefenderId={null}
+        onSelectDefender={onSelectDefender}
+      />,
+    );
+
+    expect(screen.getByTestId('defender-picker')).toBeTruthy();
+    fireEvent.click(screen.getByText('Teferi'));
+    expect(onSelectDefender).toHaveBeenCalledWith('pw1');
+  });
+
+  it('hides the defender picker with a single defender', () => {
+    render(
+      <CombatFlow combat={makeCombat()} onAssign={() => {}} onConfirm={() => {}} onSelectDefender={() => {}} />,
+    );
+    expect(screen.queryByTestId('defender-picker')).toBeNull();
   });
 
   it('renders nothing when the step is none', () => {
