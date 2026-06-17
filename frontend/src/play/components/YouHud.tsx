@@ -48,9 +48,9 @@ function CommanderChip({
         aria-expanded={hasActions ? open : undefined}
         title={card.name}
         className={cn(
-          'flex min-h-8 items-center gap-1.5 rounded-md border px-2 py-1 text-left transition-colors',
+          'flex min-h-8 items-center gap-1.5 rounded-md border px-2 py-1 text-left transition-all duration-200',
           hasActions
-            ? 'border-amber-400/60 bg-amber-500/15 hover:bg-amber-500/25'
+            ? 'border-amber-400/60 bg-amber-500/15 shadow-[0_0_14px_rgba(251,191,36,0.18)] hover:-translate-y-px hover:bg-amber-500/25 hover:shadow-[0_0_18px_rgba(251,191,36,0.3)]'
             : 'border-stone-600/70 bg-stone-800/70 hover:bg-stone-700/70',
         )}
       >

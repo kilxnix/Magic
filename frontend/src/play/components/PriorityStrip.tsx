@@ -63,7 +63,9 @@ export function PriorityStrip({
         <div
           data-testid="turn-owner"
           className={`mb-0.5 inline-block rounded px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider ${
-            isYourTurn ? 'bg-emerald-500/20 text-emerald-200' : 'bg-rose-500/20 text-rose-200'
+            isYourTurn
+              ? 'bg-emerald-500/20 text-emerald-200 shadow-[0_0_12px_rgba(16,185,129,0.3)]'
+              : 'bg-rose-500/20 text-rose-200'
           }`}
         >
           {isYourTurn ? 'Your turn' : "Opponent's turn"}
