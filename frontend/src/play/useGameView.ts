@@ -9,6 +9,7 @@ import type {
   OpponentBoard,
   YouView,
   LegalAction,
+  CombatContext,
 } from './gameView.types';
 import { opponentGlance } from './selectors/opponentGlance';
 import { stackView } from './selectors/stackView';
@@ -82,13 +83,14 @@ const EMPTY_VIEW: GameView = {
   stack: [],
   priority: {
     hasPriority: false,
+    isYourTurn: false,
     phaseLabel: '',
     hasMeaningfulResponse: false,
     canPass: false,
     canHold: false,
   },
   targeting: { active: false, prompt: '', minTargets: 0, maxTargets: 0, legalTargetIds: [], selectedTargetIds: [] },
-  combat: { step: 'none', eligibleIds: [], assignments: {} },
+  combat: { step: 'none', eligibleIds: [], eligible: [], assignments: {} },
   narration: [],
   guided: false,
   isYourTurn: false,
@@ -180,19 +182,35 @@ export function buildGameView(input: GameViewInput): GameView {
   const nameFor = (playerId: string): string =>
     nameForPlayer(gameState, playerId);
 
+  // True turn ownership (active player == you) — distinct from holding priority,
+  // which the hook reports as `isHumanTurn` even on the opponent's turn.
+  const isYourTurn = gameState.activePlayerId === gameState.humanPlayer.id;
+
+  // Resolve eligible combatants (always YOUR creatures) to names + P/T so the
+  // combat UI shows "Seedborn Muse 2/4", not a raw card instance id.
+  const myCreatureById = new Map(gameState.humanBattlefield.map(c => [c.instanceId, c]));
+  const combatView: CombatContext = {
+    ...combatCtx,
+    eligible: combatCtx.eligibleIds.map(id => {
+      const card = myCreatureById.get(id);
+      return { id, name: card?.name ?? id, power: card?.power, toughness: card?.toughness };
+    }),
+  };
+
   return {
     you,
     opponents,
     stack: stackView(gameState.stack, nameFor),
     priority: priority({
       isHumanTurn: input.isHumanTurn,
+      isYourTurn,
       legalActions: input.legalActions,
       phase: gameState.phase,
       step: gameState.step,
       canHold: pass != null,
     }),
     targeting: targeting(input.targetingPrompt),
-    combat: combatCtx,
+    combat: combatView,
     narration: narration(input.chatMessages),
     guided: input.guided,
     isYourTurn: input.isHumanTurn,

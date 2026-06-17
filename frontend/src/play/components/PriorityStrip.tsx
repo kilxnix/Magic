@@ -47,7 +47,7 @@ export function PriorityStrip({
   onHold,
   onToggleAlwaysStop,
 }: PriorityStripProps) {
-  const { hasPriority, phaseLabel, hasMeaningfulResponse, canPass, canHold } = priority;
+  const { hasPriority, isYourTurn, phaseLabel, hasMeaningfulResponse, canPass, canHold } = priority;
 
   return (
     // Normal-flow strip — never fixed/absolute. The shell sizes it via className.
@@ -56,9 +56,18 @@ export function PriorityStrip({
       aria-label="Priority"
       className="flex w-full min-w-0 flex-col gap-2 rounded-lg border border-stone-700/60 bg-stone-900/70 px-3 py-2 text-stone-200"
     >
-      {/* Phase + whose priority — on its own full-width line so it never gets
-          squeezed to "M..." by the controls beside it. */}
+      {/* Whose turn + phase + whose priority — on its own full-width block so it
+          never gets squeezed to "M..." by the controls beside it. The turn badge
+          fixes the old confusion where the opponent's turn read as yours. */}
       <div className="min-w-0">
+        <div
+          data-testid="turn-owner"
+          className={`mb-0.5 inline-block rounded px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider ${
+            isYourTurn ? 'bg-emerald-500/20 text-emerald-200' : 'bg-rose-500/20 text-rose-200'
+          }`}
+        >
+          {isYourTurn ? 'Your turn' : "Opponent's turn"}
+        </div>
         <div className="text-sm font-black leading-tight text-stone-100">
           {phaseLabel}
         </div>

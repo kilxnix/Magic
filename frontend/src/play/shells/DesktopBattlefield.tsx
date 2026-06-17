@@ -74,6 +74,7 @@ export interface DesktopBattlefieldProps {
   // ── Combat ──────────────────────────────────────────────────────────────
   onAssignCombat(a: string, b: string): void;
   onConfirmCombat(): void;
+  onSkipCombat(): void;
 }
 
 export function DesktopBattlefield({
@@ -92,6 +93,7 @@ export function DesktopBattlefield({
   onCancelTarget,
   onAssignCombat,
   onConfirmCombat,
+  onSkipCombat,
 }: DesktopBattlefieldProps) {
   const { you, opponents, stack, priority, targeting, combat, narration, guided } = view;
 
@@ -185,6 +187,7 @@ export function DesktopBattlefield({
                 combat={combat}
                 onAssign={onAssignCombat}
                 onConfirm={onConfirmCombat}
+                onSkip={onSkipCombat}
               />
             </section>
           )}

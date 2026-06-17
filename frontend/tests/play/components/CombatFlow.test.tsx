@@ -10,6 +10,10 @@ function makeCombat(overrides: Partial<CombatContext> = {}): CombatContext {
   return {
     step: 'declare-attackers',
     eligibleIds: ['c-1', 'c-2'],
+    eligible: [
+      { id: 'c-1', name: 'Llanowar Elves', power: 1, toughness: 1 },
+      { id: 'c-2', name: 'Grizzly Bears', power: 2, toughness: 2 },
+    ],
     assignments: {},
     ...overrides,
   };
@@ -30,6 +34,21 @@ describe('CombatFlow', () => {
 
     fireEvent.click(screen.getByTestId('combat-confirm'));
     expect(onConfirm).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders combatant NAMES (not raw ids) and skips with onSkip', () => {
+    const onSkip = vi.fn();
+    render(
+      <CombatFlow combat={makeCombat()} onAssign={() => {}} onConfirm={() => {}} onSkip={onSkip} />,
+    );
+
+    // Names, not instance ids.
+    expect(screen.getByText('Llanowar Elves')).toBeTruthy();
+    expect(screen.getByText('Grizzly Bears')).toBeTruthy();
+
+    // The explicit "No attacks" skip path (the gap that froze the playtest).
+    fireEvent.click(screen.getByTestId('combat-skip'));
+    expect(onSkip).toHaveBeenCalledTimes(1);
   });
 
   it('renders nothing when the step is none', () => {

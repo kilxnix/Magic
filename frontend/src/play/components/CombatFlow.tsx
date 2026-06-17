@@ -39,6 +39,8 @@ export interface CombatFlowProps {
   onAssign(a: string, b: string): void;
   /** Commit the current combat step (deliberate — this is the "commit" action). */
   onConfirm(): void;
+  /** Declare NO attackers / NO blockers and move on (the explicit skip path). */
+  onSkip?(): void;
 }
 
 /** Plain-language copy for each combat step (label + the action verb on Confirm). */
@@ -66,8 +68,8 @@ const STEP_COPY: Record<Exclude<CombatStep, 'none'>, { label: string; cta: strin
  * the step. Each eligible combatant is exposed as a small assignment control so
  * the shell can wire taps back through `onAssign`.
  */
-export function CombatFlow({ combat, onAssign, onConfirm }: CombatFlowProps) {
-  const { step, eligibleIds, assignments } = combat;
+export function CombatFlow({ combat, onAssign, onConfirm, onSkip }: CombatFlowProps) {
+  const { step, eligible, assignments } = combat;
 
   // No combat in progress → render nothing (no banner, no layout footprint).
   if (step === 'none') {
@@ -75,6 +77,7 @@ export function CombatFlow({ combat, onAssign, onConfirm }: CombatFlowProps) {
   }
 
   const copy = STEP_COPY[step];
+  const skipLabel = step === 'declare-attackers' ? 'No attacks' : step === 'declare-blockers' ? 'No blocks' : null;
 
   return (
     // Normal-flow banner — never fixed/absolute. The shell sizes it via className.
@@ -100,22 +103,25 @@ export function CombatFlow({ combat, onAssign, onConfirm }: CombatFlowProps) {
         <p className="mt-0.5 text-[11px] leading-snug text-stone-400">{copy.hint}</p>
       </div>
 
-      {eligibleIds.length > 0 && (
+      {eligible.length > 0 && (
         <ul className="flex flex-wrap gap-2" aria-label="Combatants">
-          {eligibleIds.map((id) => {
-            const assignedTo = assignments[id] ?? [];
+          {eligible.map((c) => {
+            const assignedTo = assignments[c.id] ?? [];
             const isAssigned = assignedTo.length > 0;
+            const pt = c.power !== undefined || c.toughness !== undefined
+              ? ` ${c.power ?? '–'}/${c.toughness ?? '–'}`
+              : '';
             return (
-              <li key={id}>
+              <li key={c.id}>
                 <button
                   type="button"
                   data-testid="combat-combatant"
-                  data-combatant-id={id}
+                  data-combatant-id={c.id}
                   aria-pressed={isAssigned}
                   // Pairing semantics are owned by the view-model; the banner
                   // reports the tapped combatant + its first current assignment
                   // (empty string when none yet) and lets the shell resolve it.
-                  onClick={() => onAssign(id, assignedTo[0] ?? '')}
+                  onClick={() => onAssign(c.id, assignedTo[0] ?? '')}
                   className={[
                     'min-h-10 rounded-lg border px-3 py-2 text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/60',
                     isAssigned
@@ -123,11 +129,10 @@ export function CombatFlow({ combat, onAssign, onConfirm }: CombatFlowProps) {
                       : 'border-stone-600/70 bg-stone-800/70 text-stone-200 hover:border-amber-400/50 hover:bg-stone-700/70',
                   ].join(' ')}
                 >
-                  {id}
+                  <span className="font-bold">{c.name}</span>
+                  {pt && <span className="ml-1 tabular-nums text-stone-400">{pt.trim()}</span>}
                   {isAssigned && (
-                    <span className="ml-1.5 text-[11px] font-bold text-amber-200/80">
-                      → {assignedTo.join(', ')}
-                    </span>
+                    <span className="ml-1.5 text-[11px] font-bold text-amber-200/80">✓ attacking</span>
                   )}
                 </button>
               </li>
@@ -136,7 +141,17 @@ export function CombatFlow({ combat, onAssign, onConfirm }: CombatFlowProps) {
         </ul>
       )}
 
-      <footer className="mt-1 flex border-t border-stone-700/50 pt-3">
+      <footer className="mt-1 flex gap-2 border-t border-stone-700/50 pt-3">
+        {skipLabel && onSkip && (
+          <button
+            type="button"
+            data-testid="combat-skip"
+            onClick={onSkip}
+            className="min-h-11 rounded-lg border border-stone-600 bg-stone-800 px-4 py-2 text-sm font-bold text-stone-200 transition-colors hover:bg-stone-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-stone-400/50"
+          >
+            {skipLabel}
+          </button>
+        )}
         <button
           type="button"
           data-testid="combat-confirm"

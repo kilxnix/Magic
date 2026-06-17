@@ -65,6 +65,7 @@ export function MobileTable({
   onCancelTarget,
   onAssignCombat,
   onConfirmCombat,
+  onSkipCombat,
 }: MobileTableProps) {
   const { you, opponents, stack, priority, targeting, combat, narration, guided } = view;
 
@@ -164,6 +165,7 @@ export function MobileTable({
                 combat={combat}
                 onAssign={onAssignCombat}
                 onConfirm={onConfirmCombat}
+                onSkip={onSkipCombat}
               />
             </div>
           )}

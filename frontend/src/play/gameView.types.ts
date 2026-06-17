@@ -247,6 +247,8 @@ export interface StackItemView {
 
 export interface PriorityContext {
   hasPriority: boolean;
+  /** True turn ownership (active player == you), distinct from holding priority. */
+  isYourTurn: boolean;
   phaseLabel: string;
   hasMeaningfulResponse: boolean;
   canPass: boolean;
@@ -264,9 +266,19 @@ export interface TargetingContext {
 
 export type CombatStep = 'none' | 'declare-attackers' | 'declare-blockers' | 'order-damage';
 
+/** An eligible combatant, resolved to its name + P/T for display. */
+export interface Combatant {
+  id: string;
+  name: string;
+  power?: number;
+  toughness?: number;
+}
+
 export interface CombatContext {
   step: CombatStep;
   eligibleIds: string[];
+  /** The eligible combatants with names/P-T (resolved from your board). */
+  eligible: Combatant[];
   assignments: Record<string, string[]>;
 }
 

@@ -4,6 +4,8 @@ import { phaseLabel } from './phaseLabel';
 
 export interface PriorityInput {
   isHumanTurn: boolean;
+  /** True turn ownership (active player == you). Distinct from holding priority. */
+  isYourTurn: boolean;
   legalActions: SimpleLegalAction[];
   phase?: string;
   step?: string;
@@ -28,6 +30,7 @@ export function priority(input: PriorityInput): PriorityContext {
 
   return {
     hasPriority,
+    isYourTurn: input.isYourTurn,
     phaseLabel: phaseLabel(input.phase, input.step),
     hasMeaningfulResponse,
     canPass: hasPriority,

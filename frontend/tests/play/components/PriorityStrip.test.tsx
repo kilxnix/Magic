@@ -9,6 +9,7 @@ afterEach(() => cleanup());
 function makePriority(overrides: Partial<PriorityContext> = {}): PriorityContext {
   return {
     hasPriority: true,
+    isYourTurn: true,
     phaseLabel: 'Main Phase 1',
     hasMeaningfulResponse: false,
     canPass: true,
@@ -31,6 +32,18 @@ describe('PriorityStrip', () => {
     );
     fireEvent.click(screen.getByTestId('priority-pass'));
     expect(onPass).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows whose turn it is (fixing the opponent-turn-reads-as-yours confusion)', () => {
+    const { rerender } = render(
+      <PriorityStrip priority={makePriority({ isYourTurn: true })} alwaysStop={false} onPass={() => {}} onHold={() => {}} onToggleAlwaysStop={() => {}} />,
+    );
+    expect(screen.getByTestId('turn-owner').textContent).toMatch(/your turn/i);
+
+    rerender(
+      <PriorityStrip priority={makePriority({ isYourTurn: false })} alwaysStop={false} onPass={() => {}} onHold={() => {}} onToggleAlwaysStop={() => {}} />,
+    );
+    expect(screen.getByTestId('turn-owner').textContent).toMatch(/opponent's turn/i);
   });
 
   it('calls onToggleAlwaysStop when the always-stop toggle is changed', () => {

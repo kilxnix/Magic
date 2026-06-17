@@ -582,17 +582,16 @@ export function PlayExperience({
   const handleConfirmCombat = useCallback(() => {
     if (hasDeclareAttackers) {
       const defenderId = eligibleDefenderIds[0];
-      if (attackSelection.size === 0 || !defenderId) return;
+      // Empty selection is a valid "no attacks" declaration (the engine offers a
+      // "Skip attacks" DeclareAttackers with attacks:[]). Submit it instead of
+      // no-opping, so the player is never stuck at declare-attackers.
+      const attacks = defenderId
+        ? [...attackSelection].map(cardInstanceId => ({ cardInstanceId, defendingPlayerId: defenderId }))
+        : [];
       onAction({
         kind: 'DeclareAttackers',
-        label: `Attack with ${attackSelection.size}`,
-        _engineAction: {
-          kind: 'DeclareAttackers',
-          attacks: [...attackSelection].map(cardInstanceId => ({
-            cardInstanceId,
-            defendingPlayerId: defenderId,
-          })),
-        },
+        label: attacks.length ? `Attack with ${attacks.length}` : 'No attacks',
+        _engineAction: { kind: 'DeclareAttackers', attacks },
       } as SimpleLegalAction);
       setAttackSelection(new Set());
       return;
@@ -614,6 +613,25 @@ export function PlayExperience({
     }
   }, [hasDeclareAttackers, hasDeclareBlockers, eligibleDefenderIds, attackSelection, blockAssignments, onAction]);
 
+  // Explicit skip: declare NO attackers / NO blockers and move on.
+  const handleSkipCombat = useCallback(() => {
+    if (hasDeclareAttackers) {
+      onAction({
+        kind: 'DeclareAttackers',
+        label: 'No attacks',
+        _engineAction: { kind: 'DeclareAttackers', attacks: [] },
+      } as SimpleLegalAction);
+      setAttackSelection(new Set());
+    } else if (hasDeclareBlockers) {
+      onAction({
+        kind: 'DeclareBlockers',
+        label: 'No blocks',
+        _engineAction: { kind: 'DeclareBlockers', blocks: [] },
+      } as SimpleLegalAction);
+      setBlockAssignments({});
+    }
+  }, [hasDeclareAttackers, hasDeclareBlockers, onAction]);
+
   // ── Render ────────────────────────────────────────────────────────────────
   const shellProps = {
     view,
@@ -631,6 +649,7 @@ export function PlayExperience({
     onCancelTarget: handleCancelTarget,
     onAssignCombat: handleAssignCombat,
     onConfirmCombat: handleConfirmCombat,
+    onSkipCombat: handleSkipCombat,
   };
 
   const mulliganOpen = Boolean(prompts?.mulligan.phase);
