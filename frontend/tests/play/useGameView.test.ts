@@ -26,7 +26,7 @@ describe('buildGameView', () => {
     expect(view.priority.canPass).toBe(false);
   });
 
-  it('buckets the human board into creatures / lands / other', () => {
+  it('buckets the human board into creatures / artifacts / enchantments / lands / other', () => {
     const view = buildGameView({
       gameState: makeState({
         humanPlayer: makePlayer({ life: 37 }),
@@ -44,7 +44,31 @@ describe('buildGameView', () => {
     expect(view.you.life).toBe(37);
     expect(view.you.creatures.map(c => c.id)).toEqual(['c1']);
     expect(view.you.lands.map(c => c.id)).toEqual(['l1']);
-    expect(view.you.other.map(c => c.id)).toEqual(['a1']);
+    // An artifact now buckets into its own row (5-zone), not the generic "other".
+    expect(view.you.artifacts.map(c => c.id)).toEqual(['a1']);
+    expect(view.you.other).toEqual([]);
+  });
+
+  it('stacks identical untapped lands into one tile with a count', () => {
+    const view = buildGameView({
+      gameState: makeState({
+        humanBattlefield: [
+          makeLand({ instanceId: 'f1', name: 'Forest' }),
+          makeLand({ instanceId: 'f2', name: 'Forest' }),
+          makeLand({ instanceId: 'f3', name: 'Forest' }),
+          makeLand({ instanceId: 'i1', name: 'Island' }),
+        ],
+      }),
+      legalActions: [],
+      isHumanTurn: true,
+      winner: null,
+      guided: false,
+    });
+    // 3 Forests collapse to one tile (×3); the Island is its own tile.
+    expect(view.you.lands).toHaveLength(2);
+    const forest = view.you.lands.find(l => l.name === 'Forest');
+    expect(forest?.stackCount).toBe(3);
+    expect(view.you.lands.find(l => l.name === 'Island')?.stackCount).toBeUndefined();
   });
 
   it('attaches each object its own legal actions and a top-level pass', () => {

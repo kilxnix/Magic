@@ -240,6 +240,7 @@ export function PlayPage() {
     damageAssignmentChoice,
     triggerOrderChoice,
     gameLog,
+    chatMessages,
     authorityUpdates,
     engineEventLog,
     engineEventLogSeeds,
@@ -3143,6 +3144,7 @@ export function PlayPage() {
               targetingPrompt={targetingPrompt}
               onCancelTargeting={cancelTargeting}
               currentPrompt={currentPrompt}
+              chatMessages={chatMessages}
               damageAssignmentChoice={damageAssignmentChoice}
               newPlayerMode={inGameCoachingEnabled ? newPlayerMode : false}
               prompts={{

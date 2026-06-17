@@ -66,6 +66,8 @@ function makeYou(over: Partial<YouView> = {}): YouView {
     handCount: 0,
     lands: [land('l1'), land('l2'), land('l3')],
     creatures: [creature('c1'), creature('c2')],
+    artifacts: [],
+    enchantments: [],
     other: [],
     hand: [],
     ...over,

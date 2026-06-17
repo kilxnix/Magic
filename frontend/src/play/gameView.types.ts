@@ -194,6 +194,8 @@ export interface PermanentView {
   isCreature: boolean;
   isAttacking?: boolean;
   isBlocking?: boolean;
+  /** When > 1, identical copies are stacked into this one tile (e.g. 8× Forest). */
+  stackCount?: number;
   legalActions: LegalAction[];
 }
 
@@ -314,6 +316,8 @@ export interface YouView {
   libraryCount: number;
   handCount: number;
   creatures: PermanentView[];
+  artifacts: PermanentView[];
+  enchantments: PermanentView[];
   lands: PermanentView[];
   other: PermanentView[];
   hand: HandCardView[];

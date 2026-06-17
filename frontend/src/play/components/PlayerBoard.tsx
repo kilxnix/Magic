@@ -65,10 +65,12 @@ function BoardRow({ testid, label, permanents, onAction, onExamine }: BoardRowPr
 export function PlayerBoard({ you, onAction, onExamine }: PlayerBoardProps) {
   const rows = [
     { testid: 'creatures-row', label: 'Creatures', permanents: you.creatures },
+    { testid: 'artifacts-row', label: 'Artifacts', permanents: you.artifacts },
+    { testid: 'enchantments-row', label: 'Enchantments', permanents: you.enchantments },
     { testid: 'lands-row', label: 'Lands', permanents: you.lands },
     { testid: 'other-row', label: 'Other Permanents', permanents: you.other },
   ];
-  const boardEmpty = you.creatures.length + you.lands.length + you.other.length === 0;
+  const boardEmpty = rows.every((r) => r.permanents.length === 0);
 
   return (
     <div

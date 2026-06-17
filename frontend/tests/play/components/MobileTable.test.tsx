@@ -95,6 +95,8 @@ function makeView(over: Partial<GameView> = {}): GameView {
       handCount: 2,
       lands: [land('l1'), land('l2')],
       creatures: [creature('c1')],
+      artifacts: [],
+      enchantments: [],
       other: [],
       hand: [handCard('h1'), handCard('h2')],
     },

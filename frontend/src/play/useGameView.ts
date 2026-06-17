@@ -49,20 +49,49 @@ function toPermanentView(card: SimpleCard, ctx: PermanentContext): PermanentView
   };
 }
 
-function bucket(
-  battlefield: SimpleCard[],
-  ctx: PermanentContext,
-): { creatures: PermanentView[]; lands: PermanentView[]; other: PermanentView[] } {
+/** Stack identical lands (same name/tapped-state/counters) into one tile + count. */
+function groupLands(lands: PermanentView[]): PermanentView[] {
+  const groups = new Map<string, PermanentView[]>();
+  const order: string[] = [];
+  for (const l of lands) {
+    const key = `${l.name}|${l.tapped ? 't' : 'u'}|${l.counters ? JSON.stringify(l.counters) : ''}`;
+    let g = groups.get(key);
+    if (!g) {
+      g = [];
+      groups.set(key, g);
+      order.push(key);
+    }
+    g.push(l);
+  }
+  return order.map(key => {
+    const g = groups.get(key)!;
+    return g.length > 1 ? { ...g[0], stackCount: g.length } : g[0];
+  });
+}
+
+interface Buckets {
+  creatures: PermanentView[];
+  artifacts: PermanentView[];
+  enchantments: PermanentView[];
+  lands: PermanentView[];
+  other: PermanentView[];
+}
+
+function bucket(battlefield: SimpleCard[], ctx: PermanentContext): Buckets {
   const creatures: PermanentView[] = [];
+  const artifacts: PermanentView[] = [];
+  const enchantments: PermanentView[] = [];
   const lands: PermanentView[] = [];
   const other: PermanentView[] = [];
   for (const card of battlefield) {
     const view = toPermanentView(card, ctx);
     if (view.isCreature) creatures.push(view);
     else if (view.isLand) lands.push(view);
+    else if (card.cardTypes.includes('artifact')) artifacts.push(view);
+    else if (card.cardTypes.includes('enchantment')) enchantments.push(view);
     else other.push(view);
   }
-  return { creatures, lands, other };
+  return { creatures, artifacts, enchantments, lands: groupLands(lands), other };
 }
 
 const EMPTY_VIEW: GameView = {
@@ -75,6 +104,8 @@ const EMPTY_VIEW: GameView = {
     libraryCount: 0,
     handCount: 0,
     creatures: [],
+    artifacts: [],
+    enchantments: [],
     lands: [],
     other: [],
     hand: [],
@@ -147,6 +178,8 @@ export function buildGameView(input: GameViewInput): GameView {
     libraryCount: gameState.humanPlayer.libraryCount,
     handCount: gameState.humanHand.length,
     creatures: youBuckets.creatures,
+    artifacts: youBuckets.artifacts,
+    enchantments: youBuckets.enchantments,
     lands: youBuckets.lands,
     other: youBuckets.other,
     hand,
@@ -169,7 +202,7 @@ export function buildGameView(input: GameViewInput): GameView {
       glance: opponentGlance({ player, battlefield, humanCommanderDamage }),
       creatures: buckets.creatures,
       lands: buckets.lands,
-      other: buckets.other,
+      other: [...buckets.artifacts, ...buckets.enchantments, ...buckets.other],
       graveyardCount: (gameState.aiGraveyards[player.id] ?? []).length,
       exileCount: 0, // exile zone is not surfaced on SimpleGameState today
       commandZone: (gameState.aiCommandZones[player.id] ?? []).map(card =>

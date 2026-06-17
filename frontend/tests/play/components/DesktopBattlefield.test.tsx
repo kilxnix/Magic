@@ -69,6 +69,8 @@ function makeView(over: Partial<GameView> = {}): GameView {
       libraryCount: 0,
       handCount: 2,
       creatures: [creature('you-c1')],
+      artifacts: [],
+      enchantments: [],
       lands: [land('you-l1'), land('you-l2')],
       other: [],
       hand: [

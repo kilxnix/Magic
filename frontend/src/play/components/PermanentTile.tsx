@@ -188,6 +188,16 @@ export function PermanentTile({ permanent, onAction, onExamine }: PermanentTileP
         )}
       </button>
 
+      {/* Stack count — when identical copies (e.g. lands) are collapsed into one tile. */}
+      {(permanent.stackCount ?? 0) > 1 && (
+        <span
+          data-testid="stack-count"
+          className="pointer-events-none absolute left-0.5 top-0.5 z-10 rounded bg-neutral-950/85 px-1 text-[10px] font-black tabular-nums text-amber-200 ring-1 ring-amber-400/40"
+        >
+          ×{permanent.stackCount}
+        </span>
+      )}
+
       {/* Examine affordance — a LOOK control. Calls onExamine, never onAction.
           Sits above the tile button so the tap-to-act gesture stays clean. */}
       <button
