@@ -98,7 +98,10 @@ export function YouHud({ you, onAction, onExamine }: YouHudProps) {
       {/* Life + poison */}
       <div className="flex items-baseline gap-1.5">
         <span className="text-[10px] font-bold uppercase tracking-wider text-stone-500">You</span>
-        <span data-testid="you-life" className="text-2xl font-black leading-none text-emerald-300">
+        <span
+          data-testid="you-life"
+          className="text-2xl font-black leading-none text-emerald-300 drop-shadow-[0_0_10px_rgba(16,185,129,0.45)]"
+        >
           {you.life}
         </span>
         <span className="text-[10px] font-semibold uppercase text-stone-500">life</span>

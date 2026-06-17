@@ -123,7 +123,7 @@ export function PermanentTile({ permanent, onAction, onExamine }: PermanentTileP
       ref={containerRef}
       data-testid="permanent-tile"
       data-permanent-id={permanent.id}
-      className="group relative inline-block h-24 w-[4.5rem] shrink-0 select-none align-top md:h-28 md:w-20"
+      className="group relative inline-block h-24 w-[4.5rem] shrink-0 select-none align-top animate-tile-in md:h-28 md:w-20"
     >
       <button
         type="button"

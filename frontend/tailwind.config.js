@@ -24,7 +24,32 @@ export default {
           800: '#292524',
           900: '#1c1917',
         }
-      }
+      },
+      keyframes: {
+        'tile-in': {
+          '0%': { opacity: '0', transform: 'translateY(10px) scale(0.9)' },
+          '60%': { opacity: '1' },
+          '100%': { opacity: '1', transform: 'translateY(0) scale(1)' },
+        },
+        'fade-in': {
+          '0%': { opacity: '0', transform: 'translateY(5px)' },
+          '100%': { opacity: '1', transform: 'translateY(0)' },
+        },
+        'soft-pulse': {
+          '0%, 100%': { opacity: '1', transform: 'scale(1)' },
+          '50%': { opacity: '0.4', transform: 'scale(0.78)' },
+        },
+        'sheen': {
+          '0%': { backgroundPosition: '-150% 0' },
+          '100%': { backgroundPosition: '250% 0' },
+        },
+      },
+      animation: {
+        'tile-in': 'tile-in 0.34s cubic-bezier(0.22,1,0.36,1) both',
+        'fade-in': 'fade-in 0.3s ease-out both',
+        'soft-pulse': 'soft-pulse 2.2s ease-in-out infinite',
+        'sheen': 'sheen 2.5s ease-in-out infinite',
+      },
     },
   },
   plugins: [],

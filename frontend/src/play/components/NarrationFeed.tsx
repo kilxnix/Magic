@@ -41,7 +41,7 @@ function NarrationLine({ entry }: { entry: NarrationEntry }) {
   return (
     <li
       data-kind={entry.kind}
-      className="flex items-start gap-2 px-3 py-1.5 text-[11px] leading-snug md:text-xs"
+      className="flex animate-fade-in items-start gap-2 px-3 py-1.5 text-[11px] leading-snug md:text-xs"
     >
       <span
         aria-hidden="true"
@@ -92,7 +92,7 @@ export function NarrationFeed({ entries, className = '' }: NarrationFeedProps) {
     <section
       data-testid="narration-feed"
       aria-label="Narration feed"
-      className={`flex min-h-0 flex-col rounded-lg border border-stone-700/60 bg-stone-900/70 text-stone-200 ${className}`}
+      className={`flex min-h-0 flex-col rounded-xl border border-amber-900/25 bg-gradient-to-b from-stone-900/75 to-neutral-950/75 text-stone-200 shadow-lg shadow-black/30 ${className}`}
     >
       {/* Desktop (>=md): persistent labeled side-rail header, always-open log. */}
       <div className="hidden min-h-0 flex-1 flex-col md:flex">

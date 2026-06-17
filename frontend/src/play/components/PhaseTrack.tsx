@@ -67,7 +67,11 @@ export function PhaseTrack({ phaseLabel }: PhaseTrackProps) {
               <span
                 className={cn(
                   'h-1.5 w-1.5 shrink-0 rounded-full',
-                  isActive ? 'bg-amber-400 ring-2 ring-amber-400/30' : isPast ? 'bg-stone-600' : 'bg-stone-700',
+                  isActive
+                    ? 'animate-soft-pulse bg-amber-400 ring-2 ring-amber-400/30'
+                    : isPast
+                      ? 'bg-stone-600'
+                      : 'bg-stone-700',
                 )}
               />
               {p.label}
