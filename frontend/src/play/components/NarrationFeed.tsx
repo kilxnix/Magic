@@ -106,9 +106,10 @@ export function NarrationFeed({ entries, className = '' }: NarrationFeedProps) {
 
       {/* Mobile (<md): a bounded pull-up. <details> is in normal flow and only
           grows the feed's own box — it can never become a full-screen overlay
-          on the board. Open by default so the latest line is visible. */}
+          on the board. COLLAPSED by default: open it would (with the hand pull-up)
+          crowd the battlefield to 0px. The summary bar shows the entry count and
+          taps open to read the log. Desktop uses the always-open rail above. */}
       <details
-        open
         data-testid="narration-pullup"
         className="flex min-h-0 flex-col md:hidden"
       >
