@@ -11,6 +11,7 @@ import { OpponentExplorer } from '../components/OpponentExplorer';
 import { StackView } from '../components/StackView';
 import { HandView } from '../components/HandView';
 import { PriorityStrip } from '../components/PriorityStrip';
+import { PhaseTrack } from '../components/PhaseTrack';
 import { NarrationFeed } from '../components/NarrationFeed';
 import { TargetingLayer } from '../components/TargetingLayer';
 import { CombatFlow } from '../components/CombatFlow';
@@ -133,6 +134,7 @@ export function DesktopBattlefield({
             onHold={onHold}
             onToggleAlwaysStop={onToggleAlwaysStop}
           />
+          <PhaseTrack phaseLabel={priority.phaseLabel} />
         </aside>
 
         {/* ── CENTER: the board column (relative — anchors in-flow overlays) ── */}

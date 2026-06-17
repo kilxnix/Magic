@@ -20,7 +20,7 @@ export const DESKTOP_BATTLEFIELD_LAYOUT = {
   // Root: fills the viewport height with an svh cap so zoom can't push the grid
   // taller than the screen. The whole shell is one scroll-isolated surface.
   shell:
-    'h-[100svh] max-h-[100svh] w-full bg-stone-950 text-stone-100 overflow-hidden overscroll-none',
+    'h-[100svh] max-h-[100svh] w-full bg-[radial-gradient(150%_120%_at_50%_-15%,#15231e_0%,#0d1714_42%,#080b0a_100%)] text-stone-100 overflow-hidden overscroll-none',
 
   // The persistent three-column grid: left rail | center board | right rail.
   // The center column is the only flexible track (1fr); the rails are fixed,
@@ -65,7 +65,7 @@ export const DESKTOP_BATTLEFIELD_LAYOUT = {
   // Your hand fanned along the bottom — a bottom rail, capped + scrollable, so
   // a wide hand never overlaps the board or the rails.
   handRail:
-    'shrink-0 overflow-visible rounded-xl border border-stone-700/60 bg-stone-900/50 max-h-[min(15rem,30svh)]',
+    'shrink-0 overflow-visible rounded-2xl border border-amber-900/30 bg-gradient-to-b from-stone-900/70 to-neutral-950/80 shadow-[0_-6px_24px_rgba(0,0,0,0.45)] max-h-[min(15rem,30svh)]',
 
   // In-flow overlay slot (targeting / combat). NOT fixed — it sits in the center
   // column's flow above the hand so it never covers the board's tiles silently.
@@ -98,7 +98,7 @@ export const MOBILE_TABLE_LAYOUT = {
   // Root: fills the viewport with an svh cap; the shell is one vertical flex
   // column and the single scroll-isolated surface.
   shell:
-    'flex h-[100svh] max-h-[100svh] w-full flex-col gap-1.5 overflow-hidden overscroll-none bg-stone-950 p-1.5 text-stone-100',
+    'flex h-[100svh] max-h-[100svh] w-full flex-col gap-1.5 overflow-hidden overscroll-none bg-[radial-gradient(150%_110%_at_50%_-10%,#15231e_0%,#0d1714_45%,#080b0a_100%)] p-1.5 text-stone-100',
 
   // Opponents collapse to a top strip — a single horizontal swipe row of glance
   // cards, capped so many opponents never crowd the board below.

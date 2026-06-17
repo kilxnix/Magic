@@ -54,7 +54,7 @@ export function PriorityStrip({
     <section
       data-testid="priority-strip"
       aria-label="Priority"
-      className="flex w-full min-w-0 flex-col gap-2 rounded-lg border border-stone-700/60 bg-stone-900/70 px-3 py-2 text-stone-200"
+      className="flex w-full min-w-0 flex-col gap-2 rounded-xl border border-amber-900/25 bg-gradient-to-b from-stone-900/75 to-neutral-950/75 px-3 py-2.5 text-stone-200 shadow-lg shadow-black/30"
     >
       {/* Whose turn + phase + whose priority — on its own full-width block so it
           never gets squeezed to "M..." by the controls beside it. The turn badge
