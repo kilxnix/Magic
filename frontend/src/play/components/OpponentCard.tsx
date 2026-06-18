@@ -1,5 +1,7 @@
 import type { OpponentGlance, OpponentFlag } from '../gameView.types';
 import { CardImage } from '../../components/CardImage';
+import { useValueFlash } from './useValueFlash';
+import { cn } from '../../lib/utils';
 
 interface OpponentCardProps {
   glance: OpponentGlance;
@@ -46,6 +48,7 @@ export function OpponentCard({ glance, onExplore }: OpponentCardProps) {
   } = glance;
 
   const hasOpenMana = openMana > 0;
+  const lifeFlash = useValueFlash(life);
 
   return (
     <button
@@ -69,12 +72,20 @@ export function OpponentCard({ glance, onExplore }: OpponentCardProps) {
           </div>
           {commanderDamageToYou > 0 && (
             <div className="mt-0.5 truncate text-[10px] font-bold uppercase tracking-wide text-rose-300">
-              {commanderDamageToYou} cmd dmg to you
+              {commanderDamageToYou} commander dmg to you
             </div>
           )}
         </div>
         <div className="shrink-0 text-right leading-none">
-          <div className="text-2xl font-black tabular-nums text-stone-50 drop-shadow-[0_1px_2px_rgba(0,0,0,0.7)]">
+          <div
+            key={life}
+            className={cn(
+              'inline-block text-2xl font-black tabular-nums text-stone-50 drop-shadow-[0_1px_2px_rgba(0,0,0,0.7)]',
+              lifeFlash === 'down' && 'text-rose-300',
+              lifeFlash === 'up' && 'text-emerald-300',
+              lifeFlash && 'animate-value-flash',
+            )}
+          >
             {life}
           </div>
           <div className="text-[9px] font-bold uppercase tracking-wider text-stone-400">life</div>

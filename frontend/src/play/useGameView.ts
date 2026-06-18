@@ -11,7 +11,7 @@ import type {
   LegalAction,
   CombatContext,
 } from './gameView.types';
-import { opponentGlance } from './selectors/opponentGlance';
+import { opponentGlance, openManaForBattlefield } from './selectors/opponentGlance';
 import { stackView } from './selectors/stackView';
 import { legalActionsByObject } from './selectors/legalActionsByObject';
 import { priority } from './selectors/priority';
@@ -198,8 +198,18 @@ export function buildGameView(input: GameViewInput): GameView {
   const opponents: OpponentBoard[] = gameState.aiPlayers.map(player => {
     const battlefield = gameState.aiBattlefields[player.id] ?? [];
     const buckets = bucket(battlefield, opponentPermCtx);
+    // Contextual note: during YOUR attack step, how many blockers they have up;
+    // otherwise the "can they respond?" open-mana read. (Was dead data before.)
+    const untappedBlockers = buckets.creatures.filter(c => !c.tapped).length;
+    const openMana = openManaForBattlefield(battlefield);
+    const contextNote =
+      combatCtx.step === 'declare-attackers' && untappedBlockers > 0
+        ? `${untappedBlockers} untapped blocker${untappedBlockers === 1 ? '' : 's'}`
+        : openMana > 0
+          ? `${openMana} open mana`
+          : undefined;
     return {
-      glance: opponentGlance({ player, battlefield, humanCommanderDamage }),
+      glance: opponentGlance({ player, battlefield, humanCommanderDamage, contextNote }),
       creatures: buckets.creatures,
       lands: buckets.lands,
       other: [...buckets.artifacts, ...buckets.enchantments, ...buckets.other],

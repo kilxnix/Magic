@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import type { LegalAction, PermanentView, YouView } from '../gameView.types';
 import { ActionMenu } from './ActionMenu';
 import { AnchoredMenu } from './AnchoredMenu';
+import { useValueFlash } from './useValueFlash';
 import { cn } from '../../lib/utils';
 
 export interface YouHudProps {
@@ -89,6 +90,7 @@ function CommanderChip({
  */
 export function YouHud({ you, onAction, onExamine }: YouHudProps) {
   const pips = PIP_ORDER.filter((c) => you.manaPool[c] > 0);
+  const lifeFlash = useValueFlash(you.life);
 
   return (
     <div
@@ -100,7 +102,12 @@ export function YouHud({ you, onAction, onExamine }: YouHudProps) {
         <span className="text-[10px] font-bold uppercase tracking-wider text-stone-400">You</span>
         <span
           data-testid="you-life"
-          className="text-2xl font-black leading-none text-emerald-300 drop-shadow-[0_0_10px_rgba(16,185,129,0.45)]"
+          key={you.life}
+          className={cn(
+            'inline-block text-2xl font-black leading-none text-emerald-300 drop-shadow-[0_0_10px_rgba(16,185,129,0.45)]',
+            lifeFlash === 'down' && 'text-rose-300',
+            lifeFlash && 'animate-value-flash',
+          )}
         >
           {you.life}
         </span>
@@ -121,10 +128,10 @@ export function YouHud({ you, onAction, onExamine }: YouHudProps) {
         ) : (
           pips.map((c) => (
             <span
-              key={c}
+              key={`${c}-${you.manaPool[c]}`}
               data-testid={`mana-${c}`}
               className={cn(
-                'flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[11px] font-black tabular-nums ring-1 ring-black/15 shadow-[inset_0_1px_1px_rgba(255,255,255,0.55),inset_0_-1px_1px_rgba(0,0,0,0.25),0_1px_2px_rgba(0,0,0,0.45)]',
+                'flex h-5 min-w-5 animate-tile-in items-center justify-center rounded-full px-1 text-[11px] font-black tabular-nums ring-1 ring-black/15 shadow-[inset_0_1px_1px_rgba(255,255,255,0.55),inset_0_-1px_1px_rgba(0,0,0,0.25),0_1px_2px_rgba(0,0,0,0.45)]',
                 PIP[c].bg,
                 PIP[c].text,
               )}
@@ -148,10 +155,16 @@ export function YouHud({ you, onAction, onExamine }: YouHudProps) {
       {/* Graveyard + library counts */}
       <div className="ml-auto flex items-center gap-3 text-[11px] font-semibold text-stone-400">
         <span data-testid="you-graveyard" title="Graveyard">
-          <span className="text-stone-400">GY</span> {you.graveyardCount}
+          <span className="text-stone-400">GY</span>{' '}
+          <span key={you.graveyardCount} className="inline-block animate-tile-in tabular-nums">
+            {you.graveyardCount}
+          </span>
         </span>
         <span data-testid="you-library" title="Library">
-          <span className="text-stone-400">Lib</span> {you.libraryCount}
+          <span className="text-stone-400">Lib</span>{' '}
+          <span key={you.libraryCount} className="inline-block animate-tile-in tabular-nums">
+            {you.libraryCount}
+          </span>
         </span>
       </div>
     </div>

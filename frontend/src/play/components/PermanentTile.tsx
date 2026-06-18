@@ -66,6 +66,21 @@ export function PermanentTile({ permanent, onAction, onExamine }: PermanentTileP
   // the action menu — long-press is a LOOK gesture, not a commit.
   const suppressNextClick = useRef(false);
 
+  // Brief emphasis pulse when a creature's power/toughness changes (pump, counters,
+  // anthems) so the swing is felt, not just silently re-rendered.
+  const ptSig = (power ?? 0) * 100 + (toughness ?? 0);
+  const [ptFlash, setPtFlash] = useState(false);
+  const prevPt = useRef(ptSig);
+  useEffect(() => {
+    if (prevPt.current !== ptSig && isCreature) {
+      setPtFlash(true);
+      const t = setTimeout(() => setPtFlash(false), 600);
+      prevPt.current = ptSig;
+      return () => clearTimeout(t);
+    }
+    prevPt.current = ptSig;
+  }, [ptSig, isCreature]);
+
   const badges = counterBadges(permanent.counters);
 
   // Outside-click / scroll / Escape dismissal is handled by AnchoredMenu (the
@@ -144,7 +159,7 @@ export function PermanentTile({ permanent, onAction, onExamine }: PermanentTileP
         aria-label={`${name}${tapped ? ' (tapped)' : ''} — show actions`}
         title={name}
         className={cn(
-          'absolute inset-0 flex h-full w-full flex-col justify-end overflow-hidden rounded-lg border text-left transition-all duration-200 ease-out will-change-transform',
+          'absolute inset-0 flex h-full w-full flex-col justify-end overflow-hidden rounded-lg border text-left transition-all duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-transform',
           'border-stone-600 bg-stone-800 hover:-translate-y-1 hover:bg-stone-700 hover:shadow-[0_12px_28px_rgba(0,0,0,0.6),0_0_0_2px_rgba(251,191,36,0.4)] active:scale-[0.97] focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/70',
           accentClass,
           tapped && 'rotate-6 opacity-70 saturate-50',
@@ -175,7 +190,7 @@ export function PermanentTile({ permanent, onAction, onExamine }: PermanentTileP
               <span
                 key={label}
                 data-testid={`counter-${label}`}
-                className="rounded bg-emerald-900/90 px-1 text-[8px] font-bold leading-tight text-emerald-100 ring-1 ring-emerald-400/40"
+                className="animate-fade-in rounded bg-emerald-900/90 px-1 text-[8px] font-bold leading-tight text-emerald-100 ring-1 ring-emerald-400/40"
               >
                 {count} {label}
               </span>
@@ -187,7 +202,10 @@ export function PermanentTile({ permanent, onAction, onExamine }: PermanentTileP
         {isCreature && (power !== undefined || toughness !== undefined) && (
           <span
             data-testid="power-toughness"
-            className="pointer-events-none absolute bottom-1 right-1 rounded bg-black/80 px-1 text-[10px] font-black tabular-nums leading-tight text-white ring-1 ring-white/20"
+            className={cn(
+              'pointer-events-none absolute bottom-1 right-1 rounded bg-black/80 px-1 text-[10px] font-black tabular-nums leading-tight text-white ring-1 ring-white/20',
+              ptFlash && 'animate-soft-pulse text-emerald-200 ring-emerald-300/60',
+            )}
           >
             {power ?? '—'}/{toughness ?? '—'}
           </span>

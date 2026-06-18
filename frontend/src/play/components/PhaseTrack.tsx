@@ -8,9 +8,9 @@ export interface PhaseTrackProps {
 const PHASES = [
   { key: 'upkeep', label: 'Upkeep' },
   { key: 'draw', label: 'Draw' },
-  { key: 'main1', label: 'Main 1' },
+  { key: 'main1', label: 'Main Phase 1' },
   { key: 'combat', label: 'Combat' },
-  { key: 'main2', label: 'Main 2' },
+  { key: 'main2', label: 'Main Phase 2' },
   { key: 'end', label: 'End' },
 ] as const;
 
@@ -45,7 +45,7 @@ export function PhaseTrack({ phaseLabel }: PhaseTrackProps) {
       className="rounded-xl border border-amber-900/25 bg-gradient-to-b from-stone-900/70 to-neutral-950/70 p-2.5"
     >
       <h3 className="mb-2 px-1 text-[10px] font-bold uppercase tracking-wider text-stone-400">
-        This turn
+        Turn phases
       </h3>
       <ol className="flex flex-col gap-0.5">
         {PHASES.map((p, i) => {

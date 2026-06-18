@@ -81,7 +81,7 @@ export function PriorityStrip({
             hasPriority ? 'text-amber-300' : 'text-stone-400'
           }`}
         >
-          {hasPriority ? 'Your priority' : 'Waiting…'}
+          {hasPriority ? 'Your priority' : isYourTurn ? 'Resolving…' : 'Opponent acting…'}
         </div>
       </div>
 

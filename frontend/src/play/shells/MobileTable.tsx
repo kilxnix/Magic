@@ -97,6 +97,17 @@ export function MobileTable({
   const showStackSheet = shouldSurfaceDecisionSheet(view);
   const showDecisionSheet = showStackSheet || targeting.active || combat.step !== 'none';
 
+  // Whole-screen "act now" read on the board (matches desktop): gentle inset glow
+  // + ring when you hold priority, stronger on a real decision. Driven by priority,
+  // not turn ownership (you can hold priority on an opponent's turn).
+  const live = priority.hasPriority;
+  const urgent = live && (priority.hasMeaningfulResponse || stack.length > 0);
+  const spotlight = urgent
+    ? 'ring-1 ring-amber-400/35 shadow-[inset_0_0_140px_rgba(251,191,36,0.09)]'
+    : live
+      ? 'ring-1 ring-amber-400/20 shadow-[inset_0_0_120px_rgba(251,191,36,0.05)]'
+      : 'ring-1 ring-transparent';
+
   return (
     <div data-testid="mobile-table" className={L.shell}>
       {/* ── TOP: opponents collapsed to a horizontal strip ──────────────────── */}
@@ -119,7 +130,7 @@ export function MobileTable({
       <main
         data-testid="board-area"
         aria-label="Your battlefield"
-        className={L.boardArea}
+        className={`${L.boardArea} transition-shadow duration-500 ${spotlight}`}
       >
         <PlayerBoard you={you} onAction={onAction} onExamine={onExamine} />
 

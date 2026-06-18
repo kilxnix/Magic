@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import type { NarrationEntry, NarrationKind } from '../gameView.types';
 
 // ============================================================================
@@ -60,6 +61,14 @@ function NarrationLine({ entry }: { entry: NarrationEntry }) {
  * latest is reachable. This is the part both form factors share.
  */
 function NarrationLog({ entries }: { entries: NarrationEntry[] }) {
+  // Auto-follow the tail so the newest line always animates into view (otherwise
+  // entries fade in below the fold and are missed). block:'nearest' keeps it gentle.
+  const endRef = useRef<HTMLLIElement | null>(null);
+  useEffect(() => {
+    // Optional-chain the method too: jsdom (tests) has no scrollIntoView.
+    if (entries.length > 0) endRef.current?.scrollIntoView?.({ block: 'nearest' });
+  }, [entries.length]);
+
   return (
     // `relative` + `overflow-y-auto` + bounded height = in-flow scroll region.
     // Deliberately NOT fixed / absolute-fullscreen: it must never cover the board.
@@ -79,6 +88,8 @@ function NarrationLog({ entries }: { entries: NarrationEntry[] }) {
           {entries.map((entry) => (
             <NarrationLine key={entry.id} entry={entry} />
           ))}
+          {/* Tail sentinel the log scrolls to so the newest line is always visible. */}
+          <li ref={endRef} aria-hidden="true" className="h-0" />
         </ul>
       )}
     </div>

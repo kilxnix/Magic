@@ -122,6 +122,18 @@ export function DesktopBattlefield({
     onExploreOpponent(playerId);
   };
 
+  // Whole-screen "act now" read: a gentle inset glow + ring on the board when you
+  // hold priority, stronger when there's a real decision (a response available or
+  // a non-empty stack). Driven by priority, NOT turn ownership — you can hold
+  // priority on an opponent's turn, which is exactly when "act now" matters most.
+  const live = priority.hasPriority;
+  const urgent = live && (priority.hasMeaningfulResponse || stack.length > 0);
+  const spotlight = urgent
+    ? 'ring-1 ring-amber-400/35 shadow-[inset_0_0_140px_rgba(251,191,36,0.09)]'
+    : live
+      ? 'ring-1 ring-amber-400/20 shadow-[inset_0_0_120px_rgba(251,191,36,0.05)]'
+      : 'ring-1 ring-transparent';
+
   return (
     <div data-testid="desktop-battlefield" className={L.shell}>
       <div className={L.grid}>
@@ -141,7 +153,7 @@ export function DesktopBattlefield({
         <main
           data-testid="board-column"
           aria-label="Battlefield"
-          className={L.centerColumn}
+          className={`${L.centerColumn} transition-shadow duration-500 ${spotlight}`}
         >
           {/* Opponents strip across the top — glance cards, one tap to explore. */}
           <section
