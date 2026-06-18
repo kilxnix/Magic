@@ -117,6 +117,19 @@ export function YouHud({ you, onAction, onExamine }: YouHudProps) {
             ☠ {you.poison}
           </span>
         )}
+        {you.maxCommanderDamageTaken > 0 && (
+          <span
+            title="Highest commander damage taken (lethal at 21)"
+            className={cn(
+              'ml-1 rounded px-1.5 py-0.5 text-[10px] font-bold tabular-nums',
+              you.maxCommanderDamageTaken >= 15
+                ? 'animate-soft-pulse bg-rose-950/80 text-rose-200 ring-1 ring-rose-400/60'
+                : 'bg-rose-950/60 text-rose-200/90 ring-1 ring-rose-400/30',
+            )}
+          >
+            ⚔ {you.maxCommanderDamageTaken}/21
+          </span>
+        )}
       </div>
 
       {/* Floating mana pool */}

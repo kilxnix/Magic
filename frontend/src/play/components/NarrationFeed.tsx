@@ -124,9 +124,21 @@ export function NarrationFeed({ entries, className = '' }: NarrationFeedProps) {
         data-testid="narration-pullup"
         className="flex min-h-0 flex-col md:hidden"
       >
-        <summary className="flex shrink-0 cursor-pointer list-none items-center justify-between px-3 py-2 text-[10px] font-black uppercase tracking-wider text-amber-200/90 [&::-webkit-details-marker]:hidden">
-          <span>Narration</span>
-          <span aria-hidden="true" className="text-stone-400">
+        <summary className="flex shrink-0 cursor-pointer list-none items-center justify-between gap-2 px-3 py-2 text-[10px] font-black uppercase tracking-wider text-amber-200/90 [&::-webkit-details-marker]:hidden">
+          {/* Ticker: show the newest event inline so phone players see "what just
+              happened" without opening the log (truncated so it never grows the bar). */}
+          <span className="flex min-w-0 flex-1 items-center gap-2">
+            <span className="shrink-0">Narration</span>
+            {entries.length > 0 && (
+              <span
+                aria-hidden="true"
+                className="min-w-0 flex-1 truncate text-[10px] font-normal normal-case tracking-normal text-stone-300"
+              >
+                {entries[entries.length - 1].text}
+              </span>
+            )}
+          </span>
+          <span aria-hidden="true" className="ml-2 shrink-0 text-stone-400">
             {entries.length > 0 ? `${entries.length}` : ''}
           </span>
         </summary>

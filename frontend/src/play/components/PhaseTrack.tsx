@@ -3,6 +3,8 @@ import { cn } from '../../lib/utils';
 export interface PhaseTrackProps {
   /** The view-model's current phase label (e.g. "Main Phase 1", "Declare Attackers"). */
   phaseLabel: string;
+  /** Lay out as a thin horizontal stepper (mobile) instead of the vertical rail map. */
+  horizontal?: boolean;
 }
 
 const PHASES = [
@@ -34,7 +36,7 @@ function activePhase(phaseLabel: string): string {
  *
  * PURE / PRESENTATIONAL — derives the active phase from the label heuristically.
  */
-export function PhaseTrack({ phaseLabel }: PhaseTrackProps) {
+export function PhaseTrack({ phaseLabel, horizontal = false }: PhaseTrackProps) {
   const active = activePhase(phaseLabel);
   const activeIdx = PHASES.findIndex((p) => p.key === active);
 
@@ -42,12 +44,17 @@ export function PhaseTrack({ phaseLabel }: PhaseTrackProps) {
     <section
       data-testid="phase-track"
       aria-label="Turn phases"
-      className="rounded-xl border border-amber-900/25 bg-gradient-to-b from-stone-900/70 to-neutral-950/70 p-2.5"
+      className={cn(
+        'rounded-xl border border-amber-900/25 bg-gradient-to-b from-stone-900/70 to-neutral-950/70',
+        horizontal ? 'px-2 py-1' : 'p-2.5',
+      )}
     >
-      <h3 className="mb-2 px-1 text-[10px] font-bold uppercase tracking-wider text-stone-400">
-        Turn phases
-      </h3>
-      <ol className="flex flex-col gap-0.5">
+      {!horizontal && (
+        <h3 className="mb-2 px-1 text-[10px] font-bold uppercase tracking-wider text-stone-400">
+          Turn phases
+        </h3>
+      )}
+      <ol className={cn('flex gap-0.5', horizontal ? 'flex-row flex-wrap items-center' : 'flex-col')}>
         {PHASES.map((p, i) => {
           const isActive = p.key === active;
           const isPast = activeIdx >= 0 && i < activeIdx;

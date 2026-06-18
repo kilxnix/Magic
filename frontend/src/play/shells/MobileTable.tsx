@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { HandCardView, LegalAction } from '../gameView.types';
 
 import { PlayerBoard } from '../components/PlayerBoard';
@@ -7,6 +7,7 @@ import { OpponentExplorer } from '../components/OpponentExplorer';
 import { StackView } from '../components/StackView';
 import { HandView } from '../components/HandView';
 import { PriorityStrip } from '../components/PriorityStrip';
+import { PhaseTrack } from '../components/PhaseTrack';
 import { NarrationFeed } from '../components/NarrationFeed';
 import { TargetingLayer } from '../components/TargetingLayer';
 import { CombatFlow } from '../components/CombatFlow';
@@ -108,6 +109,18 @@ export function MobileTable({
       ? 'ring-1 ring-amber-400/20 shadow-[inset_0_0_120px_rgba(251,191,36,0.05)]'
       : 'ring-1 ring-transparent';
 
+  // When a decision sheet first surfaces (e.g. after "Cast" needs targets) the hand
+  // auto-collapses and the sheet mounts between board and priority — scroll it into
+  // view ONCE on the false->true transition so it reads as a continuation of the act.
+  const sheetRef = useRef<HTMLElement>(null);
+  const wasSheetOpen = useRef(false);
+  useEffect(() => {
+    if (showDecisionSheet && !wasSheetOpen.current) {
+      sheetRef.current?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' });
+    }
+    wasSheetOpen.current = showDecisionSheet;
+  }, [showDecisionSheet]);
+
   return (
     <div data-testid="mobile-table" className={L.shell}>
       {/* ── TOP: opponents collapsed to a horizontal strip ──────────────────── */}
@@ -120,6 +133,7 @@ export function MobileTable({
           <div key={opponent.glance.playerId} className={L.opponentSlot}>
             <OpponentCard
               glance={opponent.glance}
+              graveyardCount={opponent.graveyardCount}
               onExplore={() => exploreOpponent(opponent.glance.playerId)}
             />
           </div>
@@ -145,9 +159,10 @@ export function MobileTable({
           IN FLOW beneath the board (NOT absolute over it), capped + scrollable. */}
       {showDecisionSheet && (
         <section
+          ref={sheetRef}
           data-testid="decision-sheet"
           aria-label="Your decision"
-          className={L.decisionSheet}
+          className={`${L.decisionSheet} animate-fade-in`}
         >
           {showStackSheet && (
             <StackView
@@ -192,8 +207,10 @@ export function MobileTable({
       <section
         data-testid="priority-slot"
         aria-label="Priority"
-        className={L.prioritySlot}
+        className={`${L.prioritySlot} flex flex-col gap-1.5`}
       >
+        {/* Thin horizontal turn-stepper — mobile keeps the turn map desktop has. */}
+        <PhaseTrack phaseLabel={priority.phaseLabel} horizontal />
         <PriorityStrip
           priority={priority}
           alwaysStop={alwaysStop}

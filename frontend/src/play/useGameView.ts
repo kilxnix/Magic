@@ -98,6 +98,7 @@ const EMPTY_VIEW: GameView = {
   you: {
     life: 0,
     poison: 0,
+    maxCommanderDamageTaken: 0,
     manaPool: { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 },
     commandZone: [],
     graveyardCount: 0,
@@ -169,9 +170,11 @@ export function buildGameView(input: GameViewInput): GameView {
     manaCost: card.manaCost || undefined,
     legalActions: legalFor(card.instanceId),
   }));
+  const cmdDmgTaken = Object.values(gameState.humanPlayer.commanderDamage ?? {});
   const you: YouView = {
     life: gameState.humanPlayer.life,
     poison: gameState.humanPlayer.poisonCounters,
+    maxCommanderDamageTaken: cmdDmgTaken.length ? Math.max(...cmdDmgTaken) : 0,
     manaPool: gameState.manaPool,
     commandZone: gameState.humanCommandZone.map(card => toPermanentView(card, permCtx)),
     graveyardCount: gameState.humanGraveyard.length,

@@ -90,7 +90,10 @@ export function PlayerBoard({ you, onAction, onExamine }: PlayerBoardProps) {
           >
             <span aria-hidden className="text-2xl opacity-30">🜨</span>
             <span className="text-xs font-medium text-emerald-200/40">
-              Your battlefield is empty — play a land to begin.
+              Your battlefield is empty.
+            </span>
+            <span className="text-[11px] text-emerald-200/30">
+              Your cards are in your hand below — tap one to play a land or spell.
             </span>
           </div>
         ) : (

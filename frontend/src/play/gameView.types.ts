@@ -314,6 +314,8 @@ export interface ManaPoolView {
 export interface YouView {
   life: number;
   poison: number;
+  /** Highest commander damage from any single commander against you (lethal at 21). */
+  maxCommanderDamageTaken: number;
   /** Mana currently floating in your pool. */
   manaPool: ManaPoolView;
   /** Your commander(s) in the command zone — each carries its cast action(s). */

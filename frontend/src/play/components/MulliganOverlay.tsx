@@ -47,7 +47,7 @@ export function MulliganOverlay({
   const heading = bottoming
     ? `Put ${bottomCount} card${bottomCount === 1 ? '' : 's'} on the bottom`
     : count > 0
-      ? `Mulligan #${count} — keep or mulligan again`
+      ? `You've mulliganed ${count} time${count === 1 ? '' : 's'} — keep or mulligan again`
       : 'Keep your opening hand?';
 
   const subline = bottoming

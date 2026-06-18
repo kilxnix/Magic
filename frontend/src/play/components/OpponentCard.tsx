@@ -7,6 +7,8 @@ interface OpponentCardProps {
   glance: OpponentGlance;
   /** Tapping/clicking anywhere on the card opens the full explorable board. */
   onExplore(): void;
+  /** Graveyard size — surfaced inline so it's not hidden behind the explorer. */
+  graveyardCount?: number;
 }
 
 const FLAG_META: Record<OpponentFlag, { label: string; className: string }> = {
@@ -34,7 +36,7 @@ const FLAG_META: Record<OpponentFlag, { label: string; className: string }> = {
  * It is a normal in-flow element (a <button>), never a fixed overlay, so it can
  * sit in the opponents strip without covering the board's interactive layer.
  */
-export function OpponentCard({ glance, onExplore }: OpponentCardProps) {
+export function OpponentCard({ glance, onExplore, graveyardCount }: OpponentCardProps) {
   const {
     name,
     life,
@@ -107,6 +109,9 @@ export function OpponentCard({ glance, onExplore }: OpponentCardProps) {
           value={`${creatureCount}·${totalPower}`}
           title={`${creatureCount} creatures · ${totalPower} total power`}
         />
+        {typeof graveyardCount === 'number' && (
+          <Stat label="GY" value={graveyardCount} title="Cards in graveyard" />
+        )}
       </div>
 
       {/* Flags */}

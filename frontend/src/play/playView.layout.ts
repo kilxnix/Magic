@@ -26,7 +26,7 @@ export const DESKTOP_BATTLEFIELD_LAYOUT = {
   // The center column is the only flexible track (1fr); the rails are fixed,
   // independently-scrolling columns so a long feed never grows the board.
   grid:
-    'grid h-full min-h-0 w-full grid-cols-[clamp(13rem,18vw,17rem)_minmax(0,1fr)_clamp(15rem,22vw,21rem)] gap-2 p-2',
+    'grid h-full min-h-0 w-full grid-cols-[clamp(13rem,17vw,16rem)_minmax(0,1fr)_clamp(13rem,18vw,17rem)] gap-2 p-2',
 
   // Left rail — priority/phase. In-flow column, scrolls within its own track.
   leftRail:

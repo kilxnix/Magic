@@ -551,6 +551,12 @@ export function PlayExperience({
   // a signature of the current actions so an unchanged state is never passed
   // twice (no tight loop); each real engine advance changes the signature.
   const lastAutoPassSig = useRef<string>('');
+  // Transient "nothing to do, advancing…" flash so an auto-pass isn't invisible.
+  const [autoPassed, setAutoPassed] = useState(false);
+  const autoPassTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (autoPassTimer.current) clearTimeout(autoPassTimer.current);
+  }, []);
   useEffect(() => {
     if (alwaysStop) return;
     if (guidedPromptOpen) return; // wait for the guided choice before auto-flowing
@@ -566,6 +572,9 @@ export function PlayExperience({
     if (sig === lastAutoPassSig.current) return;
     lastAutoPassSig.current = sig;
     onAction(passAction);
+    setAutoPassed(true);
+    if (autoPassTimer.current) clearTimeout(autoPassTimer.current);
+    autoPassTimer.current = setTimeout(() => setAutoPassed(false), 1200);
   }, [effectiveLegalActions, alwaysStop, guidedPromptOpen, hasPendingBlockingChoice, onAction]);
 
   // Targeting: the board-target prompt resolves ONE target per tap (max = 1).
@@ -755,6 +764,17 @@ export function PlayExperience({
           >
             No, just play
           </button>
+        </div>
+      )}
+
+      {/* Transient auto-pass flash — an auto-pass is otherwise invisible. */}
+      {autoPassed && (
+        <div
+          data-testid="play-auto-passed"
+          aria-hidden="true"
+          className="pointer-events-none absolute left-1/2 top-12 z-20 -translate-x-1/2 animate-fade-in rounded-full border border-stone-600/60 bg-stone-900/90 px-3 py-1 text-[11px] font-semibold text-stone-300 shadow-lg shadow-black/40"
+        >
+          Nothing to do — advancing…
         </div>
       )}
 

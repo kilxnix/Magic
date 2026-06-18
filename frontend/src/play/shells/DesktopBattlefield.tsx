@@ -165,6 +165,7 @@ export function DesktopBattlefield({
               <div key={opponent.glance.playerId} className={L.opponentSlot}>
                 <OpponentCard
                   glance={opponent.glance}
+                  graveyardCount={opponent.graveyardCount}
                   onExplore={() => exploreOpponent(opponent.glance.playerId)}
                 />
               </div>
