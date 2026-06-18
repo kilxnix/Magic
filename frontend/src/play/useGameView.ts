@@ -286,7 +286,7 @@ export function buildGameView(input: GameViewInput): GameView {
   };
 }
 
-function nameForPlayer(gameState: SimpleGameState, playerId: string): string {
+export function nameForPlayer(gameState: SimpleGameState, playerId: string): string {
   if (playerId === gameState.humanPlayer.id) return gameState.humanPlayer.name;
   const ai = gameState.aiPlayers.find(player => player.id === playerId);
   if (ai) return ai.name;

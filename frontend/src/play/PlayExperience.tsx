@@ -36,8 +36,10 @@ import { LibraryChoiceModal } from './components/LibraryChoiceModal';
 import { ReorderModal, type ReorderSection } from './components/ReorderModal';
 import { DecisionModal, type DecisionAccent } from './components/DecisionModal';
 import { CardDetailOverlay } from './components/CardDetailOverlay';
+import { GameOverOverlay } from './components/GameOverOverlay';
 import { DesktopBattlefield } from './shells/DesktopBattlefield';
 import { MobileTable } from './shells/MobileTable';
+import { nameForPlayer } from './useGameView';
 
 interface ReorderModalContent {
   key: string;
@@ -453,23 +455,52 @@ export function PlayExperience({
   //   • board-target selection (the prompt API resolves one tap at a time);
   //   • the composed combat assignments (attackers / blocks-in-progress).
   const view: GameView = useMemo(() => {
+    const step = baseView.combat.step;
     const assignments: Record<string, string[]> = {};
-    if (baseView.combat.step === 'declare-attackers') {
+    if (step === 'declare-attackers') {
       const defenderId = selectedDefenderId ?? eligibleDefenderIds[0];
       for (const attackerId of attackSelection) {
         assignments[attackerId] = defenderId ? [defenderId] : [];
       }
-    } else if (baseView.combat.step === 'declare-blockers') {
+    } else if (step === 'declare-blockers') {
       for (const [blockerId, attackerId] of Object.entries(blockAssignments)) {
         assignments[blockerId] = [attackerId];
       }
     }
+
+    // COMMITTED combat ring (not eligibility): the selectors mark every ELIGIBLE
+    // creature isAttacking/isBlocking during a declare step, which made the rose/sky
+    // ring read as "this is attacking" when it only meant "could attack" (and the
+    // gesture to actually attack is the CombatFlow banner, not the tile). Re-derive
+    // the flag from the player's actual in-progress selection so a creature lights
+    // up only once you've chosen it; tapping it in the banner updates the selection
+    // and the ring follows. Outside declare steps the selectors already leave these
+    // false, so we only remap during the two declare steps.
+    const remapCombat = (p: GameView['you']['creatures'][number]) => {
+      if (step === 'declare-attackers') return { ...p, isAttacking: attackSelection.has(p.id), isBlocking: false };
+      if (step === 'declare-blockers')
+        return { ...p, isBlocking: Object.prototype.hasOwnProperty.call(blockAssignments, p.id), isAttacking: false };
+      return p;
+    };
+    const you =
+      step === 'declare-attackers' || step === 'declare-blockers'
+        ? { ...baseView.you, creatures: baseView.you.creatures.map(remapCombat) }
+        : baseView.you;
+
     return {
       ...baseView,
+      you,
       targeting: { ...baseView.targeting, selectedTargetIds },
       combat: { ...baseView.combat, assignments },
     };
   }, [baseView, selectedTargetIds, attackSelection, blockAssignments, eligibleDefenderIds, selectedDefenderId]);
+
+  // Game-over flourish state. The overlay sits above the shell AND above the
+  // shared GameReview modal PlayPage opens on game-over, so "Review game"
+  // dismisses it to reveal that review underneath; "Play again" reloads.
+  const [gameOverDismissed, setGameOverDismissed] = useState(false);
+  const youWon = view.winner != null && view.winner === gameState.humanPlayer.id;
+  const winnerName = view.winner != null ? nameForPlayer(gameState, view.winner) : null;
 
   // ── Callback bag → hook dispatchers ───────────────────────────────────────
 
@@ -849,6 +880,15 @@ export function PlayExperience({
       {/* Look-only card zoom — the destination of every onExamine gesture.
           Portaled to body, so it's rendered here at the top level. */}
       <CardDetailOverlay cardName={examineName} onClose={() => setExamineName(null)} />
+
+      {/* Victory / Defeat flourish — portaled above everything; "Review game"
+          reveals PlayPage's GameReview modal underneath, "Play again" reloads. */}
+      <GameOverOverlay
+        winnerName={gameOverDismissed ? null : winnerName}
+        youWon={youWon}
+        onReview={() => setGameOverDismissed(true)}
+        onPlayAgain={() => window.location.reload()}
+      />
     </div>
   );
 }
