@@ -76,7 +76,7 @@ export function TargetingLayer({
       className="flex w-full flex-col gap-3 rounded-xl border border-amber-500/40 bg-gradient-to-b from-stone-900/90 to-neutral-950/90 p-3 text-stone-100 shadow-lg shadow-black/40 ring-1 ring-amber-500/10"
     >
       <header className="flex items-baseline justify-between gap-2">
-        <h2 className="text-xs font-semibold uppercase tracking-wide text-amber-200/90">
+        <h2 className="font-serif text-sm font-bold tracking-tight text-amber-200/90">
           Targeting
         </h2>
         <span
@@ -91,7 +91,7 @@ export function TargetingLayer({
       <p className="text-[11px] uppercase tracking-wide text-stone-400">{countHint}</p>
 
       {legalTargetIds.length === 0 ? (
-        <p className="rounded-lg border border-dashed border-stone-700/60 bg-stone-950/40 px-3 py-4 text-center text-sm text-stone-400">
+        <p className="rounded-lg border border-stone-700/40 bg-stone-950/40 px-3 py-4 text-center text-sm text-stone-400">
           No legal targets are available.
         </p>
       ) : (

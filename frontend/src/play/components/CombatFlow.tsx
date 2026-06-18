@@ -114,7 +114,7 @@ export function CombatFlow({
       className="flex w-full min-w-0 flex-col gap-3 rounded-xl border border-amber-500/45 bg-gradient-to-b from-stone-900/90 to-neutral-950/90 p-3 text-stone-100 shadow-lg shadow-black/40 ring-1 ring-amber-500/10"
     >
       <header className="flex items-baseline gap-2">
-        <h2 className="text-xs font-semibold uppercase tracking-wide text-amber-200/90">
+        <h2 className="font-serif text-sm font-bold tracking-tight text-amber-200/90">
           Combat
         </h2>
       </header>

@@ -104,7 +104,7 @@ export function LibraryChoiceModal({ mode, title, cards, onResolve }: LibraryCho
                       aria-label="Move up"
                       disabled={idx === 0}
                       onClick={() => move(id, -1)}
-                      className="px-1 text-stone-300 hover:text-amber-300 disabled:opacity-30"
+                      className="px-1 text-stone-200 hover:text-amber-300 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:text-stone-200"
                     >
                       ▲
                     </button>
@@ -113,7 +113,7 @@ export function LibraryChoiceModal({ mode, title, cards, onResolve }: LibraryCho
                       aria-label="Move down"
                       disabled={idx === order.length - 1}
                       onClick={() => move(id, 1)}
-                      className="px-1 text-stone-300 hover:text-amber-300 disabled:opacity-30"
+                      className="px-1 text-stone-200 hover:text-amber-300 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:text-stone-200"
                     >
                       ▼
                     </button>

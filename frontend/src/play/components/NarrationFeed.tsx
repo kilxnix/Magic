@@ -71,7 +71,7 @@ function NarrationLog({ entries }: { entries: NarrationEntry[] }) {
       className="relative max-h-[40svh] overflow-y-auto overscroll-contain md:max-h-full"
     >
       {entries.length === 0 ? (
-        <p className="px-3 py-4 text-[11px] italic text-stone-500 md:text-xs">
+        <p className="px-3 py-4 text-[11px] italic text-stone-400 md:text-xs">
           The log will narrate triggers, the stack, and phases as the game plays.
         </p>
       ) : (
@@ -115,7 +115,7 @@ export function NarrationFeed({ entries, className = '' }: NarrationFeedProps) {
       >
         <summary className="flex shrink-0 cursor-pointer list-none items-center justify-between px-3 py-2 text-[10px] font-black uppercase tracking-wider text-amber-200/90 [&::-webkit-details-marker]:hidden">
           <span>Narration</span>
-          <span aria-hidden="true" className="text-stone-500">
+          <span aria-hidden="true" className="text-stone-400">
             {entries.length > 0 ? `${entries.length}` : ''}
           </span>
         </summary>

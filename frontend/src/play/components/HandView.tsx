@@ -47,7 +47,9 @@ function HandCard({ card, isOpen, onToggle, onExamine }: HandCardProps) {
         // Desktop fan: rotate-less, lift + zoom on hover/open so the fanned
         // (overlapping) cards fan out and the active one comes forward.
         'lg:hover:z-20 lg:hover:-translate-y-4 lg:hover:scale-[1.06]',
-        isOpen ? 'z-30 -translate-y-4 scale-[1.04]' : 'z-0',
+        // On mobile the rail is height-capped, so an upward open-lift would clip
+        // the top card; neutralize it on mobile, reinstate the lift on desktop.
+        isOpen ? 'z-30 translate-y-0 scale-[1.04] lg:-translate-y-4' : 'z-0',
       )}
     >
       {hoverPreview.node}
@@ -93,7 +95,7 @@ function HandCard({ card, isOpen, onToggle, onExamine }: HandCardProps) {
             onClick={() => onExamine(card)}
             aria-label={`Examine ${card.name}`}
             title="Examine"
-            className="shrink-0 rounded px-1 text-[10px] font-bold uppercase tracking-wide text-stone-400 transition-colors hover:text-amber-300 focus:outline-none focus-visible:text-amber-300"
+            className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded text-[10px] font-bold uppercase tracking-wide text-stone-400 transition-colors hover:text-amber-300 focus:outline-none focus-visible:text-amber-300 focus-visible:ring-2 focus-visible:ring-amber-400/70"
           >
             &#128269;
           </button>
@@ -151,9 +153,12 @@ export function HandView({ hand, onAction, onExamine }: HandViewProps) {
     return (
       <div
         data-testid="hand-empty"
-        className="flex h-24 items-center justify-center text-xs font-semibold uppercase tracking-wide text-stone-500"
+        className="flex h-24 flex-col items-center justify-center gap-1 text-center"
       >
-        Hand empty
+        <span aria-hidden className="text-lg opacity-30">🂠</span>
+        <span className="text-xs font-medium text-stone-400/70">
+          Your hand is empty — draw to refill it.
+        </span>
       </div>
     );
   }
@@ -166,7 +171,7 @@ export function HandView({ hand, onAction, onExamine }: HandViewProps) {
       aria-label="Your hand"
       // Horizontal scroll strip. overflow-x-auto = swipe-sideways on mobile;
       // items-end so the fan/lift grows upward off the bottom rail.
-      className="flex w-full items-end gap-3 overflow-x-auto overflow-y-visible px-3 pb-2 pt-12 sm:gap-2 lg:-space-x-4 lg:gap-0 lg:px-6"
+      className="flex w-full items-end gap-3 overflow-x-auto overflow-y-visible px-3 pb-2 pt-2 sm:gap-2 lg:-space-x-4 lg:gap-0 lg:px-6 lg:pt-12"
     >
       {hand.map((card) => (
         <HandCard

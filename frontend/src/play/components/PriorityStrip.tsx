@@ -75,8 +75,10 @@ export function PriorityStrip({
         </div>
         <div
           data-testid="priority-holder"
+          role="status"
+          aria-live="polite"
           className={`text-[10px] font-bold uppercase tracking-wider ${
-            hasPriority ? 'text-amber-300' : 'text-stone-500'
+            hasPriority ? 'text-amber-300' : 'text-stone-400'
           }`}
         >
           {hasPriority ? 'Your priority' : 'Waiting…'}
@@ -89,7 +91,8 @@ export function PriorityStrip({
         {hasMeaningfulResponse && (
           <span
             data-testid="respond-chip"
-            className="shrink-0 rounded-full border border-amber-400/60 bg-amber-500/20 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-amber-100 shadow-[0_0_14px_rgba(251,191,36,0.35)]"
+            aria-label="You have a meaningful response available"
+            className="animate-fade-in shrink-0 rounded-full border border-amber-400/60 bg-amber-500/20 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-amber-100 shadow-[0_0_14px_rgba(251,191,36,0.35)]"
           >
             Respond
           </span>

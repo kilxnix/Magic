@@ -216,7 +216,7 @@ export function PermanentTile({ permanent, onAction, onExamine }: PermanentTileP
           examine();
         }}
         onPointerDown={(event) => event.stopPropagation()}
-        className="absolute right-0.5 top-0.5 z-10 flex h-5 w-5 items-center justify-center rounded-full bg-black/70 text-[11px] font-black leading-none text-stone-200 opacity-80 ring-1 ring-white/25 transition hover:bg-black/90 hover:text-amber-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/80"
+        className="absolute right-0.5 top-0.5 z-10 flex h-7 w-7 items-center justify-center rounded-full bg-black/70 text-xs font-black leading-none text-stone-200 opacity-80 ring-1 ring-white/25 transition hover:bg-black/90 hover:text-amber-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/80"
       >
         i
       </button>

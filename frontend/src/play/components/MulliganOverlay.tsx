@@ -58,6 +58,7 @@ export function MulliganOverlay({
     <div
       data-testid="mulligan-overlay"
       role="dialog"
+      aria-modal="true"
       aria-label="Mulligan decision"
       className="absolute inset-0 z-40 flex animate-fade-in flex-col items-center justify-center gap-4 bg-neutral-950/92 px-4 py-6 backdrop-blur-sm"
     >

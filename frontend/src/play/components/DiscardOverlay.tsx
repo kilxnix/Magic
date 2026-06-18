@@ -19,6 +19,7 @@ export function DiscardOverlay({ hand, count, onDiscard }: DiscardOverlayProps) 
     <div
       data-testid="discard-overlay"
       role="dialog"
+      aria-modal="true"
       aria-label="Discard to hand size"
       className="absolute inset-0 z-40 flex animate-fade-in flex-col items-center justify-center gap-4 bg-neutral-950/92 px-4 py-6 backdrop-blur-sm"
     >
@@ -39,6 +40,7 @@ export function DiscardOverlay({ hand, count, onDiscard }: DiscardOverlayProps) 
             data-testid="discard-card"
             data-card-id={card.id}
             onClick={() => onDiscard(card.id)}
+            aria-label={`Discard ${card.name}`}
             title={card.name}
             className="w-20 shrink-0 overflow-hidden rounded-lg border-2 border-stone-600/70 transition-all hover:-translate-y-2 hover:border-rose-400 hover:ring-2 hover:ring-rose-400/40 sm:w-24"
           >

@@ -65,7 +65,7 @@ export const DESKTOP_BATTLEFIELD_LAYOUT = {
   // Your hand fanned along the bottom — a bottom rail, capped + scrollable, so
   // a wide hand never overlaps the board or the rails.
   handRail:
-    'shrink-0 overflow-visible rounded-2xl border border-amber-900/30 bg-gradient-to-b from-stone-900/70 to-neutral-950/80 shadow-[0_-6px_24px_rgba(0,0,0,0.45)] max-h-[min(15rem,30svh)]',
+    'shrink-0 overflow-visible rounded-xl border border-amber-900/30 bg-gradient-to-b from-stone-900/70 to-neutral-950/80 shadow-[0_-6px_24px_rgba(0,0,0,0.45)] max-h-[min(15rem,30svh)]',
 
   // In-flow overlay slot (targeting / combat). NOT fixed — it sits in the center
   // column's flow above the hand so it never covers the board's tiles silently.

@@ -38,14 +38,14 @@ export function OpponentExplorer({ board, onClose }: OpponentExplorerProps) {
     // anchors to the nearest positioned ancestor (the board container) — NOT `fixed`.
     <div
       data-testid="opponent-explorer"
-      className="absolute inset-0 z-30 flex flex-col bg-stone-950/80 p-2 backdrop-blur-sm md:p-4"
+      className="absolute inset-0 z-30 flex min-h-[16rem] flex-col bg-stone-950/80 p-2 backdrop-blur-sm md:p-4"
     >
       {/* The panel itself — scrollable, capped on desktop, full-width on mobile. */}
       <div className="mx-auto flex h-full w-full max-w-4xl flex-col overflow-hidden rounded-xl border border-stone-600 bg-stone-900 shadow-2xl shadow-black/60">
         {/* ── Header: name · life · commander dmg · close ───────────────────── */}
         <header className="flex shrink-0 items-center gap-3 border-b border-stone-700 bg-stone-800/80 px-3 py-2 md:px-4 md:py-3">
           <div className="min-w-0 flex-1">
-            <div className="truncate text-base font-black leading-tight text-stone-100 md:text-lg">
+            <div className="truncate font-serif text-base font-bold leading-tight text-stone-100 md:text-lg">
               {glance.name}
             </div>
             {glance.commanderDamageToYou > 0 && (
@@ -76,7 +76,7 @@ export function OpponentExplorer({ board, onClose }: OpponentExplorerProps) {
             aria-label={`Close ${glance.name}'s board`}
             title="Close"
             onClick={onClose}
-            className="ml-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-stone-700 text-lg font-black leading-none text-stone-200 ring-1 ring-white/15 transition hover:bg-stone-600 hover:text-amber-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/80"
+            className="ml-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-stone-700 text-lg font-black leading-none text-stone-200 ring-1 ring-white/15 transition hover:bg-stone-600 hover:text-amber-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/80 md:h-9 md:w-9"
           >
             ×
           </button>
@@ -166,7 +166,7 @@ function Zone({ testId, title, subtitle, count, permanents, empty }: ZoneProps) 
       </div>
 
       {permanents.length === 0 ? (
-        <div className="rounded-md border border-dashed border-stone-700/70 px-2 py-2 text-[11px] italic text-stone-500">
+        <div className="rounded-md border border-stone-700/40 bg-stone-950/40 px-2 py-2 text-[11px] italic text-stone-500">
           {empty}
         </div>
       ) : (

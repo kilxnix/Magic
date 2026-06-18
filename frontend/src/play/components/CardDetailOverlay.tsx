@@ -38,6 +38,7 @@ export function CardDetailOverlay({ cardName, onClose }: CardDetailOverlayProps)
     <div
       data-testid="card-detail-overlay"
       role="dialog"
+      aria-modal="true"
       aria-label={`${cardName} — card detail`}
       onClick={onClose}
       className="fixed inset-0 z-[200] flex animate-fade-in items-center justify-center bg-black/75 p-6 backdrop-blur-sm"
@@ -51,14 +52,14 @@ export function CardDetailOverlay({ cardName, onClose }: CardDetailOverlayProps)
           cardName={cardName}
           size="normal"
           showHoverZoom={false}
-          className="aspect-[5/7] w-full overflow-hidden rounded-2xl shadow-[0_24px_60px_rgba(0,0,0,0.8)] ring-1 ring-amber-300/30"
+          className="aspect-[5/7] w-full overflow-hidden rounded-xl shadow-[0_24px_60px_rgba(0,0,0,0.8)] ring-1 ring-amber-300/30"
         />
         <button
           type="button"
           data-testid="card-detail-close"
           onClick={onClose}
           aria-label="Close"
-          className="absolute -right-3 -top-3 flex h-9 w-9 items-center justify-center rounded-full border border-stone-500 bg-stone-900 text-base font-black text-stone-200 shadow-lg transition hover:bg-stone-700 hover:text-amber-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/70"
+          className="absolute -right-3 -top-3 flex h-11 w-11 items-center justify-center rounded-full border border-stone-500 bg-stone-900 text-base font-black text-stone-200 shadow-lg transition hover:bg-stone-700 hover:text-amber-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/70 md:h-9 md:w-9"
         >
           ✕
         </button>

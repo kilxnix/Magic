@@ -29,10 +29,10 @@ export function StackView({ stack, guided, onLetResolve }: StackViewProps) {
     return (
       <div
         aria-label="The stack"
-        className="flex w-full items-center gap-2 rounded-lg border border-stone-800 bg-stone-900/40 px-3 py-1.5"
+        className="flex w-full items-center gap-2 rounded-lg border border-stone-700/40 bg-stone-900/60 px-3 py-1.5 ring-1 ring-stone-700/40"
       >
-        <span className="text-[10px] font-bold uppercase tracking-wider text-stone-500">Stack</span>
-        <span className="text-[11px] text-stone-600">empty</span>
+        <span className="text-[10px] font-bold uppercase tracking-wider text-stone-400">Stack</span>
+        <span className="text-[11px] text-stone-400">empty</span>
       </div>
     );
   }
@@ -43,7 +43,7 @@ export function StackView({ stack, guided, onLetResolve }: StackViewProps) {
       className="flex w-full flex-col gap-2 rounded-xl border border-amber-500/40 bg-gradient-to-b from-stone-900/90 to-neutral-950/90 p-3 text-stone-100 shadow-lg shadow-black/40 ring-1 ring-amber-500/10"
     >
       <header className="flex items-baseline justify-between">
-        <h2 className="text-xs font-semibold uppercase tracking-wide text-amber-200/90">
+        <h2 className="font-serif text-sm font-bold tracking-tight text-amber-200/90">
           The Stack
         </h2>
         <span className="text-[11px] tabular-nums text-stone-400">

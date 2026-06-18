@@ -39,16 +39,16 @@ export default {
           '0%, 100%': { opacity: '1', transform: 'scale(1)' },
           '50%': { opacity: '0.4', transform: 'scale(0.78)' },
         },
-        'sheen': {
-          '0%': { backgroundPosition: '-150% 0' },
-          '100%': { backgroundPosition: '250% 0' },
+        'menu-in': {
+          '0%': { opacity: '0', transform: 'scale(0.96) translateY(4px)' },
+          '100%': { opacity: '1', transform: 'scale(1) translateY(0)' },
         },
       },
       animation: {
         'tile-in': 'tile-in 0.34s cubic-bezier(0.22,1,0.36,1) both',
         'fade-in': 'fade-in 0.3s ease-out both',
         'soft-pulse': 'soft-pulse 2.2s ease-in-out infinite',
-        'sheen': 'sheen 2.5s ease-in-out infinite',
+        'menu-in': 'menu-in 0.16s cubic-bezier(0.22,1,0.36,1) both',
       },
     },
   },

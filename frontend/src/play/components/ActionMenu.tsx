@@ -36,7 +36,7 @@ export function ActionMenu({ actions, guided, onPick }: ActionMenuProps) {
       <div
         role="menu"
         aria-label="Actions"
-        className="min-w-44 max-w-72 rounded-lg border border-stone-600/70 bg-neutral-950 p-2 text-center text-xs font-semibold text-stone-500 shadow-2xl shadow-black/50"
+        className="min-w-44 max-w-72 animate-menu-in origin-center rounded-lg border border-stone-600/70 bg-neutral-950 p-2 text-center text-xs font-semibold text-stone-400 shadow-2xl shadow-black/50"
       >
         No actions available
       </div>
@@ -47,7 +47,7 @@ export function ActionMenu({ actions, guided, onPick }: ActionMenuProps) {
     <div
       role="menu"
       aria-label="Actions"
-      className="min-w-44 max-w-72 overflow-hidden rounded-lg border border-amber-500/35 bg-neutral-950 p-1 shadow-2xl shadow-black/50"
+      className="min-w-44 max-w-72 animate-menu-in origin-center overflow-hidden rounded-lg border border-amber-500/35 bg-neutral-950 p-1 shadow-2xl shadow-black/50"
     >
       {rows.map((action, idx) => {
         const enabled = isEnabled(action);
@@ -69,11 +69,11 @@ export function ActionMenu({ actions, guided, onPick }: ActionMenuProps) {
               'group flex w-full min-h-10 items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors',
               enabled
                 ? 'cursor-pointer text-stone-100 hover:bg-stone-800 focus:bg-stone-800 focus:outline-none'
-                : 'cursor-not-allowed text-stone-500',
+                : 'cursor-not-allowed text-stone-400',
             )}
           >
             {cardName && (
-              <span className="h-9 w-7 shrink-0 overflow-hidden rounded-sm bg-stone-200">
+              <span className="h-9 w-7 shrink-0 overflow-hidden rounded-sm bg-stone-800">
                 <CardImage
                   cardName={cardName}
                   size="small"
@@ -100,7 +100,7 @@ export function ActionMenu({ actions, guided, onPick }: ActionMenuProps) {
               )}
 
               {!enabled && action.whyDisabled && (
-                <span className="truncate text-[10px] font-medium leading-tight text-stone-500">
+                <span className="truncate text-[10px] font-medium leading-tight text-stone-300">
                   {action.whyDisabled}
                 </span>
               )}

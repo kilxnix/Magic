@@ -97,16 +97,16 @@ export function YouHud({ you, onAction, onExamine }: YouHudProps) {
     >
       {/* Life + poison */}
       <div className="flex items-baseline gap-1.5">
-        <span className="text-[10px] font-bold uppercase tracking-wider text-stone-500">You</span>
+        <span className="text-[10px] font-bold uppercase tracking-wider text-stone-400">You</span>
         <span
           data-testid="you-life"
           className="text-2xl font-black leading-none text-emerald-300 drop-shadow-[0_0_10px_rgba(16,185,129,0.45)]"
         >
           {you.life}
         </span>
-        <span className="text-[10px] font-semibold uppercase text-stone-500">life</span>
+        <span className="text-[10px] font-semibold uppercase text-stone-400">life</span>
         {you.poison > 0 && (
-          <span className="ml-1 rounded bg-green-900/80 px-1.5 py-0.5 text-[10px] font-bold text-green-200 ring-1 ring-green-400/40">
+          <span className="ml-1 rounded bg-emerald-950/80 px-1.5 py-0.5 text-[10px] font-bold text-emerald-200 ring-1 ring-emerald-400/40">
             ☠ {you.poison}
           </span>
         )}
@@ -115,7 +115,7 @@ export function YouHud({ you, onAction, onExamine }: YouHudProps) {
       {/* Floating mana pool */}
       <div className="flex items-center gap-1" aria-label="Mana pool">
         {pips.length === 0 ? (
-          <span className="text-[10px] font-medium uppercase tracking-wide text-stone-600">
+          <span className="text-[10px] font-medium uppercase tracking-wide text-stone-400">
             no mana
           </span>
         ) : (
@@ -148,10 +148,10 @@ export function YouHud({ you, onAction, onExamine }: YouHudProps) {
       {/* Graveyard + library counts */}
       <div className="ml-auto flex items-center gap-3 text-[11px] font-semibold text-stone-400">
         <span data-testid="you-graveyard" title="Graveyard">
-          <span className="text-stone-500">GY</span> {you.graveyardCount}
+          <span className="text-stone-400">GY</span> {you.graveyardCount}
         </span>
         <span data-testid="you-library" title="Library">
-          <span className="text-stone-500">Lib</span> {you.libraryCount}
+          <span className="text-stone-400">Lib</span> {you.libraryCount}
         </span>
       </div>
     </div>
