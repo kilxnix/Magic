@@ -1,6 +1,7 @@
 import type { LegalAction, PermanentView, YouView } from '../gameView.types';
 import { PermanentTile } from './PermanentTile';
 import { YouHud } from './YouHud';
+import { FitToBox } from './FitToBox';
 
 export interface PlayerBoardProps {
   you: YouView;
@@ -81,8 +82,9 @@ export function PlayerBoard({ you, onAction, onExamine }: PlayerBoardProps) {
       <YouHud you={you} onAction={onAction} onExamine={onExamine} />
 
       {/* Felt table surface — a lit green table so empty space reads as a board,
-          not a void: warm center light, vignetted edges, a faint top edge. */}
-      <div className="relative flex min-h-[10rem] w-full min-w-0 flex-1 flex-col justify-start gap-3 overflow-y-auto overflow-x-hidden rounded-xl border border-emerald-950/70 lg:justify-end bg-[radial-gradient(120%_80%_at_50%_-5%,#214b3a_0%,#143025_48%,#0a1812_100%),repeating-linear-gradient(45deg,rgba(180,255,210,0.014)_0px,rgba(180,255,210,0.014)_1px,transparent_1px,transparent_4px),repeating-linear-gradient(-45deg,rgba(0,0,0,0.05)_0px,rgba(0,0,0,0.05)_1px,transparent_1px,transparent_4px)] p-4 shadow-[inset_0_3px_30px_rgba(0,0,0,0.55),inset_0_0_70px_rgba(0,0,0,0.4),0_1px_0_rgba(125,205,165,0.08)] ring-1 ring-inset ring-emerald-300/[0.05]">
+          not a void. NO scrolling: the rows scale-to-fit (FitToBox) so the whole
+          battlefield is always visible at once, however crowded it gets. */}
+      <div className="relative flex min-h-[10rem] w-full min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-emerald-950/70 bg-[radial-gradient(120%_80%_at_50%_-5%,#214b3a_0%,#143025_48%,#0a1812_100%),repeating-linear-gradient(45deg,rgba(180,255,210,0.014)_0px,rgba(180,255,210,0.014)_1px,transparent_1px,transparent_4px),repeating-linear-gradient(-45deg,rgba(0,0,0,0.05)_0px,rgba(0,0,0,0.05)_1px,transparent_1px,transparent_4px)] p-4 shadow-[inset_0_3px_30px_rgba(0,0,0,0.55),inset_0_0_70px_rgba(0,0,0,0.4),0_1px_0_rgba(125,205,165,0.08)] ring-1 ring-inset ring-emerald-300/[0.05]">
         {boardEmpty ? (
           <div
             data-testid="board-empty"
@@ -97,16 +99,20 @@ export function PlayerBoard({ you, onAction, onExamine }: PlayerBoardProps) {
             </span>
           </div>
         ) : (
-          rows.map((row) => (
-            <BoardRow
-              key={row.testid}
-              testid={row.testid}
-              label={row.label}
-              permanents={row.permanents}
-              onAction={onAction}
-              onExamine={onExamine}
-            />
-          ))
+          <FitToBox className="min-h-0 flex-1">
+            <div className="flex w-full flex-col gap-3">
+              {rows.map((row) => (
+                <BoardRow
+                  key={row.testid}
+                  testid={row.testid}
+                  label={row.label}
+                  permanents={row.permanents}
+                  onAction={onAction}
+                  onExamine={onExamine}
+                />
+              ))}
+            </div>
+          </FitToBox>
         )}
       </div>
     </div>

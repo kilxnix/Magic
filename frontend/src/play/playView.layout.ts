@@ -57,10 +57,10 @@ export const DESKTOP_BATTLEFIELD_LAYOUT = {
   stackSlot:
     'shrink-0 overflow-y-auto overscroll-contain max-h-[min(18rem,34svh)]',
 
-  // Your battlefield — the main flexible area. Takes the remaining height and
-  // scrolls internally if the board is large.
+  // Your battlefield — the main flexible area. Takes the remaining height; the
+  // board itself scales-to-fit (FitToBox) so it never scrolls.
   playerBoardArea:
-    'min-h-0 flex-1 overflow-y-auto overscroll-contain',
+    'min-h-0 flex-1 overflow-hidden',
 
   // Your hand fanned along the bottom — a bottom rail, capped + scrollable, so
   // a wide hand never overlaps the board or the rails.
@@ -114,7 +114,7 @@ export const MOBILE_TABLE_LAYOUT = {
   // the one in-flow overlay (OpponentExplorer) anchors to THIS box (absolute
   // inset-0), never to the viewport. Scrolls internally when the board is large.
   boardArea:
-    'relative isolate min-h-0 flex-1 overflow-y-auto overscroll-contain',
+    'relative isolate min-h-0 flex-1 overflow-hidden',
 
   // Bottom decision sheet — the stack / priority / targeting / combat surface,
   // shown only when it's the human's decision (see shouldSurfaceDecisionSheet).
