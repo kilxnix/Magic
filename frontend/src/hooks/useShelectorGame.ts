@@ -121,6 +121,7 @@ import {
   parseWardCost,
   type WardCost,
   populateParsedCache,
+  checkTriggersForEvent,
 } from 'commander-engine';
 import {
   buildDecisionReview,
@@ -2069,7 +2070,8 @@ function runAIMulligans(
       messages.push(`${aiCommanderNames[aiId] || aiId} mulligans to ${7 - mulligansTaken}.`);
     }
 
-    current = bottomOpeningHandCardsForMulligan(current, aiId, mulligansTaken);
+    // Commander free first mulligan: bottom (mulligans − 1), not (mulligans).
+    current = bottomOpeningHandCardsForMulligan(current, aiId, Math.max(0, mulligansTaken - 1));
     if (mulligansTaken === 0) {
       messages.push(`${aiCommanderNames[aiId] || aiId} keeps their hand.`);
     } else {
@@ -4600,6 +4602,15 @@ export function useShelectorGame() {
         if (state.step === 'draw') {
           const drawKey = stepKey(state, 'draw');
           if (!stepEffectsDoneRef.current.has(drawKey)) {
+            // Fire DrawStepStart BEFORE the turn-based draw so "at the beginning of
+            // your draw step, draw an additional card" permanents (The Immortal Sun,
+            // Howling Mine family) queue their trigger — mirrors engine
+            // turn-actions.ts. runSBAAndTriggers below resolves the queued +1.
+            // Kept inside the drawKey guard so it can't double-queue on loop re-entry.
+            state = recordSystemStateTransition(
+              state,
+              checkTriggersForEvent(state, { kind: 'DrawStepStart', activePlayerId: activeId }),
+            );
             state = drawCardsWithAuthority(state, activeId, 1);
             stepEffectsDoneRef.current.add(drawKey);
             state = runSBAAndTriggers(state);
@@ -5616,60 +5627,67 @@ export function useShelectorGame() {
 
     if (mulliganCount > 0) {
       const handCards = getCardsInZone(engine, humanIdRef.current, 'hand');
-      const cardsToBottom = Math.min(mulliganCount, handCards.length);
+      // Commander free first mulligan (CR 103.5c): the first mulligan is free, so
+      // you bottom (mulligans − 1) cards, not (mulligans).
+      const cardsToBottom = Math.min(Math.max(0, mulliganCount - 1), handCards.length);
 
-      if (!mulliganBottomSelectionActive) {
-        setMulliganBottomSelectionActive(true);
-        setSelectedMulliganCardIds([]);
-        setSelectedMulliganBottomIds([]);
-        addMessage(
-          'system',
-          `Choose ${cardsToBottom} card${cardsToBottom === 1 ? '' : 's'} from your hand to put on the bottom.`,
+      if (cardsToBottom > 0) {
+        if (!mulliganBottomSelectionActive) {
+          setMulliganBottomSelectionActive(true);
+          setSelectedMulliganCardIds([]);
+          setSelectedMulliganBottomIds([]);
+          addMessage(
+            'system',
+            `Choose ${cardsToBottom} card${cardsToBottom === 1 ? '' : 's'} from your hand to put on the bottom.`,
+          );
+          syncState();
+          return;
+        }
+
+        const selectedIds = selectedMulliganBottomIds.filter(id =>
+          handCards.some(card => card.instanceId === id),
         );
-        syncState();
-        return;
-      }
 
-      const selectedIds = selectedMulliganBottomIds.filter(id =>
-        handCards.some(card => card.instanceId === id),
-      );
+        if (selectedIds.length !== cardsToBottom) {
+          addMessage(
+            'system',
+            `Choose ${cardsToBottom} card${cardsToBottom === 1 ? '' : 's'} from your hand to put on the bottom before keeping.`,
+          );
+          syncState();
+          return;
+        }
 
-      if (selectedIds.length !== cardsToBottom) {
+        const bottomRequest = createSelectCardsPromptRequest(engine, humanIdRef.current, {
+          subject: 'OpeningMulliganBottom',
+          zone: 'hand',
+          destination: 'library',
+          libraryPosition: 'bottom',
+          minSelections: cardsToBottom,
+          maxSelections: cardsToBottom,
+        });
+        const bottomSubmission = {
+          requestId: bottomRequest.id,
+          kind: 'SelectCards' as const,
+          playerId: humanIdRef.current,
+          selectedCardInstanceIds: selectedIds,
+        };
+        const bottomResponse = applySelectCardsPromptResponse(engine, bottomRequest, bottomSubmission);
+        appendEnginePromptEventLogRecord({ kind: 'Prompt', request: bottomRequest, response: bottomSubmission }, bottomResponse);
+        recordAuthorityUpdate(bottomResponse.update);
+        if (!bottomResponse.ok || !bottomResponse.state) {
+          addMessage('system', bottomResponse.message || 'Those mulligan bottom choices are not legal.');
+          syncState();
+          return;
+        }
+        engineRef.current = bottomResponse.state as GameStateWithAI;
         addMessage(
-          'system',
-          `Choose ${cardsToBottom} card${cardsToBottom === 1 ? '' : 's'} from your hand to put on the bottom before keeping.`,
+          'player',
+          `Keeping ${handCards.length - cardsToBottom} cards (mulliganed ${mulliganCount} time${mulliganCount > 1 ? 's' : ''}, bottoming ${cardsToBottom}).`,
         );
-        syncState();
-        return;
+      } else {
+        // Free first mulligan — nothing to bottom; keep the fresh 7 immediately.
+        addMessage('player', 'Keeping hand (first mulligan is free).');
       }
-
-      const bottomRequest = createSelectCardsPromptRequest(engine, humanIdRef.current, {
-        subject: 'OpeningMulliganBottom',
-        zone: 'hand',
-        destination: 'library',
-        libraryPosition: 'bottom',
-        minSelections: cardsToBottom,
-        maxSelections: cardsToBottom,
-      });
-      const bottomSubmission = {
-        requestId: bottomRequest.id,
-        kind: 'SelectCards' as const,
-        playerId: humanIdRef.current,
-        selectedCardInstanceIds: selectedIds,
-      };
-      const bottomResponse = applySelectCardsPromptResponse(engine, bottomRequest, bottomSubmission);
-      appendEnginePromptEventLogRecord({ kind: 'Prompt', request: bottomRequest, response: bottomSubmission }, bottomResponse);
-      recordAuthorityUpdate(bottomResponse.update);
-      if (!bottomResponse.ok || !bottomResponse.state) {
-        addMessage('system', bottomResponse.message || 'Those mulligan bottom choices are not legal.');
-        syncState();
-        return;
-      }
-      engineRef.current = bottomResponse.state as GameStateWithAI;
-      addMessage(
-        'player',
-        `Keeping ${handCards.length - cardsToBottom} cards (mulliganed ${cardsToBottom} time${cardsToBottom > 1 ? 's' : ''}).`,
-      );
     } else {
       addMessage('player', 'Keeping opening hand.');
     }
@@ -5794,7 +5812,7 @@ export function useShelectorGame() {
       // Auto-keep after 3 mulligans
       if (newMulliganCount >= 3) {
         const handCards = getCardsInZone(newEngine, humanIdRef.current, 'hand');
-        const cardsToBottom = Math.min(newMulliganCount, handCards.length);
+        const cardsToBottom = Math.min(Math.max(0, newMulliganCount - 1), handCards.length);
         const selectedBottomIds = handCards
           .slice(Math.max(0, handCards.length - cardsToBottom))
           .map(card => card.instanceId);
@@ -5879,7 +5897,7 @@ export function useShelectorGame() {
 
   const toggleMulliganBottomCard = useCallback((cardInstanceId: string) => {
     setSelectedMulliganBottomIds(prev => {
-      const required = Math.max(0, mulliganCount);
+      const required = Math.max(0, mulliganCount - 1);
       if (prev.includes(cardInstanceId)) {
         return prev.filter(id => id !== cardInstanceId);
       }
@@ -8861,7 +8879,7 @@ export function useShelectorGame() {
     error,
     mulliganPhase,
     mulliganCount,
-    mulliganBottomCount: mulliganPhase && mulliganBottomSelectionActive && mulliganCount > 0 ? mulliganCount : 0,
+    mulliganBottomCount: mulliganPhase && mulliganBottomSelectionActive && mulliganCount > 0 ? Math.max(0, mulliganCount - 1) : 0,
     selectedMulliganCardIds,
     selectedMulliganBottomIds,
     discardPhase,
