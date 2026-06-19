@@ -39,7 +39,7 @@ function BoardRow({ testid, label, permanents, onAction, onExamine }: BoardRowPr
           {permanents.length}
         </span>
       </div>
-      <div className="flex gap-2 overflow-x-auto overflow-y-visible pb-1 md:flex-wrap md:overflow-x-visible">
+      <div className="flex flex-wrap gap-2 pb-1">
         {permanents.map((permanent) => (
           <PermanentTile
             key={permanent.id}

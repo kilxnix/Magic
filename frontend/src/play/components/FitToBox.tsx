@@ -3,6 +3,9 @@ import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 export interface FitToBoxProps {
   children: ReactNode;
   className?: string;
+  /** Box overflow. Default clips both axes; the hand passes
+   * 'overflow-x-hidden overflow-y-visible' so its desktop hover-lift can show. */
+  overflowClass?: string;
 }
 
 // ============================================================================
@@ -21,7 +24,7 @@ export interface FitToBoxProps {
 // scaled descendants reflects the transform, so AnchoredMenu / CardHoverPreview
 // still anchor correctly to a scaled tile (the portaled menu itself is unscaled).
 // ============================================================================
-export function FitToBox({ children, className = '' }: FitToBoxProps) {
+export function FitToBox({ children, className = '', overflowClass = 'overflow-hidden' }: FitToBoxProps) {
   const boxRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1);
@@ -51,7 +54,7 @@ export function FitToBox({ children, className = '' }: FitToBoxProps) {
   }, []);
 
   return (
-    <div ref={boxRef} className={`relative overflow-hidden ${className}`}>
+    <div ref={boxRef} className={`relative ${overflowClass} ${className}`}>
       <div
         ref={contentRef}
         className="absolute left-1/2 top-1/2"

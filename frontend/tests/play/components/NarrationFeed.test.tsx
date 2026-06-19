@@ -51,9 +51,11 @@ describe('NarrationFeed', () => {
     expect(html).not.toMatch(/\babsolute\b/);
     expect(html).not.toContain('inset-0');
 
-    // Positively: the scroll region exists and is bounded + in-flow.
+    // Positively: the log region exists and is bounded + in-flow. It NO LONGER
+    // scrolls (the battlefield never scrolls) — it's a bottom-anchored window that
+    // clips older entries (overflow-hidden) with the newest pinned to the bottom.
     expect(html).toContain('data-testid="narration-log"');
-    expect(html).toContain('overflow-y-auto');
+    expect(html).toContain('overflow-hidden');
     expect(html).toMatch(/max-h-\[40svh\]/);
   });
 

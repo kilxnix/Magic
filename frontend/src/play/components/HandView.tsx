@@ -4,6 +4,7 @@ import { CardImage } from '../../components/CardImage';
 import { ActionMenu } from './ActionMenu';
 import { AnchoredMenu } from './AnchoredMenu';
 import { useCardHoverPreview } from './CardHoverPreview';
+import { FitToBox } from './FitToBox';
 import { cn } from '../../lib/utils';
 
 export interface HandViewProps {
@@ -165,24 +166,32 @@ export function HandView({ hand, onAction, onExamine }: HandViewProps) {
 
   return (
     <>
-    <div
-      data-testid="hand-view"
-      role="list"
-      aria-label="Your hand"
-      // Horizontal scroll strip. overflow-x-auto = swipe-sideways on mobile;
-      // items-end so the fan/lift grows upward off the bottom rail.
-      className="flex w-full items-end gap-3 overflow-x-auto overflow-y-visible px-3 pb-2 pt-2 sm:gap-2 lg:-space-x-4 lg:gap-0 lg:px-6 lg:pt-12"
+    {/* The hand NEVER scrolls: FitToBox scales the whole fan DOWN to fit the rail
+        width so every card is visible at once (overflow-y-visible keeps the desktop
+        hover-lift showing above the rail). Tap a card to zoom + act. */}
+    <FitToBox
+      overflowClass="overflow-x-hidden overflow-y-visible"
+      className="h-full w-full"
     >
-      {hand.map((card) => (
-        <HandCard
-          key={card.id}
-          card={card}
-          isOpen={openId === card.id}
-          onToggle={handleToggle}
-          onExamine={onExamine}
-        />
-      ))}
-    </div>
+      <div
+        data-testid="hand-view"
+        role="list"
+        aria-label="Your hand"
+        // items-end so the fan/lift grows upward off the bottom rail. No scroll
+        // here — FitToBox sizes this natural-width fan to fit.
+        className="flex w-max items-end gap-3 px-3 pb-2 pt-2 sm:gap-2 lg:-space-x-4 lg:gap-0 lg:px-6 lg:pt-12"
+      >
+        {hand.map((card) => (
+          <HandCard
+            key={card.id}
+            card={card}
+            isOpen={openId === card.id}
+            onToggle={handleToggle}
+            onExamine={onExamine}
+          />
+        ))}
+      </div>
+    </FitToBox>
 
     {openCard && (
       <AnchoredMenu anchorRef={anchorRef} open onClose={close} placement="top">

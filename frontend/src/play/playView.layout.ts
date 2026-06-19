@@ -48,8 +48,8 @@ export const DESKTOP_BATTLEFIELD_LAYOUT = {
   // Opponents strip across the top of the board. Capped height (svh) with its
   // own horizontal scroll so many opponents never crowd the board below.
   opponentsStrip:
-    'flex shrink-0 gap-2 overflow-x-auto overflow-y-hidden pb-1 max-h-[min(11rem,24svh)]',
-  // Each opponent glance card holds a sensible width inside the scroll strip.
+    'flex shrink-0 gap-2 overflow-hidden pb-1 max-h-[min(11rem,24svh)]',
+  // Each opponent glance card holds a sensible width inside the strip.
   opponentSlot: 'w-[clamp(11rem,16vw,15rem)] shrink-0',
 
   // The stack, pinned center — where resolution happens. Capped so a deep stack
@@ -65,7 +65,7 @@ export const DESKTOP_BATTLEFIELD_LAYOUT = {
   // Your hand fanned along the bottom — a bottom rail, capped + scrollable, so
   // a wide hand never overlaps the board or the rails.
   handRail:
-    'shrink-0 overflow-visible rounded-xl border border-amber-900/30 bg-gradient-to-b from-stone-900/70 to-neutral-950/80 shadow-[0_-6px_24px_rgba(0,0,0,0.45)] max-h-[min(15rem,30svh)]',
+    'shrink-0 overflow-visible rounded-xl border border-amber-900/30 bg-gradient-to-b from-stone-900/70 to-neutral-950/80 shadow-[0_-6px_24px_rgba(0,0,0,0.45)] h-[min(15rem,30svh)]',
 
   // In-flow overlay slot (targeting / combat). NOT fixed — it sits in the center
   // column's flow above the hand so it never covers the board's tiles silently.
@@ -106,7 +106,7 @@ export const MOBILE_TABLE_LAYOUT = {
   // Opponents collapse to a top strip — a single horizontal swipe row of glance
   // cards, capped so many opponents never crowd the board below.
   opponentsStrip:
-    'flex shrink-0 gap-2 overflow-x-auto overflow-y-hidden pb-1 max-h-[min(8.5rem,22svh)]',
+    'flex shrink-0 gap-2 overflow-hidden pb-1 max-h-[min(8.5rem,22svh)]',
   // Each collapsed opponent glance holds a thumb-width slot in the scroll row.
   opponentSlot: 'w-[clamp(11rem,72vw,15rem)] shrink-0',
 
@@ -135,7 +135,7 @@ export const MOBILE_TABLE_LAYOUT = {
   handPullupSummary:
     'flex cursor-pointer list-none items-center justify-between px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-amber-200/90 [&::-webkit-details-marker]:hidden',
   handPullupBody:
-    'overflow-x-auto overflow-y-visible max-h-[min(10rem,22svh)]',
+    'overflow-x-hidden overflow-y-visible h-[min(10rem,22svh)]',
 
   // Narration — a bounded pull-up (the NarrationFeed renders its own <details>
   // on mobile); this just sizes the slot. In flow, never over the board.

@@ -70,14 +70,16 @@ function NarrationLog({ entries }: { entries: NarrationEntry[] }) {
   }, [entries.length]);
 
   return (
-    // `relative` + `overflow-y-auto` + bounded height = in-flow scroll region.
-    // Deliberately NOT fixed / absolute-fullscreen: it must never cover the board.
+    // NO scroll: a bottom-anchored window onto the log. The newest entries pin to
+    // the bottom (always visible); older ones clip off the top as the log grows.
+    // Full history lives in the after-game review. Not fixed/absolute — never covers
+    // the board.
     <div
       data-testid="narration-log"
       role="log"
       aria-live="polite"
       aria-label="Game narration"
-      className="relative max-h-[40svh] overflow-y-auto overscroll-contain md:max-h-full"
+      className="relative flex max-h-[40svh] flex-col justify-end overflow-hidden md:max-h-full"
     >
       {entries.length === 0 ? (
         <p className="px-3 py-4 text-[11px] italic text-stone-400 md:text-xs">
