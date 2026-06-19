@@ -69,9 +69,11 @@ export function FeedbackWidget() {
       ? 'right-2 top-[calc(env(safe-area-inset-top)+4rem)] sm:right-4 sm:top-24'
       : 'bottom-16 right-3 sm:right-5'
     // Collapsed: a small, low-footprint icon cluster tucked into the corner so it
-    // doesn't cover the board. On the play surface it hugs the right edge.
+    // doesn't cover the board. On the play surface it sits in the BOTTOM-right
+    // corner (over the low-priority narration bar) rather than vertically centered
+    // on the right edge, where it used to overlap the priority / Hold-Pass panel.
     : useSideFeedbackTab
-      ? 'right-1 top-[calc(env(safe-area-inset-top)+4rem)] sm:top-1/2 sm:-translate-y-1/2'
+      ? 'bottom-2 right-2 sm:bottom-3 sm:right-3'
       : 'bottom-4 right-3 sm:bottom-5 sm:right-5';
 
   return (
