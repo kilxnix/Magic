@@ -3496,7 +3496,7 @@ describe('authority action boundary', () => {
         'Sisay, Weatherlight Captain',
         'Legendary Creature - Human Soldier',
         '{2}{W}',
-        "Sisay, Weatherlight Captain gets +1/+1 for each color among other legendary permanents you control.\n{W}{U}{B}{R}{G}, {T}: Search your library for a legendary permanent card with mana value less than Sisay, Weatherlight Captain's power, put that card onto the battlefield, then shuffle.",
+        "Sisay, Weatherlight Captain gets +1/+1 for each color among other legendary permanents you control.\n{W}{U}{B}{R}{G}: Search your library for a legendary permanent card with mana value less than Sisay, Weatherlight Captain's power, put that card onto the battlefield, then shuffle.",
       ),
       cmc: 3,
       colors: ['W'],
@@ -3683,7 +3683,8 @@ describe('authority action boundary', () => {
       createdAt: 202,
     }));
     expect(activated.ok).toBe(true);
-    expect(activated.state?.cards.get('sisay_current_check_1')?.tapped).toBe(true);
+    // Sisay's ability cost is {W}{U}{B}{R}{G} only (no {T}) — she must NOT tap.
+    expect(activated.state?.cards.get('sisay_current_check_1')?.tapped).toBe(false);
     expect(activated.state?.players.find(player => player.id === 'p1')?.manaPool)
       .toEqual({ W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 });
     expect(activated.state?.stack.at(-1)?.kind).toBe('ActivatedAbility');

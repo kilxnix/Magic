@@ -120,7 +120,7 @@ describe('Commander Replacement Rule', () => {
       expect(zone).toBe('graveyard');
     });
 
-    it('returns command zone when commander would go to hand by default', () => {
+    it('returns the natural zone (hand) by default — the player may still opt for command zone (CR 903.9a)', () => {
       const commander = makeCommander();
       const decks = [
         { playerId: 'p1', name: 'Alice', cards: [commander], commanderId: 'cmd-1' },
@@ -129,11 +129,13 @@ describe('Commander Replacement Rule', () => {
       const state = initGameState(decks);
       const commanderInstance = getCardsInZone(state, 'p1', 'command')[0];
 
+      // Effects that put the commander into hand (e.g. Lost to the Spirit World) must
+      // not silently snap it to the command zone — it goes to hand unless chosen.
       const zone = getCommanderDestinationZone(state, commanderInstance.instanceId, 'hand');
-      expect(zone).toBe('command');
+      expect(zone).toBe('hand');
     });
 
-    it('returns command zone when commander would go to library by default', () => {
+    it('keeps a library tuck going to the command zone by default (commander not lost)', () => {
       const commander = makeCommander();
       const decks = [
         { playerId: 'p1', name: 'Alice', cards: [commander], commanderId: 'cmd-1' },
@@ -143,6 +145,33 @@ describe('Commander Replacement Rule', () => {
       const commanderInstance = getCardsInZone(state, 'p1', 'command')[0];
 
       const zone = getCommanderDestinationZone(state, commanderInstance.instanceId, 'library');
+      expect(zone).toBe('command');
+    });
+
+    it('honors an explicit commanderZoneReplacementChoices = command for a hand bounce', () => {
+      const commander = makeCommander();
+      const decks = [
+        { playerId: 'p1', name: 'Alice', cards: [commander], commanderId: 'cmd-1' },
+        { playerId: 'p2', name: 'Bob', cards: [], commanderId: 'cmd-2' },
+      ];
+      const state = initGameState(decks);
+      const commanderInstance = getCardsInZone(state, 'p1', 'command')[0];
+      state.commanderZoneReplacementChoices = { [commanderInstance.instanceId]: true };
+
+      const zone = getCommanderDestinationZone(state, commanderInstance.instanceId, 'hand');
+      expect(zone).toBe('command');
+    });
+
+    it('still defaults a dying commander (graveyard) to the command zone', () => {
+      const commander = makeCommander();
+      const decks = [
+        { playerId: 'p1', name: 'Alice', cards: [commander], commanderId: 'cmd-1' },
+        { playerId: 'p2', name: 'Bob', cards: [], commanderId: 'cmd-2' },
+      ];
+      const state = initGameState(decks);
+      const commanderInstance = getCardsInZone(state, 'p1', 'command')[0];
+
+      const zone = getCommanderDestinationZone(state, commanderInstance.instanceId, 'graveyard');
       expect(zone).toBe('command');
     });
 

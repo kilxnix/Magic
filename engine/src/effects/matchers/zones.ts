@@ -263,6 +263,17 @@ export function matchDestroy(tokens: string[], startIndex: number): PatternResul
   if (slice[consumed] === 'an' && slice[consumed + 1] === 'opponent' && slice[consumed + 2] === 'controls') {
     opponentControls = true;
     consumed += 3;
+  } else if (
+    // "you don't control" (Vandalblast: "destroy target artifact you don't control").
+    // Without this the controller restriction is silently dropped and the engine
+    // illegally allows targeting your OWN artifact/permanent. Mirrors the
+    // "an opponent controls" branch above → opponentControls constraint.
+    slice[consumed] === 'you'
+    && (slice[consumed + 1] === "don't" || slice[consumed + 1] === 'don’t')
+    && slice[consumed + 2] === 'control'
+  ) {
+    opponentControls = true;
+    consumed += 3;
   }
 
   let constraints: TargetSpec['constraints'] = {

@@ -736,12 +736,12 @@ describe('executeSearchLibrary', () => {
     expect(accepted.cards.get('inst_2')!.zone).toBe('battlefield');
   });
 
-  it('full Sisay flow pays WUBRG, uses the stack, and resolves a legal legend to battlefield', () => {
+  it('full Sisay flow pays WUBRG, does NOT tap Sisay, uses the stack, and resolves a legal legend to battlefield', () => {
     const sisay = createTestDef({
       id: 'sisay',
       name: 'Sisay, Weatherlight Captain',
       type_line: 'Legendary Creature - Human Soldier',
-      oracle_text: '{W}{U}{B}{R}{G}, {T}: Search your library for a legendary permanent card with mana value less than Sisay, Weatherlight Captain\'s power, put that card onto the battlefield, then shuffle.',
+      oracle_text: '{W}{U}{B}{R}{G}: Search your library for a legendary permanent card with mana value less than Sisay, Weatherlight Captain\'s power, put that card onto the battlefield, then shuffle.',
       card_types: ['creature'],
       mana_cost: '{2}{W}',
       cmc: 3,
@@ -785,7 +785,9 @@ describe('executeSearchLibrary', () => {
     expect(canActivateAbility(state, 'p1', 'inst_1', 0)).toBe(true);
 
     const activated = activateAbility(state, 'p1', 'inst_1', 0);
-    expect(activated.cards.get('inst_1')!.tapped).toBe(true);
+    // Sisay's ability cost is {W}{U}{B}{R}{G} only — no {T} symbol — so she must
+    // NOT be tapped by activating it.
+    expect(activated.cards.get('inst_1')!.tapped).toBe(false);
     expect(activated.players[0].manaPool).toEqual({ W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 });
     expect(activated.stack).toHaveLength(1);
     expect(activated.cards.get('inst_2')!.zone).toBe('library');

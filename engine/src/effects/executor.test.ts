@@ -209,7 +209,7 @@ describe('executeEffects', () => {
       expect(handCount).toBe(2);
     });
 
-    it('moves a drawn commander to command zone by default instead of hand', () => {
+    it('leaves a drawn commander in hand by default (CR 903.9a — cheaper recast)', () => {
       const state = withLibraryCommander(createTestState());
       const effects: Effect[] = [
         { kind: 'Draw', player: { kind: 'Controller' }, count: 1 },
@@ -217,7 +217,9 @@ describe('executeEffects', () => {
 
       const newState = executeEffects(state, effects, 'player-1', [], []);
 
-      expect(newState.cards.get('lib-card-1')?.zone).toBe('command');
+      // Hand destination defaults to the natural zone; the owner may still opt for
+      // the command zone via commanderZoneReplacementChoices / the UI prompt.
+      expect(newState.cards.get('lib-card-1')?.zone).toBe('hand');
     });
 
     it('draws specified number of cards', () => {
@@ -668,7 +670,7 @@ describe('Phase 10 effects', () => {
       expect(newState.cards.get('creature-1')?.counters).toEqual({});
     });
 
-    it('returns commanders to the command zone by default when bounced', () => {
+    it('returns a bounced commander to hand by default (e.g. Lost to the Spirit World — CR 903.9a)', () => {
       const state = createTestState();
       const cards = new Map(state.cards);
       const commander = cards.get('creature-1')!;
@@ -694,7 +696,9 @@ describe('Phase 10 effects', () => {
         [{ id: 'target_1' }],
       );
 
-      expect(newState.cards.get('creature-1')?.zone).toBe('command');
+      // The bounce leaves the commander in hand by default; the owner may opt for the
+      // command zone via commanderZoneReplacementChoices / the UI prompt.
+      expect(newState.cards.get('creature-1')?.zone).toBe('hand');
     });
 
     it('moves commanders to command zone by default instead of tucking into library', () => {
@@ -773,7 +777,7 @@ describe('Phase 10 effects', () => {
       expect(newState.players.find(player => player.id === 'player-1')?.life).toBe(40);
     });
 
-    it('moves commanders returned from graveyard to hand into command zone by default', () => {
+    it('returns a commander from graveyard to hand by default (CR 903.9a)', () => {
       const state = createTestState();
       const cards = new Map(state.cards);
       const commander = cards.get('creature-1')!;
@@ -799,7 +803,8 @@ describe('Phase 10 effects', () => {
         [{ id: 'target_1' }],
       );
 
-      expect(newState.cards.get('creature-1')?.zone).toBe('command');
+      // Returning to HAND defaults to the natural zone; opt into command zone via the prompt.
+      expect(newState.cards.get('creature-1')?.zone).toBe('hand');
     });
 
     it('queues self ETB triggers for creatures returned from graveyard to battlefield', () => {
@@ -974,7 +979,7 @@ describe('Phase 10 effects', () => {
   });
 
   describe('Library commander replacement', () => {
-    it('moves searched commanders to command zone by default instead of hand', () => {
+    it('searches a commander to hand by default (CR 903.9a)', () => {
       const state = withLibraryCommander(createTestState());
       const effects: Effect[] = [
         {
@@ -988,7 +993,8 @@ describe('Phase 10 effects', () => {
 
       const newState = executeEffects(state, effects, 'player-1', [], []);
 
-      expect(newState.cards.get('lib-card-1')?.zone).toBe('command');
+      // Tutoring your commander to HAND defaults to the natural zone (cheaper recast).
+      expect(newState.cards.get('lib-card-1')?.zone).toBe('hand');
     });
 
     it('moves exiled-from-library commanders to command zone and excludes them from exile-count records', () => {
@@ -1010,7 +1016,7 @@ describe('Phase 10 effects', () => {
       expect(newState.delayedTriggers?.length ?? 0).toBe(0);
     });
 
-    it('moves commanders exiled-until-named to command zone by default', () => {
+    it('moves commanders exiled-until-named (found → hand) to hand by default', () => {
       const state = withLibraryCommander(createTestState());
       const effects: Effect[] = [
         {
@@ -1023,7 +1029,8 @@ describe('Phase 10 effects', () => {
 
       const newState = executeEffects(state, effects, 'player-1', [], []);
 
-      expect(newState.cards.get('lib-card-1')?.zone).toBe('command');
+      // foundDestination 'hand' → natural zone by default (CR 903.9a).
+      expect(newState.cards.get('lib-card-1')?.zone).toBe('hand');
     });
   });
 

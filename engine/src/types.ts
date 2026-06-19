@@ -585,6 +585,14 @@ export interface GameState {
    */
   legendRuleKeepChoices?: Record<string, string>;
   /**
+   * CR 903.9a commander zone-change choices, keyed by the commander's card
+   * instanceId: true => the owner sends it to the command zone, false => its
+   * natural destination zone. Set by the UI prompt (like legendRuleKeepChoices).
+   * When omitted, getCommanderDestinationZone uses a destination-dependent default
+   * (command zone for graveyard/exile, natural zone for hand/library).
+   */
+  commanderZoneReplacementChoices?: Record<string, boolean>;
+  /**
    * Explicit replacement-effect ordering choices. Keys can be the event key
    * from `replacementChoiceKey(...)`, `player:<playerId>`, or `global`.
    * Each value is an ordered list of replacement effect ids to apply first.

@@ -943,13 +943,15 @@ registerOverrideByName('Farseek', {
   targets: [],
 });
 
-// Sisay, Weatherlight Captain - {W}{U}{B}{R}{G}, {T}: Search for a
+// Sisay, Weatherlight Captain - {W}{U}{B}{R}{G}: Search for a
 // legendary permanent card with mana value less than Sisay's power.
+// NOTE: current (errata'd) oracle text has NO {T} in the cost — the ability
+// does NOT tap Sisay. Do not re-add `tap: true` here.
 registerOverrideByName('Sisay, Weatherlight Captain', {
   kind: 'Activated',
   ability: {
     kind: 'ActivatedAbility',
-    cost: { tap: true, mana: '{W}{U}{B}{R}{G}' },
+    cost: { mana: '{W}{U}{B}{R}{G}' },
     effects: [
       {
         kind: 'SearchLibrary',

@@ -360,7 +360,12 @@ function uniqueColorsAmongOtherLegendaryPermanentsYouControl(
     const def = getCardDefinition(state, card);
     if (!isLegendaryPermanentDefinition(def)) continue;
 
-    for (const color of def.colors) {
+    // Use effective colors (Layer 5, CR 613.4b) so color-defining statics such as
+    // Leyline of the Guildpact's "Each nonland permanent you control is all colors"
+    // are counted here, not just the printed def.colors. getEffectiveColors returns
+    // def.colors when no SetAllColors effect applies, so the no-overlay case is
+    // unchanged.
+    for (const color of getEffectiveColors(state, card.instanceId)) {
       if (colors.has(color as 'W' | 'U' | 'B' | 'R' | 'G')) {
         seen.add(color);
       }

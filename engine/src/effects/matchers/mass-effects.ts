@@ -78,22 +78,36 @@ export function matchDestroyAllExpanded(tokens: string[], startIndex: number): P
   let idx = 2;
   const filter: CardFilter = {};
 
-  if (slice[idx] === 'creatures') {
-    // Already handled by matchDestroyAll — use AllCreatures target
-    return null; // let existing handler do it
-  } else if (slice[idx] === 'artifacts') {
-    filter.types = ['artifact'];
-    idx++;
-  } else if (slice[idx] === 'enchantments') {
-    filter.types = ['enchantment'];
-    idx++;
-  } else if (slice[idx] === 'nonland' && slice[idx + 1] === 'permanents') {
-    idx += 2;
+  // "destroy all creatures" is handled by matchDestroyAll (AllCreatures target) — defer.
+  if (slice[idx] === 'creatures') return null;
+
+  // A permanent-type word, plural, → its singular engine type.
+  const TYPE_WORDS: Record<string, string> = {
+    artifacts: 'artifact',
+    creatures: 'creature',
+    enchantments: 'enchantment',
+    lands: 'land',
+    planeswalkers: 'planeswalker',
+  };
+
+  if (slice[idx] === 'nonland' && slice[idx + 1] === 'permanents') {
+    idx += 2; // "destroy all nonland permanents" → no type filter
   } else if (slice[idx] === 'permanents') {
-    idx++;
-  } else if (slice[idx] === 'artifacts' && slice[idx + 1] === 'and' && slice[idx + 2] === 'enchantments') {
-    filter.types = ['artifact', 'enchantment'];
-    idx += 3;
+    idx++; // "destroy all permanents" → no type filter
+  } else if (TYPE_WORDS[slice[idx]]) {
+    // A comma/'and'-separated list of permanent types, e.g. Nevinyrral's Disk
+    // "destroy all artifacts, creatures, and enchantments." (also Akroma's
+    // Vengeance, Planar Cleansing). Single type "destroy all artifacts." stays a
+    // one-element list. The two comma-skips around the 'and'-skip tolerate ", and".
+    const types: string[] = [];
+    while (slice[idx] && TYPE_WORDS[slice[idx]]) {
+      types.push(TYPE_WORDS[slice[idx]]);
+      idx++;
+      if (slice[idx] === ',') idx++;
+      if (slice[idx] === 'and') idx++;
+      if (slice[idx] === ',') idx++;
+    }
+    filter.types = types;
   } else {
     return null;
   }

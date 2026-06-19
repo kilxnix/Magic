@@ -32,9 +32,14 @@ export function isOwnersCommander(state: GameState, cardInstanceId: string): boo
  * library, graveyard, or exile from anywhere, that player may put it into the
  * command zone instead.
  *
- * The `ownerChoosesCommandZone` parameter controls whether the owner opts for command zone.
- * When null/undefined, defaults to true for hand/graveyard/exile so the trainer
- * consistently returns commanders to the command zone without a missing prompt.
+ * The `ownerChoosesCommandZone` parameter controls whether the owner opts for command zone (CR 903.9a).
+ * When null/undefined, we consult `state.commanderZoneReplacementChoices` (keyed by the commander's
+ * instanceId — set by the UI prompt), then fall back to a DESTINATION-DEPENDENT default: the NATURAL
+ * zone for HAND (so an effect that puts your commander into your hand — e.g. "Lost to the Spirit World"
+ * — leaves it in hand for a cheaper recast instead of silently snapping it to the command zone; the
+ * player may still opt for the command zone via the prompt), but the command zone for graveyard / exile
+ * / library (the player-safe default that never loses the commander to death, exile, or a library tuck
+ * when no choice prompt has been answered).
  */
 export function getCommanderDestinationZone(
   state: GameState,
@@ -54,7 +59,12 @@ export function getCommanderDestinationZone(
 
   // Check if this is the owner's commander
   if (isOwnersCommander(state, cardInstanceId)) {
-    const choosesCommandZone = ownerChoosesCommandZone ?? true;
+    const explicit = state.commanderZoneReplacementChoices?.[cardInstanceId];
+    // Hand → keep in hand by default (cheaper recast, the user's case); everything
+    // else (graveyard/exile/library) → command zone so the commander is never lost
+    // when no choice prompt has been answered.
+    const defaultChoice = intendedZone !== 'hand';
+    const choosesCommandZone = ownerChoosesCommandZone ?? explicit ?? defaultChoice;
     if (choosesCommandZone) {
       return 'command';
     }
