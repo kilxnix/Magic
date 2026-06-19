@@ -1,5 +1,48 @@
 import type { StackItemView } from '../gameView.types';
 import { CardImage } from '../../components/CardImage';
+import { useCardHoverPreview } from './CardHoverPreview';
+
+/** One stack entry. Its card thumbnail pops a large hover-preview (desktop) so you
+ * can read the spell/ability that's resolving without leaving the stack. */
+function StackItemRow({ item, onTop }: { item: StackItemView; onTop: boolean }) {
+  const emphasised = item.resolvesNext;
+  const hoverPreview = useCardHoverPreview(item.title);
+  return (
+    <li
+      data-testid="stack-item"
+      className={[
+        'flex animate-fade-in items-start gap-2.5 rounded-lg border px-2.5 py-2 transition-colors',
+        emphasised
+          ? 'border-amber-400/70 bg-amber-950/30 ring-1 ring-amber-400/30'
+          : 'border-stone-700/60 bg-stone-950/40',
+      ].join(' ')}
+    >
+      {hoverPreview.node}
+      <div
+        {...hoverPreview.bind}
+        className="h-16 w-12 shrink-0 cursor-zoom-in overflow-hidden rounded-md bg-stone-800"
+      >
+        <CardImage cardName={item.title} size="small" showHoverZoom={false} className="h-full w-full" />
+      </div>
+
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <span className="truncate text-sm font-semibold text-stone-100">{item.title}</span>
+          {emphasised && (
+            <span className="shrink-0 rounded-full border border-amber-400/60 bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-200">
+              Resolves next
+            </span>
+          )}
+        </div>
+        <p className="mt-0.5 text-xs leading-snug text-stone-300">{item.description}</p>
+        <p className="mt-1 text-[11px] text-stone-400">
+          Controlled by <span className="font-medium text-stone-300">{item.controllerName}</span>
+          {onTop ? ' · on top' : ''}
+        </p>
+      </div>
+    </li>
+  );
+}
 
 export interface StackViewProps {
   stack: StackItemView[];
@@ -62,53 +105,9 @@ export function StackView({ stack, guided, onLetResolve }: StackViewProps) {
           {/* Top-first list. The view-model orders the array so index 0 is the
               top of the stack (resolves next). */}
           <ol className="flex flex-col gap-2" aria-label="Stack items, top first">
-            {stack.map((item, index) => {
-              const emphasised = item.resolvesNext;
-              return (
-                <li
-                  key={item.id}
-                  data-testid="stack-item"
-                  className={[
-                    'flex animate-fade-in items-start gap-2.5 rounded-lg border px-2.5 py-2 transition-colors',
-                    emphasised
-                      ? 'border-amber-400/70 bg-amber-950/30 ring-1 ring-amber-400/30'
-                      : 'border-stone-700/60 bg-stone-950/40',
-                  ].join(' ')}
-                >
-                  <div className="h-16 w-12 shrink-0 overflow-hidden rounded-md bg-stone-800">
-                    <CardImage
-                      cardName={item.title}
-                      size="small"
-                      showHoverZoom={false}
-                      className="h-full w-full"
-                    />
-                  </div>
-
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="truncate text-sm font-semibold text-stone-100">
-                        {item.title}
-                      </span>
-                      {emphasised && (
-                        <span className="shrink-0 rounded-full border border-amber-400/60 bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-200">
-                          Resolves next
-                        </span>
-                      )}
-                    </div>
-                    <p className="mt-0.5 text-xs leading-snug text-stone-300">
-                      {item.description}
-                    </p>
-                    <p className="mt-1 text-[11px] text-stone-400">
-                      Controlled by{' '}
-                      <span className="font-medium text-stone-300">
-                        {item.controllerName}
-                      </span>
-                      {index === 0 ? ' · on top' : ''}
-                    </p>
-                  </div>
-                </li>
-              );
-            })}
+            {stack.map((item, index) => (
+              <StackItemRow key={item.id} item={item} onTop={index === 0} />
+            ))}
           </ol>
 
           {/* Respond is not a one-click action — you respond by casting an instant

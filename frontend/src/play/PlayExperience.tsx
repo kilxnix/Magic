@@ -643,8 +643,20 @@ export function PlayExperience({
         return;
       }
       if (hasDeclareBlockers) {
-        if (!legalBlockPairs.get(a)?.has(b)) return; // not a legal block
-        setBlockAssignments(prev => ({ ...prev, [a]: b }));
+        const legalAttackers = legalBlockPairs.get(a);
+        if (!legalAttackers || legalAttackers.size === 0) return; // can't block anything
+        // CombatFlow taps a blocker with `b` = its current assignment (empty on the
+        // first tap, since there's no per-blocker attacker picker yet). Resolve to a
+        // legal attacker: the passed one if legal, else the first/only legal attacker.
+        // This is what makes blocking work in the common single-attacker case instead
+        // of silently rejecting every block (the softlock). Re-tap toggles it off.
+        const attacker = b && legalAttackers.has(b) ? b : [...legalAttackers][0];
+        setBlockAssignments(prev => {
+          const next = { ...prev };
+          if (next[a] === attacker) delete next[a];
+          else next[a] = attacker;
+          return next;
+        });
       }
     },
     [hasDeclareAttackers, hasDeclareBlockers, legalBlockPairs],
