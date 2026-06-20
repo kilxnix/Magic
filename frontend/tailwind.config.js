@@ -9,6 +9,7 @@ export default {
       fontFamily: {
         sans: ['Inter', 'system-ui', 'sans-serif'],
         serif: ['Merriweather', 'Georgia', 'serif'],
+        display: ['"Cormorant Garamond"', 'Georgia', 'serif'],
         mono: ['JetBrains Mono', 'monospace'],
       },
       colors: {
@@ -23,7 +24,18 @@ export default {
           700: '#44403c',
           800: '#292524',
           900: '#1c1917',
-        }
+        },
+        table: {
+          felt: '#14251c', vignette: '#080b0a', frame: '#26190d',
+          leather: '#281c10', leather2: '#32230f', border: '#5a4324', 'border-hi': '#7a5a2a',
+        },
+        card: { stock: '#e3d2a6', border: '#9a824f', ink: '#2a1f10', badge: '#8a6f3f' },
+        brass: { DEFAULT: '#b8842c', deep: '#9a6c1f', on: '#241804' },
+        gold: { label: '#d8b86a', bright: '#ead6a4', muted: '#a88c5e' },
+        ember: '#cf6a52',
+        oxblood: '#8a2a1e',
+        'ring-combat': '#c79a45',
+        mana: { w: '#ece0ba', u: '#2f5f86', b: '#241c14', r: '#9a3326', g: '#2f6b40' },
       },
       keyframes: {
         'tile-in': {
