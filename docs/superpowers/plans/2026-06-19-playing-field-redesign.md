@@ -38,6 +38,9 @@ These apply to **every** task. Values are copied verbatim from the design spec (
   export type CardZone =
     | 'battlefield' | 'hand' | 'stack' | 'graveyard' | 'exile' | 'command';
 
+  // The hidden-but-browsable zones the explorer + HUD counters address.
+  export type ZoneKey = 'graveyard' | 'exile' | 'command' | 'library';
+
   export interface CardView {
     id: string;
     name: string;
@@ -142,6 +145,8 @@ colors: {
   mana: { w: '#ece0ba', u: '#2f5f86', b: '#241c14', r: '#9a3326', g: '#2f6b40' },
 },
 ```
+
+> Keep the existing `keyframes` and `animation` blocks (`tile-in`, `fade-in`, `value-flash`, `soft-pulse`, `menu-in`) intact — they already exist in this config, and `PermanentTileV2` (Task 6) uses `animate-tile-in`. Add no new keyframes.
 
 - [ ] **Step 5: Load the Cormorant font**
 
@@ -252,7 +257,9 @@ In the backward-compatible single-AI alias block (after `aiCommandZone: SimpleCa
 
 - [ ] **Step 4: Populate them in `deriveSimpleState`**
 
-Mirror the graveyard pattern. After `const humanCommandZone = mapCards(engine, 'command', humanId);` add:
+First make the function unit-testable: change its declaration (line ~2099) from `function deriveSimpleState(` to `export function deriveSimpleState(`.
+
+Then mirror the graveyard pattern. After `const humanCommandZone = mapCards(engine, 'command', humanId);` add:
 
 ```ts
   const humanExile = mapCards(engine, 'exile', humanId);
@@ -474,7 +481,7 @@ Expected: FAIL — `Cannot find module './cardView'`.
 
 - [ ] **Step 3: Add `CardZone` + `CardView`**
 
-Add to `frontend/src/play/gameView.types.ts` the `CardZone` and `CardView` definitions exactly as in Global Constraints.
+Add to `frontend/src/play/gameView.types.ts` the `CardZone`, `ZoneKey`, and `CardView` definitions exactly as in Global Constraints.
 
 - [ ] **Step 4: Write the adapters**
 
@@ -538,11 +545,11 @@ git commit -m "feat(play-v2): add CardView type + zone adapters"
 - Produces:
   - `Panel({ className?, children })` — leather surface (`bg-table-leather border border-table-border rounded-xl`).
   - `CardFace({ cardName, className?, size?, onClick?, children? })` — aged-stock card frame wrapping `<CardImage>`; `children` overlay (badges).
-  - `Pip({ color, filled?, size? })` — mana/counter dot; `color: 'W'|'U'|'B'|'R'|'G'|'C'`.
+  - `Pip({ color, size? })` — mana/counter dot; `color: 'W'|'U'|'B'|'R'|'G'|'C'`.
   - `Badge({ children, tone? })` — `tone: 'pt'|'count'|'brass'` small label.
   - `BrassButton({ children, onClick, tone?, disabled? })` — `tone: 'primary'|'neutral'|'danger'`.
   - `ZoneCounter({ icon, label, count, onClick? })` — clickable zone chip.
-  - `ModalShell({ title, onClose, children, side? })` — **board-anchored** (`absolute inset-0`) dim backdrop + centered leather panel; `Escape`/backdrop closes. Never `position: fixed`.
+  - `ModalShell({ title, onClose, children, side? })` — **board-anchored** (`absolute inset-0`) dim backdrop + centered leather panel; `Escape`/backdrop closes. Never `position: fixed`. (No prior `playView.layout` test guard exists to extend; this `ModalShell` test establishes the board-anchored / non-fixed assertion for v2.)
 
 - [ ] **Step 1: Write the failing test**
 
@@ -550,7 +557,7 @@ git commit -m "feat(play-v2): add CardView type + zone adapters"
 // frontend/src/play/v2/primitives/primitives.test.tsx
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
-import { BrassButton, ModalShell, ZoneCounter } from './index';
+import { BrassButton, ModalShell, ZoneCounter, Panel, Pip, Badge } from './index';
 
 describe('v2 primitives', () => {
   it('BrassButton fires onClick and respects disabled', () => {
@@ -579,6 +586,21 @@ describe('v2 primitives', () => {
     fireEvent.click(screen.getByTestId('modal-backdrop'));
     expect(onClose).toHaveBeenCalled();
   });
+
+  it('Panel renders children', () => {
+    render(<Panel>hello</Panel>);
+    expect(screen.getByText('hello')).toBeTruthy();
+  });
+  it('Badge renders its label', () => {
+    render(<Badge tone="pt">5/5</Badge>);
+    expect(screen.getByText('5/5')).toBeTruthy();
+  });
+  it('Pip renders a sized dot', () => {
+    const { container } = render(<Pip color="G" />);
+    const dot = container.querySelector('span') as HTMLElement;
+    expect(dot.style.width).toBe('14px');
+  });
+  // CardFace is exercised by PermanentTileV2 (Task 6), which renders one.
 });
 ```
 
@@ -888,9 +910,7 @@ Expected: FAIL — module not found.
 ```tsx
 // frontend/src/play/v2/components/YouHudV2.tsx
 import { Panel, Pip, ZoneCounter } from '../primitives';
-import type { YouView } from '../../gameView.types';
-
-export type ZoneKey = 'graveyard' | 'exile' | 'command' | 'library';
+import type { YouView, ZoneKey } from '../../gameView.types';
 
 export function YouHudV2({ you, onOpenZone }: { you: YouView; onOpenZone(zone: ZoneKey): void }) {
   return (
@@ -916,8 +936,8 @@ export function YouHudV2({ you, onOpenZone }: { you: YouView; onOpenZone(zone: Z
 ```tsx
 // frontend/src/play/v2/components/PlayerBoardV2.tsx
 import { PermanentTileV2 } from './PermanentTileV2';
-import { YouHudV2, type ZoneKey } from './YouHudV2';
-import type { CardView, LegalAction, PermanentView, YouView } from '../../gameView.types';
+import { YouHudV2 } from './YouHudV2';
+import type { CardView, LegalAction, PermanentView, YouView, ZoneKey } from '../../gameView.types';
 
 function Row({ items, onAction, onView }: { items: PermanentView[]; onAction(a: LegalAction): void; onView(cv: CardView): void }) {
   if (items.length === 0) return null;
@@ -1443,7 +1463,7 @@ git commit -m "feat(play-v2): universal CardViewerV2"
 
 **Interfaces:**
 - Consumes: `GameView`, `ZoneCardView`, `PermanentView`, `ModalShell`/`CardFace`, `cardViewFromZone`/`cardViewFromPermanent`.
-- Produces: `ZoneExplorerV2({ view, target, onClose, onView })` where `target: { playerId: string; zone: ZoneKey }`. Resolves the player (you or an opponent) + zone, renders the contents as a grid of `CardFace` thumbnails with tabs to switch zone; selecting a thumbnail calls `onView(CardView)`. `ZoneKey = 'graveyard' | 'exile' | 'command' | 'library'`.
+- Produces: `ZoneExplorerV2({ view, target, onClose, onView })` where `target: { playerId: string; zone: ZoneKey }`. Resolves the player (you or an opponent) + zone, renders the contents as a grid of `CardFace` thumbnails with tabs to switch zone; selecting a thumbnail calls `onView(CardView)`. `ZoneKey = 'graveyard' | 'exile' | 'command' | 'library'`. Graveyard/exile contents come from the view-model (Tasks 2–3); a player whose zone is empty or unsurfaced shows the "No cards here." empty state (the spec's count-only fallback), and Library is intentionally count-only.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1494,10 +1514,9 @@ import { useState } from 'react';
 import { ModalShell, CardFace } from '../primitives';
 import { cn } from '../../../lib/utils';
 import { cardViewFromZone, cardViewFromPermanent } from '../cardView';
-import type { CardView, GameView, PermanentView, ZoneCardView } from '../../gameView.types';
-import type { ZoneKey } from './YouHudV2';
+import type { CardView, CardZone, GameView, PermanentView, ZoneCardView, ZoneKey } from '../../gameView.types';
 
-export type { ZoneKey }; // single source of truth lives in YouHudV2 (Task 7)
+export type { ZoneKey }; // re-exported for the shells; defined once in gameView.types
 const TABS: { key: ZoneKey; label: string }[] = [
   { key: 'graveyard', label: 'Graveyard' }, { key: 'exile', label: 'Exile' }, { key: 'command', label: 'Command' },
 ];
@@ -1513,7 +1532,7 @@ function entries(view: GameView, playerId: string, zone: ZoneKey): { id: string;
   const list: ZoneCardView[] = isYou
     ? (zone === 'graveyard' ? view.you.graveyard : view.you.exile)
     : (() => { const o = view.opponents.find(op => op.glance.playerId === playerId); return o ? (zone === 'graveyard' ? o.graveyard : o.exile) : []; })();
-  return list.map(z => ({ id: z.id, name: z.name, cv: cardViewFromZone(z, zone) }));
+  return list.map(z => ({ id: z.id, name: z.name, cv: cardViewFromZone(z, zone as CardZone) }));
 }
 
 export function ZoneExplorerV2({
@@ -2259,4 +2278,4 @@ Note the deployed commit SHA and the date in `docs/launch-readiness.md` (or the 
 
 **Placeholder scan:** No `TBD`/`TODO`/"handle edge cases"/"similar to Task N" — each task carries full code and exact commands. Task 18 explicitly allows *deferral* (a scoping decision, not a placeholder) with a concrete verification to decide.
 
-**Type consistency:** `CardView`/`ZoneCardView`/`CardZone` defined once (Global Constraints + Tasks 3–4) and consumed by Tasks 6, 9, 10, 12, 13. `onView(cv: CardView)`, `onOpenZone(zone: ZoneKey)`, `onExplore(playerId)`, `onAction(a: LegalAction)` are used with the same signatures across components and both shells. `ZoneKey` has a single source of truth: it is defined and exported by `YouHudV2` (Task 7) and re-exported by `ZoneExplorerV2` (Task 13), so both shells importing it from `./ZoneExplorerV2` and `PlayerBoardV2` importing it from `./YouHudV2` resolve to the same type. Both shells implement `DesktopBattlefieldProps` verbatim (Task 15 imports the type; Task 16 reuses it).
+**Type consistency:** `CardView`/`ZoneCardView`/`CardZone` defined once (Global Constraints + Tasks 3–4) and consumed by Tasks 6, 9, 10, 12, 13. `onView(cv: CardView)`, `onOpenZone(zone: ZoneKey)`, `onExplore(playerId)`, `onAction(a: LegalAction)` are used with the same signatures across components and both shells. `ZoneKey` is defined once in `gameView.types.ts` (Global Constraints / Task 4); `YouHudV2`, `PlayerBoardV2`, and `ZoneExplorerV2` import it from there, and `ZoneExplorerV2` re-exports it so the shells can import `type ZoneKey` from `./ZoneExplorerV2` unchanged. Both shells implement `DesktopBattlefieldProps` verbatim and own the explorer/viewer/`onOpenZone` state **internally** — the new overlay callbacks are NOT added to `DesktopBattlefieldProps`; the v2 shells create them from local state and pass them to the child components (`PlayerBoardV2.onOpenZone`, `OpponentRailV2.onExplore`, every component's `onView`) whose props expect them.
