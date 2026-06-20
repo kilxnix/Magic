@@ -325,7 +325,7 @@ export function PlayExperience({
   prompts,
 }: PlayExperienceProps) {
   const isDesktop = useIsDesktop();
-  const uiV2 = isPlayUiV2();
+  const uiV2 = useMemo(() => isPlayUiV2(), []);
   const Desktop = uiV2 ? DesktopBattlefieldV2 : DesktopBattlefield;
   const Mobile = uiV2 ? MobileTableV2 : MobileTable;
 
