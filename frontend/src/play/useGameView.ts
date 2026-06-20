@@ -10,6 +10,7 @@ import type {
   YouView,
   LegalAction,
   CombatContext,
+  ZoneCardView,
 } from './gameView.types';
 import { opponentGlance, openManaForBattlefield } from './selectors/opponentGlance';
 import { stackView } from './selectors/stackView';
@@ -47,6 +48,10 @@ function toPermanentView(card: SimpleCard, ctx: PermanentContext): PermanentView
     isBlocking: ctx.blockingIds.has(card.instanceId) || undefined,
     legalActions: ctx.legalFor(card.instanceId),
   };
+}
+
+function toZoneCardView(card: SimpleCard, legalFor: (id: string) => LegalAction[]): ZoneCardView {
+  return { id: card.instanceId, name: card.name, legalActions: legalFor(card.instanceId) };
 }
 
 /** Stack identical lands (same name/tapped-state/counters) into one tile + count. */
@@ -110,6 +115,8 @@ const EMPTY_VIEW: GameView = {
     lands: [],
     other: [],
     hand: [],
+    graveyard: [],
+    exile: [],
   },
   opponents: [],
   stack: [],
@@ -186,6 +193,8 @@ export function buildGameView(input: GameViewInput): GameView {
     lands: youBuckets.lands,
     other: youBuckets.other,
     hand,
+    graveyard: gameState.humanGraveyard.map(c => toZoneCardView(c, legalFor)),
+    exile: gameState.humanExile.map(c => toZoneCardView(c, legalFor)),
   };
 
   // --- Opponents ---
@@ -217,10 +226,12 @@ export function buildGameView(input: GameViewInput): GameView {
       lands: buckets.lands,
       other: [...buckets.artifacts, ...buckets.enchantments, ...buckets.other],
       graveyardCount: (gameState.aiGraveyards[player.id] ?? []).length,
-      exileCount: 0, // exile zone is not surfaced on SimpleGameState today
+      exileCount: (gameState.aiExiles[player.id] ?? []).length,
       commandZone: (gameState.aiCommandZones[player.id] ?? []).map(card =>
         toPermanentView(card, opponentPermCtx),
       ),
+      graveyard: (gameState.aiGraveyards[player.id] ?? []).map(c => ({ id: c.instanceId, name: c.name, legalActions: [] })),
+      exile: (gameState.aiExiles[player.id] ?? []).map(c => ({ id: c.instanceId, name: c.name, legalActions: [] })),
     };
   });
 

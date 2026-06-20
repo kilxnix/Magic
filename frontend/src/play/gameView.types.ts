@@ -206,6 +206,12 @@ export interface HandCardView {
   legalActions: LegalAction[];
 }
 
+export interface ZoneCardView {
+  id: string;
+  name: string;
+  legalActions: LegalAction[];
+}
+
 // ----------------------------------------------------------------------------
 // Opponents
 // ----------------------------------------------------------------------------
@@ -233,6 +239,8 @@ export interface OpponentBoard {
   graveyardCount: number;
   exileCount: number;
   commandZone: PermanentView[];
+  graveyard: ZoneCardView[];
+  exile: ZoneCardView[];
 }
 
 // ----------------------------------------------------------------------------
@@ -329,6 +337,8 @@ export interface YouView {
   lands: PermanentView[];
   other: PermanentView[];
   hand: HandCardView[];
+  graveyard: ZoneCardView[];
+  exile: ZoneCardView[];
 }
 
 export interface GameView {
