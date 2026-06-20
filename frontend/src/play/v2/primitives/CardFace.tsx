@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { cn } from '../../../lib/utils';
-import CardImage from '../../../components/CardImage';
+import { CardImage } from '../../../components/CardImage';
 export function CardFace({
   cardName, className, size = 'small', onClick, children,
 }: { cardName: string; className?: string; size?: 'normal' | 'small'; onClick?(): void; children?: ReactNode }) {
