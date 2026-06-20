@@ -143,6 +143,7 @@ export function roomViewToSimpleGameState(view: ScopedViewLike): SimpleGameState
     humanBattlefield: mapZone(viewer.zones.battlefield.cards, viewer.id, 'battlefield'),
     humanGraveyard: mapZone(viewer.zones.graveyard.cards, viewer.id, 'graveyard'),
     humanCommandZone: mapZone(viewer.zones.command.cards, viewer.id, 'command'),
+    humanExile: [],
 
     stack: (view.stack || []).map((item) => ({
       id: item.id,
@@ -163,6 +164,7 @@ export function roomViewToSimpleGameState(view: ScopedViewLike): SimpleGameState
     aiBattlefields,
     aiGraveyards,
     aiCommandZones,
+    aiExiles: {},
     aiCommanderNames,
 
     // Backward-compatible single-AI aliases (first opponent).
@@ -172,5 +174,6 @@ export function roomViewToSimpleGameState(view: ScopedViewLike): SimpleGameState
     aiBattlefield: firstOppId ? aiBattlefields[firstOppId] : [],
     aiGraveyard: firstOppId ? aiGraveyards[firstOppId] : [],
     aiCommandZone: firstOppId ? aiCommandZones[firstOppId] : [],
+    aiExile: [],
   };
 }

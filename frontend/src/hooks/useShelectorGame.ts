@@ -257,6 +257,7 @@ export interface SimpleGameState {
   humanBattlefield: SimpleCard[];
   humanGraveyard: SimpleCard[];
   humanCommandZone: SimpleCard[];
+  humanExile: SimpleCard[];
   stack: { id: string; kind: StackItem['kind']; name: string; casterId: string; card?: SimpleCard; targetNames: string[] }[];
   gameOver: boolean;
   winnerId: string | null;
@@ -270,6 +271,7 @@ export interface SimpleGameState {
   aiBattlefields: Record<string, SimpleCard[]>;
   aiGraveyards: Record<string, SimpleCard[]>;
   aiCommandZones: Record<string, SimpleCard[]>;
+  aiExiles: Record<string, SimpleCard[]>;
   aiCommanderNames: Record<string, string>;
 
   // Backward-compatible single-AI aliases (first AI)
@@ -279,6 +281,7 @@ export interface SimpleGameState {
   aiBattlefield: SimpleCard[];
   aiGraveyard: SimpleCard[];
   aiCommandZone: SimpleCard[];
+  aiExile: SimpleCard[];
 }
 
 export interface SimpleLegalAction {
@@ -2096,7 +2099,7 @@ function formatManaPool(pool: { W: number; U: number; B: number; R: number; G: n
 }
 
 /** Derive the SimpleGameState for the UI from the engine's GameState */
-function deriveSimpleState(
+export function deriveSimpleState(
   engine: GameState,
   humanId: string,
   aiIds: string[],
@@ -2109,6 +2112,7 @@ function deriveSimpleState(
   const humanBattlefield = mapCards(engine, 'battlefield', humanId);
   const humanGraveyard = mapCards(engine, 'graveyard', humanId);
   const humanCommandZone = mapCards(engine, 'command', humanId);
+  const humanExile = mapCards(engine, 'exile', humanId);
 
   // Build per-AI data
   const aiPlayers: SimplePlayer[] = [];
@@ -2116,6 +2120,7 @@ function deriveSimpleState(
   const aiBattlefields: Record<string, SimpleCard[]> = {};
   const aiGraveyards: Record<string, SimpleCard[]> = {};
   const aiCommandZones: Record<string, SimpleCard[]> = {};
+  const aiExiles: Record<string, SimpleCard[]> = {};
 
   for (const aiId of aiIds) {
     const aiP = getPlayer(engine, aiId);
@@ -2133,6 +2138,7 @@ function deriveSimpleState(
     aiBattlefields[aiId] = mapCards(engine, 'battlefield', aiId);
     aiGraveyards[aiId] = mapCards(engine, 'graveyard', aiId);
     aiCommandZones[aiId] = mapCards(engine, 'command', aiId);
+    aiExiles[aiId] = mapCards(engine, 'exile', aiId);
   }
 
   // Build stack display
@@ -2236,6 +2242,7 @@ function deriveSimpleState(
     humanBattlefield,
     humanGraveyard,
     humanCommandZone,
+    humanExile,
     stack: stackDisplay,
     gameOver,
     winnerId,
@@ -2249,6 +2256,7 @@ function deriveSimpleState(
     aiBattlefields,
     aiGraveyards,
     aiCommandZones,
+    aiExiles,
     aiCommanderNames,
 
     // Backward-compatible single-AI aliases
@@ -2258,6 +2266,7 @@ function deriveSimpleState(
     aiBattlefield: aiBattlefields[firstAiId] || [],
     aiGraveyard: aiGraveyards[firstAiId] || [],
     aiCommandZone: aiCommandZones[firstAiId] || [],
+    aiExile: aiExiles[firstAiId] || [],
   };
 }
 
