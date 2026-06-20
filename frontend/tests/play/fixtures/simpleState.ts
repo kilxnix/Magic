@@ -109,6 +109,7 @@ export function makeState(overrides: Partial<SimpleGameState> = {}): SimpleGameS
     humanBattlefield: [],
     humanGraveyard: [],
     humanCommandZone: [],
+    humanExile: [],
     stack: [],
     gameOver: false,
     winnerId: null,
@@ -120,6 +121,7 @@ export function makeState(overrides: Partial<SimpleGameState> = {}): SimpleGameS
     aiBattlefields: {},
     aiGraveyards: {},
     aiCommandZones: {},
+    aiExiles: {},
     aiCommanderNames: { ai1: 'AI One' },
     aiPlayer: firstAi,
     aiCommander: 'AI One',
@@ -127,6 +129,7 @@ export function makeState(overrides: Partial<SimpleGameState> = {}): SimpleGameS
     aiBattlefield: [],
     aiGraveyard: [],
     aiCommandZone: [],
+    aiExile: [],
     ...overrides,
   };
 }

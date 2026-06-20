@@ -43,6 +43,7 @@ function state(overrides: Partial<SimpleGameState> = {}): SimpleGameState {
     humanBattlefield: [],
     humanGraveyard: [],
     humanCommandZone: [],
+    humanExile: [],
     stack: [],
     gameOver: false,
     winnerId: null,
@@ -52,6 +53,7 @@ function state(overrides: Partial<SimpleGameState> = {}): SimpleGameState {
     aiBattlefields: {},
     aiGraveyards: {},
     aiCommandZones: {},
+    aiExiles: {},
     aiCommanderNames: {},
     aiPlayer: { id: 'ai1', name: 'AI', life: 40, handCount: 7, libraryCount: 90 },
     aiCommander: 'Opponent',
@@ -59,6 +61,7 @@ function state(overrides: Partial<SimpleGameState> = {}): SimpleGameState {
     aiBattlefield: [],
     aiGraveyard: [],
     aiCommandZone: [],
+    aiExile: [],
     ...overrides,
   };
 }
