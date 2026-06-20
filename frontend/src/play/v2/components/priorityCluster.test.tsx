@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { PriorityControlsV2 } from './PriorityControlsV2';
 import { StackViewV2 } from './StackViewV2';
+import { PhaseTrackV2 } from './PhaseTrackV2';
 import type { PriorityContext, StackItemView } from '../../gameView.types';
 
 const priority: PriorityContext = {
@@ -22,5 +23,15 @@ describe('priority cluster', () => {
     render(<StackViewV2 stack={stack} onView={onView} />);
     fireEvent.click(screen.getByRole('button', { name: /cultivate/i }));
     expect(onView).toHaveBeenCalledWith(expect.objectContaining({ id: 's1', zone: 'stack' }));
+  });
+  it('PhaseTrackV2 highlights exactly one pip for a main phase', () => {
+    render(<PhaseTrackV2 priority={{ ...priority, phaseLabel: 'Main Phase 2' }} />);
+    expect(screen.getByText('Main 2').className).toContain('bg-brass');
+    expect(screen.getByText('Main 1').className).not.toContain('bg-brass');
+  });
+  it('PriorityControlsV2 disables Pass when canPass is false', () => {
+    render(<PriorityControlsV2 priority={{ ...priority, canPass: false }} alwaysStop={false} onPass={() => {}} onHold={() => {}} onToggleAlwaysStop={() => {}} />);
+    const buttons = screen.getAllByRole('button', { name: 'Pass' });
+    expect((buttons[buttons.length - 1] as HTMLButtonElement).disabled).toBe(true);
   });
 });
