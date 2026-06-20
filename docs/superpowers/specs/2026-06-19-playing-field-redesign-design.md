@@ -21,6 +21,7 @@ The engine is already cleanly decoupled from the UI through a view-model (`GameV
 | Data layer | **Reuse** engine + `useCommanderEngine` + `engineAdapter` + `useGameView` + selectors + action callbacks |
 | Foundation | Build the look as a **reusable theme + primitives layer**, not one-off styles, so the later site redesign inherits it |
 | New features | **Zone explorer** (graveyard/command/library/exile, any player) + **universal card viewer** |
+| Deployment | Ship to the **IONOS VPS** (`deckreps.app`) via the existing Docker Compose runbook; flag-gated so the deploy is non-disruptive |
 
 ## 3. Visual design language
 
@@ -216,25 +217,43 @@ Unchanged. Player actions still dispatch through the existing `useCommanderEngin
 5. v2 shells (desktop, then mobile) + flag wiring in `PlayExperience`.
 6. (Optional) exile surfacing in the hook to light up the Exile tab.
 7. A/B against v1 via the toggle; promote default to v2 when satisfied; retire v1 later.
+8. **Deploy to the VPS** (§8) — flag-gated, so it ships safely ahead of the promote-to-default decision.
 
-## 8. Out of scope
+## 8. Deployment (IONOS VPS — `deckreps.app`)
+
+The redesign ships to production through the existing Docker Compose runbook (`docs/ionos-vps-deploy.md`). Facts that shape it:
+
+- The frontend is **built into the `magic-brains:latest` image at build time** (Vite output baked in; `VITE_*` are build args). The FastAPI `web` service serves the built SPA on `:8000`, `shelector` runs on `:8100`, and Caddy terminates TLS for `deckreps.app`.
+- Because v2 is **flag-gated (default off)**, deploying ships the new code **without changing what live users see**. You opt in via `?ui=v2` / `localStorage`. Promoting v2 to default is a later, separate change + redeploy.
+
+Deploy procedure (mirrors runbook §12 "Updating"):
+
+1. Merge the redesign branch to the deploy branch and push.
+2. On the VPS: `cd /opt/deckreps/app` → `./deploy/backup-runtime.sh` (snapshot) → `git pull` → `docker compose up -d --build` → `docker compose ps`.
+3. Verify: runbook §10 (health/readiness curls) + §10.1 (Goldfish-pod browser playtest against `https://deckreps.app`), **plus** a manual `?ui=v2` smoke of the new playing field at desktop and mobile widths.
+4. Rollback if needed: `./deploy/rollback-app.sh` (`backup-app.sh` / `backup-runtime.sh` are the safety net).
+
+Optional enhancement: wire the v2 default to a `VITE_PLAY_UI_DEFAULT` build arg so the server can flip the default at build time via `.env` without a code change — deferred until we decide to promote v2.
+
+## 9. Out of scope
 
 - The marketing/generator **site** redesign (separate effort; inherits this theme + primitives).
 - Any **engine** rules/logic change.
 - New **gameplay** features beyond zone-explore + card-viewer.
 - Multiplayer-specific UI beyond what shares the play components.
 
-## 9. Risks & open questions
+## 10. Risks & open questions
 
 - **Exile plumbing** (§4.6) is the only change outside `play/`; if we want the Exile tab fully live it must land. Otherwise it's count-only — acceptable for v1.
 - **`statuses` richness** on `CardView` is best-effort from existing view data; deeper status text (e.g. granted keywords) may need extra view-model fields later.
 - **Font loading** adds Cormorant Garamond; confirm it fits the existing font pipeline/perf budget.
 - **Promote-to-default timing** — when does v2 become the default and v1 get deleted? (Post-A/B, user's call.)
 
-## 10. Success criteria
+## 11. Success criteria
 
 - New playing field renders the live engine state at full fidelity (parity with v1's information) in the deepened Artisan Table look, on desktop and mobile.
 - Graveyard (and command) are explorable for any player; exile at least count-visible.
 - Any card, anywhere, opens the universal viewer with live state.
 - Layout invariants hold (no fixed overlays, no board scrolling, fit-to-screen).
 - Flag-gated; v1 remains an instant fallback; no regression to the default experience.
+- **Deployed to `deckreps.app`** via the runbook and verified live (health + Goldfish-pod playtest pass, `?ui=v2` smoke clean on desktop + mobile).
