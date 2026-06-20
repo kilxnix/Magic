@@ -87,6 +87,7 @@ export default defineConfig(({ mode }) => {
   return {
     plugins,
     test: {
+      environment: 'jsdom',
       exclude: [
         'node_modules/**',
         'dist/**',
