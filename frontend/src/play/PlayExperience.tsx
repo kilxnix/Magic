@@ -39,6 +39,9 @@ import { CardDetailOverlay } from './components/CardDetailOverlay';
 import { GameOverOverlay } from './components/GameOverOverlay';
 import { DesktopBattlefield } from './shells/DesktopBattlefield';
 import { MobileTable } from './shells/MobileTable';
+import { isPlayUiV2 } from './v2/uiFlag';
+import { DesktopBattlefieldV2 } from './v2/shells/DesktopBattlefieldV2';
+import { MobileTableV2 } from './v2/shells/MobileTableV2';
 import { nameForPlayer } from './useGameView';
 
 interface ReorderModalContent {
@@ -322,6 +325,9 @@ export function PlayExperience({
   prompts,
 }: PlayExperienceProps) {
   const isDesktop = useIsDesktop();
+  const uiV2 = isPlayUiV2();
+  const Desktop = uiV2 ? DesktopBattlefieldV2 : DesktopBattlefield;
+  const Mobile = uiV2 ? MobileTableV2 : MobileTable;
 
   // A mid-resolution decision the engine is waiting on. SEVEN of these hard-block
   // submitAction in the hook, so the board's normal action path is refused while
@@ -821,7 +827,7 @@ export function PlayExperience({
         </div>
       )}
 
-      {isDesktop ? <DesktopBattlefield {...shellProps} /> : <MobileTable {...shellProps} />}
+      {isDesktop ? <Desktop {...shellProps} /> : <Mobile {...shellProps} />}
 
       {mulliganOpen && prompts && (
         <MulliganOverlay

@@ -303,7 +303,8 @@ export function PlayPage() {
   const useNewPlayUi = useMemo(
     () =>
       typeof window !== 'undefined' &&
-      new URLSearchParams(window.location.search).get('newui') === '1',
+      (new URLSearchParams(window.location.search).get('newui') === '1' ||
+        new URLSearchParams(window.location.search).get('ui') === 'v2'),
     [],
   );
 
