@@ -206,9 +206,29 @@ export interface HandCardView {
   legalActions: LegalAction[];
 }
 
+export type CardZone =
+  | 'battlefield' | 'hand' | 'stack' | 'graveyard' | 'exile' | 'command';
+
+// The hidden-but-browsable zones the explorer + HUD counters address.
+export type ZoneKey = 'graveyard' | 'exile' | 'command' | 'library';
+
 export interface ZoneCardView {
   id: string;
   name: string;
+  legalActions: LegalAction[];
+}
+
+export interface CardView {
+  id: string;
+  name: string;
+  zone: CardZone;
+  power?: number;
+  toughness?: number;
+  counters?: Record<string, number>;
+  tapped?: boolean;
+  isAttacking?: boolean;
+  isBlocking?: boolean;
+  statuses: string[];          // human-readable chips, e.g. ["Tapped","Attacking"]
   legalActions: LegalAction[];
 }
 
