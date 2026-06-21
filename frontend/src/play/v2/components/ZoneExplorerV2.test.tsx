@@ -20,11 +20,29 @@ function viewWithGraveyard(): GameView {
   };
 }
 
+function viewWithOpponentBoard(): GameView {
+  return {
+    ...viewWithGraveyard(),
+    opponents: [{
+      glance: { playerId: 'p2', name: 'Rival', life: 40, commanderDamageToYou: 0, handCount: 5, openMana: 0, creatureCount: 1, totalPower: 2, flags: [] },
+      creatures: [{ id: 'c1', name: 'Herald of the Pantheon', tapped: false, power: 2, toughness: 2, isLand: false, isCreature: true, legalActions: [] }],
+      lands: [], other: [], graveyardCount: 0, exileCount: 0, commandZone: [], graveyard: [], exile: [],
+    }],
+  };
+}
+
 describe('ZoneExplorerV2', () => {
   it('lists your graveyard and opens a card in the viewer', () => {
     const onView = vi.fn();
     render(<ZoneExplorerV2 view={viewWithGraveyard()} target={{ playerId: 'you', zone: 'graveyard' }} onClose={() => {}} onView={onView} />);
     fireEvent.click(screen.getByRole('button', { name: /eternal witness/i }));
     expect(onView).toHaveBeenCalledWith(expect.objectContaining({ id: 'g1', zone: 'graveyard' }));
+  });
+
+  it("shows an opponent's battlefield and opens a permanent in the viewer", () => {
+    const onView = vi.fn();
+    render(<ZoneExplorerV2 view={viewWithOpponentBoard()} target={{ playerId: 'p2', zone: 'battlefield' }} onClose={() => {}} onView={onView} />);
+    fireEvent.click(screen.getByRole('button', { name: /herald of the pantheon/i }));
+    expect(onView).toHaveBeenCalledWith(expect.objectContaining({ id: 'c1', zone: 'battlefield' }));
   });
 });

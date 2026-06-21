@@ -11,18 +11,18 @@ import { PriorityControlsV2 } from '../components/PriorityControlsV2';
 import { CombatFlowV2 } from '../components/CombatFlowV2';
 import { TargetingLayerV2 } from '../components/TargetingLayerV2';
 import { CardViewerV2 } from '../components/CardViewerV2';
-import { ZoneExplorerV2, type ZoneKey } from '../components/ZoneExplorerV2';
+import { ZoneExplorerV2, type ExploreZone } from '../components/ZoneExplorerV2';
 
 export function MobileTableV2(props: DesktopBattlefieldProps) {
   const { view } = props;
   const [viewer, setViewer] = useState<CardView | null>(null);
-  const [explorer, setExplorer] = useState<{ playerId: string; zone: ZoneKey } | null>(null);
+  const [explorer, setExplorer] = useState<{ playerId: string; zone: ExploreZone } | null>(null);
   const showSheet = shouldSurfaceDecisionSheet(view) || view.targeting.active || view.combat.step !== 'none';
 
   return (
     <div className={L.shell}>
       <div className={L.opponentsStrip}>
-        <OpponentRailV2 opponents={view.opponents} onExplore={id => setExplorer({ playerId: id, zone: 'graveyard' })} />
+        <OpponentRailV2 opponents={view.opponents} onExplore={id => setExplorer({ playerId: id, zone: 'battlefield' })} />
       </div>
 
       <div className={L.boardArea}>
