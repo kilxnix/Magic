@@ -11,7 +11,7 @@ export function PermanentTileV2({
 }) {
   const primary = permanent.legalActions[0];
   return (
-    <div className={cn('relative h-[82px] w-[60px] animate-tile-in', permanent.tapped && 'rotate-[10deg] opacity-70',
+    <div className={cn('relative h-[126px] w-[90px] animate-tile-in', permanent.tapped && 'rotate-[10deg] opacity-70',
       permanent.isAttacking && 'outline outline-2 outline-offset-1 outline-ring-combat')}>
       <CardFace cardName={permanent.name} onClick={() => (primary ? onAction(primary) : onView(cardViewFromPermanent(permanent, zone)))}>
         {permanent.stackCount && permanent.stackCount > 1 ? (
