@@ -108,7 +108,7 @@ export const MOBILE_TABLE_LAYOUT = {
   opponentsStrip:
     'flex shrink-0 gap-2 overflow-hidden pb-1 max-h-[min(8.5rem,22svh)]',
   // Each collapsed opponent glance holds a thumb-width slot in the scroll row.
-  opponentSlot: 'w-[clamp(11rem,72vw,15rem)] shrink-0',
+  opponentSlot: 'w-[clamp(9.5rem,48vw,12.5rem)] shrink-0',
 
   // The board fills the screen — the main flexible area. `relative isolate` so
   // the one in-flow overlay (OpponentExplorer) anchors to THIS box (absolute

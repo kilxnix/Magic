@@ -12,7 +12,7 @@ export function ZoneCounter({
         onClick ? 'hover:text-gold-bright' : 'cursor-default')}
     >
       <Icon size={14} aria-hidden />
-      <span className="text-[11px]">{label}</span>
+      <span className="hidden text-[11px] sm:inline">{label}</span>
       <span className="text-[12px] font-bold text-gold-bright">{count}</span>
     </button>
   );
