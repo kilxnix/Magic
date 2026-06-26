@@ -1,4 +1,4 @@
-import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type ReactNode, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   SimpleGameState,
   SimpleLegalAction,
@@ -43,7 +43,7 @@ import { DesktopBattlefieldV2 } from './v2/shells/DesktopBattlefieldV2';
 import { MobileTableV2 } from './v2/shells/MobileTableV2';
 import { getPlayUiMode } from './r3f/playUiMode';
 import { supportsWebGL } from './r3f/webgl';
-import { ThreeBattlefield } from './r3f/ThreeBattlefield';
+const ThreeBattlefield = lazy(() => import('./r3f/ThreeBattlefield'));
 import { nameForPlayer } from './useGameView';
 
 interface ReorderModalContent {
@@ -833,7 +833,9 @@ export function PlayExperience({
       )}
 
       {use3d ? (
-        <ThreeBattlefield {...shellProps} />
+        <Suspense fallback={<div className="h-full w-full bg-black" />}>
+          <ThreeBattlefield {...shellProps} />
+        </Suspense>
       ) : isDesktop ? (
         <Desktop {...shellProps} />
       ) : (

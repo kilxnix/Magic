@@ -54,9 +54,9 @@ describe('PlayExperience with ?ui=3d', () => {
   // NOTE: this project has NO global jest-dom setup; presence is asserted with
   // `.toBeTruthy()` and absence with `.toBeNull()` (queryBy* returns null), matching
   // the existing v2 test convention. Do NOT use `toBeInTheDocument()`.
-  it('renders the 3D shell when WebGL is available', () => {
+  it('renders the 3D shell when WebGL is available', async () => {
     render(<PlayExperience {...baseProps()} />);
-    expect(screen.getByTestId('three-battlefield')).toBeTruthy();
+    expect(await screen.findByTestId('three-battlefield')).toBeTruthy();
   });
 
   it('falls back to a 2D shell when WebGL is unavailable', () => {

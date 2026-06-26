@@ -47,6 +47,7 @@ export function ThreeBattlefield(props: DesktopBattlefieldProps) {
         dpr={[1, 2]}
         frameloop="demand"
         camera={{ position: [0, 7, SEAT_R + 6], fov: 50 }}
+        onCreated={(state) => state.camera.lookAt(0, 0, 0)}
       >
         <BattlefieldScene view={view} onSelect={handleSelect} />
         <HandDock hand={view.you.hand} onSelect={handleSelect} />
@@ -64,7 +65,7 @@ export function ThreeBattlefield(props: DesktopBattlefieldProps) {
             onToggleAlwaysStop={props.onToggleAlwaysStop}
           />
         </div>
-        <div className="pointer-events-auto absolute right-3 top-3 max-w-xs">
+        <div className="pointer-events-auto absolute right-3 top-3 max-w-xs max-h-[40vh] overflow-hidden">
           <NarrationFeedV2 narration={view.narration} />
         </div>
         <div className="pointer-events-auto absolute inset-x-0 bottom-3 flex flex-col items-center gap-2">
