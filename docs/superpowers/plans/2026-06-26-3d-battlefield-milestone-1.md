@@ -1288,15 +1288,18 @@ git commit -m "feat(play-3d): HandDock fanned hand"
 Create `frontend/src/play/r3f/ThreeBattlefield.test.tsx`:
 ```tsx
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, renderHook, act } from '@testing-library/react';
 
-// Render <Canvas> children inline (no real WebGL) so the DOM overlay is testable.
+// Mock <Canvas> to a placeholder that does NOT mount its 3D children: those use
+// R3F hooks (useFrame) that require a real Canvas context, and the scene graph is
+// already covered by the test-renderer tests (Tasks 8-10). The DOM overlay renders
+// as a sibling of <Canvas>, so it is still present and assertable.
 vi.mock('@react-three/fiber', async () => {
   const actual = await vi.importActual<typeof import('@react-three/fiber')>('@react-three/fiber');
-  return { ...actual, Canvas: ({ children }: { children: React.ReactNode }) => <div data-testid="r3f-canvas">{children}</div> };
+  return { ...actual, Canvas: () => <div data-testid="r3f-canvas" /> };
 });
 
-import { ThreeBattlefield } from './ThreeBattlefield';
+import { ThreeBattlefield, useSelectionViewer } from './ThreeBattlefield';
 import type { DesktopBattlefieldProps } from '../shells/DesktopBattlefield';
 import type { GameView, PermanentView } from '../gameView.types';
 
@@ -1339,11 +1342,24 @@ describe('ThreeBattlefield', () => {
     expect(screen.getByText(/Main/)).toBeInTheDocument();
   });
 
-  it('opens the card viewer when a 3D object is selected', () => {
-    render(<ThreeBattlefield {...props()} />);
-    // The scene exposes selection via a test hook on window for this environment.
-    (window as unknown as { __r3fSelect?: (id: string) => void }).__r3fSelect!('c1');
-    expect(screen.getByTestId('card-viewer')).toBeInTheDocument();
+});
+
+describe('useSelectionViewer', () => {
+  it('opens a viewer for a selected object and clears it', () => {
+    const v = view(); // your board has creature 'c1' (Bear)
+    const { result } = renderHook(() => useSelectionViewer(v));
+    expect(result.current.viewer).toBeNull();
+    act(() => result.current.select('c1'));
+    expect(result.current.viewer?.id).toBe('c1');
+    expect(result.current.viewer?.name).toBe('Bear');
+    act(() => result.current.clear());
+    expect(result.current.viewer).toBeNull();
+  });
+
+  it('ignores selection of an unknown id', () => {
+    const { result } = renderHook(() => useSelectionViewer(view()));
+    act(() => result.current.select('does-not-exist'));
+    expect(result.current.viewer).toBeNull();
   });
 });
 ```
@@ -1355,14 +1371,14 @@ Expected: FAIL — cannot find module `./ThreeBattlefield`.
 
 - [ ] **Step 3: Write minimal implementation**
 
-> Confirm the import path/prop names of `CardViewerV2` before writing (it is read in `DesktopBattlefieldV2.tsx` as `<CardViewerV2 card={viewer} onClose=... onAction=... />`). Ensure `CardViewerV2` renders a `data-testid="card-viewer"` — if it does not, add that attribute to its root element in `frontend/src/play/v2/components/CardViewerV2.tsx` as part of this task (one-line change) so the overlay is assertable.
+> Confirm the import path/prop names of `CardViewerV2` before writing (it is read in `DesktopBattlefieldV2.tsx` as `<CardViewerV2 card={viewer} onClose=... onAction=... />`). No change to `CardViewerV2` is required — the selection→viewer wiring is verified through the `useSelectionViewer` hook test, not by asserting the rendered overlay.
 
 Create `frontend/src/play/r3f/ThreeBattlefield.tsx`:
 ```tsx
 import { useCallback, useMemo, useState } from 'react';
 import { Canvas } from '@react-three/fiber';
 import type { DesktopBattlefieldProps } from '../shells/DesktopBattlefield';
-import type { CardView } from '../gameView.types';
+import type { CardView, GameView } from '../gameView.types';
 import { BattlefieldScene } from './BattlefieldScene';
 import { HandDock } from './HandDock';
 import { buildObjectIndex, toCardView } from './interaction';
@@ -1374,25 +1390,32 @@ import { CombatFlowV2 } from '../v2/components/CombatFlowV2';
 import { NarrationFeedV2 } from '../v2/components/NarrationFeedV2';
 import { CardViewerV2 } from '../v2/components/CardViewerV2';
 
-export function ThreeBattlefield(props: DesktopBattlefieldProps) {
-  const { view } = props;
+/**
+ * Selecting a 3D object opens the existing DOM action menu (CardViewerV2) for it.
+ * Extracted as a hook so the selection→viewer wiring is unit-testable without a
+ * real WebGL canvas (the 3D click path itself is covered by CardMesh's tests).
+ */
+export function useSelectionViewer(view: GameView): {
+  viewer: CardView | null;
+  select(id: string): void;
+  clear(): void;
+} {
   const [viewer, setViewer] = useState<CardView | null>(null);
-
   const index = useMemo(() => buildObjectIndex(view), [view]);
-
-  // Selecting a 3D object opens the existing DOM action menu for it.
-  const handleSelect = useCallback(
+  const select = useCallback(
     (id: string) => {
       const entry = index.get(id);
       if (entry) setViewer(toCardView(entry));
     },
     [index],
   );
+  const clear = useCallback(() => setViewer(null), []);
+  return { viewer, select, clear };
+}
 
-  // Test hook: in non-WebGL test env the canvas is mocked, so expose selection.
-  if (typeof window !== 'undefined') {
-    (window as unknown as { __r3fSelect?: (id: string) => void }).__r3fSelect = handleSelect;
-  }
+export function ThreeBattlefield(props: DesktopBattlefieldProps) {
+  const { view } = props;
+  const { viewer, select: handleSelect, clear } = useSelectionViewer(view);
 
   return (
     <div data-testid="three-battlefield" className="relative h-full w-full bg-black">
@@ -1442,10 +1465,10 @@ export function ThreeBattlefield(props: DesktopBattlefieldProps) {
       {viewer ? (
         <CardViewerV2
           card={viewer}
-          onClose={() => setViewer(null)}
+          onClose={clear}
           onAction={(a) => {
             props.onAction(a);
-            setViewer(null);
+            clear();
           }}
         />
       ) : null}
@@ -1459,12 +1482,12 @@ export default ThreeBattlefield;
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `cd frontend && npx vitest run src/play/r3f/ThreeBattlefield.test.tsx`
-Expected: PASS (2 tests). If the second test fails on the testid, add `data-testid="card-viewer"` to `CardViewerV2`'s root element and re-run.
+Expected: PASS (4 tests — 2 render tests + 2 `useSelectionViewer` hook tests).
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add frontend/src/play/r3f/ThreeBattlefield.tsx frontend/src/play/r3f/ThreeBattlefield.test.tsx frontend/src/play/v2/components/CardViewerV2.tsx
+git add frontend/src/play/r3f/ThreeBattlefield.tsx frontend/src/play/r3f/ThreeBattlefield.test.tsx
 git commit -m "feat(play-3d): ThreeBattlefield shell (canvas + DOM overlay + viewer)"
 ```
 
@@ -1490,9 +1513,10 @@ import { render, screen } from '@testing-library/react';
 vi.mock('./playUiMode', () => ({ getPlayUiMode: () => '3d' }));
 const webglMock = vi.fn(() => true);
 vi.mock('./webgl', () => ({ supportsWebGL: () => webglMock() }));
+// Canvas placeholder (no 3D children) — see ThreeBattlefield.test.tsx for rationale.
 vi.mock('@react-three/fiber', async () => {
   const actual = await vi.importActual<typeof import('@react-three/fiber')>('@react-three/fiber');
-  return { ...actual, Canvas: ({ children }: { children: React.ReactNode }) => <div data-testid="r3f-canvas">{children}</div> };
+  return { ...actual, Canvas: () => <div data-testid="r3f-canvas" /> };
 });
 
 import { PlayExperience, type PlayExperienceProps } from '../PlayExperience';
