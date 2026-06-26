@@ -39,9 +39,11 @@ import { CardDetailOverlay } from './components/CardDetailOverlay';
 import { GameOverOverlay } from './components/GameOverOverlay';
 import { DesktopBattlefield } from './shells/DesktopBattlefield';
 import { MobileTable } from './shells/MobileTable';
-import { isPlayUiV2 } from './v2/uiFlag';
 import { DesktopBattlefieldV2 } from './v2/shells/DesktopBattlefieldV2';
 import { MobileTableV2 } from './v2/shells/MobileTableV2';
+import { getPlayUiMode } from './r3f/playUiMode';
+import { supportsWebGL } from './r3f/webgl';
+import { ThreeBattlefield } from './r3f/ThreeBattlefield';
 import { nameForPlayer } from './useGameView';
 
 interface ReorderModalContent {
@@ -325,7 +327,10 @@ export function PlayExperience({
   prompts,
 }: PlayExperienceProps) {
   const isDesktop = useIsDesktop();
-  const uiV2 = useMemo(() => isPlayUiV2(), []);
+  const uiMode = useMemo(() => getPlayUiMode(), []);
+  // 3D requires WebGL; otherwise fall back to the v2 2D look.
+  const use3d = useMemo(() => uiMode === '3d' && supportsWebGL(), [uiMode]);
+  const uiV2 = uiMode === 'v2' || uiMode === '3d';
   const Desktop = uiV2 ? DesktopBattlefieldV2 : DesktopBattlefield;
   const Mobile = uiV2 ? MobileTableV2 : MobileTable;
 
@@ -827,7 +832,13 @@ export function PlayExperience({
         </div>
       )}
 
-      {isDesktop ? <Desktop {...shellProps} /> : <Mobile {...shellProps} />}
+      {use3d ? (
+        <ThreeBattlefield {...shellProps} />
+      ) : isDesktop ? (
+        <Desktop {...shellProps} />
+      ) : (
+        <Mobile {...shellProps} />
+      )}
 
       {mulliganOpen && prompts && (
         <MulliganOverlay
