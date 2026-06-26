@@ -1531,15 +1531,18 @@ function baseProps(): PlayExperienceProps {
 beforeEach(() => webglMock.mockReturnValue(true));
 
 describe('PlayExperience with ?ui=3d', () => {
+  // NOTE: this project has NO global jest-dom setup; presence is asserted with
+  // `.toBeTruthy()` and absence with `.toBeNull()` (queryBy* returns null), matching
+  // the existing v2 test convention. Do NOT use `toBeInTheDocument()`.
   it('renders the 3D shell when WebGL is available', () => {
     render(<PlayExperience {...baseProps()} />);
-    expect(screen.getByTestId('three-battlefield')).toBeInTheDocument();
+    expect(screen.getByTestId('three-battlefield')).toBeTruthy();
   });
 
   it('falls back to a 2D shell when WebGL is unavailable', () => {
     webglMock.mockReturnValue(false);
     render(<PlayExperience {...baseProps()} />);
-    expect(screen.queryByTestId('three-battlefield')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('three-battlefield')).toBeNull();
   });
 });
 ```
