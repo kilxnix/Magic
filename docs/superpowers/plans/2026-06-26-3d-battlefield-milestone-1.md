@@ -1519,13 +1519,41 @@ vi.mock('@react-three/fiber', async () => {
   return { ...actual, Canvas: () => <div data-testid="r3f-canvas" /> };
 });
 
+// Mock the view-model hook so the test needs NO full SimpleGameState fixture — the
+// branch logic under test (uiMode + WebGL → which shell) does not depend on real
+// engine state. Keep `nameForPlayer` real (PlayExperience imports it from here too).
+vi.mock('../useGameView', async () => {
+  const actual = await vi.importActual<typeof import('../useGameView')>('../useGameView');
+  const view = {
+    you: {
+      life: 40, poison: 0, maxCommanderDamageTaken: 0,
+      manaPool: { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 },
+      commandZone: [], graveyardCount: 0, libraryCount: 0, handCount: 0,
+      creatures: [], artifacts: [], enchantments: [], lands: [], other: [],
+      hand: [], graveyard: [], exile: [],
+    },
+    opponents: [],
+    stack: [],
+    priority: { hasPriority: true, isYourTurn: true, phaseLabel: 'Main', hasMeaningfulResponse: false, canPass: true, canHold: false },
+    targeting: { active: false, prompt: '', minTargets: 0, maxTargets: 0, legalTargetIds: [], legalTargets: [], selectedTargetIds: [] },
+    combat: { step: 'none', eligibleIds: [], eligible: [], eligibleDefenders: [], assignments: {} },
+    narration: [], guided: false, isYourTurn: true, winner: null,
+  };
+  return { ...actual, useGameView: () => view };
+});
+
 import { PlayExperience, type PlayExperienceProps } from '../PlayExperience';
 
-// Minimal valid gameState + props; reuse a helper or inline a stub matching SimpleGameState's
-// shape used by useGameView. (Copy the stub from PlayExperience's existing tests if present.)
+// PlayExperience reads only `gameState.humanPlayer.id` directly (the youWon check;
+// winner is null here so it is never compared). useGameView is mocked, so no deeper
+// gameState shape is needed — a minimal stub suffices.
 function baseProps(): PlayExperienceProps {
-  // NOTE: import or replicate the test fixture used by PlayExperience's existing suite.
-  return require('../__fixtures__/playExperienceProps').makePlayExperienceProps();
+  return {
+    gameState: { humanPlayer: { id: 'you' } } as unknown as PlayExperienceProps['gameState'],
+    legalActions: [],
+    isHumanTurn: true,
+    onAction: vi.fn(),
+  };
 }
 
 beforeEach(() => webglMock.mockReturnValue(true));
@@ -1546,8 +1574,6 @@ describe('PlayExperience with ?ui=3d', () => {
   });
 });
 ```
-
-> If no shared `PlayExperience` props fixture exists, create `frontend/src/play/__fixtures__/playExperienceProps.ts` exporting `makePlayExperienceProps()` that returns a minimal valid `PlayExperienceProps` (a `gameState` with `humanPlayer`, empty zones; empty `legalActions`; `isHumanTurn: true`). Model it on the `GameView` stub used in Task 9's test, wrapped as the hook-output shape `PlayExperience` expects. Keep it in one place so other tests can reuse it.
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -1605,7 +1631,7 @@ Expected: PASS — existing PlayExperience/shell tests still green (v1/v2 unaffe
 - [ ] **Step 5: Commit**
 
 ```bash
-git add frontend/src/play/PlayExperience.tsx frontend/src/play/r3f/playExperience3d.test.tsx frontend/src/play/__fixtures__/playExperienceProps.ts
+git add frontend/src/play/PlayExperience.tsx frontend/src/play/r3f/playExperience3d.test.tsx
 git commit -m "feat(play-3d): wire ?ui=3d into PlayExperience with 2D fallback"
 ```
 
