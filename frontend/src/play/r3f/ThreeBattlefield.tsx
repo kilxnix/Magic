@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Canvas } from '@react-three/fiber';
-import { ACESFilmicToneMapping } from 'three';
+import { Canvas, useThree } from '@react-three/fiber';
+import { ACESFilmicToneMapping, type PerspectiveCamera as ThreePerspectiveCamera } from 'three';
 import { EffectComposer, Bloom } from '@react-three/postprocessing';
 import type { DesktopBattlefieldProps } from '../shells/DesktopBattlefield';
 import type { CardView, GameView } from '../gameView.types';
@@ -8,8 +8,8 @@ import { BattlefieldScene } from './BattlefieldScene';
 import { HandDock } from './HandDock';
 import { SeatHudOverlay } from './SeatHudOverlay';
 import { buildObjectIndex, toCardView } from './interaction';
-import { SEAT_R, type Vec3 } from './layout';
 import type { CameraPose } from './projection';
+import { defaultPose, focusPose, lerpPose, easeInOut } from './cameraPoses';
 import { PhaseTrackV2 } from '../v2/components/PhaseTrackV2';
 import { PriorityControlsV2 } from '../v2/components/PriorityControlsV2';
 import { TargetingLayerV2 } from '../v2/components/TargetingLayerV2';
@@ -40,6 +40,65 @@ export function useSelectionViewer(view: GameView): {
   return { viewer, select, clear };
 }
 
+/** Drives the live <Canvas> camera from a pose; invalidates so demand-mode repaints. */
+function CameraRig({ pose }: { pose: CameraPose }) {
+  const camera = useThree((s) => s.camera);
+  const invalidate = useThree((s) => s.invalidate);
+  useEffect(() => {
+    camera.position.set(pose.position[0], pose.position[1], pose.position[2]);
+    camera.lookAt(pose.target[0], pose.target[1], pose.target[2]);
+    const persp = camera as ThreePerspectiveCamera;
+    if (persp.isPerspectiveCamera) {
+      persp.fov = pose.fov;
+      persp.updateProjectionMatrix();
+    }
+    invalidate();
+  }, [camera, pose, invalidate]);
+  return null;
+}
+
+/**
+ * Owns the focused-seat state and the smooth swing between the table view and a
+ * seat close-up. Returns the live (animated) pose plus focus controls. The pose
+ * feeds BOTH the Canvas camera (via CameraRig) and the DOM HUD projection, so they
+ * never drift apart during the animation.
+ */
+function useFocusCamera(seats: number): {
+  pose: CameraPose;
+  focusedSeat: number | null;
+  focusSeat: (seatIndex: number) => void;
+  resetView: () => void;
+} {
+  const base = useMemo(() => defaultPose(seats), [seats]);
+  const [focusedSeat, setFocusedSeat] = useState<number | null>(null);
+  const targetPose = useMemo(
+    () => (focusedSeat != null && focusedSeat < seats ? focusPose(focusedSeat, seats) : base),
+    [focusedSeat, base, seats],
+  );
+  const [pose, setPose] = useState<CameraPose>(base);
+  const poseRef = useRef<CameraPose>(base);
+
+  useEffect(() => {
+    const from = poseRef.current;
+    const start = typeof performance !== 'undefined' ? performance.now() : 0;
+    const DURATION = 650;
+    let raf = 0;
+    const tick = (now: number) => {
+      const t = DURATION <= 0 ? 1 : Math.min(1, (now - start) / DURATION);
+      const next = lerpPose(from, targetPose, easeInOut(t));
+      poseRef.current = next;
+      setPose(next);
+      if (t < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [targetPose]);
+
+  const focusSeat = useCallback((seatIndex: number) => setFocusedSeat(seatIndex), []);
+  const resetView = useCallback(() => setFocusedSeat(null), []);
+  return { pose, focusedSeat, focusSeat, resetView };
+}
+
 /** Track a DOM element's pixel size (for projecting WebGL world points to overlay px). */
 function useElementSize(): [React.RefObject<HTMLDivElement>, { width: number; height: number }] {
   const ref = useRef<HTMLDivElement>(null);
@@ -62,21 +121,19 @@ export function ThreeBattlefield(props: DesktopBattlefieldProps) {
   const { viewer, select: handleSelect, clear } = useSelectionViewer(view);
   const [rootRef, size] = useElementSize();
 
-  // Frame the whole table: with more seats the pod is wider, so lift + pull the
-  // angled-overhead camera back so every opponent's board stays in view and
-  // readable (the flat cards read best looked-down-upon, not edge-on).
   const seats = 1 + view.opponents.length;
-  const camY = 9.5 + seats * 1.4; // 2p ≈ 12.3, 3p ≈ 13.7, 4p ≈ 15.1
-  const camZ = SEAT_R + 5.5 + seats; // 2p ≈ 13.5, 3p ≈ 14.5, 4p ≈ 15.5
-  const camPosition = useMemo<Vec3>(() => [0, camY, camZ], [camY, camZ]);
-  const camTarget: Vec3 = useMemo(() => [0, 0, -0.5], []);
-  const camera = useMemo(() => ({ position: camPosition, fov: 50 }), [camPosition]);
-  // The DOM HUD projects through a camera identical to the <Canvas>'s so badges
-  // land on the same pixels as the boards they label.
-  const pose = useMemo<CameraPose>(
-    () => ({ position: camPosition, target: camTarget, fov: 50 }),
-    [camPosition, camTarget],
-  );
+  const { pose, focusedSeat, focusSeat, resetView } = useFocusCamera(seats);
+  const initialPose = useMemo(() => defaultPose(seats), [seats]);
+
+  // Escape returns from a seat close-up to the table view.
+  useEffect(() => {
+    if (focusedSeat == null) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') resetView();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [focusedSeat, resetView]);
 
   return (
     <div ref={rootRef} data-testid="three-battlefield" className="relative h-full w-full bg-black">
@@ -84,10 +141,10 @@ export function ThreeBattlefield(props: DesktopBattlefieldProps) {
         shadows
         dpr={[1, 2]}
         frameloop="demand"
-        camera={camera}
+        camera={{ position: initialPose.position, fov: initialPose.fov }}
         gl={{ toneMapping: ACESFilmicToneMapping, toneMappingExposure: 1.15 }}
-        onCreated={(state) => state.camera.lookAt(camTarget[0], camTarget[1], camTarget[2])}
       >
+        <CameraRig pose={pose} />
         <BattlefieldScene view={view} onSelect={handleSelect} />
         <HandDock hand={view.you.hand} onSelect={handleSelect} />
         <EffectComposer>
@@ -95,8 +152,22 @@ export function ThreeBattlefield(props: DesktopBattlefieldProps) {
         </EffectComposer>
       </Canvas>
 
-      {/* Per-seat floating life/info badges, projected onto the boards. */}
-      <SeatHudOverlay view={view} pose={pose} width={size.width} height={size.height} />
+      {/* Per-seat floating life/info badges; clicking an opponent's badge swings the
+          camera to face their board. */}
+      <SeatHudOverlay view={view} pose={pose} width={size.width} height={size.height} onFocus={focusSeat} />
+
+      {/* Return-to-table control, shown only while focused on a seat. */}
+      {focusedSeat != null ? (
+        <div className="pointer-events-auto absolute left-1/2 top-3 -translate-x-1/2">
+          <button
+            type="button"
+            onClick={resetView}
+            className="rounded-full border border-amber-300/60 bg-black/80 px-4 py-1.5 text-sm font-semibold text-amber-100 shadow-lg transition-colors hover:bg-black/95 hover:border-amber-200"
+          >
+            ← Back to table
+          </button>
+        </div>
+      ) : null}
 
       {/* DOM overlay — controls + readouts live here, not in WebGL. */}
       <div className="pointer-events-none absolute inset-0">
