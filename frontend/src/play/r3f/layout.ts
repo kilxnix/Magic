@@ -4,13 +4,16 @@ export type ZoneRow = 'creatures' | 'artifacts' | 'lands' | 'command';
 export const SEAT_R = 4.5;
 export const CARD_SPACING_X = 1.2;
 
-// local +Z points from table center toward the seated player.
-// creatures sit nearest center (smallest z), lands nearest the player (largest z).
+// local +Z points from table center toward the seated player. Rows are spread
+// ACROSS the player's half (not bunched at their edge) so the previously-empty
+// table center becomes the battlefield: the commander leads, creatures sit out in
+// the open where combat reads, artifacts/lands step back toward the player, and the
+// hand (DOCK_Z, further still) stays in front. Negative = toward table center.
 export const ROW_Z: Record<ZoneRow, number> = {
-  creatures: 1.0,
-  artifacts: 2.0,
-  lands: 3.0,
-  command: 0.2,
+  command: -2.6, // commander at the head of your field, fully in the open
+  creatures: -2.0, // out toward center — where attacks/blocks read
+  artifacts: -0.6,
+  lands: 0.8, // your edge, just behind the hand
 };
 
 export function seatTransform(index: number, total: number): { position: Vec3; rotationY: number } {

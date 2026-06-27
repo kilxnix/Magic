@@ -18,11 +18,12 @@ export interface SeatHud {
   position: Vec3;
 }
 
-// Float the badge above the table, pulled toward center so it sits in the clear
-// gap between the seat's creatures (local +Z points toward the player) and the
-// table middle — in front of the cards from the camera, never occluded by them.
-const HUD_LIFT = 1.7;
-const HUD_INSET = -1.2;
+// Float the badge HIGH above the table so it clears the card rows on screen (the
+// badge is a DOM overlay, so "clearing" means sitting higher in screen space, not
+// depth). Anchored just inboard of the seat, well above the cards rather than on
+// top of them.
+const HUD_LIFT = 3.0;
+const HUD_INSET = -0.3;
 
 function sumPower(creatures: PermanentView[]): number {
   return creatures.reduce((n, c) => n + (c.power ?? 0), 0);
