@@ -25,8 +25,12 @@ export interface SeatHud {
 // creatures — instead anchor your badge low and toward the camera, beside your hand.
 const HUD_LIFT = 3.0;
 const HUD_INSET = -0.3;
-const OWN_HUD_LIFT = 1.9;
-const OWN_HUD_INSET = 2.2; // toward you (the camera), in front of your creatures
+// Float your own badge ABOVE your board, clear of the hand fan. The hand dock sits
+// at ~seatRadius+2.3 (nearest the camera); anchoring the badge out there lands it
+// right on top of your fanned cards. Lift it high and keep it inboard (small inset)
+// so it reads as a label hovering over your board, mirroring the opponent badges.
+const OWN_HUD_LIFT = 3.2;
+const OWN_HUD_INSET = 1.0;
 
 function sumPower(creatures: PermanentView[]): number {
   return creatures.reduce((n, c) => n + (c.power ?? 0), 0);
