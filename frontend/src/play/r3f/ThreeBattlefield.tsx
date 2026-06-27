@@ -48,9 +48,9 @@ export function ThreeBattlefield(props: DesktopBattlefieldProps) {
         shadows
         dpr={[1, 2]}
         frameloop="demand"
-        camera={{ position: [0, 7, SEAT_R + 6], fov: 50 }}
+        camera={{ position: [0, 9, SEAT_R + 7.5], fov: 50 }}
         gl={{ toneMapping: ACESFilmicToneMapping, toneMappingExposure: 1.15 }}
-        onCreated={(state) => state.camera.lookAt(0, 0, 0)}
+        onCreated={(state) => state.camera.lookAt(0, 0, 1.5)}
       >
         <BattlefieldScene view={view} onSelect={handleSelect} />
         <HandDock hand={view.you.hand} onSelect={handleSelect} />

@@ -146,10 +146,39 @@ let inFlight = 0;
 const MAX_INFLIGHT = 6;
 const artQueue: (() => void)[] = [];
 
+// With frameloop="demand" the canvas only renders on demand, so a texture that
+// finishes loading after the scene settles would never be uploaded. The scene
+// registers its invalidate() here so art can request a fresh frame on arrival.
+let sceneInvalidate: (() => void) | null = null;
+export function setSceneInvalidate(fn: (() => void) | null): void {
+  sceneInvalidate = fn;
+}
+
 function pump(): void {
   while (inFlight < MAX_INFLIGHT && artQueue.length > 0) {
     const job = artQueue.shift()!;
     job();
+  }
+}
+
+// The proxy serves cached image bytes (content-type image/*) OR JSON carrying a
+// Scryfall image URL for uncached cards. Mirror <CardImage>'s resolution so the
+// inset works whether or not the art is cached locally.
+async function resolveArtUrl(name: string): Promise<string | null> {
+  if (typeof fetch === 'undefined') return null;
+  const proxy = `${cardImageUrl(name)}?size=normal`;
+  try {
+    const res = await fetch(proxy);
+    if (!res.ok) return null;
+    const ct = res.headers.get('content-type') || '';
+    if (ct.includes('image')) return proxy; // same-origin cached bytes
+    const data = await res.json();
+    if (typeof data?.scryfall_url !== 'string') return null;
+    // The inset wants just the artwork (the frame already draws name/mana/P-T),
+    // so request Scryfall's art_crop instead of the full normal card image.
+    return data.scryfall_url.replace(/version=\w+/, 'version=art_crop');
+  } catch {
+    return null; // offline → keep the tinted panel
   }
 }
 
@@ -158,26 +187,31 @@ function loadArtInset(name: string, canvas: HTMLCanvasElement, tex: CanvasTextur
   if (typeof Image === 'undefined') return;
   const job = () => {
     inFlight++;
-    const img = new Image();
-    img.onload = () => {
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        ctx.save();
-        ctx.beginPath();
-        ctx.rect(ART.x, ART.y, ART.w, ART.h);
-        ctx.clip();
-        const scale = Math.max(ART.w / img.width, ART.h / img.height); // cover-fit
-        const dw = img.width * scale;
-        const dh = img.height * scale;
-        ctx.drawImage(img, ART.x + (ART.w - dw) / 2, ART.y + (ART.h - dh) / 2, dw, dh);
-        ctx.restore();
-        tex.needsUpdate = true;
-      }
-      inFlight--;
-      pump();
-    };
-    img.onerror = () => { inFlight--; pump(); }; // keep the tinted panel
-    img.src = cardImageUrl(name);
+    const done = () => { inFlight--; pump(); };
+    resolveArtUrl(name).then((src) => {
+      if (!src) return done();
+      const img = new Image();
+      img.crossOrigin = 'anonymous'; // allow drawing cross-origin (Scryfall) art into the WebGL texture
+      img.onload = () => {
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.save();
+          ctx.beginPath();
+          ctx.rect(ART.x, ART.y, ART.w, ART.h);
+          ctx.clip();
+          const scale = Math.max(ART.w / img.width, ART.h / img.height); // cover-fit
+          const dw = img.width * scale;
+          const dh = img.height * scale;
+          ctx.drawImage(img, ART.x + (ART.w - dw) / 2, ART.y + (ART.h - dh) / 2, dw, dh);
+          ctx.restore();
+          tex.needsUpdate = true;
+          sceneInvalidate?.(); // demand-mode: request a frame so the art uploads
+        }
+        done();
+      };
+      img.onerror = done; // keep the tinted panel
+      img.src = src;
+    });
   };
   artQueue.push(job);
   pump();

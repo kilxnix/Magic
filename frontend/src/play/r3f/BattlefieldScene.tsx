@@ -1,8 +1,10 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
+import { useThree } from '@react-three/fiber';
 import { CanvasTexture, SRGBColorSpace } from 'three';
 import type { GameView } from '../gameView.types';
 import { buildPlacements } from './placements';
 import { CardMesh } from './CardMesh';
+import { setSceneInvalidate } from './cardFrame';
 import { SEAT_R } from './layout';
 
 const CARD_BASE = 0.03;
@@ -17,9 +19,9 @@ function makePlaymatTexture(): CanvasTexture | null {
   const ctx = canvas.getContext('2d');
   if (!ctx) return null;
   const g = ctx.createRadialGradient(size / 2, size / 2, 40, size / 2, size / 2, size / 2);
-  g.addColorStop(0, '#1f3a2a'); // lit center
-  g.addColorStop(0.6, '#15281d');
-  g.addColorStop(1, '#0a140e'); // vignette
+  g.addColorStop(0, '#2c5340'); // lit center
+  g.addColorStop(0.6, '#1d3528');
+  g.addColorStop(1, '#11211a'); // soft vignette
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, size, size);
   const tex = new CanvasTexture(canvas);
@@ -31,15 +33,20 @@ export function BattlefieldScene({ view, onSelect }: { view: GameView; onSelect(
   const placements = buildPlacements(view);
   const tableSize = SEAT_R * 2 + 4;
   const playmat = useMemo(() => makePlaymatTexture(), []);
+  const invalidate = useThree((s) => s.invalidate);
+  useEffect(() => {
+    setSceneInvalidate(invalidate);
+    return () => setSceneInvalidate(null);
+  }, [invalidate]);
 
   return (
     <>
       {/* 3-point cinematic lighting. */}
-      <ambientLight intensity={0.35} />
-      <hemisphereLight args={['#bcd2ff', '#1a1208', 0.5]} />
+      <ambientLight intensity={0.55} />
+      <hemisphereLight args={['#bcd2ff', '#26301c', 0.7]} />
       <directionalLight
         position={[6, 13, 7]}
-        intensity={1.5}
+        intensity={1.7}
         color="#fff3df"
         castShadow
         shadow-mapSize-width={2048}
