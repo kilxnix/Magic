@@ -42,15 +42,26 @@ export function ThreeBattlefield(props: DesktopBattlefieldProps) {
   const { view } = props;
   const { viewer, select: handleSelect, clear } = useSelectionViewer(view);
 
+  // Frame the whole table: with more seats the pod is wider, so lift + pull the
+  // angled-overhead camera back so every opponent's board stays in view and
+  // readable (the flat cards read best looked-down-upon, not edge-on).
+  const seats = 1 + view.opponents.length;
+  const camY = 9.5 + seats * 1.4; // 2p ≈ 12.3, 3p ≈ 13.7, 4p ≈ 15.1
+  const camZ = SEAT_R + 5.5 + seats; // 2p ≈ 13.5, 3p ≈ 14.5, 4p ≈ 15.5
+  const camera = useMemo(
+    () => ({ position: [0, camY, camZ] as [number, number, number], fov: 50 }),
+    [camY, camZ],
+  );
+
   return (
     <div data-testid="three-battlefield" className="relative h-full w-full bg-black">
       <Canvas
         shadows
         dpr={[1, 2]}
         frameloop="demand"
-        camera={{ position: [0, 9, SEAT_R + 7.5], fov: 50 }}
+        camera={camera}
         gl={{ toneMapping: ACESFilmicToneMapping, toneMappingExposure: 1.15 }}
-        onCreated={(state) => state.camera.lookAt(0, 0, 1.5)}
+        onCreated={(state) => state.camera.lookAt(0, 0, -0.5)}
       >
         <BattlefieldScene view={view} onSelect={handleSelect} />
         <HandDock hand={view.you.hand} onSelect={handleSelect} />

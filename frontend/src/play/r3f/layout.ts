@@ -1,7 +1,7 @@
 export type Vec3 = [number, number, number];
 export type ZoneRow = 'creatures' | 'artifacts' | 'lands' | 'command';
 
-export const SEAT_R = 6;
+export const SEAT_R = 4.5;
 export const CARD_SPACING_X = 1.2;
 
 // local +Z points from table center toward the seated player.
