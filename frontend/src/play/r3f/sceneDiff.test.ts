@@ -3,7 +3,7 @@ import { diffPlacements, lerpVec3 } from './sceneDiff';
 import type { Placement } from './placements';
 
 function p(id: string, pos: [number, number, number], tapped = false): Placement {
-  return { id, name: id, seatIndex: 0, row: 'creatures', position: pos, tapped, isOwn: true };
+  return { id, name: id, seatIndex: 0, row: 'creatures', position: pos, tapped, typeKind: 'other', isOwn: true };
 }
 
 describe('diffPlacements', () => {

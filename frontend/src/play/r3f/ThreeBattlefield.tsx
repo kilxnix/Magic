@@ -1,5 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import { Canvas } from '@react-three/fiber';
+import { ACESFilmicToneMapping } from 'three';
+import { EffectComposer, Bloom } from '@react-three/postprocessing';
 import type { DesktopBattlefieldProps } from '../shells/DesktopBattlefield';
 import type { CardView, GameView } from '../gameView.types';
 import { BattlefieldScene } from './BattlefieldScene';
@@ -47,10 +49,14 @@ export function ThreeBattlefield(props: DesktopBattlefieldProps) {
         dpr={[1, 2]}
         frameloop="demand"
         camera={{ position: [0, 7, SEAT_R + 6], fov: 50 }}
+        gl={{ toneMapping: ACESFilmicToneMapping, toneMappingExposure: 1.15 }}
         onCreated={(state) => state.camera.lookAt(0, 0, 0)}
       >
         <BattlefieldScene view={view} onSelect={handleSelect} />
         <HandDock hand={view.you.hand} onSelect={handleSelect} />
+        <EffectComposer>
+          <Bloom intensity={0.6} luminanceThreshold={0.55} luminanceSmoothing={0.2} mipmapBlur />
+        </EffectComposer>
       </Canvas>
 
       {/* DOM overlay — controls + readouts live here, not in WebGL. */}
