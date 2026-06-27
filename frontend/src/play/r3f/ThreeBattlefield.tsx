@@ -16,6 +16,8 @@ import { TargetingLayerV2 } from '../v2/components/TargetingLayerV2';
 import { CombatFlowV2 } from '../v2/components/CombatFlowV2';
 import { NarrationFeedV2 } from '../v2/components/NarrationFeedV2';
 import { CardViewerV2 } from '../v2/components/CardViewerV2';
+import { ZoneExplorerV2 } from '../v2/components/ZoneExplorerV2';
+import type { ZoneKind } from './zonePlacements';
 
 /**
  * Selecting a 3D object opens the existing DOM action menu (CardViewerV2) for it.
@@ -25,6 +27,7 @@ import { CardViewerV2 } from '../v2/components/CardViewerV2';
 export function useSelectionViewer(view: GameView): {
   viewer: CardView | null;
   select(id: string): void;
+  inspect(card: CardView): void;
   clear(): void;
 } {
   const [viewer, setViewer] = useState<CardView | null>(null);
@@ -36,8 +39,11 @@ export function useSelectionViewer(view: GameView): {
     },
     [index],
   );
+  // Open the viewer for a CardView we already hold (e.g. a graveyard/exile card
+  // picked from the zone browser), bypassing the battlefield object index.
+  const inspect = useCallback((card: CardView) => setViewer(card), []);
   const clear = useCallback(() => setViewer(null), []);
-  return { viewer, select, clear };
+  return { viewer, select, inspect, clear };
 }
 
 /** Drives the live <Canvas> camera from a pose; invalidates so demand-mode repaints. */
@@ -118,8 +124,13 @@ function useElementSize(): [React.RefObject<HTMLDivElement>, { width: number; he
 
 export function ThreeBattlefield(props: DesktopBattlefieldProps) {
   const { view } = props;
-  const { viewer, select: handleSelect, clear } = useSelectionViewer(view);
+  const { viewer, select: handleSelect, inspect, clear } = useSelectionViewer(view);
   const [rootRef, size] = useElementSize();
+  const [zoneTarget, setZoneTarget] = useState<{ playerId: string; zone: ZoneKind } | null>(null);
+  const browseZone = useCallback(
+    (playerId: string, zone: ZoneKind) => setZoneTarget({ playerId, zone }),
+    [],
+  );
 
   const seats = 1 + view.opponents.length;
   const { pose, focusedSeat, focusSeat, resetView } = useFocusCamera(seats);
@@ -145,7 +156,7 @@ export function ThreeBattlefield(props: DesktopBattlefieldProps) {
         gl={{ toneMapping: ACESFilmicToneMapping, toneMappingExposure: 1.15 }}
       >
         <CameraRig pose={pose} />
-        <BattlefieldScene view={view} onSelect={handleSelect} />
+        <BattlefieldScene view={view} onSelect={handleSelect} onBrowseZone={browseZone} />
         <HandDock hand={view.you.hand} onSelect={handleSelect} />
         <EffectComposer>
           <Bloom intensity={0.6} luminanceThreshold={0.55} luminanceSmoothing={0.2} mipmapBlur />
@@ -201,6 +212,20 @@ export function ThreeBattlefield(props: DesktopBattlefieldProps) {
           />
         </div>
       </div>
+
+      {/* Tapping a graveyard/library/exile pile opens the DOM zone browser; picking
+          a card there routes through inspect() into the same action viewer. */}
+      {zoneTarget ? (
+        <ZoneExplorerV2
+          view={view}
+          target={zoneTarget}
+          onClose={() => setZoneTarget(null)}
+          onView={(cv) => {
+            setZoneTarget(null);
+            inspect(cv);
+          }}
+        />
+      ) : null}
 
       {viewer ? (
         <CardViewerV2

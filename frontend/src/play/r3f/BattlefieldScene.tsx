@@ -4,6 +4,8 @@ import { CanvasTexture, SRGBColorSpace } from 'three';
 import type { GameView } from '../gameView.types';
 import { buildPlacements } from './placements';
 import { CardMesh } from './CardMesh';
+import { ZonePileMesh } from './ZonePileMesh';
+import { zonePilePlacements, type ZoneKind } from './zonePlacements';
 import { setSceneInvalidate } from './cardFrame';
 import { SEAT_R } from './layout';
 
@@ -29,8 +31,17 @@ function makePlaymatTexture(): CanvasTexture | null {
   return tex;
 }
 
-export function BattlefieldScene({ view, onSelect }: { view: GameView; onSelect(id: string): void }) {
+export function BattlefieldScene({
+  view,
+  onSelect,
+  onBrowseZone,
+}: {
+  view: GameView;
+  onSelect(id: string): void;
+  onBrowseZone?(playerId: string, zone: ZoneKind): void;
+}) {
   const placements = buildPlacements(view);
+  const piles = zonePilePlacements(view);
   const tableSize = SEAT_R * 2 + 4;
   const playmat = useMemo(() => makePlaymatTexture(), []);
   const invalidate = useThree((s) => s.invalidate);
@@ -66,6 +77,10 @@ export function BattlefieldScene({ view, onSelect }: { view: GameView; onSelect(
 
       {placements.map((p) => (
         <CardMesh key={p.id} placement={p} onSelect={onSelect} />
+      ))}
+
+      {piles.map((pile) => (
+        <ZonePileMesh key={pile.id} pile={pile} onBrowse={onBrowseZone ?? (() => {})} />
       ))}
     </>
   );
