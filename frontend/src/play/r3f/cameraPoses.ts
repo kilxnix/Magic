@@ -7,9 +7,11 @@ import type { CameraPose } from './projection';
  * cards read best looked-down-upon). Mirrors the values the shell shipped with.
  */
 export function defaultPose(seats: number): CameraPose {
-  const camY = 9.5 + seats * 1.4; // 2p ≈ 12.3, 3p ≈ 13.7, 4p ≈ 15.1
-  const camZ = SEAT_R + 5.5 + seats; // 2p ≈ 13.5, 3p ≈ 14.5, 4p ≈ 15.5
-  return { position: [0, camY, camZ], target: [0, 0, -0.5], fov: 50 };
+  const camY = 9.0 + seats * 1.3; // 2p ≈ 11.6, 3p ≈ 12.9, 4p ≈ 14.2
+  const camZ = SEAT_R + 5.2 + seats; // 2p ≈ 11.7, 3p ≈ 12.7, 4p ≈ 13.7
+  // Lower fov than the original 50 zooms in so the boards fill the frame instead of
+  // floating in felt, without ballooning the near hand the way a very tight fov did.
+  return { position: [0, camY, camZ], target: [0, 0, 0], fov: 47 };
 }
 
 /**

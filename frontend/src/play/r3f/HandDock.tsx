@@ -4,12 +4,13 @@ import type { Placement } from './placements';
 import { SEAT_R } from './layout';
 import { colorIdentityFromManaCost } from '../manaColors';
 
-const DOCK_Z = SEAT_R + 2.0; // in front of your seat, toward the camera
-const DOCK_Y = 1.7; // raised off the table so the whole fan clears the viewport edge
+const DOCK_Z = SEAT_R + 2.3; // in front of your seat, toward the camera (clear of the land row)
+const DOCK_Y = 2.3; // raised off the table so the whole fan clears the viewport edge
+const HAND_SCALE = 0.8; // hand cards are nearest the camera; shrink so they don't dominate
 
 // Fan the hand like held cards: overlap slightly, splay each card out from center,
 // lift the middle, and curl the ends toward the camera.
-const HAND_SPACING = 0.9; // < CARD_W → cards overlap into a fan
+const HAND_SPACING = 0.85; // < scaled CARD_W → cards overlap into a fan
 const FAN_YAW = 0.1; // radians of splay per card-step from center
 const FAN_LIFT = 0.06; // center cards raised this much per step
 const FAN_DEPTH = 0.16; // end cards pulled toward the camera (+Z) this much per step
@@ -39,7 +40,12 @@ export function HandDock({ hand, onSelect }: { hand: HandCardView[]; onSelect(id
   return (
     <>
       {hand.map((c, i) => (
-        <CardMesh key={c.id} placement={handPlacement(c, i, hand.length)} onSelect={onSelect} />
+        <CardMesh
+          key={c.id}
+          placement={handPlacement(c, i, hand.length)}
+          onSelect={onSelect}
+          scaleOverride={HAND_SCALE}
+        />
       ))}
     </>
   );

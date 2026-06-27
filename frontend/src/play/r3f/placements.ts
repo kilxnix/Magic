@@ -4,7 +4,11 @@ import { worldSlot, type Vec3, type ZoneRow } from './layout';
 export type TypeKind = 'creature' | 'land' | 'other';
 
 export interface Placement {
+  /** Unique render id (React key + mesh userData). For an expanded land stack this
+   *  is `${realId}#${i}`; otherwise it equals the card's real id. */
   id: string;
+  /** Real card id to act on when clicked (an expanded copy points back at its card). */
+  selectId?: string;
   name: string;
   seatIndex: number;
   row: ZoneRow;
@@ -30,17 +34,35 @@ interface SeatRows {
   command: PermanentView[];
 }
 
+/** The 2D view-model stacks identical lands into one tile (stackCount); the 3D board
+ *  shows each as its own card so a real land row fills the table instead of one lonely
+ *  tile. Every copy keeps the card's real id as selectId (so a click opens the right
+ *  card) but gets a unique render id for its slot. Non-stacked cards pass through. */
+function expandStacks(cards: PermanentView[]): { card: PermanentView; renderId: string }[] {
+  const out: { card: PermanentView; renderId: string }[] = [];
+  for (const c of cards) {
+    const n = c.stackCount ?? 1;
+    if (n > 1) {
+      for (let i = 0; i < n; i++) out.push({ card: c, renderId: `${c.id}#${i}` });
+    } else {
+      out.push({ card: c, renderId: c.id });
+    }
+  }
+  return out;
+}
+
 function placeSeat(rows: SeatRows, seatIndex: number, total: number, isOwn: boolean): Placement[] {
   const out: Placement[] = [];
   (Object.keys(rows) as (keyof SeatRows)[]).forEach((row) => {
-    const cards = rows[row];
-    cards.forEach((c, idx) => {
+    const expanded = expandStacks(rows[row]);
+    expanded.forEach(({ card: c, renderId }, idx) => {
       out.push({
-        id: c.id,
+        id: renderId,
+        selectId: c.id,
         name: c.name,
         seatIndex,
         row: row as ZoneRow,
-        position: worldSlot(seatIndex, total, row as ZoneRow, idx, cards.length),
+        position: worldSlot(seatIndex, total, row as ZoneRow, idx, expanded.length),
         tapped: c.tapped,
         power: c.power,
         toughness: c.toughness,

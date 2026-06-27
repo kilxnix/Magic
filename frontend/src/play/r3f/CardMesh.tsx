@@ -6,8 +6,8 @@ import type { Placement } from './placements';
 import { stepToward } from './useGlide';
 import { getFrameTexture } from './cardFrame';
 
-export const CARD_W = 1.0;
-export const CARD_H = 1.4;
+export const CARD_W = 1.35;
+export const CARD_H = 1.9;
 export const CARD_T = 0.04;
 const HOVER_LIFT = 0.25;
 
@@ -33,10 +33,14 @@ export function CardMesh({
   placement,
   onSelect,
   onHover,
+  scaleOverride,
 }: {
   placement: Placement;
   onSelect(id: string): void;
   onHover?(id: string | null): void;
+  /** Override the default own/opponent scale (the hand uses this so its near-camera
+   *  cards stay readable without ballooning over the board). */
+  scaleOverride?: number;
 }) {
   const [hovered, setHovered] = useState(false);
   const [x, y, z] = placement.position;
@@ -64,7 +68,7 @@ export function CardMesh({
     <group
       ref={groupRef}
       rotation={[CARD_TILT, (placement.tapped ? Math.PI / 2 : 0) + (placement.yaw ?? 0), 0]}
-      scale={placement.isOwn ? 1 : OPPONENT_SCALE}
+      scale={scaleOverride ?? (placement.isOwn ? 1 : OPPONENT_SCALE)}
     >
       {/* Lay the card flat: rotate the upright card -90deg about X so its face points up (+Y). */}
       <mesh
@@ -74,7 +78,7 @@ export function CardMesh({
         receiveShadow
         onClick={(e: ThreeEvent<MouseEvent>) => {
           e.stopPropagation();
-          onSelect(placement.id);
+          onSelect(placement.selectId ?? placement.id);
         }}
         onPointerOver={(e: ThreeEvent<PointerEvent>) => {
           e.stopPropagation();
