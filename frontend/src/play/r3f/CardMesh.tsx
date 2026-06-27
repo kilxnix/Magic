@@ -65,46 +65,50 @@ export function CardMesh({
   });
 
   return (
-    <group
-      ref={groupRef}
-      rotation={[CARD_TILT, (placement.tapped ? Math.PI / 2 : 0) + (placement.yaw ?? 0), 0]}
-      scale={scaleOverride ?? (placement.isOwn ? 1 : OPPONENT_SCALE)}
-    >
-      {/* Lay the card flat: rotate the upright card -90deg about X so its face points up (+Y). */}
-      <mesh
-        rotation={[-Math.PI / 2, 0, 0]}
-        userData={{ id: placement.id }}
-        castShadow
-        receiveShadow
-        onClick={(e: ThreeEvent<MouseEvent>) => {
-          e.stopPropagation();
-          onSelect(placement.selectId ?? placement.id);
-        }}
-        onPointerOver={(e: ThreeEvent<PointerEvent>) => {
-          e.stopPropagation();
-          setHovered(true);
-          onHover?.(placement.id);
-        }}
-        onPointerOut={() => {
-          setHovered(false);
-          onHover?.(null);
-        }}
-      >
-        <boxGeometry args={[CARD_W, CARD_H, CARD_T]} />
-        <meshStandardMaterial
-          color={texture ? '#0b0b0c' : frameColor(placement.isOwn, hovered)}
-          emissive={hovered ? '#facc15' : '#000000'}
-          emissiveIntensity={hovered ? 0.9 : 0}
-        />
-      </mesh>
+    // Outer group: position (driven by the glide via groupRef) + scale.
+    <group ref={groupRef} scale={scaleOverride ?? (placement.isOwn ? 1 : OPPONENT_SCALE)}>
+      {/* Seat-facing yaw: orient the card toward its own player so each seat reads
+          its board upright (rotating the table to a seat makes their cards face you). */}
+      <group rotation={[0, placement.seatYaw ?? 0, 0]}>
+        {/* Stand the card up toward the viewer (tilt) plus tap spin + hand-fan splay. */}
+        <group rotation={[CARD_TILT, (placement.tapped ? Math.PI / 2 : 0) + (placement.yaw ?? 0), 0]}>
+          {/* Lay the card flat: rotate the upright card -90deg about X so its face points up (+Y). */}
+          <mesh
+            rotation={[-Math.PI / 2, 0, 0]}
+            userData={{ id: placement.id }}
+            castShadow
+            receiveShadow
+            onClick={(e: ThreeEvent<MouseEvent>) => {
+              e.stopPropagation();
+              onSelect(placement.selectId ?? placement.id);
+            }}
+            onPointerOver={(e: ThreeEvent<PointerEvent>) => {
+              e.stopPropagation();
+              setHovered(true);
+              onHover?.(placement.id);
+            }}
+            onPointerOut={() => {
+              setHovered(false);
+              onHover?.(null);
+            }}
+          >
+            <boxGeometry args={[CARD_W, CARD_H, CARD_T]} />
+            <meshStandardMaterial
+              color={texture ? '#0b0b0c' : frameColor(placement.isOwn, hovered)}
+              emissive={hovered ? '#facc15' : '#000000'}
+              emissiveIntensity={hovered ? 0.9 : 0}
+            />
+          </mesh>
 
-      {/* Unlit frame face so the card stays legible regardless of scene lighting. */}
-      {texture ? (
-        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, CARD_T / 2 + 0.001, 0]}>
-          <planeGeometry args={[CARD_W, CARD_H]} />
-          <meshBasicMaterial map={texture} toneMapped={false} />
-        </mesh>
-      ) : null}
+          {/* Unlit frame face so the card stays legible regardless of scene lighting. */}
+          {texture ? (
+            <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, CARD_T / 2 + 0.001, 0]}>
+              <planeGeometry args={[CARD_W, CARD_H]} />
+              <meshBasicMaterial map={texture} toneMapped={false} />
+            </mesh>
+          ) : null}
+        </group>
+      </group>
     </group>
   );
 }

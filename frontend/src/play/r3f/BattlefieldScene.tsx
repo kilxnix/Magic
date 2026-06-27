@@ -7,7 +7,7 @@ import { CardMesh } from './CardMesh';
 import { ZonePileMesh } from './ZonePileMesh';
 import { zonePilePlacements, type ZoneKind } from './zonePlacements';
 import { setSceneInvalidate } from './cardFrame';
-import { SEAT_R } from './layout';
+import { seatRadius } from './layout';
 
 const CARD_BASE = 0.03;
 
@@ -35,20 +35,28 @@ export function BattlefieldScene({
   view,
   onSelect,
   onBrowseZone,
+  rotationY = 0,
 }: {
   view: GameView;
   onSelect(id: string): void;
   onBrowseZone?(playerId: string, zone: ZoneKind): void;
+  /** Spins the whole table (cards, piles, playmat) so a chosen seat faces front. */
+  rotationY?: number;
 }) {
   const placements = buildPlacements(view);
   const piles = zonePilePlacements(view);
-  const tableSize = SEAT_R * 2 + 4;
+  const seats = 1 + view.opponents.length;
+  const tableSize = seatRadius(seats) * 2 + 4;
   const playmat = useMemo(() => makePlaymatTexture(), []);
   const invalidate = useThree((s) => s.invalidate);
   useEffect(() => {
     setSceneInvalidate(invalidate);
     return () => setSceneInvalidate(null);
   }, [invalidate]);
+  // Repaint while the table spins (frameloop is "demand").
+  useEffect(() => {
+    invalidate();
+  }, [rotationY, invalidate]);
 
   return (
     <>
@@ -65,23 +73,27 @@ export function BattlefieldScene({
       />
       <directionalLight position={[-8, 6, -6]} intensity={0.35} color="#9fc0ff" />
 
-      {/* Table surface on the XZ plane (rotate the plane to lie flat). */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -CARD_BASE, 0]} receiveShadow>
-        <planeGeometry args={[tableSize, tableSize]} />
-        {playmat ? (
-          <meshStandardMaterial map={playmat} roughness={0.9} metalness={0} />
-        ) : (
-          <meshStandardMaterial color="#15281d" roughness={0.9} />
-        )}
-      </mesh>
+      {/* Everything that "belongs to the table" spins together so any seat can be
+          brought to the front; lighting stays fixed in world space. */}
+      <group rotation={[0, rotationY, 0]}>
+        {/* Table surface on the XZ plane (rotate the plane to lie flat). */}
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -CARD_BASE, 0]} receiveShadow>
+          <planeGeometry args={[tableSize, tableSize]} />
+          {playmat ? (
+            <meshStandardMaterial map={playmat} roughness={0.9} metalness={0} />
+          ) : (
+            <meshStandardMaterial color="#15281d" roughness={0.9} />
+          )}
+        </mesh>
 
-      {placements.map((p) => (
-        <CardMesh key={p.id} placement={p} onSelect={onSelect} />
-      ))}
+        {placements.map((p) => (
+          <CardMesh key={p.id} placement={p} onSelect={onSelect} />
+        ))}
 
-      {piles.map((pile) => (
-        <ZonePileMesh key={pile.id} pile={pile} onBrowse={onBrowseZone ?? (() => {})} />
-      ))}
+        {piles.map((pile) => (
+          <ZonePileMesh key={pile.id} pile={pile} onBrowse={onBrowseZone ?? (() => {})} />
+        ))}
+      </group>
     </>
   );
 }

@@ -9,7 +9,7 @@ import { HandDock } from './HandDock';
 import { SeatHudOverlay } from './SeatHudOverlay';
 import { buildObjectIndex, toCardView } from './interaction';
 import type { CameraPose } from './projection';
-import { defaultPose, focusPose, lerpPose, easeInOut } from './cameraPoses';
+import { defaultPose, easeInOut } from './cameraPoses';
 import { PhaseTrackV2 } from '../v2/components/PhaseTrackV2';
 import { PriorityControlsV2 } from '../v2/components/PriorityControlsV2';
 import { TargetingLayerV2 } from '../v2/components/TargetingLayerV2';
@@ -64,45 +64,53 @@ function CameraRig({ pose }: { pose: CameraPose }) {
 }
 
 /**
- * Owns the focused-seat state and the smooth swing between the table view and a
- * seat close-up. Returns the live (animated) pose plus focus controls. The pose
- * feeds BOTH the Canvas camera (via CameraRig) and the DOM HUD projection, so they
- * never drift apart during the animation.
+ * Spins the table (a "lazy susan") so any seat can be brought to the front. The
+ * camera stays put; instead the whole board group rotates. Because each seat's
+ * cards are oriented toward their own player, rotating a seat to the front turns
+ * their cards upright to you. Returns the live (animated) rotation in radians plus
+ * the focus controls; the same rotation drives the WebGL group AND the DOM HUD
+ * projection so badges never drift from their boards.
  */
-function useFocusCamera(seats: number): {
-  pose: CameraPose;
+function useTableRotation(seats: number): {
+  rotation: number;
   focusedSeat: number | null;
   focusSeat: (seatIndex: number) => void;
   resetView: () => void;
 } {
-  const base = useMemo(() => defaultPose(seats), [seats]);
   const [focusedSeat, setFocusedSeat] = useState<number | null>(null);
-  const targetPose = useMemo(
-    () => (focusedSeat != null && focusedSeat < seats ? focusPose(focusedSeat, seats) : base),
-    [focusedSeat, base, seats],
-  );
-  const [pose, setPose] = useState<CameraPose>(base);
-  const poseRef = useRef<CameraPose>(base);
+  // Bring seat N (at table angle a) to the front (+Z) by spinning the table by -a.
+  const targetAngle = useMemo(() => {
+    if (focusedSeat == null || focusedSeat <= 0 || focusedSeat >= seats) return 0;
+    return -((focusedSeat / seats) * Math.PI * 2);
+  }, [focusedSeat, seats]);
+  const [rotation, setRotation] = useState(0);
+  const rotRef = useRef(0);
 
   useEffect(() => {
-    const from = poseRef.current;
+    const from = rotRef.current;
+    // Take the shortest way around the circle to the target angle.
+    const TWO_PI = Math.PI * 2;
+    let delta = (targetAngle - from) % TWO_PI;
+    if (delta > Math.PI) delta -= TWO_PI;
+    if (delta < -Math.PI) delta += TWO_PI;
+    const to = from + delta;
     const start = typeof performance !== 'undefined' ? performance.now() : 0;
     const DURATION = 650;
     let raf = 0;
     const tick = (now: number) => {
       const t = DURATION <= 0 ? 1 : Math.min(1, (now - start) / DURATION);
-      const next = lerpPose(from, targetPose, easeInOut(t));
-      poseRef.current = next;
-      setPose(next);
+      const next = from + (to - from) * easeInOut(t);
+      rotRef.current = next;
+      setRotation(next);
       if (t < 1) raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [targetPose]);
+  }, [targetAngle]);
 
   const focusSeat = useCallback((seatIndex: number) => setFocusedSeat(seatIndex), []);
   const resetView = useCallback(() => setFocusedSeat(null), []);
-  return { pose, focusedSeat, focusSeat, resetView };
+  return { rotation, focusedSeat, focusSeat, resetView };
 }
 
 /** Track a DOM element's pixel size (for projecting WebGL world points to overlay px). */
@@ -133,10 +141,10 @@ export function ThreeBattlefield(props: DesktopBattlefieldProps) {
   );
 
   const seats = 1 + view.opponents.length;
-  const { pose, focusedSeat, focusSeat, resetView } = useFocusCamera(seats);
-  const initialPose = useMemo(() => defaultPose(seats), [seats]);
+  const { rotation, focusedSeat, focusSeat, resetView } = useTableRotation(seats);
+  const pose = useMemo(() => defaultPose(seats), [seats]);
 
-  // Escape returns from a seat close-up to the table view.
+  // Escape spins the table back to your seat.
   useEffect(() => {
     if (focusedSeat == null) return;
     const onKey = (e: KeyboardEvent) => {
@@ -152,22 +160,29 @@ export function ThreeBattlefield(props: DesktopBattlefieldProps) {
         shadows
         dpr={[1, 2]}
         frameloop="demand"
-        camera={{ position: initialPose.position, fov: initialPose.fov }}
+        camera={{ position: pose.position, fov: pose.fov }}
         gl={{ toneMapping: ACESFilmicToneMapping, toneMappingExposure: 1.15 }}
       >
         <CameraRig pose={pose} />
-        <BattlefieldScene view={view} onSelect={handleSelect} onBrowseZone={browseZone} />
-        <HandDock hand={view.you.hand} onSelect={handleSelect} />
+        <BattlefieldScene view={view} onSelect={handleSelect} onBrowseZone={browseZone} rotationY={rotation} />
+        <HandDock hand={view.you.hand} onSelect={handleSelect} seats={seats} />
         <EffectComposer>
           <Bloom intensity={0.6} luminanceThreshold={0.55} luminanceSmoothing={0.2} mipmapBlur />
         </EffectComposer>
       </Canvas>
 
-      {/* Per-seat floating life/info badges; clicking an opponent's badge swings the
-          camera to face their board. */}
-      <SeatHudOverlay view={view} pose={pose} width={size.width} height={size.height} onFocus={focusSeat} />
+      {/* Per-seat floating life/info badges; clicking an opponent's badge spins the
+          table so their board comes to the front. */}
+      <SeatHudOverlay
+        view={view}
+        pose={pose}
+        width={size.width}
+        height={size.height}
+        onFocus={focusSeat}
+        worldRotationY={rotation}
+      />
 
-      {/* Return-to-table control, shown only while focused on a seat. */}
+      {/* Spin-back control, shown only while turned to another seat. */}
       {focusedSeat != null ? (
         <div className="pointer-events-auto absolute left-1/2 top-3 -translate-x-1/2">
           <button
@@ -175,7 +190,7 @@ export function ThreeBattlefield(props: DesktopBattlefieldProps) {
             onClick={resetView}
             className="rounded-full border border-amber-300/60 bg-black/80 px-4 py-1.5 text-sm font-semibold text-amber-100 shadow-lg transition-colors hover:bg-black/95 hover:border-amber-200"
           >
-            ← Back to table
+            ↺ Back to your seat
           </button>
         </div>
       ) : null}

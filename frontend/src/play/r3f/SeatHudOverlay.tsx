@@ -2,6 +2,15 @@ import { useMemo } from 'react';
 import type { GameView } from '../gameView.types';
 import { seatHuds, type SeatHud } from './seatHud';
 import { makeProjector, type CameraPose } from './projection';
+import type { Vec3 } from './layout';
+
+/** Rotate a world point about the Y axis (matches the table's spin group). */
+function spinY([x, y, z]: Vec3, angle: number): Vec3 {
+  if (!angle) return [x, y, z];
+  const s = Math.sin(angle);
+  const c = Math.cos(angle);
+  return [x * c + z * s, y, -x * s + z * c];
+}
 
 /** Compact floating badge: name, life, hand size, threat, open mana, commander-damage warning. */
 function HudBadge({ hud, onFocus }: { hud: SeatHud; onFocus?: (seatIndex: number) => void }) {
@@ -51,12 +60,15 @@ export function SeatHudOverlay({
   width,
   height,
   onFocus,
+  worldRotationY = 0,
 }: {
   view: GameView;
   pose: CameraPose;
   width: number;
   height: number;
   onFocus?: (seatIndex: number) => void;
+  /** Spin applied to the table group, so each badge tracks its (rotated) board. */
+  worldRotationY?: number;
 }) {
   const huds = useMemo(() => seatHuds(view), [view]);
   const project = useMemo(() => makeProjector(pose, width, height), [pose, width, height]);
@@ -65,7 +77,7 @@ export function SeatHudOverlay({
   return (
     <div className="pointer-events-none absolute inset-0 overflow-hidden">
       {huds.map((h) => {
-        const p = project(h.position);
+        const p = project(spinY(h.position, worldRotationY));
         if (p.behind) return null;
         return (
           <div

@@ -1,5 +1,5 @@
 import type { GameView, PermanentView } from '../gameView.types';
-import { worldSlot, type Vec3, type ZoneRow } from './layout';
+import { seatTransform, worldSlot, type Vec3, type ZoneRow } from './layout';
 
 export type TypeKind = 'creature' | 'land' | 'other';
 
@@ -25,6 +25,9 @@ export interface Placement {
   isOwn: boolean;
   /** Extra Y-rotation (radians) added on top of tap — used to splay the hand fan. */
   yaw?: number;
+  /** Seat-facing Y-rotation (radians): the card is oriented toward its own player,
+   *  so each seat reads its own board upright. Equals the seat's table angle. */
+  seatYaw?: number;
 }
 
 interface SeatRows {
@@ -53,6 +56,7 @@ function expandStacks(cards: PermanentView[]): { card: PermanentView; renderId: 
 
 function placeSeat(rows: SeatRows, seatIndex: number, total: number, isOwn: boolean): Placement[] {
   const out: Placement[] = [];
+  const seatYaw = seatTransform(seatIndex, total).rotationY;
   (Object.keys(rows) as (keyof SeatRows)[]).forEach((row) => {
     const expanded = expandStacks(rows[row]);
     expanded.forEach(({ card: c, renderId }, idx) => {
@@ -61,6 +65,7 @@ function placeSeat(rows: SeatRows, seatIndex: number, total: number, isOwn: bool
         selectId: c.id,
         name: c.name,
         seatIndex,
+        seatYaw,
         row: row as ZoneRow,
         position: worldSlot(seatIndex, total, row as ZoneRow, idx, expanded.length),
         tapped: c.tapped,

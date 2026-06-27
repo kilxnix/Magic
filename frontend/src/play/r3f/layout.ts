@@ -4,6 +4,19 @@ export type ZoneRow = 'creatures' | 'artifacts' | 'lands' | 'command';
 export const SEAT_R = 4.5;
 export const CARD_SPACING_X = 1.6;
 
+/**
+ * Table radius (table center → a seat) grows with the player count. With 2 players
+ * facing off, a tight radius lets each board reach toward the open center and fill
+ * the table. With 3-4 players seated around the table, the same reach would pile
+ * every board's center-facing rows on top of each other in the middle — so the
+ * radius widens to give each seat its own wedge and keep the center open.
+ */
+export function seatRadius(total: number): number {
+  if (total <= 2) return SEAT_R; // 4.5
+  if (total === 3) return SEAT_R + 1.6; // 6.1
+  return SEAT_R + 2.7; // 4p ≈ 7.2
+}
+
 // local +Z points from table center toward the seated player. Rows are spread
 // ACROSS the player's whole half so the table center becomes the battlefield
 // instead of empty felt: the commander leads near center, creatures sit out in the
@@ -20,9 +33,10 @@ export const ROW_Z: Record<ZoneRow, number> = {
 
 export function seatTransform(index: number, total: number): { position: Vec3; rotationY: number } {
   const a = (index / total) * Math.PI * 2;
+  const r = seatRadius(total);
   // rotationY = a maps local +Z (0,0,1) to world (sin a, 0, cos a).
   return {
-    position: [SEAT_R * Math.sin(a), 0, SEAT_R * Math.cos(a)],
+    position: [r * Math.sin(a), 0, r * Math.cos(a)],
     rotationY: a,
   };
 }

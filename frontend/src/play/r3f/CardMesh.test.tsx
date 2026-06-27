@@ -24,14 +24,23 @@ describe('CardMesh', () => {
 
   it('rotates a tapped card about Y', async () => {
     const r = await ReactThreeTestRenderer.create(<CardMesh placement={p({ tapped: true })} onSelect={() => {}} />);
-    const group = r.scene.children[0];
-    expect(Math.abs(group.instance.rotation.y)).toBeCloseTo(Math.PI / 2);
+    // outer = position/scale, middle = seat-facing yaw, inner = tilt + tap.
+    const inner = r.scene.children[0].children[0].children[0];
+    expect(Math.abs(inner.instance.rotation.y)).toBeCloseTo(Math.PI / 2);
   });
 
   it('tilts every card up toward the camera for readability', async () => {
     const r = await ReactThreeTestRenderer.create(<CardMesh placement={p()} onSelect={() => {}} />);
-    const group = r.scene.children[0];
-    expect(group.instance.rotation.x).toBeCloseTo(CARD_TILT);
+    const inner = r.scene.children[0].children[0].children[0];
+    expect(inner.instance.rotation.x).toBeCloseTo(CARD_TILT);
+  });
+
+  it('faces the card toward its own seat (seatYaw) so each player reads upright', async () => {
+    const r = await ReactThreeTestRenderer.create(
+      <CardMesh placement={p({ seatYaw: Math.PI })} onSelect={() => {}} />,
+    );
+    const facing = r.scene.children[0].children[0]; // middle group carries seatYaw
+    expect(facing.instance.rotation.y).toBeCloseTo(Math.PI);
   });
 
   it('renders own cards at unit scale', async () => {

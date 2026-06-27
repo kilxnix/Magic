@@ -1,4 +1,4 @@
-import { SEAT_R, seatTransform, type Vec3 } from './layout';
+import { seatRadius, seatTransform, type Vec3 } from './layout';
 import type { CameraPose } from './projection';
 
 /**
@@ -7,11 +7,13 @@ import type { CameraPose } from './projection';
  * cards read best looked-down-upon). Mirrors the values the shell shipped with.
  */
 export function defaultPose(seats: number): CameraPose {
-  const camY = 9.0 + seats * 1.3; // 2p ≈ 11.6, 3p ≈ 12.9, 4p ≈ 14.2
-  const camZ = SEAT_R + 5.2 + seats; // 2p ≈ 11.7, 3p ≈ 12.7, 4p ≈ 13.7
+  const r = seatRadius(seats);
+  const camY = 8.5 + r * 0.85; // higher with a wider table so the whole pod stays in view
+  const camZ = r + 6.0; // sit behind the near seat, scaled to the (larger) table
   // Lower fov than the original 50 zooms in so the boards fill the frame instead of
   // floating in felt, without ballooning the near hand the way a very tight fov did.
-  return { position: [0, camY, camZ], target: [0, 0, 0], fov: 47 };
+  // Aim slightly past center so the near seat's zone piles don't clip the bottom.
+  return { position: [0, camY, camZ], target: [0, 0, -0.6], fov: 47 };
 }
 
 /**
@@ -23,7 +25,7 @@ export function focusPose(seatIndex: number, total: number): CameraPose {
   const { rotationY } = seatTransform(seatIndex, total);
   const ox = Math.sin(rotationY); // outward unit vector (table center → seat)
   const oz = Math.cos(rotationY);
-  const boardR = SEAT_R + 2; // mid-board radius (between creatures and lands)
+  const boardR = seatRadius(total) + 2; // mid-board radius (between creatures and lands)
   const bx = ox * boardR;
   const bz = oz * boardR;
   return {
