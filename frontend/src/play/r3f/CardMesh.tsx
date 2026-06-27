@@ -63,7 +63,7 @@ export function CardMesh({
   return (
     <group
       ref={groupRef}
-      rotation={[CARD_TILT, placement.tapped ? Math.PI / 2 : 0, 0]}
+      rotation={[CARD_TILT, (placement.tapped ? Math.PI / 2 : 0) + (placement.yaw ?? 0), 0]}
       scale={placement.isOwn ? 1 : OPPONENT_SCALE}
     >
       {/* Lay the card flat: rotate the upright card -90deg about X so its face points up (+Y). */}

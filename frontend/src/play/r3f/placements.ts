@@ -19,6 +19,8 @@ export interface Placement {
   isCommander?: boolean;
   isToken?: boolean;
   isOwn: boolean;
+  /** Extra Y-rotation (radians) added on top of tap — used to splay the hand fan. */
+  yaw?: number;
 }
 
 interface SeatRows {
