@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
 import type { ThreeEvent } from '@react-three/fiber';
 import type { Group } from 'three';
 import type { Placement } from './placements';
 import { stepToward } from './useGlide';
+import { getFrameTexture } from './cardFrame';
 
 export const CARD_W = 1.0;
 export const CARD_H = 1.4;
@@ -29,6 +30,7 @@ export function CardMesh({
   const [x, y, z] = placement.position;
   const lift = hovered ? HOVER_LIFT : 0;
   const groupRef = useRef<Group>(null);
+  const texture = useMemo(() => getFrameTexture(placement), [placement]);
 
   useEffect(() => {
     groupRef.current?.position.set(x, y + lift, z);
@@ -69,8 +71,20 @@ export function CardMesh({
         }}
       >
         <boxGeometry args={[CARD_W, CARD_H, CARD_T]} />
-        <meshStandardMaterial color={frameColor(placement.isOwn, hovered)} />
+        <meshStandardMaterial
+          color={texture ? '#0b0b0c' : frameColor(placement.isOwn, hovered)}
+          emissive={hovered ? '#facc15' : '#000000'}
+          emissiveIntensity={hovered ? 0.9 : 0}
+        />
       </mesh>
+
+      {/* Unlit frame face so the card stays legible regardless of scene lighting. */}
+      {texture ? (
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, CARD_T / 2 + 0.001, 0]}>
+          <planeGeometry args={[CARD_W, CARD_H]} />
+          <meshBasicMaterial map={texture} toneMapped={false} />
+        </mesh>
+      ) : null}
     </group>
   );
 }
