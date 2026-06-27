@@ -18,12 +18,15 @@ export interface SeatHud {
   position: Vec3;
 }
 
-// Float the badge HIGH above the table so it clears the card rows on screen (the
-// badge is a DOM overlay, so "clearing" means sitting higher in screen space, not
-// depth). Anchored just inboard of the seat, well above the cards rather than on
-// top of them.
+// Float each badge so it clears its seat's card rows on screen (the badge is a DOM
+// overlay, so "clearing" means sitting higher in screen space, not depth).
+// Opponents sit across the table, so lifting high puts their badge at the top, above
+// their board. Your own seat is at the near edge, so the same lift would land ON your
+// creatures — instead anchor your badge low and toward the camera, beside your hand.
 const HUD_LIFT = 3.0;
 const HUD_INSET = -0.3;
+const OWN_HUD_LIFT = 1.9;
+const OWN_HUD_INSET = 2.2; // toward you (the camera), in front of your creatures
 
 function sumPower(creatures: PermanentView[]): number {
   return creatures.reduce((n, c) => n + (c.power ?? 0), 0);
@@ -34,8 +37,10 @@ export function seatAnchor(seatIndex: number, total: number): Vec3 {
   const { position, rotationY } = seatTransform(seatIndex, total);
   const sin = Math.sin(rotationY);
   const cos = Math.cos(rotationY);
-  // local offset (lx=0, lz=HUD_INSET) rotated into world by the seat's rotationY.
-  return [position[0] + HUD_INSET * sin, HUD_LIFT, position[2] + HUD_INSET * cos];
+  const inset = seatIndex === 0 ? OWN_HUD_INSET : HUD_INSET;
+  const lift = seatIndex === 0 ? OWN_HUD_LIFT : HUD_LIFT;
+  // local offset (lx=0, lz=inset) rotated into world by the seat's rotationY.
+  return [position[0] + inset * sin, lift, position[2] + inset * cos];
 }
 
 /** One HUD entry per seat (you first), pulling life/hand/threat from the view-model. */
