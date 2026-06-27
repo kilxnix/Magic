@@ -4,6 +4,7 @@ import { ArrowLeft, ClipboardPaste, Download, Loader2, Swords, Link as LinkIcon,
 import { useShelectorGame, type GameLogEntry, type ImportedCards, type ShelectorGameSaveSnapshot } from '../hooks/useShelectorGame';
 import { GameBoard } from '../components/GameBoard';
 import { PlayExperience } from '../play/PlayExperience';
+import { usesPlayExperience } from '../play/r3f/playUiMode';
 import { GameReview } from '../components/GameReview';
 import { EndGameModal } from '../components/shelector/EndGameModal';
 import { DraftTournament } from '../components/DraftTournament';
@@ -298,15 +299,10 @@ export function PlayPage() {
     reviewLog,
   } = useShelectorGame();
 
-  // Feature flag: opt into the rebuilt play UI (PlayExperience) with ?newui=1.
+  // Feature flag: opt into the rebuilt play UI (PlayExperience) via ?newui=1 or
+  // ?ui=v2 / ?ui=3d (the 3d battlefield shell lives inside PlayExperience).
   // Defaults off — the existing <GameBoard> stays the default board.
-  const useNewPlayUi = useMemo(
-    () =>
-      typeof window !== 'undefined' &&
-      (new URLSearchParams(window.location.search).get('newui') === '1' ||
-        new URLSearchParams(window.location.search).get('ui') === 'v2'),
-    [],
-  );
+  const useNewPlayUi = useMemo(() => usesPlayExperience(), []);
 
   // Pre-game state
   const [step, setStep] = useState<'import' | 'opponent' | 'draft' | 'standard' | 'game'>('import');
