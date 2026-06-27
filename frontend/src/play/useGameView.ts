@@ -19,6 +19,7 @@ import { priority } from './selectors/priority';
 import { targeting } from './selectors/targeting';
 import { combat } from './selectors/combat';
 import { narration } from './selectors/narration';
+import { colorIdentityFromManaCost } from './manaColors';
 
 function isCreature(card: SimpleCard): boolean {
   return card.cardTypes.includes('creature');
@@ -42,6 +43,10 @@ function toPermanentView(card: SimpleCard, ctx: PermanentContext): PermanentView
     power: card.power,
     toughness: card.toughness,
     counters: Object.keys(card.counters).length > 0 ? card.counters : undefined,
+    manaCost: card.manaCost || undefined,
+    colorIdentity: card.manaCost ? colorIdentityFromManaCost(card.manaCost) : undefined,
+    isCommander: card.isCommander || undefined,
+    isToken: card.isToken || undefined,
     isLand: isLand(card),
     isCreature: isCreature(card),
     isAttacking: ctx.attackingIds.has(card.instanceId) || undefined,

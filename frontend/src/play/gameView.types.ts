@@ -190,6 +190,12 @@ export interface PermanentView {
   power?: number;
   toughness?: number;
   counters?: Record<string, number>;
+  /** Raw mana cost string, e.g. "{1}{G}". Absent for tokens with no cost. */
+  manaCost?: string;
+  /** Distinct WUBRG colors derived from the mana cost (frame tinting). */
+  colorIdentity?: string[];
+  isCommander?: boolean;
+  isToken?: boolean;
   isLand: boolean;
   isCreature: boolean;
   isAttacking?: boolean;
