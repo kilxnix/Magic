@@ -136,8 +136,55 @@ function drawFrame(ctx: CanvasRenderingContext2D, spec: FrameSpec): void {
   }
 }
 
+/** Same-origin card-art proxy URL (art is resolved by card name). */
+export function cardImageUrl(name: string): string {
+  return `/api/card-image/${encodeURIComponent(name)}`;
+}
+
+const ART = { x: 20, y: 44, w: FRAME_W - 40, h: 180 };
+let inFlight = 0;
+const MAX_INFLIGHT = 6;
+const artQueue: (() => void)[] = [];
+
+function pump(): void {
+  while (inFlight < MAX_INFLIGHT && artQueue.length > 0) {
+    const job = artQueue.shift()!;
+    job();
+  }
+}
+
+/** Lazily paint the card art into the inset region; on any failure keep the tinted panel. */
+function loadArtInset(name: string, canvas: HTMLCanvasElement, tex: CanvasTexture): void {
+  if (typeof Image === 'undefined') return;
+  const job = () => {
+    inFlight++;
+    const img = new Image();
+    img.onload = () => {
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(ART.x, ART.y, ART.w, ART.h);
+        ctx.clip();
+        const scale = Math.max(ART.w / img.width, ART.h / img.height); // cover-fit
+        const dw = img.width * scale;
+        const dh = img.height * scale;
+        ctx.drawImage(img, ART.x + (ART.w - dw) / 2, ART.y + (ART.h - dh) / 2, dw, dh);
+        ctx.restore();
+        tex.needsUpdate = true;
+      }
+      inFlight--;
+      pump();
+    };
+    img.onerror = () => { inFlight--; pump(); }; // keep the tinted panel
+    img.src = cardImageUrl(name);
+  };
+  artQueue.push(job);
+  pump();
+}
+
 /** Build a card-frame texture. Returns null when no 2D context (test/headless). */
-export function makeFrameTexture(spec: FrameSpec): CanvasTexture | null {
+export function makeFrameTexture(spec: FrameSpec, name?: string): CanvasTexture | null {
   if (typeof document === 'undefined') return null;
   const canvas = document.createElement('canvas');
   canvas.width = FRAME_W;
@@ -148,10 +195,11 @@ export function makeFrameTexture(spec: FrameSpec): CanvasTexture | null {
   const tex = new CanvasTexture(canvas);
   tex.colorSpace = SRGBColorSpace;
   tex.anisotropy = 4;
+  if (name) loadArtInset(name, canvas, tex);
   return tex;
 }
 
-const frameTextureCache = createFrameCache<CanvasTexture | null>((p) => makeFrameTexture(frameSpec(p)));
+const frameTextureCache = createFrameCache<CanvasTexture | null>((p) => makeFrameTexture(frameSpec(p), p.name));
 
 export function getFrameTexture(p: Placement): CanvasTexture | null {
   return frameTextureCache.get(p);

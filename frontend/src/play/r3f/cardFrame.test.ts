@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { frameSignature, createFrameCache, frameSpec, makeFrameTexture, getFrameTexture } from './cardFrame';
+import { frameSignature, createFrameCache, frameSpec, makeFrameTexture, getFrameTexture, cardImageUrl } from './cardFrame';
 import type { Placement } from './placements';
 
 function p(over: Partial<Placement>): Placement {
@@ -62,5 +62,12 @@ describe('makeFrameTexture', () => {
     const a = getFrameTexture(p({ id: 'a', name: 'Bear' }));
     const b = getFrameTexture(p({ id: 'b', name: 'Bear' })); // same signature
     expect(a).toBe(b); // same cached value (null or texture)
+  });
+});
+
+describe('cardImageUrl', () => {
+  it('builds an encoded same-origin proxy URL', () => {
+    expect(cardImageUrl('Sol Ring')).toBe('/api/card-image/Sol%20Ring');
+    expect(cardImageUrl('Ach! Hans, Run!')).toBe('/api/card-image/Ach!%20Hans%2C%20Run!');
   });
 });
