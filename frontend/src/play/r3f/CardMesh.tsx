@@ -11,6 +11,18 @@ export const CARD_H = 1.4;
 export const CARD_T = 0.04;
 const HOVER_LIFT = 0.25;
 
+// Every card shares one world orientation (only tap spins Y), so a single +X tilt
+// stands them all up toward the angled-overhead camera: the name edge rises to the
+// top and the face turns toward the viewer, so every seat's cards read at a glance
+// instead of lying edge-on flat. ~31deg props them up Arena-style without occluding
+// the rows behind.
+export const CARD_TILT = 0.55;
+
+// Opponent seats sit farther from the camera, so perspective shrinks their cards.
+// Scale them up to partially equalize apparent size (full detail is reachable via
+// tap-to-focus). Kept under CARD_SPACING_X / CARD_W to avoid heavy in-row overlap.
+export const OPPONENT_SCALE = 1.25;
+
 // Color the frame by seat ownership; full per-type theming arrives in a later milestone.
 function frameColor(isOwn: boolean, hovered: boolean): string {
   if (hovered) return '#facc15';
@@ -49,7 +61,11 @@ export function CardMesh({
   });
 
   return (
-    <group ref={groupRef} rotation={[0, placement.tapped ? Math.PI / 2 : 0, 0]}>
+    <group
+      ref={groupRef}
+      rotation={[CARD_TILT, placement.tapped ? Math.PI / 2 : 0, 0]}
+      scale={placement.isOwn ? 1 : OPPONENT_SCALE}
+    >
       {/* Lay the card flat: rotate the upright card -90deg about X so its face points up (+Y). */}
       <mesh
         rotation={[-Math.PI / 2, 0, 0]}
