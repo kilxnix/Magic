@@ -56,7 +56,10 @@ describe('PlayExperience with ?ui=3d', () => {
   // the existing v2 test convention. Do NOT use `toBeInTheDocument()`.
   it('renders the 3D shell when WebGL is available', async () => {
     render(<PlayExperience {...baseProps()} />);
-    expect(await screen.findByTestId('three-battlefield')).toBeTruthy();
+    // The shell is React.lazy()'d, so the dynamic import must resolve before the
+    // testid appears. Under a loaded full-suite run that chunk can take >1s, so
+    // give findBy a generous timeout (the default 1000ms is too tight here).
+    expect(await screen.findByTestId('three-battlefield', {}, { timeout: 8000 })).toBeTruthy();
   });
 
   it('falls back to a 2D shell when WebGL is unavailable', () => {
