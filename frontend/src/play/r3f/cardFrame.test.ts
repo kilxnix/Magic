@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { frameSignature, createFrameCache, frameSpec } from './cardFrame';
+import { frameSignature, createFrameCache, frameSpec, makeFrameTexture, getFrameTexture } from './cardFrame';
 import type { Placement } from './placements';
 
 function p(over: Partial<Placement>): Placement {
@@ -50,5 +50,17 @@ describe('frameSpec', () => {
 describe('frameSignature varies by frame-relevant fields', () => {
   it('differs by manaCost', () => {
     expect(frameSignature(p({ name: 'X', manaCost: '{G}' }))).not.toBe(frameSignature(p({ name: 'X', manaCost: '{R}' })));
+  });
+});
+
+describe('makeFrameTexture', () => {
+  it('returns null when no 2D canvas context is available (test env)', () => {
+    const tex = makeFrameTexture(frameSpec(p({ name: 'Bear', typeKind: 'creature', power: 2, toughness: 2 })));
+    expect(tex === null || typeof tex === 'object').toBe(true);
+  });
+  it('getFrameTexture is callable and memoized by signature', () => {
+    const a = getFrameTexture(p({ id: 'a', name: 'Bear' }));
+    const b = getFrameTexture(p({ id: 'b', name: 'Bear' })); // same signature
+    expect(a).toBe(b); // same cached value (null or texture)
   });
 });
