@@ -54,8 +54,23 @@ function zoneTexture(zone: ZoneKind, count: number | null): CanvasTexture | null
 }
 
 /** A graveyard / library / exile pile: a small stacked tile whose height hints at
- *  size, with a label + count on top. Click opens the DOM zone browser. */
-export function ZonePileMesh({ pile, onBrowse }: { pile: ZonePile; onBrowse(playerId: string, zone: ZoneKind): void }) {
+ *  size, with a label + count on top. Click opens the DOM zone browser.
+ *
+ *  `rotationY` is the table's lazy-susan spin (radians). The pile's POSITION rides
+ *  the spin with its seat (it's authored in unspun world space and the parent
+ *  table group rotates it), but its label is flat info text that must stay legible
+ *  — so we cancel the spin on the pile's ORIENTATION (counter-rotate by -rotationY)
+ *  so "DECK/GRAVE/EXILE" always reads upright toward the camera instead of flipping
+ *  upside-down when its seat rotates to the far side. */
+export function ZonePileMesh({
+  pile,
+  onBrowse,
+  rotationY = 0,
+}: {
+  pile: ZonePile;
+  onBrowse(playerId: string, zone: ZoneKind): void;
+  rotationY?: number;
+}) {
   const [hovered, setHovered] = useState(false);
   const [x, y, z] = pile.position;
   const texture = useMemo(() => zoneTexture(pile.zone, pile.count), [pile.zone, pile.count]);
@@ -66,7 +81,8 @@ export function ZonePileMesh({ pile, onBrowse }: { pile: ZonePile; onBrowse(play
   const tint = ZONE_STYLE[pile.zone].tint;
 
   return (
-    <group position={[x, y, z]} rotation={[CARD_TILT, 0, 0]} scale={pile.isOwn ? 1 : OPPONENT_SCALE}>
+    <group position={[x, y, z]} rotation={[0, -rotationY, 0]}>
+      <group rotation={[CARD_TILT, 0, 0]} scale={pile.isOwn ? 1 : OPPONENT_SCALE}>
       <mesh
         rotation={[-Math.PI / 2, 0, 0]}
         userData={{ zoneId: pile.id }}
@@ -95,6 +111,7 @@ export function ZonePileMesh({ pile, onBrowse }: { pile: ZonePile; onBrowse(play
           <meshBasicMaterial map={texture} toneMapped={false} />
         </mesh>
       ) : null}
+      </group>
     </group>
   );
 }

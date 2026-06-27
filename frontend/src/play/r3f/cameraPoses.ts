@@ -8,12 +8,13 @@ import type { CameraPose } from './projection';
  */
 export function defaultPose(seats: number): CameraPose {
   const r = seatRadius(seats);
-  const camY = 8.5 + r * 0.85; // higher with a wider table so the whole pod stays in view
-  const camZ = r + 6.0; // sit behind the near seat, scaled to the (larger) table
-  // Lower fov than the original 50 zooms in so the boards fill the frame instead of
-  // floating in felt, without ballooning the near hand the way a very tight fov did.
-  // Aim slightly past center so the near seat's zone piles don't clip the bottom.
-  return { position: [0, camY, camZ], target: [0, 0, -0.6], fov: 47 };
+  const camY = 9.5 + r * 1.0; // higher with a wider table so the whole pod stays in view
+  const camZ = r + 8.5; // sit behind the near seat, scaled to the (larger) table
+  // Aim a touch toward the near (+Z) half rather than dead center, so the near/front
+  // board — its lands, zone-pile column, and the hand dock just behind them — lifts
+  // up into frame instead of sliding off the bottom edge. The far board stays in
+  // view (smaller) toward the top; spin-to-focus is how you read a specific board.
+  return { position: [0, camY, camZ], target: [0, 0, 1.2], fov: 46 };
 }
 
 /**
@@ -46,6 +47,11 @@ function mixVec(a: Vec3, b: Vec3, t: number): Vec3 {
 /** Component-wise interpolation between two poses (t clamped to [0,1]). */
 export function lerpPose(a: CameraPose, b: CameraPose, t: number): CameraPose {
   const u = t < 0 ? 0 : t > 1 ? 1 : t;
+  // Return the endpoints exactly at the clamp boundaries — component-wise mix
+  // (a + (b - a) * u) reintroduces floating-point error at u===1, so this both
+  // guarantees exact endpoints and is a hair cheaper for the common t≤0 / t≥1 case.
+  if (u === 0) return a;
+  if (u === 1) return b;
   return {
     position: mixVec(a.position, b.position, u),
     target: mixVec(a.target, b.target, u),

@@ -91,7 +91,7 @@ export function BattlefieldScene({
         ))}
 
         {piles.map((pile) => (
-          <ZonePileMesh key={pile.id} pile={pile} onBrowse={onBrowseZone ?? (() => {})} />
+          <ZonePileMesh key={pile.id} pile={pile} onBrowse={onBrowseZone ?? (() => {})} rotationY={rotationY} />
         ))}
       </group>
     </>

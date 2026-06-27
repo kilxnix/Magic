@@ -31,9 +31,9 @@ export interface ZonePile {
 const OWN_COLUMN_X = 4.4;
 const OPP_COLUMN_X = 3.8;
 const COLUMN_Z: Record<ZoneKind, number> = {
-  library: 1.55, // nearest the seated player
-  graveyard: 0.55,
-  exile: -0.45, // farthest from the seated player
+  library: 1.05, // nearest the seated player
+  graveyard: 0.2,
+  exile: -0.65, // farthest from the seated player
 };
 
 function pileWorld(seatIndex: number, total: number, zone: ZoneKind, isOwn: boolean): Vec3 {

@@ -13,8 +13,10 @@ export const CARD_SPACING_X = 1.6;
  */
 export function seatRadius(total: number): number {
   if (total <= 2) return SEAT_R; // 4.5
-  if (total === 3) return SEAT_R + 1.6; // 6.1
-  return SEAT_R + 2.7; // 4p ≈ 7.2
+  if (total === 3) return SEAT_R + 0.9; // 5.4
+  return SEAT_R + 1.5; // 4p = 6.0 — wide enough that seats don't pile in the
+  // center, tight enough that the table fills the frame instead of leaving a vast
+  // empty middle (and so the near/front board doesn't clip off the bottom edge).
 }
 
 // local +Z points from table center toward the seated player. Rows are spread
