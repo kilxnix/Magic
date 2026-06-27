@@ -3,7 +3,7 @@ import { frameSignature, createFrameCache } from './cardFrame';
 import type { Placement } from './placements';
 
 function p(over: Partial<Placement>): Placement {
-  return { id: 'x', name: 'Forest', seatIndex: 0, row: 'lands', position: [0, 0, 0], tapped: false, isOwn: true, ...over };
+  return { id: 'x', name: 'Forest', seatIndex: 0, row: 'lands', position: [0, 0, 0], tapped: false, typeKind: 'other', isOwn: true, ...over };
 }
 
 describe('frameSignature', () => {

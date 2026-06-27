@@ -1,6 +1,8 @@
 import type { GameView, PermanentView } from '../gameView.types';
 import { worldSlot, type Vec3, type ZoneRow } from './layout';
 
+export type TypeKind = 'creature' | 'land' | 'other';
+
 export interface Placement {
   id: string;
   name: string;
@@ -11,6 +13,11 @@ export interface Placement {
   power?: number;
   toughness?: number;
   counters?: Record<string, number>;
+  manaCost?: string;
+  colorIdentity?: string[];
+  typeKind: TypeKind;
+  isCommander?: boolean;
+  isToken?: boolean;
   isOwn: boolean;
 }
 
@@ -36,6 +43,11 @@ function placeSeat(rows: SeatRows, seatIndex: number, total: number, isOwn: bool
         power: c.power,
         toughness: c.toughness,
         counters: c.counters,
+        manaCost: c.manaCost,
+        colorIdentity: c.colorIdentity,
+        typeKind: c.isCreature ? 'creature' : c.isLand ? 'land' : 'other',
+        isCommander: c.isCommander,
+        isToken: c.isToken,
         isOwn,
       });
     });

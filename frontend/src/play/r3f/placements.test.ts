@@ -12,7 +12,7 @@ function makeView(): GameView {
       life: 40, poison: 0, maxCommanderDamageTaken: 0,
       manaPool: { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 },
       commandZone: [], graveyardCount: 0, libraryCount: 0, handCount: 0,
-      creatures: [perm('c1', 'Bear', { isCreature: true, power: 2, toughness: 2 })],
+      creatures: [perm('c1', 'Bear', { isCreature: true, power: 2, toughness: 2, manaCost: '{1}{G}', colorIdentity: ['G'] })],
       artifacts: [], enchantments: [],
       lands: [perm('l1', 'Forest', { isLand: true, tapped: true }), perm('l2', 'Forest', { isLand: true })],
       other: [], hand: [], graveyard: [], exile: [],
@@ -60,5 +60,13 @@ describe('buildPlacements', () => {
     const ps = buildPlacements(makeView());
     const keys = ps.map((p) => p.position.map((n) => n.toFixed(2)).join(','));
     expect(new Set(keys).size).toBe(ps.length);
+  });
+
+  it('threads manaCost, colorIdentity and typeKind onto creature placements', () => {
+    const bear = buildPlacements(makeView()).find((p) => p.id === 'c1')!;
+    expect(bear.manaCost).toBe('{1}{G}');
+    expect(bear.colorIdentity).toEqual(['G']);
+    expect(bear.typeKind).toBe('creature');
+    expect(buildPlacements(makeView()).find((p) => p.id === 'l1')!.typeKind).toBe('land');
   });
 });

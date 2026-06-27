@@ -4,7 +4,7 @@ import { CardMesh } from './CardMesh';
 import type { Placement } from './placements';
 
 function p(over: Partial<Placement> = {}): Placement {
-  return { id: 'c1', name: 'Bear', seatIndex: 0, row: 'creatures', position: [1, 0, 2], tapped: false, isOwn: true, ...over };
+  return { id: 'c1', name: 'Bear', seatIndex: 0, row: 'creatures', position: [1, 0, 2], tapped: false, typeKind: 'other', isOwn: true, ...over };
 }
 
 describe('CardMesh', () => {
