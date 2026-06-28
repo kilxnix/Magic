@@ -17,6 +17,7 @@ import { CombatFlowV2 } from '../v2/components/CombatFlowV2';
 import { NarrationFeedV2 } from '../v2/components/NarrationFeedV2';
 import { CardViewerV2 } from '../v2/components/CardViewerV2';
 import { ZoneExplorerV2 } from '../v2/components/ZoneExplorerV2';
+import { StackViewV2 } from '../v2/components/StackViewV2';
 import type { ZoneKind } from './zonePlacements';
 
 /**
@@ -197,6 +198,12 @@ export function ThreeBattlefield(props: DesktopBattlefieldProps) {
 
       {/* DOM overlay — controls + readouts live here, not in WebGL. */}
       <div className="pointer-events-none absolute inset-0">
+        {/* Live stack — pending spells/abilities and their order. Without this the
+            3D player had no view of the stack during counter/trigger exchanges.
+            Tapping an item routes its CardView into the same action/inspect viewer. */}
+        <div className="pointer-events-auto absolute left-1/2 top-14 z-20 max-h-[42vh] w-[min(280px,42vw)] -translate-x-1/2 overflow-auto">
+          <StackViewV2 stack={view.stack} onView={inspect} />
+        </div>
         <div className="pointer-events-auto absolute left-3 top-3">
           <PhaseTrackV2 priority={view.priority} />
           <PriorityControlsV2

@@ -45,6 +45,7 @@ export function CardMesh({
   const [hovered, setHovered] = useState(false);
   const [x, y, z] = placement.position;
   const lift = hovered ? HOVER_LIFT : 0;
+  const combatGlow = placement.isAttacking ? '#e11d48' : placement.isBlocking ? '#0ea5e9' : null;
   const groupRef = useRef<Group>(null);
   const texture = useMemo(() => getFrameTexture(placement), [placement]);
 
@@ -95,8 +96,12 @@ export function CardMesh({
             <boxGeometry args={[CARD_W, CARD_H, CARD_T]} />
             <meshStandardMaterial
               color={texture ? '#0b0b0c' : frameColor(placement.isOwn, hovered)}
-              emissive={hovered ? '#facc15' : '#000000'}
-              emissiveIntensity={hovered ? 0.9 : 0}
+              // Hover wins; otherwise glow the card edges rose when attacking / sky when
+              // blocking so combat reads on the board, not just in the DOM banner.
+              emissive={hovered ? '#facc15' : combatGlow ?? '#000000'}
+              // Combat glow is pushed above the Bloom threshold (0.55) so an attacking/
+              // blocking card's edge visibly blooms instead of a faint hard-to-see line.
+              emissiveIntensity={hovered ? 0.9 : combatGlow ? 1.3 : 0}
             />
           </mesh>
 

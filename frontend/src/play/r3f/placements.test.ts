@@ -69,4 +69,25 @@ describe('buildPlacements', () => {
     expect(bear.typeKind).toBe('creature');
     expect(buildPlacements(makeView()).find((p) => p.id === 'l1')!.typeKind).toBe('land');
   });
+
+  it('renders YOUR `other` permanents (planeswalkers/battles) so they are visible and clickable', () => {
+    const view = makeView();
+    view.you.other = [perm('pw1', 'Teferi', { isCreature: false, isLand: false })];
+    const ps = buildPlacements(view);
+    const pw = ps.find((p) => p.id === 'pw1');
+    expect(pw).toBeDefined();
+    expect(pw!.seatIndex).toBe(0);
+    expect(pw!.isOwn).toBe(true);
+    expect(pw!.selectId).toBe('pw1'); // a real object to click → opens its action viewer
+    expect(pw!.typeKind).toBe('other');
+  });
+
+  it('forwards isAttacking / isBlocking so the board can ring combatants', () => {
+    const view = makeView();
+    view.you.creatures = [perm('a1', 'Attacker', { isCreature: true, isAttacking: true })];
+    view.opponents[0].creatures = [perm('b1', 'Blocker', { isCreature: true, isBlocking: true })];
+    const ps = buildPlacements(view);
+    expect(ps.find((p) => p.id === 'a1')!.isAttacking).toBe(true);
+    expect(ps.find((p) => p.id === 'b1')!.isBlocking).toBe(true);
+  });
 });

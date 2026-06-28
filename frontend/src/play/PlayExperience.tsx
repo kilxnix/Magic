@@ -43,6 +43,7 @@ import { DesktopBattlefieldV2 } from './v2/shells/DesktopBattlefieldV2';
 import { MobileTableV2 } from './v2/shells/MobileTableV2';
 import { getPlayUiMode } from './r3f/playUiMode';
 import { supportsWebGL } from './r3f/webgl';
+import { CanvasErrorBoundary } from './r3f/CanvasErrorBoundary';
 const ThreeBattlefield = lazy(() => import('./r3f/ThreeBattlefield'));
 import { nameForPlayer } from './useGameView';
 
@@ -833,9 +834,13 @@ export function PlayExperience({
       )}
 
       {use3d ? (
-        <Suspense fallback={<div className="h-full w-full bg-black" />}>
-          <ThreeBattlefield {...shellProps} />
-        </Suspense>
+        // A WebGL failure (lost context, render throw) falls back to the 2D shell
+        // for this viewport instead of crashing the whole play page.
+        <CanvasErrorBoundary fallback={isDesktop ? <Desktop {...shellProps} /> : <Mobile {...shellProps} />}>
+          <Suspense fallback={<div className="h-full w-full bg-black" />}>
+            <ThreeBattlefield {...shellProps} />
+          </Suspense>
+        </CanvasErrorBoundary>
       ) : isDesktop ? (
         <Desktop {...shellProps} />
       ) : (

@@ -22,6 +22,9 @@ export interface Placement {
   typeKind: TypeKind;
   isCommander?: boolean;
   isToken?: boolean;
+  /** Combat flags forwarded from the view-model so the board can ring attackers/blockers. */
+  isAttacking?: boolean;
+  isBlocking?: boolean;
   isOwn: boolean;
   /** Extra Y-rotation (radians) added on top of tap — used to splay the hand fan. */
   yaw?: number;
@@ -77,6 +80,8 @@ function placeSeat(rows: SeatRows, seatIndex: number, total: number, isOwn: bool
         typeKind: c.isCreature ? 'creature' : c.isLand ? 'land' : 'other',
         isCommander: c.isCommander,
         isToken: c.isToken,
+        isAttacking: c.isAttacking,
+        isBlocking: c.isBlocking,
         isOwn,
       });
     });
@@ -92,7 +97,11 @@ export function buildPlacements(view: GameView): Placement[] {
     ...placeSeat(
       {
         creatures: view.you.creatures,
-        artifacts: [...view.you.artifacts, ...view.you.enchantments],
+        // Include your `other` permanents (planeswalkers, battles, etc.) alongside
+        // artifacts/enchantments — otherwise they get no mesh and are invisible AND
+        // unclickable, so you could never see or activate a planeswalker you control.
+        // Mirrors the opponent path (which renders opp.other in this row).
+        artifacts: [...view.you.artifacts, ...view.you.enchantments, ...view.you.other],
         lands: view.you.lands,
         command: view.you.commandZone,
       },

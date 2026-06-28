@@ -134,6 +134,23 @@ function drawFrame(ctx: CanvasRenderingContext2D, spec: FrameSpec): void {
     ctx.fillText(spec.pt, FRAME_W - 48, FRAME_H - 33);
     ctx.textAlign = 'left';
   }
+  // Counter pill, bottom-left (mirrors the P/T badge) — +1/+1, loyalty, charge, etc.
+  // The data is threaded through the whole pipeline; without this it never shows.
+  if (spec.counterText) {
+    const cw = 118;
+    const cx = 18;
+    const cy = FRAME_H - 52;
+    ctx.fillStyle = '#16291d'; // dark green counter chip
+    ctx.strokeStyle = '#5fd08a';
+    ctx.lineWidth = 3;
+    ctx.fillRect(cx, cy, cw, 34);
+    ctx.strokeRect(cx, cy, cw, 34);
+    ctx.fillStyle = '#eafff2';
+    ctx.font = 'bold 18px system-ui, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(spec.counterText, cx + 9, cy + 18, cw - 16);
+  }
 }
 
 /** Same-origin card-art proxy URL (art is resolved by card name). */
